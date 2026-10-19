@@ -92,6 +92,7 @@ export default function StudentsScreen() {
       >
         <SchoolBadge principal="guardian" name={school?.name} />
         <ScreenHeader
+          featured
           title={`${greeting(new Date().getHours())}${guardian ? `, ${guardian.firstName}` : ""}`}
           action={<MenuButton onPress={menu.open} />}
         />

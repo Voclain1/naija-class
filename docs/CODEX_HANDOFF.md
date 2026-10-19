@@ -194,7 +194,7 @@ This section used to be a running log; the log below it stopped on
 2026-09-01 and several of its "in progress" entries have since merged.
 Treat it as history. The current picture:
 
-- **UI-only review branch:** `design/app-visual-refresh`. Shared web/portal and
+- **UI-only review branch (second pass after owner feedback):** `design/app-visual-refresh`. Shared web/portal and
   Expo presentation refreshed, with no business logic or navigation changes.
   Design scope: `docs/modules/app-visual-refresh.md`; verification and remaining
   device/screen-review limits: `docs/journal/2026-10-19.md`. Not deployed by this

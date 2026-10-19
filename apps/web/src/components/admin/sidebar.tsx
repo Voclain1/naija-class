@@ -40,7 +40,7 @@ export function AdminSidebar() {
   const { items, laterPhaseItems } = useVisibleAdminNavItems();
 
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-border/80 bg-card md:flex md:flex-col">
+    <aside className="schoolkit-rail hidden w-64 shrink-0 border-r border-border/80 bg-card md:flex md:flex-col">
       <div className="flex h-16 items-center border-b border-border/80 px-5">
         <SchoolBrand />
       </div>

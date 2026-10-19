@@ -63,3 +63,31 @@ These inform visual restraint, not a change to SchoolKit's interaction design.
 Validation results and environment limitations are recorded in the session
 journal. Native browser rendering is not evidence of an Android/iOS device
 smoke. A production release remains separate from this review branch.
+
+## Reference-led second pass (owner feedback, 19 October)
+
+The owner found the first pass too close to the old app. The revision makes the
+reference more visible: bold welcome typography, a flat gold marker highlight,
+a soft illustrated welcome panel, mint/gold metric surfaces, larger rounded
+cards, and a contrasting deep-emerald navigation rail. The original desktop
+information order and all action destinations stay intact. On phones the same
+four web metrics use a two-column visual grid, with complete amounts and
+supporting lines retained.
+
+Native home headers use the same featured treatment. The staff school summary
+renders the same four facts as tiles; the existing text, callback conditions
+and permissions are preserved. A decorative figure style separates the existing
+leading number from its suffix, without calculating or changing any values.
+The native sign-in heading also uses the marker treatment.
+
+The SchoolDayArt SVG and the native geometric book shapes are noninteractive,
+hidden from accessibility and require no downloads. This is flat code-native
+artwork, not a screenshot or mock product content.
+
+Mobile QA includes the actual responsive Next dashboard and an isolated Expo
+component fixture. Staff sign-in is deliberately unavailable on Expo web because
+it requires a native device lock (`canProtectStaffSession`); that safeguard is
+unchanged. The fixture composes the same native header, StatRow and ActionTile
+components using sample data, is exported locally, then removed from source.
+It is a component preview, not a native device screenshot or an authentication
+verification. No fixture route is shipped.

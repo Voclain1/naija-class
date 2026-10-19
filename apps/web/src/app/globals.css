@@ -213,3 +213,101 @@
 @layer utilities {
   .font-serif { font-weight: 600; letter-spacing: -0.035em; }
 }
+
+/* Reference-led second pass: bold type, marker gold and illustrated surfaces.
+ * No controls or information are removed at a narrow width. */
+@layer components {
+  .schoolkit-rail {
+    --foreground: 45 33% 96%;
+    --card: 161 74% 17%;
+    --primary: 157 57% 74%;
+    --primary-foreground: 161 74% 13%;
+    --muted-foreground: 154 19% 77%;
+    --border: 158 31% 29%;
+    --input: 158 31% 35%;
+    --muted: 160 47% 21%;
+    --accent: 160 41% 25%;
+    --accent-foreground: 45 33% 96%;
+    background: hsl(var(--card));
+  }
+  .dark .schoolkit-rail { --card: 164 45% 10%; }
+  .dashboard-welcome {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    min-height: 252px;
+    padding: 2rem;
+    border-radius: 1.5rem;
+    background: #e5eee6;
+    color: #13262e;
+  }
+  .dashboard-welcome.flex { display: block; }
+  .dashboard-welcome > div:last-child { margin-top: 1.25rem; max-width: 76%; }
+  .dashboard-welcome > div { position: relative; z-index: 1; }
+  .dashboard-welcome > div:first-of-type { max-width: 76%; }
+  .dashboard-welcome h1 {
+    max-width: 750px;
+    font-family: var(--font-sans), sans-serif;
+    font-size: clamp(2rem, 3.4vw, 3.1rem);
+    font-weight: 750;
+    line-height: 1.12;
+    letter-spacing: -0.055em;
+    color: #13262e;
+  }
+  .dashboard-welcome .text-muted-foreground { color: #50615b; }
+  .welcome-highlight {
+    background: #f6d779;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    padding: 0 .12em;
+    border-radius: .12em;
+  }
+  .dashboard-welcome-art {
+    position: absolute;
+    z-index: 0;
+    width: 280px;
+    height: 245px;
+    right: -15px;
+    top: 8px;
+    pointer-events: none;
+  }
+  .dark .dashboard-welcome { background: #183a30; color: #f7f5ef; }
+  .dark .dashboard-welcome h1 { color: #f7f5ef; }
+  .dark .dashboard-welcome .text-muted-foreground { color: #bdcec4; }
+  .dark .welcome-highlight { background: #f6d779; color: #13262e; }
+  .metric-card { border-radius: 1.35rem; }
+  .metric-card.metric-mint { background: #e7f2ed; }
+  .metric-card.metric-gold { background: #fcf1d5; }
+  .dark .metric-card.metric-mint { background: #18372e; }
+  .dark .metric-card.metric-gold { background: #363120; }
+  .metric-value { font-weight: 750; letter-spacing: -.055em; }
+  .dashboard-stats .metric-value { font-size: clamp(1.15rem, 2.2vw, 2.2rem); }
+  .dashboard-stats .metric-label > p { letter-spacing: .02em; text-transform: none; font-size: .76rem; }
+  .dashboard-stats .metric-label > span { background: hsl(var(--primary) / .10); }
+}
+@media (max-width: 639.98px) {
+  .dashboard-welcome { padding: 1.25rem; min-height: 285px; border-radius: 1.3rem; }
+  .dashboard-welcome > div:first-of-type { max-width: 100%; }
+  .dashboard-welcome h1 { max-width: 290px; font-size: 2.05rem; padding-right: 20px; }
+  .dashboard-welcome-art { width: 135px; height: 130px; top: -18px; right: -28px; opacity: .38; }
+  .dashboard-welcome > div:last-child { width: 100%; max-width: 100%; }
+  .dashboard-stats .metric-content { padding: .85rem; }
+  .dashboard-stats .metric-label { gap: .3rem; align-items: center; }
+  .dashboard-stats .metric-label > p { font-size: .69rem; }
+  .dashboard-stats .metric-label > span { width: 1.65rem; height: 1.65rem; flex-shrink: 0; }
+  .dashboard-stats .metric-value { font-size: clamp(.92rem, 3.5vw, 1.3rem); overflow-wrap: anywhere; margin-top: .6rem; }
+  .dashboard-stats .metric-value[data-metric-length="short"] { font-size: 2rem; line-height: 1.15; }
+  .dashboard-stats .metric-content > p.text-xs,
+  .dashboard-stats .metric-content > div.text-xs { font-size: .68rem; line-height: 1.5; }
+}
+@media print {
+  .schoolkit-rail { display: none; }
+  .dashboard-welcome { min-height: 0; padding: 0; background: transparent; }
+  .dashboard-welcome-art { display: none; }
+}
+
+/* Wrap chrome rather than pushing account controls outside a small screen. */
+@media (max-width: 1023.98px) {
+  .app-topbar.flex { height: auto; min-height: 4rem; flex-wrap: wrap; padding-top: .6rem; padding-bottom: .6rem; }
+  .app-topbar .app-topbar-controls { flex-wrap: wrap; max-width: 100%; }
+}

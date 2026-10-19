@@ -217,7 +217,7 @@ export function TeacherSidebar() {
   // longest-match rule keeps daily and subject attendance from both lighting
   // up on /teacher/attendance/subject.
   return (
-    <aside className="hidden w-60 shrink-0 border-r border-border/80 bg-card md:flex md:flex-col">
+    <aside className="schoolkit-rail hidden w-60 shrink-0 border-r border-border/80 bg-card md:flex md:flex-col">
       <div className="flex h-16 items-center border-b border-border/80 px-4">
         <SchoolBrand />
       </div>

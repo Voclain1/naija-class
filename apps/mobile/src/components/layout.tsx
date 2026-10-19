@@ -35,17 +35,31 @@ export function ScreenHeader({
   title,
   subtitle,
   action,
+  featured = false,
+  highlight,
 }: {
   title: string;
   subtitle?: string | null;
   action?: ReactElement | null;
+  featured?: boolean;
+  highlight?: string;
 }) {
   const { colors } = useTheme();
+  const marked = featured && highlight && title.endsWith(highlight) ? highlight : null;
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, featured && styles.featured, featured && { backgroundColor: colors.hero }]}>
+      {featured ? (
+        <View pointerEvents="none" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.heroArt}>
+          <View style={[styles.heroCircle, { backgroundColor: colors.heroGold }]} />
+          <View style={[styles.bookBack, { backgroundColor: colors.primary }]} />
+          <View style={[styles.bookFront, { backgroundColor: colors.card, borderColor: colors.primary }]} />
+        </View>
+      ) : null}
       <View style={styles.headerText}>
-        <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
-        {subtitle ? <Body muted>{subtitle}</Body> : null}
+        <Text style={[styles.title, { color: featured ? colors.heroForeground : colors.foreground }, featured && styles.featuredTitle]}>
+          {marked ? <>{title.slice(0, -marked.length)}<Text style={{ backgroundColor: colors.heroGold, color: "#13262E" }}>{marked}</Text></> : title}
+        </Text>
+        {subtitle ? featured ? <Text style={[styles.featuredSubtitle, { color: colors.heroMuted }]}>{subtitle}</Text> : <Body muted>{subtitle}</Body> : null}
       </View>
       {action ?? null}
     </View>
@@ -127,28 +141,34 @@ export function StatRow({
   value,
   tone = "default",
   onPress,
+  presentation = "row",
+  figure,
 }: {
   icon: IconName;
   label: string;
   value: string;
   tone?: "default" | "warning";
   onPress?: () => void;
+  presentation?: "row" | "tile";
+  figure?: string;
 }) {
   const { colors } = useTheme();
   const accent = tone === "warning" ? colors.warning : colors.primary;
   const content = (
-    <View style={styles.statRow}>
+    <View style={[styles.statRow, presentation === "tile" && styles.metricTile, presentation === "tile" && { backgroundColor: tone === "warning" ? colors.tileGold : colors.tileMint, borderColor: colors.border }]}>
       <Ionicons name={icon} size={18} color={accent} />
       <View style={styles.statText}>
-        <Text style={[styles.statValue, { color: colors.foreground }]}>{value}</Text>
+        <Text style={[styles.statValue, presentation === "tile" && styles.metricValue, { color: colors.foreground }]}>
+          {presentation === "tile" && figure && value.startsWith(figure) ? <><Text style={[styles.metricFigure, figure.length > 9 && styles.metricMoney]}>{figure}</Text>{"\n"}{value.slice(figure.length).trimStart()}</> : value}
+        </Text>
         <Caption>{label}</Caption>
       </View>
       {onPress ? <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} /> : null}
     </View>
   );
-  if (!onPress) return content;
+  if (!onPress) return presentation === "tile" ? <View style={styles.metricPressable}>{content}</View> : content;
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${value}. ${label}`} onPress={onPress}>
+    <Pressable style={presentation === "tile" ? styles.metricPressable : undefined} accessibilityRole="button" accessibilityLabel={`${value}. ${label}`} onPress={onPress}>
       {content}
     </Pressable>
   );
@@ -257,8 +277,20 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingBottom: spacing.xs,
   },
+  featured: { borderRadius: 24, padding: 20, minHeight: 182, overflow: "hidden", isolation: "isolate" },
+  featuredTitle: { fontSize: 32, lineHeight: 36, letterSpacing: -1.2, paddingTop: 20 },
+  featuredSubtitle: { fontFamily: fonts.sans, fontSize: 13, lineHeight: 20, paddingTop: 6 },
+  heroArt: { position: "absolute", width: 90, height: 90, top: -18, right: -12, opacity: 0.55, transform: [{ rotate: "-18deg" }] },
+  heroCircle: { position: "absolute", width: 66, height: 66, borderRadius: 33, right: 6, top: 8 },
+  bookBack: { position: "absolute", width: 62, height: 43, borderRadius: 7, top: 30, right: 16 },
+  bookFront: { position: "absolute", width: 58, height: 38, borderWidth: 2, borderRadius: 6, top: 20, right: 18 },
+  metricPressable: { flexGrow: 1, flexBasis: "45%", minWidth: 0 },
+  metricTile: { flex: 1, flexDirection: "column", alignItems: "flex-start", borderRadius: 20, padding: 16, gap: 10, minHeight: 165 },
+  metricValue: { fontFamily: fonts.sansMedium, fontSize: 14, lineHeight: 22 },
+  metricFigure: { fontFamily: fonts.sansSemibold, fontSize: 30, lineHeight: 38, letterSpacing: -1 },
+  metricMoney: { fontSize: 17, lineHeight: 38, letterSpacing: -0.6 },
   headerText: { flex: 1, gap: spacing.xs },
-  title: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.title, lineHeight: 28, letterSpacing: -0.6 },
+  title: { fontFamily: fonts.sansSemibold, fontSize: 26, lineHeight: 32, letterSpacing: -0.8 },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "baseline",
@@ -271,7 +303,7 @@ const styles = StyleSheet.create({
     // accounted for so the last tile never wraps alone.
     flexGrow: 1,
     flexBasis: "45%",
-    minHeight: 104,
+    minHeight: 124,
     borderWidth: 1,
     borderRadius: radii.lg,
     padding: spacing.md,
@@ -279,8 +311,8 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
   tileIcon: {
-    width: 36,
-    height: 36,
+    width: 42,
+    height: 42,
     borderRadius: radii.md,
     alignItems: "center",
     justifyContent: "center",

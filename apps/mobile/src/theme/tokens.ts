@@ -38,6 +38,12 @@ export const palette = {
 export const colors = {
   light: {
     background: palette.paper,
+    hero: "#E5EEE6",
+    heroForeground: "#13262E",
+    heroMuted: "#50615B",
+    heroGold: "#F6D779",
+    tileMint: "#E7F2ED",
+    tileGold: "#FCF1D5",
     /** White content surfaces separate from the warm Paper canvas. */
     card: "#FFFFFF",
     foreground: palette.ink,
@@ -55,6 +61,12 @@ export const colors = {
   },
   dark: {
     background: "#0B1519",
+    hero: "#183A30",
+    heroForeground: "#F7F5EF",
+    heroMuted: "#BDCEC4",
+    heroGold: "#F6D779",
+    tileMint: "#18372E",
+    tileGold: "#363120",
     card: "#132228",
     foreground: "#E8EDEE",
     mutedForeground: "#9AAAB0",

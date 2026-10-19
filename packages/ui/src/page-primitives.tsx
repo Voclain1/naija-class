@@ -57,7 +57,7 @@ export function PageHeader({
   return (
     <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex flex-col gap-1">
-        <h1 className="font-sans text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
+        <h1 className="font-sans text-3xl font-bold tracking-tight text-foreground">{title}</h1>
         {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
       {/* Wraps below the title on a phone rather than squeezing beside it: a
@@ -229,7 +229,7 @@ export function StatRow({
           would sink into the background. */}
       <span
         className={cn(
-          "font-sans text-2xl font-semibold tracking-tight tabular-nums",
+          "font-sans text-3xl font-bold tracking-tight tabular-nums",
           tone === "warning" ? "text-amber-700 dark:text-amber-400" : "text-foreground",
         )}
       >
