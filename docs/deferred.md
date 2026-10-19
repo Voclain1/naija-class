@@ -410,6 +410,9 @@ the module doc or the PR, then link it here.
 
 ## 3. Waiting on the owner or outside parties
 
+The whole list, with where each step is done and its status, is
+`docs/runbooks/launch-checklist.md` (2026-10-19).
+
 - [ ] **NDPR legal review** of third-party AI processing (Anthropic, in
   production since 2026-09). This is a legal question, not an engineering one.
   Phase 7 implementation waits on it, or on a recorded decision to proceed.

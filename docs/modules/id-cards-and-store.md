@@ -135,7 +135,9 @@ is now a two-page section. Old names stay as search words in **Find a page**
   school comes from its slug (`schools` has no RLS), and the card is read
   under that school's GUC.
 - What the check shows: valid, expired (Lagos date after the session's end),
-  cancelled or replaced, plus the photo (a five-minute link), name, class or
+  cancelled, replaced, or LEFT (added 2026-10-19: the card is still active but
+  its holder is withdrawn, graduated or inactive, or a staff account is
+  switched off; nothing cancels a card when its holder leaves), plus the photo (a five-minute link), name, class or
   role, school, session and card number. It does not show the admission
   number.
 - Printing: `/id-cards/print`, in one of two layouts.

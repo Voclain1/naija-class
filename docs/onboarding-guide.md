@@ -136,7 +136,7 @@ There are five short screens. A bar at the top shows which one you are on.
 
    Press **Finish setup**. You will land on your Dashboard.
 
-**Why the dates matter:** registers, fees and results are all recorded against a term. If the dates are wrong, they will be filed under the wrong term. You can correct them later in **Settings → Academics**.
+**Why the dates matter:** registers, fees and results are all recorded against a term. If the dates are wrong, they will be filed under the wrong term. You can correct them later in **School setup → Sessions & classes**.
 
 ## Step 3. Use the checklist on your dashboard
 
@@ -204,7 +204,7 @@ A child on your student list is **not yet in a class**. Registers, invoices and 
 2. Press the **Enrollments** tab.
 3. Under **Enroll in current term**, choose their **Class arm** and confirm.
 
-To see who is in each class, go to **Enrollments** in the menu, pick the year and term, and click a class.
+To see who is in each class, go to **Students → Class enrolment** in the menu, pick the year and term, and click a class.
 
 **Tip:** The Students page shows a message when some students are on the roster but not yet in any class. If a teacher says their class is empty, this is almost always why.
 
@@ -258,7 +258,7 @@ You can run SchoolKit on your own, but teachers need their own accounts before t
 
 Each class can have a **form teacher**. That teacher can then take the class's daily register and write its report card comments. (You and your admins can always do both for any class yourselves.)
 
-1. Go to **Academics** in the menu, then the **Class Arms** tab.
+1. Go to **School setup → Sessions & classes** in the menu, then the **Class Arms** tab.
 2. Press **Edit** beside a class.
 3. Under **Class teacher**, choose the teacher. Only staff invited as **Teacher** appear in this list.
 4. Save.
@@ -285,7 +285,7 @@ Parents can see their children's fees, results, timetable and school messages on
 3. Tick **Set as primary guardian** for the main contact, and **Allowed to pick up** if they may collect the child.
 4. Press **Create and link** (or **Link guardian**).
 
-**Adding many parents at once:** go to **Guardians** in the menu and press **Import guardians**. Fill in the template — each parent is matched to their child by **admission number**.
+**Adding many parents at once:** go to **Students → Parents & guardians** in the menu and press **Import guardians**. Fill in the template — each parent is matched to their child by **admission number**.
 
 **Giving a parent access to the parent portal**
 
@@ -294,17 +294,17 @@ Parents can see their children's fees, results, timetable and school messages on
 3. **SchoolKit emails the invitation to the parent for you.** The link is also shown on your screen once, with a **Copy** button, in case the parent cannot find the email (ask them to check their spam folder first).
 4. The parent opens the link, chooses a password, and can then sign in at **portal.schoolkit.ng**.
 
-The **Guardians** page in the menu lists every parent and whether they can sign in. From there you can **Invite again**, **Cancel invite**, or **Switch off access** for a parent who should no longer see anything. Switching off access signs them out straight away.
+The **Parents & guardians** page in the menu lists every parent and whether they can sign in. From there you can **Invite again**, **Cancel invite**, or **Switch off access** for a parent who should no longer see anything. Switching off access signs them out straight away.
 
 ## Already done for you
 
 When you signed up, SchoolKit set these up with sensible Nigerian defaults. Look them over, but you only need to change them if your school does things differently.
 
-- **Classes** — KG 1 through SSS 3, with one class each (for example JSS 1A). To add a second stream, rename a class, or set a class size, go to **Academics → Class Arms** and press **Add class arm** or **Edit**. To hide a level you do not run, deactivate its class.
+- **Classes** — KG 1 through SSS 3, with one class each (for example JSS 1A). To add a second stream, rename a class, or set a class size, go to **Sessions & classes → Class Arms** and press **Add class arm** or **Edit**. To hide a level you do not run, deactivate its class.
 - **Grading** — First CA 20, Second CA 20 and Exam 60, with WAEC‑style grades A1 to F9. To change it, go to **Grading** in the menu. The **Scheme** tab sets the parts and their weights (they must add up to 100); the **Boundaries** tab sets the score range for each grade. Press **Save scheme** or **Save boundaries**.
-- **Subjects** — English Language, Mathematics and Civic Education. Add the rest of your subjects in **Academics → Subjects** with **Add subject**.
+- **Subjects** — English Language, Mathematics and Civic Education. Add the rest of your subjects in **Sessions & classes → Subjects** with **Add subject**.
 
-The **Matrix** tab under Academics (which classes take which subjects) is a reference list only. Nothing stops working if you leave it empty.
+The **Matrix** tab under **Sessions & classes** (which classes take which subjects) is a reference list only. Nothing stops working if you leave it empty.
 
 ---
 
@@ -463,13 +463,13 @@ If a card is lost or stolen, use **Void one PIN** with the serial number printed
 
 ## A new term
 
-1. **Set the new term as current.** Go to **Academics → Years**, press **View terms** beside the year, and press **Set current** beside the new term. Check its dates while you are there.
-2. **Move the children into the new term.** Go to **Enrollments** and press **Promote students**. Choose to move students **from** last term **Into** the new term, and press **Show me the list**. Within the same session, everyone stays in their class. Check the list and press **Review and approve**, then **Apply**.
+1. **Set the new term as current.** Go to **Sessions & classes → Years**, press **View terms** beside the year, and press **Set current** beside the new term. Check its dates while you are there.
+2. **Move the children into the new term.** Go to **Students → Class enrolment** and press **Promote students**. Choose to move students **from** last term **Into** the new term, and press **Show me the list**. Within the same session, everyone stays in their class. Check the list and press **Review and approve**, then **Apply**.
 3. **Bill for the new term** — see [Billing parents for school fees](#billing-parents-for-school-fees).
 
 ## A new session
 
-1. **Create the new academic year.** Go to **Academics → Years** and press **Add academic year**. Fill in the **Label** (for example `2027/2028`), **Start date** and **End date**, then press **Create year**.
+1. **Create the new academic year.** Go to **Sessions & classes → Years** and press **Add academic year**. Fill in the **Label** (for example `2027/2028`), **Start date** and **End date**, then press **Create year**.
 2. **Add its three terms.** Press **View terms**, then **Add term** for each of First, Second and Third Term, with their dates. Press **Set current** on First Term.
 3. **Move everyone up a class.** Go to **Enrollments → Promote students**. Move students **from** last session's Third Term **Into** the new First Term, and press **Show me the list**. Each class moves up — Primary 1 into Primary 2, JSS 1A into JSS 2A and so on.
    - For a child who is repeating, choose **Repeat**. For a child who is leaving, choose **Leave out**. You can also do a whole class at once.
@@ -527,7 +527,7 @@ You do not need any of these to get started. Use them when you are ready.
 - **ID cards** — under **Students → Student ID cards** and **Staff → Staff ID cards**. Tick the people, press **Issue cards** (one card each for the current session), then **Print cards**.
   - **Printing:** choose **A4 paper or card sheets** (ten cards a page; print double‑sided, flipping on the long edge, then cut and laminate) or **PVC card printer** (one card per page at bank‑card size). People without a photo are named before you print.
   - **What the card shows:** the photo, name, class or role, admission or staff number and session on the front, and where to return it on the back. Date of birth, home address, blood group and parents' phone numbers are never printed.
-  - **The QR code:** anyone can scan it with a phone camera to see whether the card is real and current (valid, expired, cancelled or replaced), with the holder's photo to compare.
+  - **The QR code:** anyone can scan it with a phone camera to see whether the card is real and current (valid, expired, cancelled, replaced, or no longer at the school: a card of someone who has left stops being valid by itself), with the holder's photo to compare.
   - **Lost cards:** press **Replace** beside the person. A new card is issued and the old one scans as "replaced". To charge for a replacement, add a charge on the student's page.
   - **People who leave:** press **Cancel** beside them.
   - **On phones:** students see their card under **My ID card** in the student app, and staff under their profile in the staff app.
@@ -572,7 +572,7 @@ The children are on your student list but not in that class **for this term**. S
 Staff links are shown only once and are not emailed. Send a new invitation from **Staff → Invite staff**. If it says an invitation is already waiting, the old one is still valid for up to 7 days — or ask the teacher to look for the link you sent before.
 
 **A parent did not get their invitation.**
-Ask them to check their spam or junk folder first. Then, on the **Guardians** page, press **Invite again** — this sends a new email, and the old link stops working.
+Ask them to check their spam or junk folder first. Then, on the **Parents & guardians** page, press **Invite again** — this sends a new email, and the old link stops working.
 
 **A parent forgot their password.**
 They can press **Forgot password?** on the parent portal sign‑in page.
