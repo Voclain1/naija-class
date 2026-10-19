@@ -186,8 +186,8 @@ export function Button({
       style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: isPrimary ? colors.primary : "transparent",
-          borderColor: colors.primary,
+          backgroundColor: isPrimary ? colors.primary : colors.card,
+          borderColor: isPrimary ? colors.primary : colors.border,
           opacity: inert ? 0.5 : pressed ? 0.85 : 1,
         },
       ]}
@@ -222,11 +222,11 @@ export function Notice({
     tone === "danger"
       ? colors.danger
       : tone === "warning"
-        ? colors.warning
+        ? colors.warningForeground
         : colors.mutedForeground;
 
   return (
-    <View style={[styles.notice, { borderColor: color }]}>
+    <View style={[styles.notice, { borderColor: colors.border, backgroundColor: tone === "warning" ? colors.tileGold : tone === "danger" ? colors.danger + "0D" : colors.card }]}>
       <Text style={[styles.noticeText, { color }]}>{children}</Text>
     </View>
   );
@@ -251,16 +251,19 @@ const styles = StyleSheet.create({
   heading: {
     fontFamily: fonts.serif,
     fontSize: fontSizes.title,
+    letterSpacing: -0.6,
+    lineHeight: 28,
   },
   body: {
     fontFamily: fonts.sans,
     fontSize: fontSizes.body,
+    lineHeight: 23,
   },
   label: {
     fontFamily: fonts.sansMedium,
     fontSize: fontSizes.caption,
     textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
   },
   caption: {
     fontFamily: fonts.sans,
@@ -277,7 +280,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     fontFamily: fonts.sansSemibold,
-    fontSize: fontSizes.bodyLarge,
+    fontSize: fontSizes.body,
   },
   notice: {
     borderWidth: StyleSheet.hairlineWidth,

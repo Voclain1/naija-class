@@ -81,7 +81,7 @@ export function MobileNav({
           <div className="fixed inset-0 z-50 flex md:hidden" onClick={() => onOpenChange(false)}>
             <div className="absolute inset-0 bg-foreground/30 backdrop-blur-sm" />
             <div
-              className="relative flex h-full w-72 max-w-[85vw] flex-col border-r border-border bg-card shadow-lg"
+              className="schoolkit-rail relative flex h-full w-72 max-w-[85vw] flex-col border-r border-border bg-card shadow-lg"
               role="dialog"
               aria-modal="true"
               aria-label="Navigation"

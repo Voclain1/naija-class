@@ -11,10 +11,9 @@
  * convention expects — this file is the token source of truth, CLAUDE.md
  * documents the *decision*, not a second copy of the numbers.
  *
- * Dark mode is a genuinely new addition (previously undefined despite
- * `darkMode: ["class"]` being configured) — built from the same five colors,
- * not new hex values: Ink becomes the background, Bright Emerald (lighter,
- * better contrast on a dark surface than Deep Emerald) becomes primary.
+ * Content surfaces were separated from Paper in the October 2026 visual
+ * refresh; see docs/modules/app-visual-refresh.md. Dark mode keeps the
+ * existing Ink-derived surfaces and Bright Emerald primary.
  * ------------------------------------------------------------------------- */
 
 @layer base {
@@ -25,17 +24,17 @@
   :root {
     --background: 45 33% 95%; /* Paper #F7F5EF */
     --foreground: 198 42% 13%; /* Ink #13262E */
-    --card: 45 33% 95%;
+    --card: 0 0% 100%;
     --card-foreground: 198 42% 13%;
-    --popover: 45 33% 97%;
+    --popover: 0 0% 100%;
     --popover-foreground: 198 42% 13%;
     --primary: 161 74% 21%; /* Deep Emerald #0E5C43 */
     --primary-foreground: 45 33% 97%;
     --secondary: 40 74% 53%; /* Gold Spark #E0A52E — used sparingly per the mockup */
     --secondary-foreground: 198 42% 13%;
-    --muted: 45 15% 90%;
-    --muted-foreground: 198 15% 40%;
-    --accent: 45 20% 88%;
+    --muted: 150 12% 93%;
+    --muted-foreground: 198 18% 32%;
+    --accent: 155 25% 92%;
     --accent-foreground: 198 42% 13%;
     /* Darkened so `text-destructive` on the existing destructive/5 banner
        background reaches 6.98:1 contrast (the former #ef4444 pairing was
@@ -43,10 +42,10 @@
        source, rather than recolouring every caller. */
     --destructive: 0 72% 35%;
     --destructive-foreground: 210 40% 98%;
-    --border: 45 15% 85%;
-    --input: 45 15% 85%;
+    --border: 150 12% 87%;
+    --input: 150 10% 80%;
     --ring: 161 74% 21%;
-    --radius: 0.75rem;
+    --radius: 1rem;
 
     /* Bright Emerald #3FB68B — the SchoolKit wordmark's "kit" accent, per the
        brand sheet (apps/web/public/brand/schoolkit-brand-sheet.png, 2026-08-01).
@@ -69,7 +68,7 @@
     --secondary: 40 74% 53%; /* Gold Spark, unchanged — reads fine on dark too */
     --secondary-foreground: 198 42% 10%;
     --muted: 198 25% 18%;
-    --muted-foreground: 45 12% 65%;
+    --muted-foreground: 45 12% 75%;
     --accent: 198 25% 20%;
     --accent-foreground: 45 20% 92%;
     /* In dark mode the alert text needs the opposite polarity: this light red
@@ -105,7 +104,8 @@
    * Keep these in the same scope as the next/font class. */
   body {
     --font-sans: var(--font-dm-sans);
-    --font-serif: var(--font-dm-serif-display);
+    /* Legacy font-serif callers intentionally share the new sans display face. */
+    --font-serif: var(--font-dm-sans);
     @apply bg-background text-foreground;
   }
 }
@@ -199,4 +199,119 @@
     display: block;
     text-align: center;
   }
+}
+
+/* Visual refresh, October 2026. Presentation only; native controls, focus
+ * semantics, table stacking, and the existing motion contract stay intact. */
+@layer base {
+  body { font-feature-settings: "ss01" on; }
+  h1 { letter-spacing: -0.035em; }
+  h2, h3 { letter-spacing: -0.02em; }
+  input, select, textarea { accent-color: hsl(var(--primary)); }
+  ::selection { background: hsl(var(--primary) / 0.16); }
+}
+@layer utilities {
+  .font-serif { font-weight: 600; letter-spacing: -0.035em; }
+}
+
+/* Reference-led second pass: bold type, marker gold and illustrated surfaces.
+ * No controls or information are removed at a narrow width. */
+@layer components {
+  .schoolkit-rail {
+    --foreground: 45 33% 96%;
+    --card: 161 74% 17%;
+    --primary: 157 57% 74%;
+    --primary-foreground: 161 74% 13%;
+    --muted-foreground: 154 19% 77%;
+    --border: 158 31% 29%;
+    --input: 158 31% 35%;
+    --muted: 160 47% 21%;
+    --accent: 160 41% 25%;
+    --accent-foreground: 45 33% 96%;
+    background: hsl(var(--card));
+  }
+  .dark .schoolkit-rail { --card: 164 45% 10%; }
+  .dashboard-welcome {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    min-height: 252px;
+    padding: 2rem;
+    border-radius: 1.5rem;
+    background: #e5eee6;
+    color: #13262e;
+  }
+  .dashboard-welcome.flex { display: block; }
+  .dashboard-welcome > div:last-child { margin-top: 1.25rem; max-width: 76%; }
+  .dashboard-welcome > div { position: relative; z-index: 1; }
+  .dashboard-welcome > div:first-of-type { max-width: 76%; }
+  .dashboard-welcome h1 {
+    max-width: 750px;
+    font-family: var(--font-sans), sans-serif;
+    font-size: clamp(2rem, 3.4vw, 3.1rem);
+    font-weight: 750;
+    line-height: 1.12;
+    letter-spacing: -0.055em;
+    color: #13262e;
+  }
+  .dashboard-welcome .text-muted-foreground { color: #50615b; }
+  .welcome-highlight {
+    background: #f6d779;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    padding: 0 .12em;
+    border-radius: .12em;
+  }
+  .dashboard-welcome-art {
+    position: absolute;
+    z-index: 0;
+    width: 280px;
+    height: 245px;
+    right: -15px;
+    top: 8px;
+    pointer-events: none;
+  }
+  .dark .dashboard-welcome { background: #183a30; color: #f7f5ef; }
+  .dark .dashboard-welcome h1 { color: #f7f5ef; }
+  .dark .dashboard-welcome .text-muted-foreground { color: #bdcec4; }
+  .dark .welcome-highlight { background: #f6d779; color: #13262e; }
+  .metric-card { border-radius: 1.35rem; }
+  .metric-card.metric-mint { background: #e7f2ed; }
+  .metric-card.metric-gold { background: #fcf1d5; }
+  .dark .metric-card.metric-mint { background: #18372e; }
+  .dark .metric-card.metric-gold { background: #363120; }
+  .metric-content { container-type: inline-size; }
+  .metric-value { font-weight: 750; letter-spacing: -.055em; overflow-wrap: anywhere; }
+  /* A tablet still has a sidebar plus two/three KPI columns. Size long
+   * amounts against their actual card, rather than the viewport. */
+  .metric-value[data-metric-length="long"] { font-size: clamp(.9rem, 9cqi, 1.875rem); }
+  .dashboard-stats .metric-value { font-size: clamp(1.15rem, 2.2vw, 2.2rem); }
+  .dashboard-stats .metric-label > p { letter-spacing: .02em; text-transform: none; font-size: .76rem; }
+  .dashboard-stats .metric-label > span { background: hsl(var(--primary) / .10); }
+}
+@media (max-width: 639.98px) {
+  .dashboard-welcome { padding: 1.25rem; min-height: 285px; border-radius: 1.3rem; }
+  .dashboard-welcome > div:first-of-type { max-width: 100%; }
+  .dashboard-welcome h1 { max-width: 290px; font-size: 2.05rem; padding-right: 20px; }
+  .dashboard-welcome-art { width: 135px; height: 130px; top: -18px; right: -28px; opacity: .38; }
+  .dashboard-welcome > div:last-child { width: 100%; max-width: 100%; }
+  .dashboard-stats .metric-content { padding: .85rem; }
+  .dashboard-stats .metric-label { gap: .3rem; align-items: center; }
+  .dashboard-stats .metric-label > p { font-size: .69rem; }
+  .dashboard-stats .metric-label > span { width: 1.65rem; height: 1.65rem; flex-shrink: 0; }
+  .dashboard-stats .metric-value { font-size: clamp(.92rem, 3.5vw, 1.3rem); overflow-wrap: anywhere; margin-top: .6rem; }
+  .dashboard-stats .metric-value[data-metric-length="short"] { font-size: 2rem; line-height: 1.15; }
+  .dashboard-stats .metric-content > p.text-xs,
+  .dashboard-stats .metric-content > div.text-xs { font-size: .68rem; line-height: 1.5; }
+}
+@media print {
+  .schoolkit-rail { display: none; }
+  .dashboard-welcome { min-height: 0; padding: 0; background: transparent; }
+  .dashboard-welcome-art { display: none; }
+}
+
+/* Wrap chrome rather than pushing account controls outside a small screen. */
+@media (max-width: 1023.98px) {
+  .app-topbar.flex { height: auto; min-height: 4rem; flex-wrap: wrap; padding-top: .6rem; padding-bottom: .6rem; }
+  .app-topbar .app-topbar-controls { flex-wrap: wrap; max-width: 100%; }
 }

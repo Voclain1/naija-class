@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import type { AdminDashboardDto, DashboardAlertType } from "@school-kit/types";
 
+import { SchoolDayArt } from "@/components/brand/school-day-art";
 import { AttendanceSparkline } from "@/components/admin/attendance-sparkline";
 import { DashboardActionBar } from "@/components/admin/dashboard-action-bar";
 import { SchoolProfileCard } from "@/components/admin/school-profile-card";
@@ -205,7 +206,8 @@ export default function DashboardPage() {
       {/* Greeting and actions share ONE row (flex-wrap, so the buttons drop
           under the greeting on narrow screens rather than overflowing it).
           The status pill and the brief line stay inside the greeting block. */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="dashboard-welcome flex flex-wrap items-end justify-between gap-4">
+        <SchoolDayArt className="dashboard-welcome-art" />
         <div>
         {/* Freshness first, and it is a real claim: `asOf` is stamped by the
             server when it computed THIS response, not a client clock. The dot
@@ -224,7 +226,7 @@ export default function DashboardPage() {
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
           <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground sm:text-4xl">
-            {greeting()}, {user?.firstName ?? ""}
+            {greeting()}, <span className="welcome-highlight">{user?.firstName ?? ""}</span>
           </h1>
           <SetupProgressChip setup={setup} />
         </div>
@@ -248,7 +250,7 @@ export default function DashboardPage() {
       <SetupChecklist setup={setup} />
 
       {/* KPI row */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="dashboard-stats grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <StatCard
           label="Enrolled"
           value={String(dashboard.enrolled.count)}
@@ -261,6 +263,7 @@ export default function DashboardPage() {
           footer="Pupils on the active register"
         />
         <StatCard
+          appearance="mint"
           label="Fees collected"
           value={formatKobo(dashboard.fees.collected)}
           icon={<Wallet className="h-4 w-4" />}
@@ -277,6 +280,7 @@ export default function DashboardPage() {
           }
         />
         <StatCard
+          appearance="gold"
           label="Attendance today"
           value={
             // 0 marked is NOT 0% present — the register simply has not been

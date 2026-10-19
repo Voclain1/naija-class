@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Linking, ScrollView, StyleSheet } from "react-native";
+import { Linking, ScrollView, StyleSheet, View } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { formatKobo, formatMinuteOfDay, type DashboardAlertType } from "@school-kit/types";
@@ -224,6 +224,8 @@ export default function StaffDashboardScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <SchoolBadge principal="staff" name={staff?.school.name} />
         <ScreenHeader
+          featured
+          highlight={staff?.user.firstName}
           title={`${greeting(new Date().getHours())}${staff ? `, ${staff.user.firstName}` : ""}`}
           subtitle={formatToday(today)}
           action={<MenuButton onPress={menu.open} />}
@@ -294,9 +296,11 @@ export default function StaffDashboardScreen() {
         {school ? (
           <>
             <SectionHeader title="Your school" note={school.termName} />
-            <Card style={styles.band}>
+            <View style={styles.metrics}>
               <StatRow
+                presentation="tile"
                 icon="people-outline"
+                figure={String(school.enrolled.count)}
                 value={`${school.enrolled.count} students`}
                 label={
                   school.enrolled.previousTermCount === null
@@ -305,22 +309,28 @@ export default function StaffDashboardScreen() {
                 }
               />
               <StatRow
+                presentation="tile"
                 icon="wallet-outline"
+                figure={`${school.fees.percent}%`}
                 value={`${school.fees.percent}% of fees collected`}
                 label={`${formatKobo(school.fees.collected)} of ${formatKobo(school.fees.billed)}`}
                 onPress={canSeeCollections ? () => router.push("/staff/collections") : undefined}
               />
               {school.attendanceToday.totalMarked > 0 ? (
                 <StatRow
+                presentation="tile"
                   icon="checkmark-done-outline"
+                  figure={`${school.attendanceToday.percentPresent}%`}
                   value={`${school.attendanceToday.percentPresent}% present today`}
                   label={`${school.attendanceToday.presentCount} present, ${school.attendanceToday.absentCount} absent`}
                 />
               ) : null}
               {school.outstanding.debtorCount > 0 ? (
                 <StatRow
+                presentation="tile"
                   icon="alert-circle-outline"
                   tone="warning"
+                  figure={formatKobo(school.outstanding.amount)}
                   value={`${formatKobo(school.outstanding.amount)} outstanding`}
                   label={`${school.outstanding.debtorCount} famil${
                     school.outstanding.debtorCount === 1 ? "y" : "ies"
@@ -328,7 +338,7 @@ export default function StaffDashboardScreen() {
                   onPress={canSeeCollections ? () => router.push("/staff/collections/debtors") : undefined}
                 />
               ) : null}
-            </Card>
+            </View>
 
             {alerts.length > 0 ? (
               <>
@@ -452,5 +462,6 @@ export default function StaffDashboardScreen() {
 
 const styles = StyleSheet.create({
   content: { gap: spacing.md, paddingBottom: spacing.xl },
-  band: { gap: spacing.xs },
+  band: { gap: spacing.sm },
+  metrics: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
 });

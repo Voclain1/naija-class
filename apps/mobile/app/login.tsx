@@ -19,7 +19,7 @@ import { loadSchoolHint } from "../src/lib/auth/school-hint-store";
 import { shouldCollapseSchoolField } from "../src/lib/auth/school-hint";
 import { useTheme } from "../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../src/theme/tokens";
-import { Body, Button, Heading, Notice, Screen } from "../src/components/ui";
+import { Body, Button, Notice, Screen } from "../src/components/ui";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- React Native bundles images through require()
 const SCHOOLKIT_ICON = require("../assets/icon.png");
@@ -210,7 +210,7 @@ export default function LoginScreen() {
             <Text style={[styles.brandName, { color: colors.foreground }]}>SchoolKit</Text>
           </View>
           <View style={styles.intro}>
-            <Heading>Welcome back</Heading>
+            <Text style={[styles.welcome, { color: colors.foreground }]}>Welcome <Text style={{ backgroundColor: colors.heroGold }}>back</Text></Text>
             <Body muted>
               {isStudent
                 ? "Sign in to see your results."
@@ -415,6 +415,7 @@ const styles = StyleSheet.create({
   brand: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   brandIcon: { width: 36, height: 36 },
   brandName: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.bodyLarge },
+  welcome: { fontFamily: fonts.sansSemibold, fontSize: 38, lineHeight: 44, letterSpacing: -1.5 },
   intro: {
     gap: spacing.xs,
     marginBottom: spacing.sm,

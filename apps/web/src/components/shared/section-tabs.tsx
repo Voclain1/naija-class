@@ -49,18 +49,15 @@ export function SectionTabs({
   // "Ex…" and "Subje…" cut mid-word on a phone, and the current tab could be
   // scrolled out of sight. Finance's seven take three rows on a phone.
   //
-  // From `lg` it is the underlined strip, which fits beside the sidebar. It
-  // keeps its scrollport as a safety net (the history: a plain flex row that
-  // neither wrapped nor scrolled made trailing tabs unreachable under the
-  // shell's overflow-x-hidden <main>). The scrollport is the <nav> and the row
-  // moves inside it: `overflow-x: auto` computes `overflow-y` to `auto` too, so
-  // scrolling the bordered row itself would clip each tab's `-mb-px` underline.
-  //
-  // One set of links styled by breakpoint, not two lists, so a screen reader
-  // and the e2e tests always see exactly one tab per section.
+  // The approved visual direction uses quiet rounded tabs at every width.
+  // The existing responsive contract stays: wrap below lg, retain a desktop
+  // scrollport as a safety net. One set of links, same route/dirty guards.
   const tabs = (
-    <nav aria-label={ariaLabel} className="min-w-0 flex-1 lg:overflow-x-auto">
-      <div className="flex flex-wrap gap-2 text-sm lg:min-w-max lg:flex-nowrap lg:gap-1 lg:border-b lg:border-border">
+    <nav
+      aria-label={ariaLabel}
+      className={cn("min-w-0 flex-1 lg:overflow-x-auto", actions && "xl:flex-[1_1_max-content]")}
+    >
+      <div className="flex flex-wrap gap-2 text-sm lg:min-w-max lg:flex-nowrap">
         {items.map((item) => {
           const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
           return (
@@ -70,11 +67,10 @@ export function SectionTabs({
               aria-current={active ? "page" : undefined}
               onClick={onNavigate ? (e) => onNavigate(item, active, e) : undefined}
               className={cn(
-                "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 font-medium transition-colors",
-                "lg:-mb-px lg:rounded-none lg:border-0 lg:border-b-2 lg:px-3 lg:py-2",
+                "sk-section-tab shrink-0 whitespace-nowrap rounded-xl border px-3 py-2 font-semibold transition-colors motion-reduce:transition-none",
                 active
-                  ? "border-primary/40 bg-primary/10 text-primary lg:border-primary lg:bg-transparent"
-                  : "border-border text-muted-foreground hover:text-foreground lg:border-transparent lg:hover:border-muted",
+                  ? "border-primary/15 bg-primary/10 text-primary"
+                  : "border-border/70 bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
             >
               {item.label}
@@ -94,12 +90,12 @@ export function SectionTabs({
   // scrolled), which is why the scrollability check in a11y-wave3a passed
   // while the row was barely usable.
   //
-  // xl, not lg: at 1024px the admin sidebar leaves roughly 720px, less than
-  // seven tabs plus the button. The breakpoint is enforced by measurement in
-  // e2e/tests/finance-section-row.spec.ts across 390-1440px, not by this
-  // comment.
+  // At xl, use the tabs' intrinsic width as the flex basis and allow the
+  // action to wrap. A viewport breakpoint alone cannot account for wider
+  // pill tabs, the sidebar and body type. Keep the whole strip available
+  // before sharing a row; finance-section-row.spec.ts measures this.
   return (
-    <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:gap-3">
+    <div className="flex flex-col gap-2 xl:flex-row xl:flex-wrap xl:items-end xl:gap-3">
       {tabs}
       <div className="flex shrink-0 items-center justify-end gap-2 xl:pb-1">{actions}</div>
     </div>

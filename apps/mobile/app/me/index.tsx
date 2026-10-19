@@ -118,6 +118,7 @@ export default function MyHomeScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <SchoolBadge principal="student" name={school?.name} />
         <ScreenHeader
+          featured
           title={`${greeting(new Date().getHours())}${student ? `, ${student.firstName}` : ""}`}
           subtitle={enrollment ? enrollment.classArm.name : null}
           action={<MenuButton onPress={menu.open} />}

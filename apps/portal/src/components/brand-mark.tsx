@@ -18,7 +18,7 @@ import Image from "next/image";
 // that name.
 export function BrandHeading({ tagline = "Parent Portal" }: { tagline?: string }) {
   return (
-    <div className="flex flex-col items-center gap-2 text-center">
+    <div className="sk-entry-brand flex flex-col items-center gap-2 text-center">
       <h1>
         <span className="sr-only">SchoolKit</span>
         <span aria-hidden className="inline-flex items-center gap-2">

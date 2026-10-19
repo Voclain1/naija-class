@@ -157,9 +157,9 @@ export default function SettingsIndex() {
             <li key={link.href}>
               <Link
                 href={link.href}
-                className="flex items-start gap-3 rounded-md border p-4 transition-colors hover:bg-accent/40"
+                className="flex items-start gap-3 rounded-xl border bg-card p-4 transition-colors motion-reduce:transition-none hover:bg-accent/40"
               >
-                <Icon className="mt-0.5 h-5 w-5 text-muted-foreground" />
+                <Icon className="h-9 w-9 shrink-0 rounded-xl bg-primary/10 p-2 text-primary" />
                 <div className="flex flex-col gap-0.5">
                   <span className="text-sm font-medium">{link.label}</span>
                   <span className="text-xs text-muted-foreground">{link.description}</span>

@@ -20,7 +20,6 @@ import { expect, test } from "@playwright/test";
 // variable. Asserting the stylesheet would have passed throughout the bug.
 
 const EXPECTED_SANS = /DM Sans/i;
-const EXPECTED_SERIF = /DM Serif Display/i;
 
 test.describe("typography actually applies", () => {
   test("the staff app renders in the brand sans, not a browser default", async ({ page }) => {
@@ -33,7 +32,7 @@ test.describe("typography actually applies", () => {
     expect(body).not.toMatch(/Times New Roman/i);
   });
 
-  test("the display face resolves too, and is not the body face", async ({ page }) => {
+  test("legacy display classes resolve to the approved sans family", async ({ page }) => {
     await page.goto("/login");
 
     // Every element carrying `font-serif` today sits behind authentication —
@@ -53,10 +52,10 @@ test.describe("typography actually applies", () => {
       return resolved;
     });
 
-    // A page where BOTH resolve to the same family is the other way this
-    // breaks: the serif token empty while the sans one works.
-    expect(font).toMatch(EXPECTED_SERIF);
-    expect(font).not.toMatch(EXPECTED_SANS);
+    // The approved refresh intentionally aliases legacy display classes to
+    // DM Sans. Keep guarding the computed family against an empty token.
+    expect(font).toMatch(EXPECTED_SANS);
+    expect(font).not.toMatch(/Times New Roman/i);
   });
 
   test("the token is readable where the font class lives", async ({ page }) => {

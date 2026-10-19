@@ -5,7 +5,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./surfaces.css": "./src/surfaces.css"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

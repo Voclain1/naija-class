@@ -10,8 +10,8 @@ import { SchoolKitWordmark } from "@/components/brand/schoolkit-mark";
 // drilling through the layout.
 export default function OnboardingLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/40 p-4">
-      <div className="mb-6 flex flex-col items-center gap-2 text-center">
+    <div className="sk-entry flex min-h-screen flex-col items-center justify-center bg-background p-4">
+      <div className="sk-entry-brand mb-6 flex flex-col items-center gap-2 text-center">
         <SchoolKitWordmark iconSize={32} textClassName="text-2xl" />
         <p className="text-sm text-muted-foreground">Let&apos;s set up your school.</p>
       </div>

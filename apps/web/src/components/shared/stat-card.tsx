@@ -31,6 +31,8 @@ interface StatCardProps {
   context?: string;
   tone?: "default" | "warning" | "positive" | "negative";
   className?: string;
+  /** Decorative surface treatment; status still comes from tone and words. */
+  appearance?: "plain" | "mint" | "gold";
   /**
    * Small glyph in the top-right corner. Purely decorative — it repeats what
    * `label` already says, so it is rendered aria-hidden and MUST NOT be the
@@ -54,26 +56,28 @@ export function StatCard({
   value,
   context,
   tone = "default",
+  appearance = "plain",
   className,
   icon,
   footer,
 }: StatCardProps) {
   return (
-    <Card className={className}>
-      <CardContent className="pt-6">
-        <div className="flex items-start justify-between gap-3">
+    <Card className={cn("metric-card", `metric-${appearance}`, className)}>
+      <CardContent className="metric-content pt-6">
+        <div className="metric-label flex items-start justify-between gap-3">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             {label}
           </p>
           {/* Decorative: it restates the label, so a screen reader announcing
               it would just be noise. */}
           {icon && (
-            <span aria-hidden className="shrink-0 text-muted-foreground/70">
+            <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/[0.08] text-primary">
               {icon}
             </span>
           )}
         </div>
         <p
+          data-metric-length={value.length > 9 ? "long" : "short"}
           className={cn(
             // Responsive: a naira figure like N1,530,000.00 is nine glyphs
             // plus separators and does not fit at text-3xl on a 430px phone —
@@ -81,7 +85,7 @@ export function StatCard({
             // Note the a11y overflow suite did NOT catch this: it checks
             // body-level overflow and offscreen-unreachable elements, and this
             // was text clipped INSIDE a card that itself fits.
-            "mt-1 font-serif text-2xl font-medium tabular-nums sm:text-3xl",
+            "metric-value mt-1 font-sans text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl",
             TONE_CLASSES[tone],
           )}
         >

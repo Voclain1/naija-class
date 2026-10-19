@@ -1,4 +1,4 @@
-import { DM_Sans, DM_Serif_Display } from "next/font/google";
+import { DM_Sans } from "next/font/google";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
@@ -10,7 +10,6 @@ import "./globals.css";
 // typefaces as the web and the portal; next/font serves them from this app's
 // own files, so they work offline too.
 const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans", display: "swap" });
-const dmSerifDisplay = DM_Serif_Display({ subsets: ["latin"], weight: ["400"], variable: "--font-dm-serif-display", display: "swap" });
 
 export const metadata: Metadata = {
   title: "SchoolKit — Exams",
@@ -32,7 +31,7 @@ export const viewport: Viewport = { themeColor: "#0E5C43" };
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${dmSans.variable} ${dmSerifDisplay.variable} min-h-screen bg-background font-sans antialiased`}>
+      <body className={`${dmSans.variable} min-h-screen bg-background font-sans antialiased`}>
         {children}
         <ServiceWorker />
       </body>

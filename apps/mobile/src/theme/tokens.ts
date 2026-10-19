@@ -28,7 +28,7 @@ export const palette = {
 /**
  * Semantic colours per scheme.
  *
- * The light scheme is taken directly from CLAUDE.md. The DARK scheme is
+ * The light scheme uses a Paper canvas and white content cards. The DARK scheme is
  * derived here, because CLAUDE.md specifies only one dark value
  * (Bright Emerald as `--primary`). The derivation rule is: darken Ink for
  * surfaces rather than using pure black, so the dark theme stays as warm as
@@ -38,31 +38,46 @@ export const palette = {
 export const colors = {
   light: {
     background: palette.paper,
-    card: palette.paper,
+    hero: "#E5EEE6",
+    heroForeground: "#13262E",
+    heroMuted: "#50615B",
+    heroGold: "#F6D779",
+    tileMint: "#E7F2ED",
+    tileGold: "#FCF1D5",
+    /** White content surfaces separate from the warm Paper canvas. */
+    card: "#FFFFFF",
     foreground: palette.ink,
     /** De-emphasised text — captions, "as of" timestamps. */
-    mutedForeground: "#5B6B72",
+    mutedForeground: "#43565F",
     primary: palette.deepEmerald,
     primaryForeground: palette.paper,
     secondary: palette.goldSpark,
     secondaryForeground: palette.ink,
-    border: "#E2DED3",
+    border: "#DAE2DE",
     /** Offline / stale indicators. Amber, deliberately not red: stale data is
      *  a caution, not an error. */
     warning: palette.goldSpark,
+    warningForeground: "#8A4B08",
     danger: "#B3261E",
   },
   dark: {
     background: "#0B1519",
+    hero: "#183A30",
+    heroForeground: "#F7F5EF",
+    heroMuted: "#BDCEC4",
+    heroGold: "#F6D779",
+    tileMint: "#18372E",
+    tileGold: "#363120",
     card: "#132228",
     foreground: "#E8EDEE",
-    mutedForeground: "#9AAAB0",
+    mutedForeground: "#B7C3C8",
     primary: palette.brightEmerald,
     primaryForeground: "#06231A",
     secondary: palette.goldSpark,
     secondaryForeground: "#1A1405",
     border: "#243238",
     warning: palette.goldSpark,
+    warningForeground: "#F6D779",
     danger: "#F2B8B5",
   },
 } as const;
@@ -80,11 +95,11 @@ export type ThemeColors = (typeof colors)[ColorScheme];
  */
 export const fonts = {
   /** Hanken Grotesk — body text, labels, nav. */
-  sans: "HankenGrotesk_400Regular",
+  sans: "HankenGrotesk_500Medium",
   sansMedium: "HankenGrotesk_500Medium",
   sansSemibold: "HankenGrotesk_600SemiBold",
-  /** Fraunces — large numerals, page headings, greeting lines. */
-  serif: "Fraunces_600SemiBold",
+  /** Legacy display alias: headings and numerals now use the sans family. */
+  serif: "HankenGrotesk_600SemiBold",
 } as const;
 
 /** 4px base scale. */
@@ -98,9 +113,9 @@ export const spacing = {
 } as const;
 
 export const radii = {
-  sm: 6,
-  md: 10,
-  lg: 16,
+  sm: 8,
+  md: 12,
+  lg: 20,
   pill: 999,
 } as const;
 

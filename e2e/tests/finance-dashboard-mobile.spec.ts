@@ -27,12 +27,15 @@ import { uniqueSuffix } from "../fixtures/unique.js";
 //      "nothing was clipped" list is indistinguishable from "nothing was
 //      looked at".
 
-const PHONES = [
+const VIEWPORTS = [
+  { name: "narrow phone", width: 320, height: 844 },
   { name: "iPhone 15 Pro Max", width: 430, height: 932 },
   { name: "small Android", width: 390, height: 844 },
+  { name: "tablet with sidebar", width: 768, height: 900 },
+  { name: "small desktop", width: 1024, height: 900 },
 ];
 
-test.describe("finance dashboard — phone widths", () => {
+test.describe("finance dashboard — responsive figures", () => {
   test("KPI figures are never clipped inside their cards", async ({ browser }) => {
     test.setTimeout(8 * 60 * 1000);
     const admin = await loginAsAdmin(browser);
@@ -53,7 +56,7 @@ test.describe("finance dashboard — phone widths", () => {
       data: { termId: structure.termId, classArmId: structure.arms[0]!.id },
     });
 
-    for (const phone of PHONES) {
+    for (const phone of VIEWPORTS) {
       await admin.page.setViewportSize({ width: phone.width, height: phone.height });
       await admin.page.goto("/finance/dashboard", { waitUntil: "domcontentloaded" });
       // Wait for the FIGURES, not a fixed sleep. In dev mode this route has to
@@ -62,7 +65,7 @@ test.describe("finance dashboard — phone widths", () => {
       // is what made the previous version of this test fail its own guard.
       await admin.page.waitForFunction(
         () =>
-          Array.from(document.querySelectorAll(".font-serif")).filter((el) =>
+          Array.from(document.querySelectorAll(".metric-value")).filter((el) =>
             /[₦%]/.test((el.textContent ?? "").trim()),
           ).length >= 4,
         undefined,
@@ -72,10 +75,9 @@ test.describe("finance dashboard — phone widths", () => {
       const result = await admin.page.evaluate(() => {
         const bad: string[] = [];
         const measured: string[] = [];
-        for (const el of Array.from(document.querySelectorAll<HTMLElement>(".font-serif"))) {
+        for (const el of Array.from(document.querySelectorAll<HTMLElement>(".metric-value"))) {
           const text = (el.textContent ?? "").trim();
-          // Only the money/percentage figures — the page title is serif too
-          // and is allowed to wrap.
+          // Only money/percentage figures; other metrics may be counts.
           if (!/[₦%]/.test(text)) continue;
           if (el.offsetWidth === 0) continue; // not visible
           measured.push(text);
