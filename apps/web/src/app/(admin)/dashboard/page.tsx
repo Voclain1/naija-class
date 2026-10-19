@@ -35,6 +35,8 @@ const ALERT_LABELS: Record<DashboardAlertType, string> = {
   new_admission_applications: "New admission applications",
   unread_messages: "Unread messages from parents",
   flagged_messages: "Flagged conversations",
+  // 2026-10-19 — store items at or below their reorder level.
+  low_stock_items: "Store items running low",
   // Phase 8 / CP2 (§16 Q33) — count of active term-health signals; links to /reports.
   term_health: "Term setup issues to fix",
 };

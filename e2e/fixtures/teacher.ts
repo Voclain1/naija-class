@@ -50,7 +50,7 @@ export async function inviteAndAcceptTeacher(
     lastName?: string;
     password?: string;
     /** Another staff role through the same accept flow (Phase 9 / CP3.1, CP6.1). */
-    roleKey?: "teacher" | "health_officer" | "librarian";
+    roleKey?: "teacher" | "health_officer" | "librarian" | "storekeeper";
   },
 ): Promise<InvitedTeacher> {
   const suffix = uniqueSuffix();

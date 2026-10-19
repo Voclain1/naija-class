@@ -16,6 +16,7 @@ export * from './class-subjects/index.js';
 export * from './students/index.js';
 export * from './photos/index.js';
 export * from './id-cards/index.js';
+export * from './store/index.js';
 export * from './announcements/index.js';
 export * from './behaviour/index.js';
 export * from './health/index.js';

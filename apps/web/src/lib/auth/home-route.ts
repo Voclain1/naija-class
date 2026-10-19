@@ -18,6 +18,8 @@ export function homeRouteForRoles(roles: AuthMeRoleDto[]): string {
   if (roles.some((r) => r.key === "librarian")) return "/library";
   // Phase 9 / CP6b.2 — the House master's page.
   if (roles.some((r) => r.key === "house_master")) return "/boarding";
+  // 2026-10-19 — the Storekeeper's pages.
+  if (roles.some((r) => r.key === "storekeeper")) return "/store";
   if (roles.some((r) => r.key === "teacher")) return "/teacher/dashboard";
   // 2026-10-19 (the role audit): these four are normally added on top of a
   // main role, but a school can give one on its own — an office clerk who

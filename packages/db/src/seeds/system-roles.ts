@@ -44,6 +44,8 @@ import {
   EXAM_PAPER_PERMISSIONS,
   CBT_PERMISSIONS,
   ID_CARD_PERMISSIONS,
+  STORE_PERMISSIONS,
+  ASSET_PERMISSIONS,
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
@@ -203,6 +205,10 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // ID cards (2026-10-19). Kept IN SYNC with
   // prisma/migrations/20261114120000_id_cards.
   ...ID_CARD_PERMISSIONS,
+  // The Store and fixed assets (2026-10-19). Kept IN SYNC with
+  // prisma/migrations/20261115120000_store.
+  ...STORE_PERMISSIONS,
+  ...ASSET_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced
@@ -341,6 +347,18 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
     // CP6.3 adds the digital resources (20261102120000_library_resources).
     permissions: [...LIBRARY_PERMISSIONS, ...LIBRARY_RESOURCE_PERMISSIONS],
   },
+  // The Storekeeper (2026-10-19, docs/modules/id-cards-and-store.md §4,
+  // owner's answer 5): runs the store and the asset register day to day. Not
+  // store.sell (billing a child is the bursar's) or store.approve (a count is
+  // approved by someone other than the person who counted). Kept IN SYNC with
+  // the INSERT in prisma/migrations/20261115120000_store.
+  {
+    key: "storekeeper",
+    name: "Storekeeper",
+    description:
+      "Runs the school store and the asset register: items, receiving, issuing, stock takes and assets. No academic, finance, health, staff or settings access.",
+    permissions: ["store.read", "store.manage", "asset.read", "asset.manage", ...TABLE_EXPORT_PERMISSIONS],
+  },
   // Phase 9 / CP6b.1 — the optional House master (docs/modules/phase-9.md
   // §15.8): boarding staff who are not teachers. hostel.house only, scoped by
   // the service to the hostels they are assigned to. Kept IN SYNC with the
@@ -418,6 +436,13 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       ...HOMEWORK_READ_PERMISSIONS,
       // Phase 9 / CP1.3 — Excel/PDF of the finance lists the bursar works from.
       ...TABLE_EXPORT_PERMISSIONS,
+      // The Store (2026-10-19, owner's answer 5): sees stock and its value,
+      // sells to students and approves stock-take adjustments; does not edit
+      // items or assets. Kept IN SYNC with 20261115120000_store.
+      "store.read",
+      "store.sell",
+      "store.approve",
+      "asset.read",
       // Phase 9 / CP5.1 — student charges. Kept IN SYNC with
       // prisma/migrations/20261029120000_student_charges.
       ...STUDENT_CHARGE_PERMISSIONS,

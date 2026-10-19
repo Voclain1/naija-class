@@ -44,6 +44,8 @@ export type DashboardAlertType =
   | "unread_messages"
   // CP8.2: conversations flagged for the owner and admins.
   | "flagged_messages"
+  // 2026-10-19 (the Store): items at or below their reorder level; /store?low=true.
+  | "low_stock_items"
   // Phase 8 / CP2 (§16 Q33): count of active term-health signals for the
   // current term, linking to /reports. Computed by the same helper the
   // completeness report uses, inside the dashboard's one transaction.

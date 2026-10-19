@@ -18,6 +18,7 @@ import {
 } from "../finance/finance-totals.js";
 import { flaggedMessagesFor, unreadMessagesFor } from "../messages/messages.shared.js";
 import { computeTermHealth } from "../reports/term-health.js";
+import { lowStockItemCount } from "../store/store.service.js";
 
 const TREND_WEEKS = 8;
 
@@ -247,6 +248,8 @@ export class DashboardService {
       const unreadMessageCount = await unreadMessagesFor(db, authCtx.schoolId, authCtx.userId);
       // CP8.2 — flagged conversations, for the owner and admins only.
       const flaggedMessageCount = await flaggedMessagesFor(db, authCtx.schoolId, authCtx.userId);
+      // 2026-10-19 — store items at or below their reorder level.
+      const lowStockCount = await lowStockItemCount(db);
 
       const needsYouToday = [
         { type: "overdue_fees" as const, count: overdueCount, href: "/finance/debtors" },
@@ -263,6 +266,7 @@ export class DashboardService {
         { type: "new_admission_applications" as const, count: newAdmissionCount, href: "/admissions" },
         { type: "unread_messages" as const, count: unreadMessageCount, href: "/messages" },
         { type: "flagged_messages" as const, count: flaggedMessageCount, href: "/messages?box=FLAGGED" },
+        { type: "low_stock_items" as const, count: lowStockCount, href: "/store?low=true" },
         {
           type: "term_health" as const,
           count: termHealthSignals.length,

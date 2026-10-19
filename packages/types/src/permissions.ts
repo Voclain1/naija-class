@@ -865,6 +865,15 @@ export const CBT_PERMISSIONS = ["cbt.read", "cbt.manage"] as const;
 // admin only.
 export const ID_CARD_PERMISSIONS = ["id-card.read", "id-card.issue"] as const;
 
+// The Store and fixed assets (2026-10-19, docs/modules/id-cards-and-store.md
+// §4). Owner's answer 5: the Storekeeper runs the store day to day
+// (store.read, store.manage, asset.read, asset.manage); the bursar sees stock
+// and its value, sells to students (billing) and approves stock-take
+// adjustments (store.read, store.sell, store.approve, asset.read); owner and
+// admin hold everything.
+export const STORE_PERMISSIONS = ["store.read", "store.manage", "store.sell", "store.approve"] as const;
+export const ASSET_PERMISSIONS = ["asset.read", "asset.manage"] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -908,6 +917,8 @@ export const ALL_PERMISSIONS = [
   ...EXAM_PAPER_PERMISSIONS,
   ...CBT_PERMISSIONS,
   ...ID_CARD_PERMISSIONS,
+  ...STORE_PERMISSIONS,
+  ...ASSET_PERMISSIONS,
   /* extend per phase */
 ] as const;
 
