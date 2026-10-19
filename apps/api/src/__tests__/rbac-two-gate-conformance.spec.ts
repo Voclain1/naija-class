@@ -30,6 +30,15 @@ const STAFF_ROLE_KEYS: RoleKey[] = ["owner", "admin", "teacher", "bursar", "heal
 // undocumented, while an entry that no longer occurs fails as stale.
 const I2_DESIGN_EXCEPTIONS = [
   {
+    name: "what parents are shown of the store is the school's call",
+    reason:
+      "PUT /store/settings decides whether parents see the store's price list. Everyone with store.read may read the setting beside the list it governs, but changing what families see is a decision for the owner and admins, not the storekeeper or the bursar who run the store (2026-10-19).",
+    disagreements: [
+      "StoreController.updateSettings -> StorePricesService.updateSettings: bursar holds store.read but is rejected by [owner, admin]",
+      "StoreController.updateSettings -> StorePricesService.updateSettings: storekeeper holds store.read but is rejected by [owner, admin]",
+    ],
+  },
+  {
     name: "teacher academic context comes from the scoped teacher surface",
     reason:
       "The general academic-structure routes are operator CRUD. Teachers receive only the arms, levels, subjects, and class-subject relationships in their own assignments through GET /teacher-scope/me; allowing these general routes would bypass that Q3a boundary.",

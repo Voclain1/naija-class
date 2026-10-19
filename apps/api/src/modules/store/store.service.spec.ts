@@ -5,6 +5,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@
 
 import { AuthService } from "../auth/auth.service";
 import { AssetsService } from "./assets.service";
+import { StorePricesService } from "./store-prices.service";
 import { dedupeLabels, lagosDayStart, StoreService, lowStockItemCount } from "./store.service";
 
 // The Store and the asset register (docs/modules/id-cards-and-store.md §4),
@@ -244,6 +245,36 @@ describe("StoreService (integration)", () => {
       const item = await store.getItem(ctx(A.schoolId, A.keeperId), blazer.id);
       expect(item.variants.find((v) => v.id === blazer.size10)!.onHand).toBe(3);
       expect(item.movements[0]).toMatchObject({ kind: "ADJUST", quantity: -2 });
+    });
+  });
+
+  describe("the price list for parents", () => {
+    const prices = new StorePricesService();
+    const parent = (schoolId: string) => ({ sessionId: "s", guardianId: "g", schoolId });
+
+    it("shows priced items by size, available or not, and never a count; unpriced items are left out", async () => {
+      const list = await prices.forParent(parent(A.schoolId));
+      expect(list.shown).toBe(true);
+      expect(list.items.map((i) => i.name)).toEqual(["Blazer"]); // Chalk has no selling price
+      expect(list.items[0]!.sizes).toEqual([
+        { label: "Size 10", price: 1_500_000, available: true },
+        { label: "Size 12", price: 1_500_000, available: false },
+      ]);
+      expect(JSON.stringify(list)).not.toMatch(/onHand|stockValue|averageCost/);
+    });
+
+    it("owner and admin switch it off; the storekeeper and bursar cannot; parents then see nothing", async () => {
+      await expect(prices.updateSettings(ctx(A.schoolId, A.keeperId), { pricesForParents: false }, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(prices.updateSettings(ctx(A.schoolId, A.bursarId), { pricesForParents: false }, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      expect(await prices.settings(ctx(A.schoolId, A.keeperId))).toEqual({ pricesForParents: true });
+      await prices.updateSettings(ctx(A.schoolId, A.adminId), { pricesForParents: false }, reqCtx);
+      expect(await prices.forParent(parent(A.schoolId))).toEqual({ shown: false, items: [] });
+      await prices.updateSettings(ctx(A.schoolId, A.ownerId), { pricesForParents: true }, reqCtx);
+      expect((await prices.forParent(parent(A.schoolId))).shown).toBe(true);
+    });
+
+    it("another school's parents see their own school's list only", async () => {
+      expect(await prices.forParent(parent(B.schoolId))).toEqual({ shown: true, items: [] });
     });
   });
 

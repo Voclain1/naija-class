@@ -1,4 +1,5 @@
 import type {
+  StoreSettingsDto,
   AddStoreVariantInput,
   CreateFixedAssetInput,
   CreateStoreItemInput,
@@ -85,3 +86,8 @@ export const updateAsset = (assetId: string, body: UpdateFixedAssetInput) =>
   apiFetch<FixedAssetDto>(`/assets/${id(assetId)}`, { method: "PATCH", body });
 export const disposeAsset = (assetId: string, body: DisposeFixedAssetInput) =>
   apiFetch<FixedAssetDto>(`/assets/${id(assetId)}/dispose`, { method: "POST", body });
+
+// The price list for parents: whether it is shown (2026-10-19).
+export const getStoreSettings = () => apiFetch<StoreSettingsDto>("/store/settings", { method: "GET" });
+export const updateStoreSettings = (pricesForParents: boolean) =>
+  apiFetch<StoreSettingsDto>("/store/settings", { method: "PUT", body: { pricesForParents } });

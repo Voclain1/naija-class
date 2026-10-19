@@ -268,6 +268,9 @@ model School {
   //                          summaries. That still needs this second, separate
   //                          opt-in, by the school itself.
   parentSummaryEnabled Boolean  @default(false) @map("parent_summary_enabled")
+  // The school store's price list for parents (2026-10-19). On by default;
+  // owner and admin switch it off on the Store page.
+  storePricesForParents Boolean @default(true) @map("store_prices_for_parents")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 

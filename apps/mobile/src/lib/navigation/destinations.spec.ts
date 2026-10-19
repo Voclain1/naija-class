@@ -144,8 +144,8 @@ describe("a bursar", () => {
 });
 
 describe("families", () => {
-  it("gives a parent their children, messages and the calendar", () => {
-    expect(guardianDestinations().map((d) => d.route)).toEqual(["/students", "/announcements", "/messages", "/calendar", "/settings"]);
+  it("gives a parent their children, messages, the calendar and the store prices", () => {
+    expect(guardianDestinations().map((d) => d.route)).toEqual(["/students", "/announcements", "/messages", "/calendar", "/store-prices", "/settings"]);
   });
 
   it("gives a student every part of their own school work", () => {

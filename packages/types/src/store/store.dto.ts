@@ -362,3 +362,39 @@ export const storePeopleQuerySchema = z
   })
   .strict();
 export type StorePeopleQuery = z.infer<typeof storePeopleQuerySchema>;
+
+// ----------------------------------------------------- the parents' price list
+//
+// 2026-10-19: what the store sells and the price, for parents on the portal and
+// the parent app. Read-only: no ordering (owner, 2026-10-19). Only items and
+// sizes with a selling price; "available" rather than a count, because stock
+// levels are the school's business.
+
+/** GET/PUT /store/settings */
+export interface StoreSettingsDto {
+  pricesForParents: boolean;
+}
+export const updateStoreSettingsSchema = z.object({ pricesForParents: z.boolean() }).strict();
+export type UpdateStoreSettingsInput = z.infer<typeof updateStoreSettingsSchema>;
+
+export interface PortalStorePriceDto {
+  /** The size, or null for an item without sizes. */
+  label: string | null;
+  /** Kobo. */
+  price: number;
+  available: boolean;
+}
+
+export interface PortalStoreItemDto {
+  id: string;
+  name: string;
+  category: StoreCategory;
+  unit: string;
+  sizes: PortalStorePriceDto[];
+}
+
+/** GET /portal/store/prices. `shown` false: the school has switched the list off. */
+export interface PortalStorePriceListDto {
+  shown: boolean;
+  items: PortalStoreItemDto[];
+}

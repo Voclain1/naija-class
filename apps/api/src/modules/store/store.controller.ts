@@ -1,5 +1,8 @@
 import { Body, Controller, Get, HttpCode, Ip, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import {
+  updateStoreSettingsSchema,
+  type StoreSettingsDto,
+  type UpdateStoreSettingsInput,
   addStoreVariantSchema,
   createFixedAssetSchema,
   createStoreItemSchema,
@@ -49,6 +52,7 @@ import { Permissions } from "../../common/auth/permissions.decorator.js";
 import { PermissionsGuard } from "../../common/auth/permissions.guard.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
 import { AssetsService } from "./assets.service.js";
+import { StorePricesService } from "./store-prices.service.js";
 import { StoreService } from "./store.service.js";
 
 // The Store and the asset register (docs/modules/id-cards-and-store.md §4).
@@ -59,7 +63,27 @@ import { StoreService } from "./store.service.js";
 @Controller("store")
 @UseGuards(AuthGuard, PermissionsGuard)
 export class StoreController {
-  constructor(private readonly store: StoreService) {}
+  constructor(
+    private readonly store: StoreService,
+    private readonly prices: StorePricesService,
+  ) {}
+
+  // The price list for parents: whether it is shown (2026-10-19).
+  @Get("settings")
+  @Permissions("store.read")
+  settings(@CurrentUser() authCtx: AuthContext): Promise<StoreSettingsDto> {
+    return this.prices.settings(authCtx);
+  }
+
+  @Put("settings")
+  @Permissions("store.read")
+  updateSettings(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(updateStoreSettingsSchema)) body: UpdateStoreSettingsInput,
+    @Ip() ip: string,
+  ): Promise<StoreSettingsDto> {
+    return this.prices.updateSettings(authCtx, body, { ipAddress: ip });
+  }
 
   @Get("items")
   @Permissions("store.read")

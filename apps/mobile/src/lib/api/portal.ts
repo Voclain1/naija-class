@@ -23,6 +23,7 @@ import type {
   IssueStudentInvitationResponse,
   DeactivateStudentPortalResponse,
   CalendarResponse,
+  PortalStorePriceListDto,
 } from "@school-kit/types";
 import type {
   AnnouncementFeedResponse,
@@ -362,4 +363,9 @@ export function guardianEmailPreferences(): Promise<PortalEmailPreferencesDto> {
 
 export function guardianSetEmailPreferences(announcements: boolean): Promise<PortalEmailPreferencesDto> {
   return apiFetch<PortalEmailPreferencesDto>("/portal/email-preferences", { method: "POST", body: { announcements } });
+}
+
+/** The school store's price list (2026-10-19). Read-only; no ordering. */
+export function getStorePrices(): Promise<PortalStorePriceListDto> {
+  return apiFetch<PortalStorePriceListDto>("/portal/store/prices");
 }
