@@ -33,6 +33,10 @@ export interface StudentDto {
   dateOfBirth: string | Date;
   gender: GenderDto;
   photoUrl: string | null;
+  // An uploaded passport photo (2026-10-19). Shown through
+  // POST /students/photo-urls, never through photoUrl, which stays the
+  // older typed-in address.
+  hasPhoto: boolean;
   address: string | null;
   phone: string | null;
   email: string | null;

@@ -89,7 +89,7 @@ test("the guardian roster shows every parent's portal access and lets an owner a
     // after loading, which can swallow a sidebar click made before it settles.
     await page.goto("/students");
     await expect(page.getByRole("heading", { name: "Students", level: 1 })).toBeVisible({ timeout: 60_000 });
-    await openFromMenu(page, "Guardians");
+    await openFromMenu(page, "Parents & guardians");
     await expect(page).toHaveURL(/\/guardians$/, { timeout: 60_000 });
     await expect(page.getByRole("heading", { name: "Guardians", level: 1 })).toBeVisible({ timeout: 60_000 });
 
@@ -217,8 +217,8 @@ test("the guardian roster shows every parent's portal access and lets an owner a
     const bursarApi = await createApiContext(bursar.token);
     try {
       await bursar.page.goto("/finance/dashboard");
-      await expect(bursar.page.getByRole("link", { name: "Finance" }).first()).toBeVisible({ timeout: 60_000 });
-      await expect(bursar.page.getByRole("link", { name: "Guardians" })).toHaveCount(0);
+      await expect(bursar.page.getByRole("link", { name: "Bursary" }).first()).toBeVisible({ timeout: 60_000 });
+      await expect(bursar.page.getByRole("link", { name: "Parents & guardians" })).toHaveCount(0);
       expect((await bursarApi.get("guardians")).status()).toBe(403);
       expect((await bursarApi.post(`guardians/${ids.never}/invite`)).status()).toBe(403);
     } finally {

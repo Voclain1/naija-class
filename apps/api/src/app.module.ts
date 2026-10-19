@@ -46,6 +46,8 @@ import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { AnnouncementsModule } from "./modules/announcements/announcements.module";
 import { BehaviourModule } from "./modules/behaviour/behaviour.module";
 import { HealthModule } from "./modules/health/health.module";
+import { PhotosModule } from "./modules/photos/photos.module";
+import { IdCardsModule } from "./modules/id-cards/id-cards.module";
 import { TransportModule } from "./modules/transport/transport.module";
 import { LibraryModule } from "./modules/library/library.module";
 import { HostelModule } from "./modules/hostels/hostel.module";
@@ -146,6 +148,8 @@ const isProd = process.env.NODE_ENV === "production";
     HomeworkModule,
     BehaviourModule,
     HealthModule,
+    PhotosModule,
+    IdCardsModule,
     TransportModule,
     LibraryModule,
     HostelModule,

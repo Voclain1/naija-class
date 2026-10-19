@@ -27,4 +27,7 @@ export interface UserListItemDto {
   // (2026-10-10) so the staff roster no longer pages through
   // GET /teacher-profiles to learn it, which stopped at 200 profiles.
   teacherProfileId: string | null;
+  // An uploaded passport photo (2026-10-19), shown through
+  // POST /users/photo-urls.
+  hasPhoto: boolean;
 }

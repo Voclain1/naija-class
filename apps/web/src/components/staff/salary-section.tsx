@@ -108,7 +108,7 @@ export function SalarySection({ userId }: { userId: string }) {
               <span className="text-xs text-muted-foreground">
                 Filled in for you when you run payroll under{" "}
                 <Link href="/finance/payroll" className="underline underline-offset-2">
-                  Finance → Payroll
+                  Bursary → Payroll
                 </Link>
                 . Changing it does not change a month already on the payroll.
               </span>

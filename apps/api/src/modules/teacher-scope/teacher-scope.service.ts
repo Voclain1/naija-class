@@ -132,6 +132,7 @@ const ROSTER_STUDENT_SELECT = {
   lastName: true,
   gender: true,
   photoUrl: true,
+  photoUploadedAt: true,
   status: true,
 } satisfies Prisma.StudentSelect;
 
@@ -148,6 +149,7 @@ function toRosterStudentDto(row: RosterStudentRow): TeacherRosterStudentDto {
     lastName: row.lastName,
     gender: row.gender,
     photoUrl: row.photoUrl,
+    hasPhoto: row.photoUploadedAt !== null,
     status: row.status,
   };
 }

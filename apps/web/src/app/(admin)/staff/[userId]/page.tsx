@@ -12,12 +12,15 @@ import type {
 } from "@school-kit/types";
 
 import { BooksOutField } from "@/components/library/books-out";
+import { PhotoField } from "@/components/photos/photo-field";
 import { BvnSection } from "@/components/staff/bvn-section";
 import { SalarySection } from "@/components/staff/salary-section";
 import { TeacherAssignmentsSection } from "@/components/staff/teacher-assignments-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
+import { hasPermission } from "@/lib/auth/has-permission";
+import { useAuth } from "@/lib/auth/use-auth";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { listStaff, listTeacherProfiles } from "@/lib/staff/staff-api";
 
@@ -58,6 +61,7 @@ export default function StaffDetailPage() {
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { permissions } = useAuth();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -179,6 +183,21 @@ export default function StaffDetailPage() {
           </Link>
         </Button>
       </header>
+
+      {/* 2026-10-19 — passport photo, for the staff ID card. */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Passport photo</h2>
+        <div className="rounded-md border bg-card p-4">
+          <PhotoField
+            kind="staff"
+            id={userId}
+            name={fullName(user.firstName, user.lastName)}
+            hasPhoto={user.hasPhoto}
+            canEdit={hasPermission(permissions, "user.update")}
+            onChange={(hasPhoto) => setUser((prev) => (prev ? { ...prev, hasPhoto } : prev))}
+          />
+        </div>
+      </section>
 
       {/* BVN — staff-wide payroll identifier, not teacher-specific */}
       <BvnSection mode="other" userId={userId} />

@@ -39,7 +39,7 @@ const SHIPPED_HREFS = [
 
 describe("admin nav items", () => {
   it("lists Lesson plans as live, pointing at the shell where it actually shipped", () => {
-    const item = NAV_ITEMS.find((i) => i.label === "Lesson plans");
+    const item = NAV_ITEMS.find((i) => i.label === "Lesson notes");
     expect(item).toBeDefined();
     expect(item!.enabled).toBe(true);
     expect(item!.href).toBe("/teacher/lesson-plans");
@@ -50,12 +50,12 @@ describe("admin nav items", () => {
   });
 
   it("lists Event Calendar as live, gated on the read permission every staff role holds (Phase 8 CP1)", () => {
-    const item = NAV_ITEMS.find((i) => i.label === "Event Calendar");
+    const item = NAV_ITEMS.find((i) => i.label === "Events calendar");
     expect(item).toBeDefined();
     expect(item!.enabled).toBe(true);
     expect(item!.href).toBe("/events");
     expect(item!.requiredPermission).toBe("calendar-event.read");
-    expect(LATER_PHASE_ITEMS.some((i) => i.label === "Event Calendar")).toBe(false);
+    expect(LATER_PHASE_ITEMS.some((i) => i.label === "Events calendar")).toBe(false);
   });
 
   it("lists Reports as live, gated on the owner/admin-only completeness permission (Phase 8 CP2)", () => {
@@ -79,12 +79,12 @@ describe("admin nav items", () => {
   it("lists Result Checker as live, on the PIN cards page, owner/admin only (Phase 8c CP6b)", () => {
     // It shipped while this entry still said "Coming soon" — the gap this
     // spec exists to close for every promoted item.
-    const item = NAV_ITEMS.find((i) => i.label === "Result Checker");
+    const item = NAV_ITEMS.find((i) => i.label === "Result checker");
     expect(item).toBeDefined();
     expect(item!.enabled).toBe(true);
     expect(item!.href).toBe("/report-cards/pins");
     expect(item!.requiredPermission).toBe("result-pin.read");
-    expect(LATER_PHASE_ITEMS.some((i) => i.label === "Result Checker")).toBe(false);
+    expect(LATER_PHASE_ITEMS.some((i) => i.label === "Result checker")).toBe(false);
   });
 
   it("lists the question bank and exam papers as live, replacing \"Assessments & Exams\" (Phase 8c CP5)", () => {
@@ -102,7 +102,7 @@ describe("admin nav items", () => {
   });
 
   it("lists online exams (CBT) as live, gated on cbt.read", () => {
-    expect(NAV_ITEMS.find((i) => i.label === "Online exams")).toMatchObject({
+    expect(NAV_ITEMS.find((i) => i.label === "CBT exams")).toMatchObject({
       enabled: true,
       href: "/teacher/cbt",
       requiredPermission: "cbt.read",
@@ -134,7 +134,7 @@ describe("admin nav items", () => {
   });
 
   it("lists Guardians as live, pointing at the roster, gated on guardian.read", () => {
-    const item = NAV_ITEMS.find((i) => i.label === "Guardians");
+    const item = NAV_ITEMS.find((i) => i.label === "Parents & guardians");
     expect(item).toBeDefined();
     expect(item!.enabled).toBe(true);
     // The roster itself — not /guardians/import, which is how parents are

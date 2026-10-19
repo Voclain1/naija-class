@@ -1,3 +1,4 @@
+import { OwnPhotoSection } from "@/components/photos/own-photo-section";
 import { BvnSection } from "@/components/staff/bvn-section";
 
 // /settings/profile — Phase 3 / Slice 12. Self-service surface for
@@ -9,9 +10,10 @@ export default function ProfileSettingsPage() {
       <header className="flex flex-col gap-1">
         <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">My profile</h1>
         <p className="text-sm text-muted-foreground">
-          Manage payroll-related information tied to your own account.
+          Your photo for your staff ID card, and payroll information tied to your own account.
         </p>
       </header>
+      <OwnPhotoSection />
       <BvnSection mode="self" />
     </div>
   );

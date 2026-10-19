@@ -33,7 +33,7 @@ const BLOCKER_COPY: Record<DashboardSetupBlockerType, { title: string; action: s
   },
   no_fee_structure: {
     title: "No fees are set up for this term.",
-    action: "Add fee items in Finance → Fees",
+    action: "Add fee items in Bursary → Fees",
   },
 };
 

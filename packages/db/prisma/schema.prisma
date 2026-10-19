@@ -326,6 +326,8 @@ model User {
   emailVerified     Boolean   @default(false) @map("email_verified")
   phoneVerified     Boolean   @default(false) @map("phone_verified")
   lastLoginAt       DateTime? @map("last_login_at")
+  // 2026-10-19 — an uploaded passport photo exists (storage key staff-photo).
+  photoUploadedAt   DateTime? @map("photo_uploaded_at")
   totpPendingSecret String?   @map("totp_pending_secret")
   totpSecret        String?   @map("totp_secret")
   totpEnabled       Boolean   @default(false) @map("totp_enabled")
@@ -753,6 +755,8 @@ model Student {
   dateOfBirth     DateTime        @map("date_of_birth") @db.Date // calendar date — see CLAUDE.md
   gender          Gender
   photoUrl        String?         @map("photo_url") // string only; upload UI deferred (Phase 2/4)
+  // 2026-10-19 — an uploaded passport photo exists (storage key student-photo).
+  photoUploadedAt DateTime?       @map("photo_uploaded_at")
   address         String?
   phone           String?
   email           String?
@@ -5061,4 +5065,41 @@ model EventRsvp {
   @@unique([eventId, guardianId])
   @@index([schoolId, eventId])
   @@map("event_rsvps")
+}
+
+// ---------- ID cards (2026-10-19, docs/modules/id-cards-and-store.md §3) ----------
+
+enum IdCardHolderKind {
+  STUDENT
+  STAFF
+}
+
+enum IdCardStatus {
+  ACTIVE
+  CANCELLED
+  REPLACED
+}
+
+// One row per card issued. Reissuing marks the old row REPLACED. Plain FKs.
+model IdCard {
+  id             String           @id @default(uuid())
+  schoolId       String           @map("school_id")
+  holderKind     IdCardHolderKind @map("holder_kind")
+  studentId      String?          @map("student_id")
+  userId         String?          @map("user_id")
+  academicYearId String           @map("academic_year_id")
+  cardNumber     String           @map("card_number")
+  status         IdCardStatus     @default(ACTIVE)
+  issuedBy       String           @map("issued_by")
+  issuedAt       DateTime         @default(now()) @map("issued_at")
+  endedAt        DateTime?        @map("ended_at")
+  endedBy        String?          @map("ended_by")
+  endReason      String?          @map("end_reason")
+  replacedById   String?          @map("replaced_by_id")
+
+  @@unique([schoolId, cardNumber])
+  @@index([schoolId, academicYearId])
+  @@index([studentId])
+  @@index([userId])
+  @@map("id_cards")
 }

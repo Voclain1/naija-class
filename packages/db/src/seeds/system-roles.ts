@@ -43,6 +43,7 @@ import {
   QUESTION_BANK_PERMISSIONS,
   EXAM_PAPER_PERMISSIONS,
   CBT_PERMISSIONS,
+  ID_CARD_PERMISSIONS,
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
@@ -199,6 +200,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Online exams (CBT1). Kept IN SYNC with
   // prisma/migrations/20261008120000_cbt1_sittings.
   ...CBT_PERMISSIONS,
+  // ID cards (2026-10-19). Kept IN SYNC with
+  // prisma/migrations/20261114120000_id_cards.
+  ...ID_CARD_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced

@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  IdCard,
   BookOpenCheck,
   Bus,
   BedDouble,
@@ -84,20 +85,23 @@ export interface NavItem {
 // Phase 8 / CP2 (§16). Timetable followed with Phase 8 / CP3 (§17).
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, enabled: true, requiredPermission: "dashboard.read" },
-  { label: "Students", href: "/students", icon: GraduationCap, group: "people", keywords: ["pupils", "children", "learners"], enabled: true, requiredPermission: "student.read" },
+  { label: "Students", href: "/students", icon: GraduationCap, group: "students", keywords: ["pupils", "children", "learners"], enabled: true, requiredPermission: "student.read" },
   // Added 2026-09-16. The guardian roster — the parent-facing product's front
   // door, which did not exist: parents were reachable only one student at a
   // time. Gated on guardian.read, which owner and admin hold.
-  { label: "Guardians", href: "/guardians", icon: Contact, group: "people", keywords: ["parents", "families"], enabled: true, requiredPermission: "guardian.read" },
-  { label: "Staff", href: "/staff", icon: Users, group: "people", keywords: ["teachers", "employees", "salary", "invite"], enabled: true, requiredPermission: "user.read" },
-  { label: "Enrollments", href: "/enrollments", icon: UserPlus, group: "people", keywords: ["classes", "promote", "term"], enabled: true, requiredPermission: "enrollment.read" },
+  { label: "Parents & guardians", href: "/guardians", icon: Contact, group: "students", keywords: ["guardians", "parents", "families"], enabled: true, requiredPermission: "guardian.read" },
+  { label: "Staff", href: "/staff", icon: Users, group: "staff", keywords: ["teachers", "employees", "salary", "invite"], enabled: true, requiredPermission: "user.read" },
+  { label: "Class enrolment", href: "/enrollments", icon: UserPlus, group: "students", keywords: ["enrollments", "classes", "promote", "term"], enabled: true, requiredPermission: "enrollment.read" },
   // Phase 9 / CP7.1 — admission applications (docs/modules/phase-9.md §16.8).
   // admission.read: owner, admin and Admissions officers.
-  { label: "Admissions", href: "/admissions", icon: Inbox, group: "people", keywords: ["applications", "apply", "new students"], enabled: true, requiredPermission: "admission.read" },
+  { label: "Admissions", href: "/admissions", icon: Inbox, group: "students", keywords: ["applications", "apply", "new students"], enabled: true, requiredPermission: "admission.read" },
+  // ID cards (2026-10-19, docs/modules/id-cards-and-store.md §3): owner and admin.
+  { label: "Student ID cards", href: "/id-cards/students", icon: IdCard, group: "students", keywords: ["identity card", "badge", "photo", "print cards"], enabled: true, requiredPermission: "id-card.read" },
+  { label: "Staff ID cards", href: "/id-cards/staff", icon: IdCard, group: "staff", keywords: ["identity card", "badge", "staff card"], enabled: true, requiredPermission: "id-card.read" },
   // Phase 8 / CP3 (docs/modules/phase-8.md §17 D36). Promoted from "Coming soon".
   // Gated on timetable.read — owner/admin only in CP3; teacher, student and
   // guardian timetable views are CP4's.
-  { label: "Timetable", href: "/timetable", icon: CalendarClock, group: "teaching", keywords: ["periods", "schedule"], enabled: true, requiredPermission: "timetable.read" },
+  { label: "Timetable", href: "/timetable", icon: CalendarClock, group: "academics", keywords: ["periods", "schedule"], enabled: true, requiredPermission: "timetable.read" },
   // Lesson plans (Phase 5 / slice 2, shipped). The admin sidebar previously
   // listed this under "Coming soon" pointing at /lesson-notes — a route that
   // NEVER EXISTED. The feature shipped in the TEACHER shell as
@@ -111,21 +115,21 @@ export const NAV_ITEMS: NavItem[] = [
   // hide a shipped feature owner/admin genuinely hold permissions for.
   // (teacher)/layout.tsx has NO role gate — a bare RequireAuth — so an
   // admin can open it; that is what makes this viable at all.
-  { label: "Lesson plans", href: "/teacher/lesson-plans", icon: NotebookText, group: "teaching", keywords: ["lesson notes", "scheme of work"], enabled: true, requiredPermission: "lesson-plan.read" },
+  { label: "Lesson notes", href: "/teacher/lesson-plans", icon: NotebookText, group: "academics", keywords: ["lesson plans", "lesson notes", "scheme of work"], enabled: true, requiredPermission: "lesson-plan.read" },
   // 2026-10-19 (the role audit). Owner and admin hold curriculum.* but no
   // menu reached the curriculum library; cross-shell like Lesson plans,
   // which it feeds.
-  { label: "Curriculum", href: "/teacher/curriculum", icon: Library, group: "teaching", keywords: ["syllabus", "scheme of work", "upload"], enabled: true, requiredPermission: "curriculum.read" },
+  { label: "Scheme of work", href: "/teacher/curriculum", icon: Library, group: "academics", keywords: ["curriculum", "syllabus", "scheme of work", "upload"], enabled: true, requiredPermission: "curriculum.read" },
   // Homework (docs/modules/the-school-day.md Part B), added 2026-10-14 by the
   // pre-build audit. A read-only lookup by class, so a bursar can answer "what
   // homework does my child have?" at the counter — the reason they hold
   // homework.read, which no screen used. Owner, admin and bursar hold it;
   // teachers do too but set homework from the teacher shell.
-  { label: "Homework", href: "/homework", icon: BookOpenCheck, group: "teaching", keywords: ["assignments"], enabled: true, requiredPermission: "homework.read" },
+  { label: "Homework", href: "/homework", icon: BookOpenCheck, group: "academics", keywords: ["assignments"], enabled: true, requiredPermission: "homework.read" },
   // Phase 8c / CP5b (docs/modules/phase-8.md §22.2). Links across shells into
   // the teacher shell, exactly as Lesson plans above does and for the same
   // reasons. Owner/admin see every subject there.
-  { label: "Question bank", href: "/teacher/question-bank", icon: FileQuestion, group: "teaching", keywords: ["questions"], enabled: true, requiredPermission: "question.read" },
+  { label: "Question bank", href: "/teacher/question-bank", icon: FileQuestion, group: "academics", keywords: ["questions"], enabled: true, requiredPermission: "question.read" },
   // Added 2026-09-15. Owner/admin score entry for any class and subject. The
   // API has allowed it since Phase 2 / Slice 2 (admins unscoped), but the only
   // gradebook screen was the teacher's, so owners were inviting themselves as
@@ -138,38 +142,38 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Exam papers", href: "/teacher/exam-papers", icon: ScrollText, group: "results", keywords: ["exams", "papers"], enabled: true, requiredPermission: "exam-paper.read" },
   // Online exams (CBT, docs/modules/cbt.md): a FINAL paper sat on the school's
   // lab computers. Cross-shell, as above.
-  { label: "Online exams", href: "/teacher/cbt", icon: MonitorCheck, group: "results", keywords: ["CBT", "computer exams"], enabled: true, requiredPermission: "cbt.read" },
-  { label: "Report Cards", href: "/report-cards", icon: FileText, group: "results", keywords: ["results", "terminal report"], enabled: true, requiredPermission: "report-card.read" },
+  { label: "CBT exams", href: "/teacher/cbt", icon: MonitorCheck, group: "results", keywords: ["online exams", "CBT", "computer exams"], enabled: true, requiredPermission: "cbt.read" },
+  { label: "Report cards", href: "/report-cards", icon: FileText, group: "results", keywords: ["results", "terminal report"], enabled: true, requiredPermission: "report-card.read" },
   // Phase 8c / CP6b (docs/modules/phase-8.md §21). Promoted from "Coming soon"
   // on 2026-10-05: the feature shipped in #365/#366, but this entry kept saying
   // "Coming soon" for a feature schools already had. It lands on the PIN cards
   // page — the school's side of the checker; the checker itself is the public
   // portal page families use. Gated on result-pin.read: owner/admin only.
-  { label: "Result Checker", href: "/report-cards/pins", icon: FileSearch, group: "results", keywords: ["PIN", "scratch card", "check result"], enabled: true, requiredPermission: "result-pin.read" },
+  { label: "Result checker", href: "/report-cards/pins", icon: FileSearch, group: "results", keywords: ["PIN", "scratch card", "check result"], enabled: true, requiredPermission: "result-pin.read" },
   // Phase 9 / CP2.2 (docs/modules/phase-9.md §9 CP2-D2) — incidents involving
   // more than one student. Gated on behaviour.read, which owner and admin hold
   // here and bursar never does (C14). Teachers reach it in their own shell.
-  { label: "Behaviour", href: "/behaviour", icon: ShieldAlert, group: "care", keywords: ["discipline", "incidents"], enabled: true, requiredPermission: "behaviour.read" },
+  { label: "Behaviour & discipline", href: "/behaviour", icon: ShieldAlert, group: "welfare", keywords: ["discipline", "incidents"], enabled: true, requiredPermission: "behaviour.read" },
   // Phase 9 / CP3.1 — health records (docs/modules/phase-9.md §10). Owner, admin
   // and the Health officer, whose whole menu this is.
-  { label: "Health", href: "/health", icon: HeartPulse, group: "care", keywords: ["medical", "allergies", "vaccinations"], enabled: true, requiredPermission: "health.read" },
+  { label: "Health records", href: "/health", icon: HeartPulse, group: "welfare", keywords: ["medical", "allergies", "vaccinations"], enabled: true, requiredPermission: "health.read" },
   // Phase 9 / CP3.3 — the sickbay log. sickbay.manage: owner, admin and the
   // Health officer. A teacher never holds it.
-  { label: "Sickbay", href: "/sickbay", icon: Stethoscope, group: "care", keywords: ["clinic", "nurse", "sick"], enabled: true, requiredPermission: "sickbay.manage" },
+  { label: "Sickbay", href: "/sickbay", icon: Stethoscope, group: "welfare", keywords: ["clinic", "nurse", "sick"], enabled: true, requiredPermission: "sickbay.manage" },
   // Phase 9 / CP5.2 — transport (docs/modules/phase-9.md §13). transport.read:
   // owner, admin and the bursar (who sets route fees there). Teachers never.
-  { label: "Transport", href: "/transport", icon: Bus, group: "services", keywords: ["bus", "school bus", "routes"], enabled: true, requiredPermission: "transport.read" },
-  // Phase 9 / CP6.1 — the library (docs/modules/phase-9.md §14). library.read:
-  // owner, admin and the Librarian, whose whole menu this is.
-  { label: "Library", href: "/library", icon: Library, group: "services", keywords: ["books", "borrow"], enabled: true, requiredPermission: "library.read" },
+  { label: "Transport", href: "/transport", icon: Bus, group: "facilities", keywords: ["bus", "school bus", "routes"], enabled: true, requiredPermission: "transport.read" },
   // Phase 9 / CP6b.1 — hostels (docs/modules/phase-9.md §15). hostel.read:
   // owner, admin and the bursar (who sets hostel fees there).
-  { label: "Hostels", href: "/hostels", icon: BedDouble, group: "services", keywords: ["boarding house", "beds", "rooms"], enabled: true, requiredPermission: "hostel.read" },
+  { label: "Hostels", href: "/hostels", icon: BedDouble, group: "facilities", keywords: ["boarding house", "beds", "rooms"], enabled: true, requiredPermission: "hostel.read" },
   // Phase 9 / CP6b.2 — a hostel's boarders and visitor log. hostel.house:
   // admin and the House master, whose whole menu this is. (A teacher who keeps
   // a hostel reaches it from the teacher portal.)
-  { label: "Boarding", href: "/boarding", icon: DoorOpen, group: "services", keywords: ["boarders", "exeat", "leave-out", "visitors"], enabled: true, requiredPermission: "hostel.house" },
-  { label: "Finance", href: "/finance/dashboard", icon: Wallet, group: "money", keywords: ["fees", "invoices", "payments", "debtors", "expenses", "payroll", "salary"], enabled: true, requiredPermission: "finance.dashboard.read" },
+  { label: "Boarding", href: "/boarding", icon: DoorOpen, group: "facilities", keywords: ["boarders", "exeat", "leave-out", "visitors"], enabled: true, requiredPermission: "hostel.house" },
+  // Phase 9 / CP6.1 — the library (docs/modules/phase-9.md §14). library.read:
+  // owner, admin and the Librarian, whose whole menu this is.
+  { label: "Library", href: "/library", icon: Library, group: "facilities", keywords: ["books", "borrow"], enabled: true, requiredPermission: "library.read" },
+  { label: "Bursary", href: "/finance/dashboard", icon: Wallet, keywords: ["finance", "fees", "invoices", "payments", "debtors", "expenses", "payroll", "salary"], enabled: true, requiredPermission: "finance.dashboard.read" },
   // Phase 9 / CP8.1 — private messages from parents (docs/modules/phase-9.md
   // §17.8). messages.read: admin and bursar here (teachers, principals and
   // head teachers reach it from the teacher portal); the service shows each
@@ -192,7 +196,7 @@ export const NAV_ITEMS: NavItem[] = [
   // (D4: visible to all users) — so bursar's filtered sidebar shows it too, and
   // the page itself hides management controls from anyone without the write
   // permissions.
-  { label: "Event Calendar", href: "/events", icon: CalendarDays, group: "communication", keywords: ["calendar", "holidays", "PTA", "RSVP"], enabled: true, requiredPermission: "calendar-event.read" },
+  { label: "Events calendar", href: "/events", icon: CalendarDays, group: "communication", keywords: ["event calendar", "calendar", "holidays", "PTA", "RSVP"], enabled: true, requiredPermission: "calendar-event.read" },
   // Phase 8 / CP2 (docs/modules/phase-8.md §16). Promoted from "Coming soon".
   // v1 is a recording-completeness report, not outcome analytics (§16.1).
   // Gated on reports.completeness.read — owner/admin only, so teacher and
@@ -210,7 +214,7 @@ export const NAV_ITEMS: NavItem[] = [
   // this nav item links to (years/terms/class-levels/arms/subjects/matrix
   // CRUD). Gating on a create permission keeps bursar's filtered sidebar
   // showing just Finance, matching what they can actually do here.
-  { label: "Academics", href: "/settings/academic", icon: BarChart3, group: "setup", keywords: ["sessions", "terms", "classes", "subjects", "arms"], enabled: true, requiredPermission: "academic-year.create" },
+  { label: "Sessions & classes", href: "/settings/academic", icon: BarChart3, group: "setup", keywords: ["academics", "sessions", "terms", "classes", "subjects", "arms"], enabled: true, requiredPermission: "academic-year.create" },
   { label: "Grading", href: "/settings/grading", icon: SlidersHorizontal, group: "setup", keywords: ["grades", "grading scheme"], enabled: true, requiredPermission: "grading-scheme.read" },
   { label: "Settings", href: "/settings", icon: Settings, group: "setup", keywords: ["profile", "logo", "SMS", "sign in"], enabled: true, requiredPermission: "school.read" },
   // 2026-10-19 (the role audit). Every member of staff has their own

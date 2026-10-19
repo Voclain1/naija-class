@@ -420,6 +420,7 @@ const USER_LIST_SELECT = {
   emailVerified: true,
   phoneVerified: true,
   lastLoginAt: true,
+  photoUploadedAt: true,
   createdAt: true,
   roles: {
     select: {
@@ -449,6 +450,7 @@ function toUserListItem(row: UserListRow): UserListItemDto {
     createdAt: row.createdAt,
     roles,
     teacherProfileId: row.teacherProfile?.id ?? null,
+    hasPhoto: row.photoUploadedAt !== null,
   };
 }
 

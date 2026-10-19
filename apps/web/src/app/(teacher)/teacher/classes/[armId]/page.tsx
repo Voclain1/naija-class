@@ -12,6 +12,7 @@ import type {
 } from "@school-kit/types";
 
 import { StudentAvatar } from "@/components/students/student-avatar";
+import { usePhotoUrls } from "@/lib/photos/use-photo-urls";
 import { StudentStatusBadge } from "@/components/students/student-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ export default function TeacherArmRosterPage() {
   const [outOfScope, setOutOfScope] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const photos = usePhotoUrls("student", students.filter((s) => s.hasPhoto).map((s) => s.id));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -182,7 +184,7 @@ export default function TeacherArmRosterPage() {
                         <StudentAvatar
                           firstName={s.firstName}
                           lastName={s.lastName}
-                          photoUrl={s.photoUrl}
+                          photoUrl={photos[s.id] ?? s.photoUrl}
                           size="sm"
                         />
                         {/* A teacher records conduct for a child they teach

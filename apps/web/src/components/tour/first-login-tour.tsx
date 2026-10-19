@@ -64,12 +64,12 @@ export function buildTourSteps(schoolName: string | null | undefined): TourStep[
       kind: "spot",
       target: "/students",
       title: "Students",
-      body: "Add students one at a time, in bulk, or import a whole class list from a spreadsheet. Parents are linked to each child here or under Guardians.",
+      body: "Add students one at a time, in bulk, or import a whole class list from a spreadsheet. Parents are linked to each child here or under Parents & guardians.",
     },
     {
       kind: "spot",
       target: "/enrollments",
-      title: "Enrollments",
+      title: "Class enrolment",
       body: "Put students in their classes for the term — one at a time or a whole class at once. Registers, fees and report cards all follow from this.",
     },
     {
@@ -81,8 +81,8 @@ export function buildTourSteps(schoolName: string | null | undefined): TourStep[
     {
       kind: "spot",
       target: "/settings/academic",
-      title: "Academics",
-      body: "Your school year and terms, class levels, arms and subjects, and which classes take which subjects.",
+      title: "Sessions & classes",
+      body: "Your session and terms, class levels, arms and subjects, and which classes take which subjects.",
     },
     {
       kind: "spot",
@@ -105,7 +105,7 @@ export function buildTourSteps(schoolName: string | null | undefined): TourStep[
     {
       kind: "spot",
       target: "/finance/dashboard",
-      title: "Finance",
+      title: "Bursary",
       body: "Your fee list, invoices and payments, including fees parents pay online through Paystack.",
     },
     {
