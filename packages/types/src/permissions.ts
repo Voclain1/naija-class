@@ -860,6 +860,11 @@ export const EXAM_PAPER_PERMISSIONS = [
 // as for exam papers (D62). Bursar holds none.
 export const CBT_PERMISSIONS = ["cbt.read", "cbt.manage"] as const;
 
+// ID cards (2026-10-19, docs/modules/id-cards-and-store.md §3). `read` sees
+// who holds a card and prints; `issue` issues, cancels and reissues. Owner and
+// admin only.
+export const ID_CARD_PERMISSIONS = ["id-card.read", "id-card.issue"] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -902,6 +907,7 @@ export const ALL_PERMISSIONS = [
   ...QUESTION_BANK_PERMISSIONS,
   ...EXAM_PAPER_PERMISSIONS,
   ...CBT_PERMISSIONS,
+  ...ID_CARD_PERMISSIONS,
   /* extend per phase */
 ] as const;
 
