@@ -45,6 +45,11 @@ const VERDICT: Record<IdCardVerdictDto, { title: string; body: string; tint: str
     body: "This card was reported lost or damaged and a new one was issued. Do not accept this one.",
     tint: "bg-red-50 text-red-900 dark:bg-red-950/50 dark:text-red-100",
   },
+  LEFT: {
+    title: "No longer at the school",
+    body: "The person this card was issued to has left the school. Do not accept it.",
+    tint: "bg-red-50 text-red-900 dark:bg-red-950/50 dark:text-red-100",
+  },
 };
 
 export default function IdCardCheckPage() {

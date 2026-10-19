@@ -203,7 +203,9 @@ export class ReportExportsService {
   // ===========================================================================
   async getPdfStatus(authCtx: AuthContext, exportId: string): Promise<ReportExportStatusDto> {
     await assertUserActiveAndHasOneOf(authCtx, MANAGER_ROLES);
-    return this.pdf().status(authCtx, exportId);
+    // Only the person who asked for it: an export can hold a report the
+    // caller cannot open themselves (teacher activity, a health list).
+    return this.pdf().status(authCtx, exportId, authCtx.userId);
   }
 
   // ---------------------------------------------------------------------------

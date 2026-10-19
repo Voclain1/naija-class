@@ -410,6 +410,10 @@ export class HostelService {
     const outcome = await this.charges.reprice(db, actor, { ...source, amount: fee, description });
     if (outcome === "repriced") return "repriced";
     if (outcome === "billed") return "keptBilled";
+    // Removed and put back after billing: keep the billed charge, don't bill twice.
+    if (await this.charges.reattachOrphan(db, actor, { studentId: bed.studentId, termId: bed.termId, kind: "HOSTEL", ...source })) {
+      return "keptBilled";
+    }
     await this.charges.raise(db, actor, { studentId: bed.studentId, termId: bed.termId, kind: "HOSTEL", description, amount: fee, ...source });
     return "raised";
   }

@@ -822,7 +822,14 @@ export class AssignmentsService {
     });
     const id = randomUUID();
     await this.storage.put(schoolId, { kind: "submission-file", fileId: id, ext: kind.ext }, buffer, kind.mime);
-    return withTenant(schoolId, async (db) => {
+    const stored = await withTenant(schoolId, async (db) => {
+      // Re-count under a per-student lock: the first count ran before the
+      // upload, so parallel requests could all have seen room for one more.
+      await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`submission-files:${collection.id}:${studentId}`}))`;
+      const stagedNow = await db.assignmentSubmissionFile.count({
+        where: { collectionId: collection.id, studentId, submissionId: null },
+      });
+      if (stagedNow >= ASSIGNMENT_LIMITS.files) return false;
       await db.assignmentSubmissionFile.create({
         data: { id, schoolId, collectionId: collection.id, studentId, ext: kind.ext, size: buffer.length },
       });
@@ -836,6 +843,13 @@ export class AssignmentsService {
           metadata: { assignmentId, type: kind.ext, size: buffer.length, principal: "student" },
         },
       });
+      return true;
+    });
+    if (!stored) {
+      await this.storage.delete(schoolId, { kind: "submission-file", fileId: id, ext: kind.ext }).catch(() => undefined);
+      throw new ConflictError("TOO_MANY_FILES", `You can attach up to ${ASSIGNMENT_LIMITS.files} files.`);
+    }
+    return withTenant(schoolId, async (db) => {
       const { assignment } = await this.studentAssignment(db, studentId, assignmentId);
       return this.readMine(db, assignment, collection, studentId);
     });

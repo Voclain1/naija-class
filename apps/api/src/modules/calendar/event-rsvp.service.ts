@@ -78,7 +78,7 @@ export function rsvpAccepting(e: RsvpEventRow, today = sickbayDayOf(new Date()))
 /** The parents an event asks, with their children in the asked classes. */
 export async function askedParents(db: TenantDb, schoolId: string, e: Pick<RsvpEventRow, "rsvpClassArmIds">): Promise<AskedParent[]> {
   const enrollments = await db.enrollment.findMany({
-    where: { schoolId, term: { isCurrent: true }, ...(e.rsvpClassArmIds.length ? { classArmId: { in: e.rsvpClassArmIds } } : {}) },
+    where: { schoolId, status: "ENROLLED", term: { isCurrent: true }, ...(e.rsvpClassArmIds.length ? { classArmId: { in: e.rsvpClassArmIds } } : {}) },
     select: { studentId: true, classArm: { select: { name: true } }, student: { select: { firstName: true, lastName: true } } },
   });
   const childOf = new Map(enrollments.map((x) => [x.studentId, { name: `${x.student.firstName} ${x.student.lastName}`.trim(), className: x.classArm?.name ?? null }]));
@@ -155,7 +155,7 @@ async function isAsked(db: TenantDb, schoolId: string, guardianId: string, e: Pi
     where: {
       guardianId,
       guardian: { schoolId, portalDisabledAt: null },
-      student: { enrollments: { some: { schoolId, term: { isCurrent: true }, ...(e.rsvpClassArmIds.length ? { classArmId: { in: e.rsvpClassArmIds } } : {}) } } },
+      student: { enrollments: { some: { schoolId, status: "ENROLLED", term: { isCurrent: true }, ...(e.rsvpClassArmIds.length ? { classArmId: { in: e.rsvpClassArmIds } } : {}) } } },
     },
   });
   return n > 0;
