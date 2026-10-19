@@ -49,7 +49,7 @@ const PAGES: Array<{ path: string; label?: string; ready: (page: Page) => Promis
     ready: (page) =>
       page.waitForFunction(
         () =>
-          Array.from(document.querySelectorAll(".font-serif")).filter((el) => /[₦%]/.test(el.textContent ?? ""))
+          Array.from(document.querySelectorAll(".metric-value")).filter((el) => /[₦%]/.test(el.textContent ?? ""))
             .length >= 4,
         undefined,
         { timeout: 120_000 },

@@ -95,7 +95,7 @@ export default function AcceptGuardianInvitationPage() {
 
   if (loadState.kind === "loading") {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center px-4">
+      <main className="sk-entry flex min-h-screen flex-col items-center justify-center px-4">
         <p className="text-sm text-muted-foreground">Loading…</p>
       </main>
     );
@@ -103,7 +103,7 @@ export default function AcceptGuardianInvitationPage() {
 
   if (loadState.kind === "error") {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+      <main className="sk-entry flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
         <h1 className="text-xl font-semibold tracking-tight">Invitation not available</h1>
         <p className="text-sm text-muted-foreground">{loadState.message}</p>
         <Link href="/login" className="text-sm underline">
@@ -115,7 +115,7 @@ export default function AcceptGuardianInvitationPage() {
 
   if (submitState.kind === "success") {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+      <main className="sk-entry flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
         <h1 className="text-xl font-semibold tracking-tight">You&apos;re all set</h1>
         <p className="text-sm text-muted-foreground">
           Your portal account is ready.{" "}
@@ -130,7 +130,7 @@ export default function AcceptGuardianInvitationPage() {
   const { invitation } = loadState;
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4">
+    <main className="sk-entry flex min-h-screen flex-col items-center justify-center gap-8 px-4">
       <div className="flex flex-col items-center gap-1 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">
           Join {invitation.schoolName} on SchoolKit

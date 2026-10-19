@@ -154,7 +154,7 @@ export function ChoiceChips<T extends string>({
               onPress={() => onChange(option.value)}
               style={[
                 styles.chip,
-                { borderColor: colors.primary, backgroundColor: active ? colors.primary : "transparent" },
+                { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary : colors.card },
               ]}
             >
               <Text style={[styles.chipText, { color: active ? colors.primaryForeground : colors.primary }]}>
@@ -178,6 +178,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     fontFamily: fonts.sans,
     fontSize: fontSizes.body,
+    lineHeight: 22,
   },
   textarea: {
     minHeight: 80,
@@ -187,6 +188,7 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
     fontFamily: fonts.sans,
     fontSize: fontSizes.body,
+    lineHeight: 22,
   },
   // The boxes share the row rather than taking fixed widths: at fixed widths
   // "Month" was cut to "Montl" (mobile review, 2026-10-13), and wider fixed

@@ -745,14 +745,18 @@ this table documents the decision, not a second copy of the numbers):
 | Bright Emerald | `#3FB68B` | `--primary` (dark mode only — better contrast on a dark surface than Deep Emerald) |
 | Gold Spark | `#E0A52E` | `--secondary` — used sparingly (one metric's progress bar, a summary row), not a second primary |
 
-Typefaces: **Fraunces** (serif — large KPI numerals, page headings, the
-dashboard's greeting line) paired with **Hanken Grotesk** (sans — body text,
-labels, nav). Both loaded via `next/font/google` in `apps/web/src/app/
-layout.tsx` (self-hosted by Next at build time, no runtime call to Google's
-CDN), exposed as `--font-hanken-grotesk`/`--font-fraunces` and re-mapped to
-`--font-sans`/`--font-serif` in `globals.css`. Dark mode (`next-themes`,
-`attribute="class"`, matching the existing `darkMode: ["class"]` Tailwind
-config) is genuinely new — it did not exist before this initiative.
+**Visual refresh (2026-10-19):** `docs/modules/app-visual-refresh.md`.
+The Paper canvas remains; content cards and popovers are white in light mode,
+with quieter green-grey borders and muted surfaces. Dark-mode surfaces remain
+Ink-derived. Web and portal use **DM Sans** for body, headings and numerals;
+mobile uses **Hanken Grotesk** throughout. Existing `font-serif` / `fonts.serif`
+callers are compatibility aliases to the sans display treatment, so inline
+legacy headings receive the same look. Font tokens must remain on BODY,
+where next/font's variables exist, never on `:root`.
+
+This refresh is presentation only: no navigation, workflow, copy, permissions,
+API contracts, calculations or form behaviour changes. Existing responsive
+layouts, reduced-motion handling and print behaviour remain authoritative.
 
 **No accent borders — anywhere (owner's decision, 2026-10-02).** No thick or
 coloured edge on one side of a box: no emerald stripe for "unread", no red edge

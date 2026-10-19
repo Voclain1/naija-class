@@ -3,7 +3,6 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
-import { Fraunces_600SemiBold } from "@expo-google-fonts/fraunces";
 import {
   HankenGrotesk_400Regular,
   HankenGrotesk_500Medium,
@@ -78,7 +77,6 @@ export default function RootLayout() {
   const [sessionReady, setSessionReady] = useState(false);
 
   const [fontsLoaded, fontError] = useFonts({
-    Fraunces_600SemiBold,
     HankenGrotesk_400Regular,
     HankenGrotesk_500Medium,
     HankenGrotesk_600SemiBold,

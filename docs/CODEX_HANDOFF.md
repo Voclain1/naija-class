@@ -188,11 +188,23 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-10-10)
+## Latest state (updated 2026-10-19)
 
 This section used to be a running log; the log below it stopped on
 2026-09-01 and several of its "in progress" entries have since merged.
 Treat it as history. The current picture:
+
+- **PR #463 merge gate:** owner approved deployment and auto-merge is enabled. The first full e2e run failed four checks: three old serif-dependent assertions/selectors and a real finance tab/action squeeze. Follow-up fixes update selectors/expected computed family, wrap actions by intrinsic width, and size long amounts by card width (tablet review). Recheck CI before reporting live. Native release is still separate and not published.
+
+- **UI-only review branch (second pass after owner feedback):** `design/app-visual-refresh`. Shared web/portal and
+  Expo presentation refreshed, with no business logic or navigation changes.
+  The approved direction now rolls through staff/parent root styles and
+  shared controls; native refinement stays restrained. Source coverage and
+  verification: `docs/reviews/app-visual-refresh/coverage.md`.
+  Design scope: `docs/modules/app-visual-refresh.md`; verification and remaining
+  device/screen-review limits: `docs/journal/2026-10-19.md`. Not deployed by this
+  session. Check the PR before treating this branch as merged.
+
 
 - **Live.** Schools sign up and run on the staff web app and the parent
   portal, on early-access pricing. The mobile app is built but not released
@@ -478,3 +490,5 @@ Code, tell it explicitly: "read `docs/CODEX_HANDOFF.md`'s Latest state
 section and recent git log, then update your memory." Claude Code's memory
 system will not automatically know what Codex did in the interim — it only
 captures what happens in its own conversations.
+
+Typography follow-up (2026-10-19): body contrast strengthened; web/portal body weight 450, native body Medium. See journal.

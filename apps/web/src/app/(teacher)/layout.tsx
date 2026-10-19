@@ -34,7 +34,7 @@ import { TeacherTopbar } from "@/components/teacher/topbar";
 export default function TeacherLayout({ children }: { children: ReactNode }) {
   return (
     <RequireAuth>
-      <div className="flex min-h-screen bg-muted/30">
+      <div className="flex min-h-screen bg-background">
         <div className="flex print:hidden">
           <TeacherSidebar />
         </div>

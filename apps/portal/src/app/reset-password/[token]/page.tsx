@@ -100,7 +100,7 @@ export default function ResetPasswordPage() {
 
   if (state.kind === "done") {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-4 py-10">
+      <main className="sk-entry flex min-h-screen flex-col items-center justify-center gap-6 px-4 py-10">
         <div className="flex w-full max-w-sm flex-col gap-4 rounded-lg border bg-card p-6 text-center shadow-sm">
           <h1 className="text-xl font-semibold tracking-tight">Password updated</h1>
           {/* No auto-login, matching the staff convention: recovery re-enters
@@ -125,7 +125,7 @@ export default function ResetPasswordPage() {
   const submitting = state.kind === "submitting";
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4 py-10">
+    <main className="sk-entry flex min-h-screen flex-col items-center justify-center gap-8 px-4 py-10">
       <BrandHeading />
 
       <form

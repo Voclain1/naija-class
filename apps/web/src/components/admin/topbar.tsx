@@ -85,7 +85,7 @@ export function AdminTopbar({
   const effectiveLaterPhaseItems = navLaterPhaseItems ?? visibleAdminNav.laterPhaseItems;
 
   return (
-    <header className="flex h-16 items-center gap-2 border-b border-border bg-card px-3 sm:gap-4 sm:px-6">
+    <header className="app-topbar flex h-16 items-center gap-2 border-b border-border/80 bg-card px-3 sm:gap-4 sm:px-6">
       <MobileNav
         items={effectiveNavItems}
         laterPhaseItems={effectiveLaterPhaseItems}
@@ -107,7 +107,7 @@ export function AdminTopbar({
         type="button"
         onClick={() => setCommandOpen(true)}
         aria-label="Search or run a command"
-        className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm text-muted-foreground hover:bg-accent/40 sm:max-w-sm"
+        className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-muted/50 px-3 text-sm text-muted-foreground hover:bg-accent/40 sm:max-w-sm"
       >
         <Search className="h-4 w-4 shrink-0" />
         <span className="hidden truncate md:inline">Search or run a command</span>
@@ -120,7 +120,7 @@ export function AdminTopbar({
           filtered nav list the sidebar uses — see quick-actions.ts. */}
       <QuickActionPills onOpenCommand={() => setCommandOpen(true)} />
 
-      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+      <div className="app-topbar-controls flex shrink-0 items-center gap-1 sm:gap-2">
         <DashboardTermSelector />
 
         <DropdownMenu open={helpOpen} onOpenChange={setHelpOpen}>

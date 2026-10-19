@@ -69,7 +69,7 @@ function AdminShell({
   }
 
   return (
-    <div className="flex min-h-screen bg-muted/30">
+    <div className="flex min-h-screen bg-background">
       <div className="flex print:hidden">
         <AdminSidebar />
       </div>

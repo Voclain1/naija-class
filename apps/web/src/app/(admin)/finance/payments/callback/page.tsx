@@ -36,8 +36,8 @@ export default function PaystackCallbackPage() {
 
   if (status === "loading") {
     return (
-      <div className="p-6 flex flex-col items-center gap-3 text-gray-400">
-        <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+      <div className="p-6 flex flex-col items-center gap-3 text-muted-foreground">
+        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin motion-reduce:animate-none" />
         <p>Verifying payment…</p>
       </div>
     );
@@ -46,13 +46,13 @@ export default function PaystackCallbackPage() {
   if (status === "success" && payment) {
     return (
       <div className="p-6 max-w-md space-y-4">
-        <div className="rounded-lg border border-green-200 bg-green-50 px-6 py-5 space-y-2">
-          <p className="text-green-700 font-semibold text-lg">Payment successful</p>
-          <p className="text-sm text-green-600">
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30 px-6 py-5 space-y-2">
+          <p className="text-emerald-800 dark:text-emerald-200 font-semibold text-lg">Payment successful</p>
+          <p className="text-sm text-emerald-800 dark:text-emerald-200">
             {formatKobo(payment.amount)} received via Paystack.
           </p>
           {payment.paidAt && (
-            <p className="text-xs text-green-500">
+            <p className="text-xs text-emerald-800 dark:text-emerald-200">
               {new Date(payment.paidAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}
             </p>
           )}
@@ -60,11 +60,11 @@ export default function PaystackCallbackPage() {
         <div className="flex gap-3 text-sm">
           <Link
             href={`/finance/invoices/${payment.invoiceId}`}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90"
           >
             View invoice
           </Link>
-          <Link href="/finance/invoices" className="px-4 py-2 border rounded text-gray-600 hover:bg-gray-50">
+          <Link href="/finance/invoices" className="px-4 py-2 border rounded text-muted-foreground hover:bg-accent">
             All invoices
           </Link>
         </div>
@@ -75,16 +75,16 @@ export default function PaystackCallbackPage() {
   if (status === "failed" && payment) {
     return (
       <div className="p-6 max-w-md space-y-4">
-        <div className="rounded-lg border border-red-200 bg-red-50 px-6 py-5 space-y-2">
-          <p className="text-red-700 font-semibold text-lg">Payment failed</p>
-          <p className="text-sm text-red-600">
+        <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-6 py-5 space-y-2">
+          <p className="text-destructive font-semibold text-lg">Payment failed</p>
+          <p className="text-sm text-destructive">
             The payment was not completed. No amount has been charged.
           </p>
         </div>
         <div className="flex gap-3 text-sm">
           <Link
             href={`/finance/invoices/${payment.invoiceId}`}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90"
           >
             Return to invoice
           </Link>
@@ -95,11 +95,11 @@ export default function PaystackCallbackPage() {
 
   return (
     <div className="p-6 max-w-md space-y-4">
-      <div className="rounded-lg border border-gray-200 bg-gray-50 px-6 py-5 space-y-2">
-        <p className="text-gray-700 font-semibold">Could not verify payment</p>
-        {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+      <div className="rounded-lg border border-border bg-card px-6 py-5 space-y-2">
+        <p className="text-foreground font-semibold">Could not verify payment</p>
+        {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
       </div>
-      <Link href="/finance/invoices" className="text-sm text-blue-600 hover:underline">
+      <Link href="/finance/invoices" className="text-sm text-primary hover:underline">
         ← Back to invoices
       </Link>
     </div>

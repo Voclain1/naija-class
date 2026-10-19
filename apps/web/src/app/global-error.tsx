@@ -33,10 +33,13 @@ export default function GlobalError({
           padding: 24,
           fontFamily: "system-ui, sans-serif",
           gap: 12,
+          background: "#F7F5EF",
+          color: "#13262E",
+          textAlign: "center",
         }}
       >
-        <h1 style={{ fontSize: 20, margin: 0 }}>Something went wrong</h1>
-        <p style={{ color: "#666", margin: 0 }}>
+        <h1 style={{ fontSize: 28, letterSpacing: "-0.04em", margin: 0 }}>Something went wrong</h1>
+        <p style={{ color: "#5B6B72", margin: 0 }}>
           The page failed to load. Try refreshing — if it keeps happening,
           contact support.
         </p>
@@ -45,9 +48,11 @@ export default function GlobalError({
           style={{
             marginTop: 8,
             padding: "8px 16px",
-            border: "1px solid #ccc",
-            borderRadius: 4,
-            background: "white",
+            border: "1px solid #0E5C43",
+            borderRadius: 12,
+            background: "#0E5C43",
+            color: "#F7F5EF",
+            fontWeight: 600,
             cursor: "pointer",
           }}
         >

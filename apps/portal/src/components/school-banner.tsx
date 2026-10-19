@@ -48,7 +48,7 @@ export function SchoolBanner() {
   if (!school) return <div className="h-10" aria-hidden="true" />;
 
   return (
-    <div className="flex h-10 items-center gap-3">
+    <div className="sk-school-banner flex min-h-10 items-center gap-3">
       {school.logoUrl ? (
         // Signed, per-school URL on R2: next/image's allowlist does not fit it.
         // eslint-disable-next-line @next/next/no-img-element
