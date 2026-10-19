@@ -253,8 +253,11 @@ describe("admission numbers", () => {
 
     it("per class: a blank number needs the row's class, and takes that class's code", async () => {
       const { authCtx, schoolId } = await school("csvclass");
-      const { levelCode } = await withArm(schoolId, "k");
-      const armName = await withTenant(schoolId, (db) => db.classArm.findFirstOrThrow({ select: { name: true } }));
+      const { levelCode, classArmId } = await withArm(schoolId, "k");
+      // The arm this test made, by id: a new school may already hold others.
+      const armName = await withTenant(schoolId, (db) =>
+        db.classArm.findUniqueOrThrow({ where: { id: classArmId }, select: { name: true } }),
+      );
       await settings.update(authCtx, { mode: "AUTO", format: "{CLASS}-{NNN}", order: "CLASS" }, reqCtx);
       const result = await withTenant(schoolId, (db) =>
         runStudentValidationEngine(
