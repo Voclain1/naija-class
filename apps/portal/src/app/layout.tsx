@@ -1,23 +1,13 @@
-import { DM_Sans, DM_Serif_Display } from "next/font/google";
+import { DM_Sans } from "next/font/google";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import "./globals.css";
 
-// The same pair apps/web uses, chosen 2026-09-29. The portal previously had
-// NO typeface configured at all — it fell back to whatever system stack the
-// browser offered, which is a large part of why it read as a draft beside the
-// app. A parent who meets the portal before the app should not meet a
-// different product.
+// Same sans family and visual tokens as the staff app.
 const dmSans = DM_Sans({
   subsets: ["latin"],
   variable: "--font-dm-sans",
-  display: "swap",
-});
-const dmSerifDisplay = DM_Serif_Display({
-  subsets: ["latin"],
-  weight: ["400"],
-  variable: "--font-dm-serif-display",
   display: "swap",
 });
 
@@ -46,7 +36,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body
-        className={`${dmSans.variable} ${dmSerifDisplay.variable} min-h-screen bg-background font-sans antialiased`}
+        className={`${dmSans.variable} min-h-screen bg-background font-sans antialiased`}
       >
         {children}
       </body>

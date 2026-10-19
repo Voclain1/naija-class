@@ -57,7 +57,7 @@ export function PageHeader({
   return (
     <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex flex-col gap-1">
-        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">{title}</h1>
+        <h1 className="font-sans text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
         {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
       {/* Wraps below the title on a phone rather than squeezing beside it: a
@@ -81,7 +81,7 @@ export function SectionHeader({
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-2">
       <div className="flex flex-col gap-0.5">
-        <h2 className="text-lg font-medium text-foreground">{title}</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">{title}</h2>
         {note ? <p className="text-sm text-muted-foreground">{note}</p> : null}
       </div>
       {actions ?? null}
@@ -108,7 +108,7 @@ export function EmptyState({
   icon?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed bg-muted/30 p-8 text-center">
+    <div className="flex flex-col items-center gap-2 rounded-lg border border-border/80 bg-card p-8 text-center">
       {icon ? <div className="text-muted-foreground">{icon}</div> : null}
       <p className="font-medium text-foreground">{title}</p>
       <p className="max-w-prose text-sm text-muted-foreground">{body}</p>
@@ -217,7 +217,7 @@ export function StatRow({
   const body = (
     <div
       className={cn(
-        "flex flex-col gap-0.5 rounded-lg border p-4 transition-colors motion-reduce:transition-none",
+        "flex flex-col gap-0.5 rounded-lg border border-border/80 p-4 transition-colors motion-reduce:transition-none",
         // Warning is a tinted background and an amber figure, never an accent
         // edge (CLAUDE.md "Design system", 2026-10-02).
         tone === "warning" ? "bg-amber-500/10" : "bg-card",
@@ -229,7 +229,7 @@ export function StatRow({
           would sink into the background. */}
       <span
         className={cn(
-          "font-serif text-2xl font-medium",
+          "font-sans text-2xl font-semibold tracking-tight tabular-nums",
           tone === "warning" ? "text-amber-700 dark:text-amber-400" : "text-foreground",
         )}
       >
@@ -266,7 +266,7 @@ export function FilterBar({
   count?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:flex-wrap sm:items-end">
+    <div className="flex flex-col gap-3 rounded-lg border border-border/80 bg-card p-3 sm:flex-row sm:flex-wrap sm:items-end">
       <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">{children}</div>
       {count ? <p className="text-sm text-muted-foreground">{count}</p> : null}
     </div>
@@ -324,7 +324,7 @@ export function DataTableShell({
   if (loading) return <PageSkeleton rows={5} />;
   if (empty) return <>{empty}</>;
   return (
-    <div className="overflow-x-auto rounded-lg border bg-card">
+    <div className="overflow-x-auto rounded-lg border border-border/80 bg-card">
       <table className="w-full border-collapse text-sm" {...(caption ? { "aria-label": caption } : {})}>
         {children}
       </table>

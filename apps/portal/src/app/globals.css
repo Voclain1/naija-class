@@ -25,26 +25,26 @@
   :root {
     --background: 45 33% 95%; /* Paper #F7F5EF */
     --foreground: 198 42% 13%; /* Ink #13262E */
-    --card: 45 33% 95%;
+    --card: 0 0% 100%;
     --card-foreground: 198 42% 13%;
-    --popover: 45 33% 97%;
+    --popover: 0 0% 100%;
     --popover-foreground: 198 42% 13%;
     --primary: 161 74% 21%; /* Deep Emerald #0E5C43 */
     --primary-foreground: 45 33% 97%;
     --secondary: 40 74% 53%; /* Gold Spark #E0A52E */
     --secondary-foreground: 198 42% 13%;
-    --muted: 45 15% 90%;
+    --muted: 150 12% 93%;
     --muted-foreground: 198 15% 40%;
-    --accent: 45 20% 88%;
+    --accent: 155 25% 92%;
     --accent-foreground: 198 42% 13%;
     /* The web's darkened red: 6.98:1 for text-destructive on a destructive/5
        banner, where the stock #ef4444 managed 3.23:1. */
     --destructive: 0 72% 35%;
     --destructive-foreground: 210 40% 98%;
-    --border: 45 15% 85%;
-    --input: 45 15% 85%;
+    --border: 150 12% 87%;
+    --input: 150 10% 80%;
     --ring: 161 74% 21%;
-    --radius: 0.75rem;
+    --radius: 1rem;
 
     /* Bright Emerald #3FB68B — the wordmark's "kit". Its own token, as on the
        web: fixed in every theme rather than following --primary. */
@@ -64,7 +64,21 @@
    * 2026-09-29. */
   body {
     --font-sans: var(--font-dm-sans);
-    --font-serif: var(--font-dm-serif-display);
+    /* Legacy font-serif callers intentionally share the new sans display face. */
+    --font-serif: var(--font-dm-sans);
     @apply bg-background text-foreground;
   }
+}
+
+/* Visual refresh, October 2026. Presentation only; native controls, focus
+ * semantics, table stacking, and the existing motion contract stay intact. */
+@layer base {
+  body { font-feature-settings: "ss01" on; }
+  h1 { letter-spacing: -0.035em; }
+  h2, h3 { letter-spacing: -0.02em; }
+  input, select, textarea { accent-color: hsl(var(--primary)); }
+  ::selection { background: hsl(var(--primary) / 0.16); }
+}
+@layer utilities {
+  .font-serif { font-weight: 600; letter-spacing: -0.035em; }
 }

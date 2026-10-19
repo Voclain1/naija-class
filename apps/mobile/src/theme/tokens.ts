@@ -28,7 +28,7 @@ export const palette = {
 /**
  * Semantic colours per scheme.
  *
- * The light scheme is taken directly from CLAUDE.md. The DARK scheme is
+ * The light scheme uses a Paper canvas and white content cards. The DARK scheme is
  * derived here, because CLAUDE.md specifies only one dark value
  * (Bright Emerald as `--primary`). The derivation rule is: darken Ink for
  * surfaces rather than using pure black, so the dark theme stays as warm as
@@ -38,7 +38,8 @@ export const palette = {
 export const colors = {
   light: {
     background: palette.paper,
-    card: palette.paper,
+    /** White content surfaces separate from the warm Paper canvas. */
+    card: "#FFFFFF",
     foreground: palette.ink,
     /** De-emphasised text — captions, "as of" timestamps. */
     mutedForeground: "#5B6B72",
@@ -46,7 +47,7 @@ export const colors = {
     primaryForeground: palette.paper,
     secondary: palette.goldSpark,
     secondaryForeground: palette.ink,
-    border: "#E2DED3",
+    border: "#DAE2DE",
     /** Offline / stale indicators. Amber, deliberately not red: stale data is
      *  a caution, not an error. */
     warning: palette.goldSpark,
@@ -83,8 +84,8 @@ export const fonts = {
   sans: "HankenGrotesk_400Regular",
   sansMedium: "HankenGrotesk_500Medium",
   sansSemibold: "HankenGrotesk_600SemiBold",
-  /** Fraunces — large numerals, page headings, greeting lines. */
-  serif: "Fraunces_600SemiBold",
+  /** Legacy display alias: headings and numerals now use the sans family. */
+  serif: "HankenGrotesk_600SemiBold",
 } as const;
 
 /** 4px base scale. */
@@ -98,9 +99,9 @@ export const spacing = {
 } as const;
 
 export const radii = {
-  sm: 6,
-  md: 10,
-  lg: 16,
+  sm: 8,
+  md: 12,
+  lg: 20,
   pill: 999,
 } as const;
 

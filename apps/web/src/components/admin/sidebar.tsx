@@ -40,8 +40,8 @@ export function AdminSidebar() {
   const { items, laterPhaseItems } = useVisibleAdminNavItems();
 
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-border bg-card md:flex md:flex-col">
-      <div className="flex h-14 items-center border-b border-border px-5">
+    <aside className="hidden w-64 shrink-0 border-r border-border/80 bg-card md:flex md:flex-col">
+      <div className="flex h-16 items-center border-b border-border/80 px-5">
         <SchoolBrand />
       </div>
       <NavList pathname={pathname} items={items} laterPhaseItems={laterPhaseItems} />

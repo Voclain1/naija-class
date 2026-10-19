@@ -26,18 +26,8 @@ const config: Config = {
     },
     extend: {
       fontFamily: {
-        // DM Sans (body) + DM Serif Display (headings and KPI numerals) —
-        // loaded via next/font/google in app/layout.tsx,
-        // exposed as CSS vars there and re-mapped to token names in
-        // globals.css. See CLAUDE.md's "Design system" section.
-        //
-        // The in-var fallbacks are load-bearing, not belt-and-braces. A bare
-        // `var(--font-sans)` that resolves to EMPTY makes the whole
-        // declaration a parse error — `font-family: , ui-sans-serif, …` — so
-        // the browser throws away the fallback list too and uses its default
-        // serif. That is exactly how this site shipped in Times New Roman.
-        // With a fallback inside var(), a missing token degrades to a system
-        // sans instead of to Times.
+        // Display alias retained for existing callers; both tokens now map
+        // to DM Sans on body. In-var fallbacks prevent an invalid font stack.
         sans: ["var(--font-sans, ui-sans-serif)", "ui-sans-serif", "system-ui", "sans-serif"],
         serif: ["var(--font-serif, ui-serif)", "ui-serif", "Georgia", "serif"],
       },

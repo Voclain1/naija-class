@@ -144,7 +144,7 @@ export function NavList({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Find a page"
-            className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-8 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-9 w-full rounded-md border border-border bg-muted/50 pl-8 pr-8 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           {query && (
             <button
@@ -253,17 +253,8 @@ function NavLink({
   onNavigate?: () => void;
 }) {
   const Icon = item.icon;
-  // Nav labels sit at font-medium, one step above the previous default
-  // weight — the single deliberate typography change in the dashboard
-  // redesign (brand faces themselves are unchanged: Hanken Grotesk +
-  // Fraunces stay, the mockup's Newsreader/Plus Jakarta Sans were rejected).
-  // The active item goes one step further to font-semibold so the current
-  // page still reads as distinct now that everything around it is heavier.
-  //
-  // Set HERE, in the one shared NavLink, rather than per container: this
-  // component backs the desktop rail, the mobile drawer AND the teacher
-  // portal's sidebar, so a per-call-site weight would drift between them.
-  const baseClasses = "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium";
+  // Shared styling across the desktop rail, mobile drawer and teacher menu.
+  const baseClasses = "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150 motion-reduce:transition-none";
 
   if (!item.enabled) {
     return (
@@ -287,8 +278,8 @@ function NavLink({
       className={cn(
         baseClasses,
         active
-          ? "bg-primary/10 font-semibold text-primary"
-          : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
+          ? "bg-primary font-semibold text-primary-foreground shadow-sm"
+          : "text-muted-foreground hover:bg-accent hover:text-foreground",
       )}
     >
       <Icon className="h-4 w-4" />

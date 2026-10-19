@@ -154,7 +154,7 @@ export function ChoiceChips<T extends string>({
               onPress={() => onChange(option.value)}
               style={[
                 styles.chip,
-                { borderColor: colors.primary, backgroundColor: active ? colors.primary : "transparent" },
+                { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary : colors.card },
               ]}
             >
               <Text style={[styles.chipText, { color: active ? colors.primaryForeground : colors.primary }]}>
