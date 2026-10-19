@@ -52,7 +52,7 @@ Status key: **Done**, **Open** (needs doing), **Waiting** (on someone outside).
 
 | Item | Status |
 |---|---|
-| Force a password reset for accounts created under the Phase 0 password rules | **Open** (`docs/deferred.md` §5). |
+| Force a password reset for accounts created under the Phase 0 password rules | **Done** 2026-10-19: at sign-in, a right password that fails today's rules gets a 15-minute reset token instead of a session (web and staff app). |
 | Confirm the production database connection limit (assumed 3) in the Neon dashboard | **Open.** |
 | Online exams: switch on about four weeks before a school's first exam period | **Open** (`docs/runbooks/cbt-go-live.md`). |
 

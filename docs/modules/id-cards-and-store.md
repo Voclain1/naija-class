@@ -268,3 +268,28 @@ A storekeeper signs in to the Store (`/store`). The role is offered in
 - Staff app: a read-only **Store** screen with stock on hand and a
   **Running low** filter. Receiving, selling and stock takes stay on the
   website.
+
+## 4b. The price list for parents (2026-10-19)
+
+The cheaper first step the owner chose over ordering (`docs/deferred.md` keeps
+ordering as a later idea). Read-only: parents see what the store sells and the
+price; they buy at the school, and a sale goes on the child's bill as before.
+
+- **What a parent sees:** active items with a selling price (the size's own
+  price, else the item's), grouped by item, each size marked "Available" or
+  "Out of stock". Never a quantity, a cost or a value. Items without a price
+  (chalk, cleaning supplies) never appear.
+- **The switch:** `schools.store_prices_for_parents` (migration
+  `20261116120000_store_price_list`), on by default. An item appears only once
+  it has a selling price, so a school that has not set up its store shows
+  nothing either way. The Store page shows the switch to everyone with
+  `store.read`; only the owner and admins change it (an I2 design exception in
+  `rbac-two-gate-conformance.spec.ts`: what families are shown is the school's
+  call, not the storekeeper's or the bursar's). Audited as
+  `store.settings.update`.
+- **Routes:** `GET /store/settings` (`store.read`), `PUT /store/settings`
+  (owner, admin), `GET /portal/store/prices` (any signed-in parent of the
+  school; school-wide, not per child).
+- **Screens:** the portal's **School store prices** page (`/store`, linked
+  under the children list), and **School store prices** in the parent app's
+  menu.

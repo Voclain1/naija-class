@@ -540,6 +540,7 @@ You do not need any of these to get started. Use them when you are ready.
   - **Asset register:** under **Assets**, record computers, projectors, furniture and laboratory equipment with a tag number, where each one is and who has it. Moves, condition changes and disposal are kept as history.
   - **Who can do what:** a **Storekeeper** runs the store day to day. The **bursar** sees stock and its value, sells to children and approves stock takes, but does not change items. You and your admins can do everything.
   - **On phones:** the staff app shows stock on hand under **Store**, with a **Running low** filter.
+  - **Prices for parents:** parents see what the store sells and the price, size by size, marked **Available** or **Out of stock** (never how many), under **School store prices** on the parent portal and in the parent app. Only items with a selling price appear. They cannot order; they buy at the school as before. You or an admin can turn this off with **Show parents the price list** on the Store page.
 - **Your own photo** — every member of staff can add their own photo under **My profile** (or the profile screen in the staff app). It goes on their staff ID card.
 - **Payroll** — run monthly salaries under **Bursary → Payroll**. Press **Run payroll** and choose a member of staff: their saved monthly salary fills in by itself, and you can change it for that month. Set or change a saved salary on the staff member's page, or when you invite them.
 - **Bursary dashboard** — **Bursary** in the menu shows how much has been billed and collected this term, class by class.
@@ -555,6 +556,8 @@ You do not need any of these to get started. Use them when you are ready.
 ---
 
 # Problems and questions
+
+**"Choose a new password" when signing in.** If your password was set before SchoolKit asked for stronger passwords, you will be asked once, after signing in correctly, to choose a new one: at least 8 characters, with a capital letter, a small letter, a number and a symbol. Then sign in with the new password. This happens on the website and in the staff app; parents and students are not affected.
 
 **I can't find a page in the menu.**
 It may be inside a closed section — tap the section's name to open it. Or type what you are looking for in **Find a page** at the top of the menu (for example "fees" or "sickbay"). If it is still not there, your role does not include that page; ask the owner or an admin.
