@@ -224,7 +224,7 @@ export function AdminTopbar({
         </DropdownMenu>
       </div>
 
-      <CommandDialog open={commandOpen} onOpenChange={setCommandOpen} />
+      <CommandDialog open={commandOpen} onOpenChange={setCommandOpen} items={effectiveNavItems} />
     </header>
   );
 }

@@ -26,7 +26,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     // the other half of the fix: it filters NAV_ITEMS by permission so a
     // bursar who now reaches this shell only sees Finance, not
     // Students/Staff/Academics/Settings they have no permission for.
-    <RequireAuth roles={["owner", "admin", "bursar", "health_officer", "librarian", "house_master"]}>
+    // admission_officer, principal, head_teacher and inbox_officer added
+    // 2026-10-19 for someone holding one of them alone (home-route.ts); the
+    // menu still shows only what their permissions allow.
+    <RequireAuth
+      roles={["owner", "admin", "bursar", "health_officer", "librarian", "house_master", "admission_officer", "principal", "head_teacher", "inbox_officer"]}
+    >
       <TourProvider mobileNavOpen={mobileNavOpen} setMobileNavOpen={setMobileNavOpen}>
         <AdminShell mobileNavOpen={mobileNavOpen} setMobileNavOpen={setMobileNavOpen}>
           {children}

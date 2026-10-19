@@ -22,3 +22,4 @@ export {
 export { inviteAndAcceptTeacher, type InvitedTeacher } from "./teacher.js";
 export { uniqueSuffix, uniquePhone } from "./unique.js";
 export { seedAttendanceRoster, setFormTeacher } from "./attendance.js";
+export * from "./menu.js";

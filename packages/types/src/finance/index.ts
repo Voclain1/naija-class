@@ -18,5 +18,6 @@ export * from "./payroll.dto.js";
 export * from "./refund.dto.js";
 export * from "./revenue-trajectory.dto.js";
 export * from "./staff-bank-account.dto.js";
+export * from "./staff-salary.dto.js";
 export * from "./student-charge.dto.js";
 export * from "./amount-words.js";

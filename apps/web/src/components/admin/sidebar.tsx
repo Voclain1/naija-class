@@ -22,7 +22,9 @@ import { NavList } from "./nav-list";
 export function useVisibleAdminNavItems(): { items: NavItem[]; laterPhaseItems: NavItem[] } {
   const { permissions, roles } = useAuth();
   const items = NAV_ITEMS.filter(
-    (item) => !item.requiredPermission || hasPermission(permissions, item.requiredPermission),
+    (item) =>
+      (!item.requiredPermission || hasPermission(permissions, item.requiredPermission)) &&
+      !(item.hiddenWithPermission && hasPermission(permissions, item.hiddenWithPermission)),
   );
   // "Coming soon" placeholders are only meaningful to owner/admin — bursar's
   // narrow finance scope has no bearing on any of them (today: AI Tutor —

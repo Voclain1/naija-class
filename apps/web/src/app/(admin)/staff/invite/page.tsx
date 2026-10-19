@@ -13,6 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
+import { hasPermission } from "@/lib/auth/has-permission";
+import { useAuth } from "@/lib/auth/use-auth";
+import { nairaInputToKobo } from "@/lib/finance/naira-input";
 import { inviteStaff } from "@/lib/staff/staff-api";
 
 // /staff/invite — Slice 10 cp3, role dropdown added Phase 3 slice 15 cp2,
@@ -47,6 +50,13 @@ const inviteFormSchema = z.object({
   firstName: z.string().trim().max(60, "First name is too long."),
   lastName: z.string().trim().max(60, "Last name is too long."),
   roleKey: z.enum(["admin", "bursar", "teacher", "health_officer", "librarian", "house_master"]),
+  // Monthly salary in naira, optional (2026-10-19). Turned into kobo with
+  // string arithmetic (nairaInputToKobo); the field shows only to someone who
+  // runs payroll.
+  salary: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || nairaInputToKobo(v) !== null, "Enter an amount in naira, like 150000 or 150,000.50."),
 });
 
 type FormValues = z.infer<typeof inviteFormSchema>;
@@ -57,9 +67,11 @@ export default function InviteStaffPage() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(inviteFormSchema),
-    defaultValues: { email: "", firstName: "", lastName: "", roleKey: "admin" },
+    defaultValues: { email: "", firstName: "", lastName: "", roleKey: "admin", salary: "" },
     mode: "onSubmit",
   });
+  const { permissions } = useAuth();
+  const canSetPay = hasPermission(permissions, "payroll.process");
 
   const roleKey = form.watch("roleKey");
 
@@ -72,11 +84,12 @@ export default function InviteStaffPage() {
         firstName: values.firstName ? values.firstName : undefined,
         lastName: values.lastName ? values.lastName : undefined,
         roleKey: values.roleKey,
+        ...(canSetPay && values.salary ? { monthlyGross: nairaInputToKobo(values.salary)! } : {}),
       };
       const res = await inviteStaff(payload);
       setCreated(res);
       setCopied(false);
-      form.reset({ email: "", firstName: "", lastName: "", roleKey: "admin" });
+      form.reset({ email: "", firstName: "", lastName: "", roleKey: "admin", salary: "" });
     } catch (error) {
       if (error instanceof ApiError) {
         if (error.code === "EMAIL_TAKEN") {
@@ -250,7 +263,7 @@ export default function InviteStaffPage() {
           </select>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <div className="flex flex-1 flex-col gap-1">
             <Label htmlFor="invite-firstName">First name (optional)</Label>
             <Input
@@ -278,6 +291,27 @@ export default function InviteStaffPage() {
             )}
           </div>
         </div>
+
+        {canSetPay && (
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="invite-salary">Monthly salary in naira (optional)</Label>
+            <Input
+              id="invite-salary"
+              inputMode="decimal"
+              placeholder="e.g. 150,000"
+              {...form.register("salary")}
+              aria-invalid={Boolean(form.formState.errors.salary)}
+              aria-describedby="invite-salary-help"
+            />
+            <p id="invite-salary-help" className="text-xs text-muted-foreground">
+              Saved to their record when they accept, and filled in for you when you run payroll under
+              Finance → Payroll. You can change it later on their staff page.
+            </p>
+            {form.formState.errors.salary && (
+              <p className="text-sm text-destructive">{form.formState.errors.salary.message}</p>
+            )}
+          </div>
+        )}
 
         <div className="flex gap-2">
           <Button type="button" variant="outline" asChild>

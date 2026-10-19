@@ -3,6 +3,8 @@ import type {
   ListPayrollQuery,
   PayrollItemDto,
   PayslipUrlDto,
+  SetStaffSalaryInput,
+  StaffSalaryDto,
   TransferPayrollResultDto,
   UpdatePayrollItemInput,
 } from "@school-kit/types";
@@ -44,4 +46,14 @@ export function transferPayrollItem(id: string): Promise<TransferPayrollResultDt
   return apiFetch<TransferPayrollResultDto>(`/payroll/${encodeURIComponent(id)}/transfer`, {
     method: "POST",
   });
+}
+
+// Saved monthly salaries (2026-10-19), payroll.process. Set on the invite form
+// or a staff member's page; "Run payroll" fills its gross from them.
+export function listStaffSalaries(): Promise<StaffSalaryDto[]> {
+  return apiFetch<StaffSalaryDto[]>("/payroll/salaries", { method: "GET" });
+}
+
+export function setStaffSalary(userId: string, input: SetStaffSalaryInput): Promise<StaffSalaryDto> {
+  return apiFetch<StaffSalaryDto>(`/payroll/salaries/${encodeURIComponent(userId)}`, { method: "PUT", body: input });
 }

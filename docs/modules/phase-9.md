@@ -5639,3 +5639,153 @@ of it there, and seven real gaps.
   - `exeat-form.spec.ts`, `library.spec.ts`, `days.spec.ts`;
   - the menu spec (Incidents);
   - the staff-keys spec (`staffSickbayDay`, `staffBehaviourIncidents`).
+
+## 21. The owner's list after Phase 9 (2026-10-19)
+
+Six items, asked for together and shipped as one pull request (the owner's
+rule from 2026-10-18: one PR for what used to be two or three). Built while the
+owner was away, on their instruction, for review before merging.
+
+### 21.1 The admin menu, grouped into families
+
+The admin menu had 31 items in one column. They are now folded into sections a
+member of staff would recognise (`apps/web/src/components/admin/nav-groups.ts`):
+
+| Section | Pages |
+|---|---|
+| (alone) | Dashboard |
+| People | Students, Guardians, Staff, Enrollments, Admissions |
+| Teaching | Timetable, Lesson plans, Curriculum, Homework, Question bank |
+| Exams & results | Gradebook, Exam papers, Online exams, Report Cards, Result Checker |
+| Student care | Behaviour, Health, Sickbay |
+| School services | Transport, Library, Hostels, Boarding |
+| Money | Finance (one page, so shown alone; its own tabs hold the rest) |
+| Messages & events | Messages, Announcements, School news, Event Calendar |
+| Reports & insights | Reports, Insights |
+| School setup | Academics, Grading, Settings |
+| (alone) | My profile |
+
+The teacher menu uses the same machinery: My classes, Lessons, Exams & results,
+School, with Dashboard and Profile alone.
+
+Rules the menu keeps, so it never becomes a maze (`buildNavBlocks`):
+
+- **Eight pages or fewer: a plain list, no sections** (a librarian, a bursar).
+- **A section with one visible page is just the page** — nothing to open.
+- **The section holding the current page is always open**; the ones someone
+  opened stay open on their next visit (`localStorage`, per browser, wrapped in
+  try/catch).
+- **"Find a page"** at the top of a grouped menu, and the ⌘K search, match a
+  page's name, its section, or everyday words (`keywords`: "fees" → Finance,
+  "parents" → Guardians, "exeat" → Boarding).
+- The page lit is the **longest matching path**, so `/report-cards/pins` lights
+  Result Checker alone (before, Report Cards lit too), and daily and subject
+  attendance no longer both light up.
+- The first-login tour opens a stop's section before pointing at it
+  (`revealNavItem`, a layout effect so it lands before the tour measures).
+
+### 21.2 Every role's menu (the audit)
+
+All menu links went to pages that exist; the gaps were about roles:
+
+- **⌘K search listed every admin page to everyone.** It now searches the
+  person's own menu (`CommandDialog items`).
+- **Settings → Security** was shown to admins, but two-factor is the owner's
+  (`auth.2fa.manage`); the card is now gated on it.
+- **An owner or admin following a cross-shell link** (Lesson plans, Question
+  bank…) got the whole teacher menu, where Classes, Attendance and the rest
+  refuse anyone without a timetable. They now see only those pages and
+  **Back to admin**.
+- **Curriculum** had no admin menu entry; added (Teaching, `curriculum.read`).
+  The seed's admin grant lacked `PHASE_7_PERMISSIONS` although migration
+  `20260903090000` grants them and says the seed does too; added.
+- **My profile** (BVN for payroll) was reachable only from Settings, which a
+  bursar, health officer, librarian or house master cannot open; now a menu
+  item for everyone.
+- **School news** — staff could read announcements only in the phone app. New
+  page `/news` (and `/teacher/news`) on `announcement.read`, hidden from anyone
+  holding `announcement.create`, who has the sending desk instead
+  (`hiddenWithPermission`). Opening it marks what it shows as read.
+- **Admissions officer, principal, head teacher, Inbox officer held alone**
+  landed on the teacher dashboard and a menu that refused them; they now go to
+  `/admissions` or `/messages` in the admin shell, with a permission-filtered
+  menu.
+
+Not changed: the paystack-setup permissions are in no seed grant; their routes
+carry no permission decorator, so nothing is blocked today.
+
+### 21.3 Phone fit: the student page and Expenses
+
+- **Student page:** five tabs in one underlined row were wider than a phone, so
+  Health and Behaviour sat past the edge. Below `sm` they wrap into rounded
+  buttons (the SectionTabs pattern); long emails and addresses wrap.
+- **Expenses:** four header buttons in one row ran off the screen; they wrap.
+- `e2e/tests/phone-fit.spec.ts` now measures `/finance/expenses` (with a
+  recorded expense) and the student page on each of its five tabs, at 390 and
+  430 px.
+
+### 21.4 Debtor reminders: "no guardian email"
+
+**Cause:** the reminder read only the guardian marked **primary**, and a
+guardian added from the student's Guardians tab or the guardians import is not
+primary unless someone ticks the box. Most children with a guardian and an
+email were skipped, and the page said "no guardian email" for every skip
+whatever the cause.
+
+**Fix** (`FinanceService.sendReminders`):
+
+- Every guardian linked to the child, primary first.
+- **Email goes to each one with an address**, except one that bounced or was
+  reported as spam (`email_suppressions` scope `ALL`). An announcements
+  unsubscribe does not stop it: a fee reminder is the school's own business.
+- **Push and SMS go to one guardian** (the first with a phone), so the school
+  pays for one text.
+- The result says why each skip happened — `skippedBy` {`NO_BALANCE`,
+  `NO_GUARDIAN`, `NO_CONTACT`, `NOT_DELIVERED`} and `noChannel` when email, SMS
+  and push are all off or not set up — and `reminderResultText` turns that into
+  the line the page shows (amber when nothing was sent).
+- The log line no longer prints the address.
+
+Tests: `finance.service.spec.ts` — a non-primary guardian is emailed; every
+guardian with an email is, except a bounced one; each skip reason; channels
+off.
+
+### 21.5 A salary on the invite, linked to payroll
+
+- **`staff_salaries`** (migration `20261112120000_staff_salaries`): one current
+  monthly gross per staff member, kobo, FORCE RLS `tenant_isolation`, shaped
+  like `staff_bank_accounts`. The PayrollItem D2 prefill, now asked for.
+- **`invitations.pending_monthly_gross`**: a salary typed on the invite form,
+  moved into `staff_salaries` in the accept transaction and audited as
+  `staff-salary.set` by the inviter (`source: "invitation"`). Resending keeps
+  it. The invite's own audit row records only `salaryPending`.
+- **Permission:** `payroll.process`. The invite form shows the box only to
+  someone holding it; `UsersService.invite` refuses a salary otherwise
+  (`userHoldsPermission`). Owner and admin hold it today.
+- **API:** `GET /payroll/salaries`, `PUT /payroll/salaries/:userId`, both
+  `payroll.process`; each change audited with the old and new amounts.
+- **Web:** the invite form's "Monthly salary in naira"; a **Monthly salary**
+  section on the staff page; **Run payroll** fills the gross from the saved
+  salary when a person is chosen, editable for that month. Changing a saved
+  salary never changes a month already on the payroll.
+- The payroll page converted naira with `Math.round(parseFloat(x) * 100)`; it
+  now uses `nairaInputToKobo` (string arithmetic), per the money rule.
+- No new permission and no SECURITY DEFINER function: accept reads the
+  invitation by id under the school's GUC. Count stays 23.
+
+Tests: `payroll/staff-salary.spec.ts` (accept moves it and audits; resend keeps
+it; none set when none typed; who may set pay; validation; set and change with
+audit; tenant isolation). `e2e/tests/menu-families-and-salary.spec.ts` drives
+the invite form, the staff page and Run payroll.
+
+### 21.6 The onboarding guide
+
+`docs/onboarding-guide.md` (also the in-app **Getting started guide**) now
+describes the menu sections and Find a page, the new invite roles and the salary
+box, reminders going to every guardian and saying why one was not sent, payroll
+prefill, every role in "Who does what", and two new problems ("I can't find a
+page", "a reminder says not sent").
+
+**Standing rule from the owner (2026-10-19):** after every build, before the
+next one, update the onboarding guide and the docs, unless the change does not
+touch anything they describe. Recorded in CLAUDE.md.

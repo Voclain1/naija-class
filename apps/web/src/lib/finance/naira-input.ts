@@ -10,3 +10,11 @@ export function nairaInputToKobo(input: string): number | null {
   const total = naira * 100 + kobo;
   return Number.isSafeInteger(total) && total > 0 ? total : null;
 }
+
+// The other way, for pre-filling a naira box from a saved kobo amount
+// ("15000000" -> "150000", "12345" -> "123.45"). Integer arithmetic only.
+export function koboToNairaInput(kobo: number): string {
+  const naira = Math.floor(kobo / 100);
+  const rest = kobo % 100;
+  return rest === 0 ? String(naira) : `${naira}.${String(rest).padStart(2, "0")}`;
+}

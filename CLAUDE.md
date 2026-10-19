@@ -156,7 +156,7 @@ owned by Phase 5's own plan-first; see `docs/deferred.md` for the draft.
 
 ### Git
 
-- Never commit to `main`. PR per module.
+- Never commit to `main`. Every change goes through a PR (bundled — see Git conventions).
 - Never commit `.env`, `.env.*`, secrets, `dist/`, `.next/`, `node_modules/`, or generated Prisma client.
 - `.env.example` is committed and stays in sync with required keys.
 
@@ -833,6 +833,11 @@ frequently-displayed branding/media asset" case:
 11. Build mobile UI in `apps/mobile/src/screens/<module>/` if user-facing for parents/students.
 12. Add at least one E2E test for the happy path.
 13. Update `docs/modules/<module>.md` with anything that changed.
+14. Update `docs/onboarding-guide.md` (it is also the in-app **Getting started
+    guide**) for anything a school would see differently. **Owner's standing
+    rule (2026-10-19): after every build, before starting the next, update the
+    onboarding guide and the docs**, unless the change touches nothing they
+    describe.
 
 ## Dev commands
 
@@ -884,7 +889,9 @@ coverage summary (CI sets it; `apps/api` and `apps/web` only).
 - Branches: `<phase>/<module>` e.g. `phase-2/attendance`, or `fix/<short>`.
 - Commits: conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`).
 - PR title: scope + summary, e.g. `feat(attendance): daily marking with SMS alert`.
-- One module = one PR. Squash on merge.
+- Squash on merge. Since 2026-10-18 (the owner's rule) one PR carries what
+  used to be two or three slices: bundle related slices rather than opening a
+  PR per slice.
 
 ## Environment variables
 

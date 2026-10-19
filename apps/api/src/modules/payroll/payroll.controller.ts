@@ -5,14 +5,19 @@ import {
   HttpCode,
   Ip,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
 import {
   createPayrollItemSchema,
+  setStaffSalarySchema,
   updatePayrollItemSchema,
+  type SetStaffSalaryInput,
+  type StaffSalaryDto,
   type CreatePayrollItemInput,
   type ListPayrollQuery,
   type PayrollItemDto,
@@ -49,6 +54,26 @@ export class PayrollController {
       ...(userId ? { userId } : {}),
     };
     return this.service.findAll(authCtx, query);
+  }
+
+  // Saved monthly salaries (2026-10-19). Declared before ":id" so the word
+  // "salaries" is never read as a payroll item id. payroll.process for both:
+  // reading what each person earns is the same tier as setting it.
+  @Get("salaries")
+  @Permissions("payroll.process")
+  async listSalaries(@CurrentUser() authCtx: AuthContext): Promise<StaffSalaryDto[]> {
+    return this.service.listSalaries(authCtx);
+  }
+
+  @Put("salaries/:userId")
+  @Permissions("payroll.process")
+  async setSalary(
+    @Param("userId", new ParseUUIDPipe()) userId: string,
+    @Body(new ZodValidationPipe(setStaffSalarySchema)) dto: SetStaffSalaryInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+  ): Promise<StaffSalaryDto> {
+    return this.service.setSalary(authCtx, userId, dto, { ipAddress: ip });
   }
 
   @Get(":id")

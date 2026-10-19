@@ -55,6 +55,7 @@ import {
   PHASE_4_PERMISSIONS,
   PHASE_5_PERMISSIONS,
   PHASE_5_TEACHER_PERMISSIONS,
+  PHASE_7_PERMISSIONS,
   PHASE_7_TEACHER_PERMISSIONS,
   SMART_IMPORT_PERMISSIONS,
 } from "@school-kit/types";
@@ -90,6 +91,11 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Phase 5 / Slice 2 — lesson-plan CRUD + ai-usage.read. No owner-only
   // subset: nothing here moves money or deletes an academic record.
   ...PHASE_5_PERMISSIONS,
+  // Phase 7 / CP2 — the curriculum library. Migration
+  // 20260903090000_phase_7_cp2_curriculum_ingestion grants these to the admin
+  // row and says this seed does the same, but it never did (found
+  // 2026-10-19 by the role audit): a freshly seeded admin had no Curriculum.
+  ...PHASE_7_PERMISSIONS,
   // Admin dashboard (2026-08-21). ADMIN_DASHBOARD_PERMISSIONS was spliced into
   // ALL_PERMISSIONS when the dashboard shipped and GET /dashboard has always
   // been guarded by it, but the admin role was never granted it — so every

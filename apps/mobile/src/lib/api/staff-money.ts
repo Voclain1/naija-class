@@ -12,6 +12,7 @@ import type {
   SendRemindersInput,
   SendRemindersResult,
 } from "@school-kit/types";
+import { REMINDER_SKIP_REASONS } from "@school-kit/types";
 
 import { apiFetch } from "./client";
 import { uploadMultipart } from "./native-upload";
@@ -36,19 +37,27 @@ import { reminderBatches } from "../staff/money";
 export async function staffSendReminders(
   termId: string,
   studentIds: readonly string[],
-): Promise<{ sent: number; skipped: number; batchesSent: number; batchesTotal: number }> {
+): Promise<SendRemindersResult & { batchesSent: number; batchesTotal: number }> {
   const batches = reminderBatches(studentIds);
-  let sent = 0;
-  let skipped = 0;
+  // Totals across batches, reasons included (2026-10-19), so the screen can
+  // say why a family was not reached, as the website does.
+  const total: SendRemindersResult = {
+    sent: 0,
+    skipped: 0,
+    skippedBy: { NO_BALANCE: 0, NO_GUARDIAN: 0, NO_CONTACT: 0, NOT_DELIVERED: 0 },
+    noChannel: false,
+  };
   let batchesSent = 0;
   for (const batch of batches) {
     const body: SendRemindersInput = { termId, studentIds: [...batch] };
     const result = await apiFetch<SendRemindersResult>("/finance/debtors/remind", { method: "POST", body });
-    sent += result.sent;
-    skipped += result.skipped;
+    total.sent += result.sent;
+    total.skipped += result.skipped;
+    for (const reason of REMINDER_SKIP_REASONS) total.skippedBy[reason] += result.skippedBy?.[reason] ?? 0;
+    total.noChannel = total.noChannel || Boolean(result.noChannel);
     batchesSent += 1;
   }
-  return { sent, skipped, batchesSent, batchesTotal: batches.length };
+  return { ...total, batchesSent, batchesTotal: batches.length };
 }
 
 /**

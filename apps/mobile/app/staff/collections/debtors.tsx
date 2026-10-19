@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Redirect, Stack, useRouter } from "expo-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { FEE_RISK_LEVEL_LABELS, FEE_RISK_LEVELS, formatKobo, type FeeRiskLevel } from "@school-kit/types";
+import { FEE_RISK_LEVEL_LABELS, FEE_RISK_LEVELS, formatKobo, reminderResultText, type FeeRiskLevel } from "@school-kit/types";
 
 import { staffDebtors } from "../../../src/lib/api/staff-finance";
 import { staffSendReminders } from "../../../src/lib/api/staff-money";
@@ -84,11 +84,8 @@ export default function DebtorsScreen() {
       setNotice(null);
       setRemindFailure(null);
     },
-    onSuccess: (result) =>
-      setNotice(
-        `Reminders sent to ${result.sent} famil${result.sent === 1 ? "y" : "ies"}.` +
-          (result.skipped > 0 ? ` ${result.skipped} could not be reached (no main contact, or already paid).` : ""),
-      ),
+    // Why a family was not reached, in the website's words (reminderResultText).
+    onSuccess: (result) => setNotice(reminderResultText(result)),
     onError: (error) =>
       setRemindFailure(
         error instanceof ApiNetworkError

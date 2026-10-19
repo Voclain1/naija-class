@@ -50,9 +50,43 @@ export type SendRemindersInput = z.infer<typeof sendRemindersSchema>;
 // Response DTO — reminder send result
 // ---------------------------------------------------------------------------
 
+/**
+ * Why a debtor got no reminder (2026-10-19). Before this the page said "no
+ * guardian email" for every skip, whatever the cause, so a school whose
+ * guardians all had emails was told they had none.
+ */
+export const REMINDER_SKIP_REASONS = ["NO_BALANCE", "NO_GUARDIAN", "NO_CONTACT", "NOT_DELIVERED"] as const;
+export type ReminderSkipReason = (typeof REMINDER_SKIP_REASONS)[number];
+
 export interface SendRemindersResult {
   sent: number;
   skipped: number;
+  /** The skips, by reason. Sums to `skipped`. */
+  skippedBy: Record<ReminderSkipReason, number>;
+  /**
+   * True when no channel could be tried at all: email, SMS and app alerts are
+   * all switched off in Settings, or email and SMS are not set up on the
+   * server. Every debtor is then skipped, and the reason is the school's
+   * settings, not the families.
+   */
+  noChannel: boolean;
+}
+
+const SKIP_TEXT: Record<ReminderSkipReason, (n: number) => string> = {
+  NO_BALANCE: (n) => `${n} no longer owe${n === 1 ? "s" : ""} anything this term`,
+  NO_GUARDIAN: (n) => `${n} ${n === 1 ? "has" : "have"} no parent or guardian linked`,
+  NO_CONTACT: (n) => `${n} ${n === 1 ? "has" : "have"} a guardian with no email, phone or app`,
+  NOT_DELIVERED: (n) => `${n} could not be delivered`,
+};
+
+/** The line the debtors page shows after sending, in words a bursar acts on. */
+export function reminderResultText(r: SendRemindersResult): string {
+  const head = `Reminders sent for ${r.sent} student${r.sent === 1 ? "" : "s"}.`;
+  if (r.noChannel) {
+    return `${head} None could be sent: email, SMS and app alerts are all off or not set up. Turn one on in Settings → Notifications.`;
+  }
+  const parts = REMINDER_SKIP_REASONS.filter((k) => r.skippedBy[k] > 0).map((k) => SKIP_TEXT[k](r.skippedBy[k]));
+  return parts.length ? `${head} Not sent: ${parts.join("; ")}.` : head;
 }
 
 // ---------------------------------------------------------------------------

@@ -27,8 +27,23 @@ const PHONES = [390, 430];
 
 // Set once the structure exists: the invoice list is filtered by this arm.
 const ARM_NAME = { value: "" };
+// Set once a student exists: their own page, each tab in turn (2026-10-19,
+// the owner: "the student page is not optimised for phones, it overflows and
+// cuts off").
+const STUDENT_ID = { value: "" };
 
-const PAGES: Array<{ path: string; ready: (page: Page) => Promise<unknown> }> = [
+function studentTab(tab: string) {
+  return {
+    path: "/students/[student]",
+    label: `/students/:id (${tab})`,
+    ready: async (page: Page) => {
+      await page.getByRole("tab", { name: tab }).click({ timeout: 120_000 });
+      await page.waitForTimeout(1500);
+    },
+  };
+}
+
+const PAGES: Array<{ path: string; label?: string; ready: (page: Page) => Promise<unknown> }> = [
   {
     path: "/finance/dashboard",
     ready: (page) =>
@@ -79,6 +94,13 @@ const PAGES: Array<{ path: string; ready: (page: Page) => Promise<unknown> }> = 
     ready: (page) => page.locator("main table tbody tr").first().waitFor({ timeout: 120_000 }),
   },
   { path: "/students", ready: (page) => page.locator("main table tbody tr").first().waitFor({ timeout: 120_000 }) },
+  // A recorded expense, so the list and its buttons have a row to lay out.
+  { path: "/finance/expenses", ready: (page) => page.locator("main table tbody tr").first().waitFor({ timeout: 120_000 }) },
+  studentTab("Bio"),
+  studentTab("Guardians"),
+  studentTab("Enrollments"),
+  studentTab("Health"),
+  studentTab("Behaviour"),
   { path: "/staff", ready: (page) => page.locator("main table tbody tr").first().waitFor({ timeout: 120_000 }) },
   // Phase 9 / CP3.1 — the Health page's student list.
   { path: "/health", ready: (page) => page.locator("main ul li a").first().waitFor({ timeout: 120_000 }) },
@@ -136,18 +158,33 @@ test("admin pages fit a phone screen: nothing past the right edge", async ({ bro
   });
   expect(visit.ok(), await visit.text()).toBe(true);
 
+  STUDENT_ID.value = scaffold.students[0]!.id;
+  const category = await admin.api.post("expense-categories", { data: { name: `Diesel ${uniqueSuffix()}` } });
+  expect(category.ok(), await category.text()).toBe(true);
+  const expense = await admin.api.post("expenses", {
+    data: {
+      categoryId: ((await category.json()) as { id: string }).id,
+      amount: 4_550_000,
+      description: "Diesel for the school generator, two drums from the depot on the expressway",
+      incurredAt: new Date().toISOString().slice(0, 10),
+    },
+  });
+  expect(expense.ok(), await expense.text()).toBe(true);
+
   const problems: string[] = [];
   for (const width of PHONES) {
     await admin.page.setViewportSize({ width, height: 900 });
-    for (const { path, ready } of PAGES) {
+    for (const { path: template, label, ready } of PAGES) {
+      const path = template.replace("[student]", STUDENT_ID.value);
+      const name = label ?? path;
       await admin.page.goto(path, { waitUntil: "domcontentloaded" });
       await ready(admin.page);
       await admin.page.waitForTimeout(500);
       const { vw, measured, out } = await pastTheEdge(admin.page);
-      expect(measured, `${path} @${width}px measured nothing — the page did not render`).toBeGreaterThan(20);
+      expect(measured, `${name} @${width}px measured nothing — the page did not render`).toBeGreaterThan(20);
       // Collected, not asserted one by one: a fix for one page should not
       // hide the next page's problem until the following run.
-      if (out.length) problems.push(`${path} @${width}px (screen ${vw}px): ${out.join(" ~ ")}`);
+      if (out.length) problems.push(`${name} @${width}px (screen ${vw}px): ${out.join(" ~ ")}`);
     }
   }
   expect(problems, problems.join("\n")).toEqual([]);

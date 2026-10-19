@@ -166,7 +166,12 @@ describe("money bindings", () => {
   }
 
   it("sends reminders in valid batches and totals the results", async () => {
-    const perBatch: SendRemindersResult = { sent: 2, skipped: 1 };
+    const perBatch: SendRemindersResult = {
+      sent: 2,
+      skipped: 1,
+      skippedBy: { NO_BALANCE: 0, NO_GUARDIAN: 1, NO_CONTACT: 0, NOT_DELIVERED: 0 },
+      noChannel: false,
+    };
     respond(perBatch);
     const ids = Array.from({ length: 60 }, (_, i) => uuid(i));
     const result = await staffSendReminders(TERM, ids);
@@ -176,7 +181,14 @@ describe("money bindings", () => {
       expect(url).toMatch(/\/finance\/debtors\/remind$/);
       expect(sendRemindersSchema.safeParse(JSON.parse(init.body as string)).success).toBe(true);
     }
-    expect(result).toEqual({ sent: 4, skipped: 2, batchesSent: 2, batchesTotal: 2 });
+    expect(result).toEqual({
+      sent: 4,
+      skipped: 2,
+      skippedBy: { NO_BALANCE: 0, NO_GUARDIAN: 2, NO_CONTACT: 0, NOT_DELIVERED: 0 },
+      noChannel: false,
+      batchesSent: 2,
+      batchesTotal: 2,
+    });
   });
 
   it("stops at the first failed batch — a sent reminder cannot be unsent, so nothing is retried", async () => {

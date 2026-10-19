@@ -13,6 +13,7 @@ import type {
 
 import { BooksOutField } from "@/components/library/books-out";
 import { BvnSection } from "@/components/staff/bvn-section";
+import { SalarySection } from "@/components/staff/salary-section";
 import { TeacherAssignmentsSection } from "@/components/staff/teacher-assignments-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -181,6 +182,9 @@ export default function StaffDetailPage() {
 
       {/* BVN — staff-wide payroll identifier, not teacher-specific */}
       <BvnSection mode="other" userId={userId} />
+
+      {/* 2026-10-19 — saved monthly salary, read by Finance → Payroll (payroll.process only). */}
+      <SalarySection userId={userId} />
 
       {/* Phase 9 / CP6.1 — library books this person has out (library.read only). */}
       <dl className="grid grid-cols-1 gap-x-6 gap-y-3 rounded-md border bg-card p-4 empty:hidden sm:grid-cols-2">

@@ -12,6 +12,7 @@ import {
   type RevenueTrajectoryDto,
   type SendRemindersInput,
   type SendRemindersResult,
+  type ReminderSkipReason,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
@@ -29,6 +30,7 @@ import { NotificationPreferencesService } from "../notifications/notification-pr
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service.js";
 import { smsSenderFor } from "../../common/termii/sms-sender";
 import { computeFeeRisks } from "./fee-risk.js";
+import { blockedAddresses } from "../announcements/announcement-email.shared.js";
 
 // onModuleInit must never block NestFactory.create() indefinitely. Same fix
 // as PartitionService (see docs/deferred.md's "recurring dev-server bootstrap
@@ -39,6 +41,8 @@ import { computeFeeRisks } from "./fee-risk.js";
 // legitimately has more work per call (a school loop, not 3 fixed calls), so
 // it gets more headroom before we give up and let boot continue anyway.
 const ON_MODULE_INIT_TIMEOUT_MS = 10000;
+
+const NO_SKIPS: Record<ReminderSkipReason, number> = { NO_BALANCE: 0, NO_GUARDIAN: 0, NO_CONTACT: 0, NOT_DELIVERED: 0 };
 
 // ---------------------------------------------------------------------------
 // FinanceService — cross-entity aggregation: debtor list, OVERDUE cron, email
@@ -575,7 +579,7 @@ export class FinanceService implements OnModuleInit {
           `smsEnabled=${channels.sms}, smsConfigured=${this.termii.isConfigured}, ` +
           `pushEnabled=${channels.push})`,
       );
-      return { sent: 0, skipped: dto.studentIds.length };
+      return { sent: 0, skipped: dto.studentIds.length, skippedBy: { ...NO_SKIPS }, noChannel: true };
     }
 
     return withTenant(authCtx.schoolId, async (db) => {
@@ -589,6 +593,11 @@ export class FinanceService implements OnModuleInit {
 
       let sent = 0;
       let skipped = 0;
+      const skippedBy = { ...NO_SKIPS };
+      const skip = (reason: ReminderSkipReason) => {
+        skipped++;
+        skippedBy[reason]++;
+      };
 
       for (const studentId of dto.studentIds) {
         // Load the outstanding invoices for this student in the specified
@@ -605,7 +614,7 @@ export class FinanceService implements OnModuleInit {
           orderBy: { sequence: "asc" },
         });
         if (outstanding.length === 0) {
-          skipped++;
+          skip("NO_BALANCE");
           continue;
         }
         const dueDates = outstanding.flatMap((i) => (i.dueDate ? [i.dueDate] : []));
@@ -621,16 +630,40 @@ export class FinanceService implements OnModuleInit {
           select: { firstName: true, lastName: true },
         });
 
-        // Load primary guardian contact info (same pattern as Slice 8 initPaystack).
-        const guardianLink = await db.studentGuardian.findFirst({
-          where: { studentId, isPrimary: true },
+        // Every guardian linked to the child, primary first (2026-10-19).
+        // This read only the PRIMARY guardian, and a guardian added from the
+        // student's Guardians tab or the guardians import is not primary
+        // unless someone ticks the box — so most children with a guardian
+        // and an email got no reminder, reported as "no guardian email".
+        //   * Email goes to every linked guardian with an address that has
+        //     not bounced or been reported as spam (a fee reminder is the
+        //     school's own business, so an announcements unsubscribe does not
+        //     stop it).
+        //   * Push and SMS go to one guardian only — the first with a phone,
+        //     else the first — so the school pays for one text, not three.
+        const links = await db.studentGuardian.findMany({
+          where: { studentId },
+          orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
           select: {
             guardian: { select: { id: true, email: true, phone: true, firstName: true } },
           },
         });
-        const guardianEmail = guardianLink?.guardian?.email;
-        const guardianPhone = guardianLink?.guardian?.phone;
-        const guardianId = guardianLink?.guardian?.id;
+        if (links.length === 0) {
+          skip("NO_GUARDIAN");
+          continue;
+        }
+        const guardians = links.map((l) => l.guardian);
+        const lead = guardians.find((g) => g.phone) ?? guardians[0]!;
+        const addressed = guardians.flatMap((g) => {
+          const email = g.email?.trim().toLowerCase();
+          return email ? [{ email, firstName: g.firstName }] : [];
+        });
+        const blocked = emailAttemptable
+          ? await blockedAddresses(db, authCtx.schoolId, addressed.map((a) => a.email))
+          : new Map<string, string>();
+        const emailTo = [...new Map(addressed.filter((a) => blocked.get(a.email) !== "SUPPRESSED").map((a) => [a.email, a])).values()];
+        const guardianPhone = lead.phone;
+        const guardianId = lead.id;
         // Push is reachable whenever a guardian exists — it needs no contact
         // detail on the row, because the address is a device token the parent
         // registered themselves. That is why it is not part of the
@@ -638,14 +671,14 @@ export class FinanceService implements OnModuleInit {
         const pushReachable = pushAttemptable && !!guardianId;
 
         if (
-          (!emailAttemptable || !guardianEmail) &&
+          (!emailAttemptable || emailTo.length === 0) &&
           (!smsAttemptable || !guardianPhone) &&
           !pushReachable
         ) {
           this.logger.warn(
             `No usable guardian contact info on an enabled channel for student ${studentId} — skipping`,
           );
-          skipped++;
+          skip("NO_CONTACT");
           continue;
         }
 
@@ -660,18 +693,16 @@ export class FinanceService implements OnModuleInit {
         const studentName = student
           ? `${student.firstName} ${student.lastName}`
           : "your child";
-        const guardianFirstName = guardianLink?.guardian?.firstName ?? "Parent/Guardian";
-
         let sentAny = false;
 
-        if (emailAttemptable && guardianEmail) {
+        for (const to of emailAttemptable ? emailTo : []) {
           try {
             await this.email.send({
-              to: guardianEmail,
+              to: to.email,
               subject: `Fee reminder from ${school.name}`,
               schoolName: school.name,
               html: buildReminderHtml({
-                guardianFirstName,
+                guardianFirstName: to.firstName ?? "Parent/Guardian",
                 studentName,
                 schoolName: school.name,
                 balance,
@@ -680,7 +711,7 @@ export class FinanceService implements OnModuleInit {
             });
             sentAny = true;
           } catch (err) {
-            this.logger.error(`Failed to email reminder to ${guardianEmail}: ${String(err)}`);
+            this.logger.error(`Failed to email a fee reminder for student ${studentId}: ${String(err)}`);
           }
         }
 
@@ -735,11 +766,11 @@ export class FinanceService implements OnModuleInit {
         }
 
         if (sentAny) sent++;
-        else skipped++;
+        else skip("NOT_DELIVERED");
       }
 
       this.logger.log(`Reminders: sent=${sent} skipped=${skipped} school=${authCtx.schoolId}`);
-      return { sent, skipped };
+      return { sent, skipped, skippedBy, noChannel: false };
     });
   }
 

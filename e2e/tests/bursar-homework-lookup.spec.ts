@@ -12,6 +12,7 @@ import {
   loginAsTeacher,
   setupAcademicStructure,
   uniqueSuffix,
+  openFromMenu,
 } from "../fixtures/index.js";
 
 // A bursar looks up a class's homework at the counter (pre-build audit,
@@ -69,7 +70,7 @@ test("a bursar looks up what a class has been set", async ({ browser }) => {
   try {
     const page = bursar.page;
     await page.goto("/finance/dashboard");
-    await page.getByRole("link", { name: "Homework" }).first().click();
+    await openFromMenu(page, "Homework");
     await expect(page.getByRole("heading", { name: "Homework", level: 1 })).toBeVisible({ timeout: 60_000 });
     await page.getByLabel("Class").selectOption({ label: "JSS 3 Green" });
     await expect(page.getByText(`Exercise 4 ${suffix}`)).toBeVisible({ timeout: 30_000 });
