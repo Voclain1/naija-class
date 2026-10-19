@@ -53,7 +53,10 @@ export function SectionTabs({
   // The existing responsive contract stays: wrap below lg, retain a desktop
   // scrollport as a safety net. One set of links, same route/dirty guards.
   const tabs = (
-    <nav aria-label={ariaLabel} className="min-w-0 flex-1 lg:overflow-x-auto">
+    <nav
+      aria-label={ariaLabel}
+      className={cn("min-w-0 flex-1 lg:overflow-x-auto", actions && "xl:flex-[1_1_max-content]")}
+    >
       <div className="flex flex-wrap gap-2 text-sm lg:min-w-max lg:flex-nowrap">
         {items.map((item) => {
           const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
@@ -87,12 +90,12 @@ export function SectionTabs({
   // scrolled), which is why the scrollability check in a11y-wave3a passed
   // while the row was barely usable.
   //
-  // xl, not lg: at 1024px the admin sidebar leaves roughly 720px, less than
-  // seven tabs plus the button. The breakpoint is enforced by measurement in
-  // e2e/tests/finance-section-row.spec.ts across 390-1440px, not by this
-  // comment.
+  // At xl, use the tabs' intrinsic width as the flex basis and allow the
+  // action to wrap. A viewport breakpoint alone cannot account for wider
+  // pill tabs, the sidebar and body type. Keep the whole strip available
+  // before sharing a row; finance-section-row.spec.ts measures this.
   return (
-    <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:gap-3">
+    <div className="flex flex-col gap-2 xl:flex-row xl:flex-wrap xl:items-end xl:gap-3">
       {tabs}
       <div className="flex shrink-0 items-center justify-end gap-2 xl:pb-1">{actions}</div>
     </div>

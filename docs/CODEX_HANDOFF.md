@@ -194,6 +194,8 @@ This section used to be a running log; the log below it stopped on
 2026-09-01 and several of its "in progress" entries have since merged.
 Treat it as history. The current picture:
 
+- **PR #463 merge gate:** owner approved deployment and auto-merge is enabled. The first full e2e run failed four checks: three old serif-dependent assertions/selectors and a real finance tab/action squeeze. Follow-up fixes update selectors/expected computed family, wrap actions by intrinsic width, and size long amounts by card width (tablet review). Recheck CI before reporting live. Native release is still separate and not published.
+
 - **UI-only review branch (second pass after owner feedback):** `design/app-visual-refresh`. Shared web/portal and
   Expo presentation refreshed, with no business logic or navigation changes.
   The approved direction now rolls through staff/parent root styles and
