@@ -101,6 +101,8 @@ export const config = {
     "/announcements/:path*",
     // School news, the staff reading view of announcements (2026-10-19).
     "/news/:path*",
+    // ID cards (2026-10-19).
+    "/id-cards/:path*",
     // The homework lookup, added 2026-10-14 in the same PR as the page.
     "/homework/:path*",
     // Behaviour incidents (Phase 9 / CP2.2), added in the same PR as the page.

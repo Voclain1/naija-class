@@ -98,6 +98,7 @@ export const queryKeys = {
   myAnnouncements: ["me", "announcements"] as const,
   // Phase 9 / CP6.2 — the student's own library books out.
   myLibrary: ["me", "library"] as const,
+  myIdCard: ["me", "id-card"] as const,
   // Phase 9 / CP6.3 — PDFs and links for the student's class.
   myLibraryResources: ["me", "library", "resources"] as const,
 

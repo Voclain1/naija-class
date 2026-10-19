@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  IdCard,
   BookOpenCheck,
   Bus,
   BedDouble,
@@ -94,6 +95,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Phase 9 / CP7.1 — admission applications (docs/modules/phase-9.md §16.8).
   // admission.read: owner, admin and Admissions officers.
   { label: "Admissions", href: "/admissions", icon: Inbox, group: "students", keywords: ["applications", "apply", "new students"], enabled: true, requiredPermission: "admission.read" },
+  // ID cards (2026-10-19, docs/modules/id-cards-and-store.md §3): owner and admin.
+  { label: "Student ID cards", href: "/id-cards/students", icon: IdCard, group: "students", keywords: ["identity card", "badge", "photo", "print cards"], enabled: true, requiredPermission: "id-card.read" },
+  { label: "Staff ID cards", href: "/id-cards/staff", icon: IdCard, group: "staff", keywords: ["identity card", "badge", "staff card"], enabled: true, requiredPermission: "id-card.read" },
   // Phase 8 / CP3 (docs/modules/phase-8.md §17 D36). Promoted from "Coming soon".
   // Gated on timetable.read — owner/admin only in CP3; teacher, student and
   // guardian timetable views are CP4's.

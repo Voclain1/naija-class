@@ -18,6 +18,7 @@ import type {
   FamilyAssignmentListResponse,
   MyAssignmentDto,
   SubmitWorkInput,
+  MyIdCardDto,
 } from "@school-kit/types";
 
 import type { AnnouncementFeedResponse, HomeworkFeedResponse } from "@school-kit/types";
@@ -218,4 +219,9 @@ export function studentLibraryResources(): Promise<StudentLibraryResourcesDto> {
 
 export function studentLibraryResourceFile(id: string): Promise<LibraryResourceUrlDto> {
   return apiFetch<LibraryResourceUrlDto>(`/student-portal/me/library/resources/${encodeURIComponent(id)}/file`);
+}
+
+// ID cards (2026-10-19): the student's own card, if the school has issued one.
+export function studentMyIdCard(): Promise<MyIdCardDto> {
+  return apiFetch<MyIdCardDto>("/student-portal/me/id-card", { method: "GET" });
 }
