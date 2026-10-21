@@ -254,7 +254,10 @@ describe("eas.json — build profiles", () => {
     build: Record<string, { env?: Record<string, string>; distribution?: string }>;
   };
 
-  const PRODUCTION_API = "https://school-kit-api.fly.dev/api/v1";
+  // The custom domain, never the platform hostname (`school-kit-api.fly.dev`).
+  // A published app keeps this address until every phone updates, so it must
+  // survive a move off the current host: only DNS changes, not the app.
+  const PRODUCTION_API = "https://api.schoolkit.ng/api/v1";
 
   it("defines the three profiles the build scripts invoke", () => {
     // package.json's build:dev / build:preview / build:production name these

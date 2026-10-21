@@ -18,7 +18,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://school-kit-api.fly.dev/api/v1",
+        "EXPO_PUBLIC_API_URL": "https://api.schoolkit.ng/api/v1",
         "EXPO_PUBLIC_WEB_URL": "https://app.schoolkit.ng"
       }
     },
@@ -41,7 +41,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://school-kit-api.fly.dev/api/v1",
+        "EXPO_PUBLIC_API_URL": "https://api.schoolkit.ng/api/v1",
         "EXPO_PUBLIC_WEB_URL": "https://app.schoolkit.ng"
       }
     }

@@ -14,7 +14,7 @@
 //
 // Why it is gated on an env var rather than just set:
 //   Allowing cleartext weakens the app. It must never reach a production or
-//   preview build, both of which talk to `https://school-kit-api.fly.dev`
+//   preview build, both of which talk to `https://api.schoolkit.ng`
 //   and have no reason to permit plain HTTP. `SMOKE_CLEARTEXT` is set by
 //   exactly one EAS profile (`smoke`) and by nothing else, so every other
 //   build resolves to the untouched app.json config — verifiable with:
