@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+import { MetricValue } from "./metric-value";
+
 // Extracted from the dashboard rebuild's private `KpiCard` (dashboard/page.tsx)
 // so other sections (Students, Staff, Finance, Report Cards) can show the same
 // "data as hero" tile — label, large serif numeral, context line — instead of
@@ -76,8 +78,8 @@ export function StatCard({
             </span>
           )}
         </div>
-        <p
-          data-metric-length={value.length > 9 ? "long" : "short"}
+        <MetricValue
+          value={value}
           className={cn(
             // Responsive: a naira figure like N1,530,000.00 is nine glyphs
             // plus separators and does not fit at text-3xl on a 430px phone —
@@ -88,9 +90,7 @@ export function StatCard({
             "metric-value mt-1 font-sans text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl",
             TONE_CLASSES[tone],
           )}
-        >
-          {value}
-        </p>
+        />
         {context && <p className="mt-1 text-xs text-muted-foreground">{context}</p>}
         {footer && (
           <div className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">
