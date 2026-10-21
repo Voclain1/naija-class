@@ -1,0 +1,28 @@
+# Added on top of docker-compose.yml while VPS_MODE=rehearsal, i.e. while the
+# VPS runs on a COPY of production (vps-db-copy.yml) that holds real
+# families' phone numbers, emails and push tokens. Two guards, so the copy
+# can never message a real family, even if a tester presses "send":
+#   - SCHEDULED_JOBS=off: no reminders, nudges or weekly summaries;
+#   - the senders' hosts resolve to nowhere inside the API containers (Expo
+#     push, Resend email, Termii SMS), so a send fails instead of arriving.
+# Set Paystack TEST keys in the rehearsal api.env as well.
+
+x-no-outbound: &no-outbound
+  environment:
+    SCHEDULED_JOBS: "off"
+    TERMII_BASE_URL: "http://127.0.0.1:9"
+  extra_hosts:
+    - "exp.host:127.0.0.1"
+    - "api.resend.com:127.0.0.1"
+    - "api.ng.termii.com:127.0.0.1"
+    - "v3.api.termii.com:127.0.0.1"
+    - "api.termii.com:127.0.0.1"
+
+services:
+  api: *no-outbound
+  render-worker:
+    <<: *no-outbound
+    environment:
+      SCHEDULED_JOBS: "off"
+      TERMII_BASE_URL: "http://127.0.0.1:9"
+      RENDER_WORKER_PORT: "4001"

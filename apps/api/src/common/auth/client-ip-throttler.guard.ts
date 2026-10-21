@@ -20,9 +20,20 @@ import { verifiedForwardedIp } from "./forwarded-client-ip.js";
 // the client, as before. If Fly were already presenting real client addresses
 // as the socket address, the two are equal and this changes nothing.
 //
+// Self-hosted (docs/runbooks/vps-migration.md), there is no Fly proxy, and a
+// `Fly-Client-IP` sent by a caller would be believed. CLIENT_IP_HEADER names
+// the header to read instead (`x-real-ip`), which Caddy OVERWRITES on every
+// request with the address it trusts (infra/vps/Caddyfile). Only ever name a
+// header the proxy in front of the API sets itself; a header a caller can
+// send is a header a caller can use to dodge every limit here.
+//
 // Not used for anything security-bearing beyond rate limiting: the per-identity
 // lockouts (login-lockout.ts) key on what was typed, not on any address.
 export const FLY_CLIENT_IP_HEADER = "fly-client-ip";
+
+export function clientIpHeader(env: { CLIENT_IP_HEADER?: string } = process.env): string {
+  return env.CLIENT_IP_HEADER?.trim().toLowerCase() || FLY_CLIENT_IP_HEADER;
+}
 
 export function clientIp(
   req: {
@@ -34,18 +45,23 @@ export function clientIp(
   // (forwarded-client-ip.ts). Honoured only when it verifies; otherwise the
   // request is keyed as below, exactly as before.
   portal: { secret?: string; nowSeconds?: number } = {},
+  header: string = FLY_CLIENT_IP_HEADER,
 ): string {
   const forwarded = verifiedForwardedIp(req.headers, portal.secret, portal.nowSeconds ?? Math.floor(Date.now() / 1000));
   if (forwarded) return forwarded;
-  const raw = req.headers?.[FLY_CLIENT_IP_HEADER];
-  const fly = Array.isArray(raw) ? raw[0] : raw;
-  if (typeof fly === "string" && fly.trim()) return fly.trim();
+  const raw = req.headers?.[header];
+  const proxied = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof proxied === "string" && proxied.trim()) return proxied.trim();
   return req.ip ?? req.socket?.remoteAddress ?? "unknown";
 }
 
 @Injectable()
 export class ClientIpThrottlerGuard extends ThrottlerGuard {
   protected override async getTracker(req: Record<string, unknown>): Promise<string> {
-    return clientIp(req as Parameters<typeof clientIp>[0], { secret: process.env.PORTAL_PROXY_SECRET });
+    return clientIp(
+      req as Parameters<typeof clientIp>[0],
+      { secret: process.env.PORTAL_PROXY_SECRET },
+      clientIpHeader(),
+    );
   }
 }

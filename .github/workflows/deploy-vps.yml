@@ -1,0 +1,257 @@
+# School Kit on the VPS (docs/runbooks/vps-migration.md): build the images,
+# migrate the VPS database, switch with health-checked rollback, smoke test.
+# Runs after `ci` passes on main once VPS_DEPLOY_ENABLED is "true", or by hand.
+# Fly and Vercel are untouched; deploy-staging.yml keeps deploying there until
+# FLY_DEPLOY_DISABLED is "true" (cutover, runbook §6).
+name: deploy-vps
+
+on:
+  workflow_run:
+    workflows: ["ci"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false  # never cancel an in-flight deploy
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  IMAGE_PREFIX: ghcr.io/voclain1
+  TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  deploy:
+    name: vps deploy
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.VPS_DEPLOY_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Check settings
+        env:
+          API_ENV_FILE: ${{ secrets.API_ENV_FILE }}
+          WEB_ENV_FILE: ${{ secrets.WEB_ENV_FILE }}
+          PORTAL_ENV_FILE: ${{ secrets.PORTAL_ENV_FILE }}
+          POSTGRES_PASSWORD: ${{ secrets.VPS_POSTGRES_PASSWORD }}
+          SCHOOL_KIT_DB_PASSWORD: ${{ secrets.VPS_SCHOOL_KIT_DB_PASSWORD }}
+          APP_USER_DB_PASSWORD: ${{ secrets.VPS_APP_USER_DB_PASSWORD }}
+          API_HOST: ${{ vars.VPS_API_HOST }}
+          WEB_HOST: ${{ vars.VPS_WEB_HOST }}
+          PORTAL_HOST: ${{ vars.VPS_PORTAL_HOST }}
+          VPS_MODE: ${{ vars.VPS_MODE }}
+        run: |
+          missing=0
+          for v in API_ENV_FILE WEB_ENV_FILE PORTAL_ENV_FILE POSTGRES_PASSWORD SCHOOL_KIT_DB_PASSWORD \
+                   APP_USER_DB_PASSWORD API_HOST WEB_HOST PORTAL_HOST; do
+            [ -n "${!v}" ] || { echo "::error::$v is not set (runbook §4)"; missing=1; }
+          done
+          case "$VPS_MODE" in rehearsal|live) ;; *) echo "::error::VPS_MODE must be rehearsal or live"; missing=1;; esac
+          exit $missing
+
+      # NEXT_PUBLIC_* are inlined into the browser bundle, so they are read
+      # from each app's settings secret at build time, one source of truth.
+      - name: Public build settings
+        id: public
+        env:
+          WEB_ENV_FILE: ${{ secrets.WEB_ENV_FILE }}
+          PORTAL_ENV_FILE: ${{ secrets.PORTAL_ENV_FILE }}
+          CBT_ENV_FILE: ${{ secrets.CBT_ENV_FILE }}
+        run: |
+          for app in web portal cbt; do
+            var="${app^^}_ENV_FILE"
+            {
+              echo "${app}<<ARGS"
+              echo "APP=$app"
+              printf '%s\n' "${!var}" | grep -E '^(NEXT_PUBLIC_[A-Z_]+|SESSION_COOKIE_DOMAIN)=' || true
+              echo "ARGS"
+            } >> "$GITHUB_OUTPUT"
+          done
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/school-kit-api:${{ env.TAG }}
+          build-args: SENTRY_RELEASE=${{ env.TAG }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+      - name: Build render worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile.render
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/school-kit-render:${{ env.TAG }}
+          build-args: SENTRY_RELEASE=${{ env.TAG }}
+          cache-from: type=gha,scope=render
+          cache-to: type=gha,scope=render,mode=max
+      - name: Build web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/vps/Dockerfile.next
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/school-kit-web:${{ env.TAG }}
+          build-args: ${{ steps.public.outputs.web }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+      - name: Build portal
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/vps/Dockerfile.next
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/school-kit-portal:${{ env.TAG }}
+          build-args: ${{ steps.public.outputs.portal }}
+          cache-from: type=gha,scope=portal
+          cache-to: type=gha,scope=portal,mode=max
+      - name: Build exam app
+        if: vars.VPS_CBT_ENABLED == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/vps/Dockerfile.next
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/school-kit-cbt:${{ env.TAG }}
+          build-args: ${{ steps.public.outputs.cbt }}
+          cache-from: type=gha,scope=cbt
+          cache-to: type=gha,scope=cbt,mode=max
+
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+
+      # Postgres listens on the server's loopback only; this tunnel is how the
+      # runner reaches it for migrations and the smoke-school cleanup.
+      - name: Tunnel to the VPS database
+        run: |
+          ssh -f -N -o ExitOnForwardFailure=yes -L 5432:127.0.0.1:5432 vps
+          for i in $(seq 1 20); do (echo > /dev/tcp/127.0.0.1/5432) 2>/dev/null && exit 0; sleep 1; done
+          echo "::error::SSH tunnel to the VPS database did not come up"; exit 1
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+        run: pnpm install --frozen-lockfile
+
+      # Same as deploy-staging.yml: migrate first, as school_kit. Skipped on
+      # the very first deploy, when the server has no database yet (it is
+      # created when Postgres first starts, in the switch below); run
+      # vps-db-copy next, which brings the schema with the data.
+      - name: Migrate the VPS database
+        env:
+          DIRECT_URL: postgresql://school_kit:${{ secrets.VPS_SCHOOL_KIT_DB_PASSWORD }}@127.0.0.1:5432/school_kit
+        run: |
+          if ! ssh vps 'test -f /opt/school-kit/deploy.env'; then
+            echo "First deploy: no database on the server yet, nothing to migrate."
+            exit 0
+          fi
+          pnpm --filter @school-kit/db exec prisma migrate deploy
+
+      - name: Ship settings and switch
+        env:
+          API_ENV_FILE: ${{ secrets.API_ENV_FILE }}
+          WEB_ENV_FILE: ${{ secrets.WEB_ENV_FILE }}
+          PORTAL_ENV_FILE: ${{ secrets.PORTAL_ENV_FILE }}
+          CBT_ENV_FILE: ${{ secrets.CBT_ENV_FILE }}
+          BACKUP_ENV_FILE: ${{ secrets.BACKUP_ENV_FILE }}
+          POSTGRES_PASSWORD: ${{ secrets.VPS_POSTGRES_PASSWORD }}
+          SCHOOL_KIT_DB_PASSWORD: ${{ secrets.VPS_SCHOOL_KIT_DB_PASSWORD }}
+          APP_USER_DB_PASSWORD: ${{ secrets.VPS_APP_USER_DB_PASSWORD }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          umask 077
+          mkdir -p out
+          # The API and render worker always use the services beside them;
+          # these lines from API_ENV_FILE (Fly's values) are replaced.
+          printf '%s\n' "$API_ENV_FILE" \
+            | grep -vE '^(DATABASE_URL|DIRECT_URL|REDIS_URL|RENDER_WORKER_URL|RENDER_WORKER_PORT|API_PORT|CLIENT_IP_HEADER|NODE_ENV|SCHEDULED_JOBS)=' \
+            > out/api.env
+          cat >> out/api.env <<ENV
+          NODE_ENV=production
+          API_PORT=4000
+          DATABASE_URL=postgresql://app_user:${APP_USER_DB_PASSWORD}@postgres:5432/school_kit
+          DIRECT_URL=postgresql://school_kit:${SCHOOL_KIT_DB_PASSWORD}@postgres:5432/school_kit
+          REDIS_URL=redis://redis:6379
+          RENDER_WORKER_URL=http://render-worker:4001
+          CLIENT_IP_HEADER=x-real-ip
+          ENV
+          sed -i 's/^ *//' out/api.env
+          printf '%s\n' "$WEB_ENV_FILE" > out/web.env
+          printf '%s\n' "$PORTAL_ENV_FILE" > out/portal.env
+          printf '%s\n' "$CBT_ENV_FILE" > out/cbt.env
+          printf '%s\n' "$BACKUP_ENV_FILE" > out/backup.env
+          ssh vps "grep '^APP_TAG=' /opt/school-kit/deploy.env 2>/dev/null || true" > out/deploy.env
+          cat >> out/deploy.env <<ENV
+          IMAGE_PREFIX=${IMAGE_PREFIX}
+          PG_MAJOR=${{ vars.PG_MAJOR || '16' }}
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+          SCHOOL_KIT_PASSWORD=${SCHOOL_KIT_DB_PASSWORD}
+          APP_USER_PASSWORD=${APP_USER_DB_PASSWORD}
+          API_HOST=${{ vars.VPS_API_HOST }}
+          WEB_HOST=${{ vars.VPS_WEB_HOST }}
+          PORTAL_HOST=${{ vars.VPS_PORTAL_HOST }}
+          CBT_HOST=${{ vars.VPS_CBT_HOST }}
+          CBT_ENABLED=${{ vars.VPS_CBT_ENABLED == 'true' }}
+          VPS_MODE=${{ vars.VPS_MODE }}
+          ENV
+          sed -i 's/^ *//' out/deploy.env
+
+          tar -C infra/vps --exclude='Dockerfile.next*' -cf - . | ssh vps 'tar -C /opt/school-kit -xf -'
+          tar -C out -cf - . | ssh vps 'umask 077; tar -C /opt/school-kit -xf -'
+          printf '%s' "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+          ssh vps "/opt/school-kit/deploy.sh ${TAG}"
+          ssh vps 'docker logout ghcr.io'
+
+      # Five operations against the public address: health, database role,
+      # sign-up, login, schools/me (scripts/smoke-test.sh, as on Fly).
+      - name: Smoke test
+        id: smoke
+        run: |
+          sleep 10
+          bash scripts/smoke-test.sh
+        env:
+          SMOKE_API_URL: https://${{ vars.VPS_API_HOST }}
+
+      - name: Roll back on smoke failure
+        if: failure() && steps.smoke.outcome == 'failure'
+        run: |
+          prev=$(ssh vps 'cat /opt/school-kit/.previous-tag 2>/dev/null || true')
+          if [ -z "$prev" ]; then echo "::error::no previous image to roll back to"; exit 1; fi
+          echo "rolling back to $prev"
+          ssh vps "/opt/school-kit/deploy.sh $prev"
+
+      - name: Prune smoke-test schools
+        if: always()
+        continue-on-error: true
+        env:
+          DIRECT_URL: postgresql://school_kit:${{ secrets.VPS_SCHOOL_KIT_DB_PASSWORD }}@127.0.0.1:5432/school_kit
+        run: |
+          psql "${DIRECT_URL}" -f scripts/list-smoke-schools.sql || true
+          psql "${DIRECT_URL}" -v ON_ERROR_STOP=1 -f scripts/prune-smoke-schools.sql

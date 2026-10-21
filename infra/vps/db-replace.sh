@@ -1,0 +1,53 @@
+#!/bin/bash
+# Replaces the VPS database with a pg_dump (custom format) read from stdin.
+# Run by vps-db-copy.yml for the rehearsal and, once, at cutover:
+#   ssh vps /opt/school-kit/db-replace.sh [--no-start] < neon.dump
+# --no-start leaves the apps stopped, so the copy can be compared with Neon
+# before anything writes to it; `start-apps.sh` starts them.
+#
+# The restore runs as `postgres` with SET ROLE school_kit and --no-owner, so
+# every table and SECURITY DEFINER function ends up owned by school_kit
+# (security-definer-inventory.spec.ts requires it) without Neon's
+# neondb_owner. The privileges in the dump (EXECUTE on the auth functions,
+# app_user's grants) come across; database-setup.sql supplies what only the
+# superuser can do here. Tested end to end, see docs/runbooks/vps-migration.md.
+#
+# --exit-on-error and --single-transaction: any error leaves an EMPTY
+# database and the apps stopped, never a half-restored one. The only entries
+# skipped are the three COMMENT ON EXTENSION lines, which need the extension's
+# owner and change nothing.
+set -euo pipefail
+cd "$(dirname "$0")"
+files=(-f docker-compose.yml)
+if grep -q '^VPS_MODE=rehearsal$' deploy.env; then files+=(-f docker-compose.rehearsal.yml); fi
+if grep -q '^CBT_ENABLED=true$' deploy.env; then export COMPOSE_PROFILES=cbt; fi
+compose() { docker compose --env-file deploy.env "${files[@]}" "$@"; }
+
+echo "stopping the apps (no writes during the restore)"
+compose stop api render-worker web portal cbt 2>/dev/null || compose stop api render-worker web portal
+
+compose exec -T postgres sh -c 'cat > /tmp/import.dump'
+compose exec -T postgres sh -c 'ls -l /tmp/import.dump'
+
+compose exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  -c "DROP DATABASE IF EXISTS school_kit WITH (FORCE)" -c "CREATE DATABASE school_kit"
+compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U postgres -d school_kit \
+  -f /usr/local/share/school-kit/database-setup.sql
+
+compose exec -T postgres sh -c '
+  set -e
+  trap "rm -f /tmp/import.dump /tmp/import.toc" EXIT
+  pg_restore -l /tmp/import.dump | grep -v "COMMENT - EXTENSION" > /tmp/import.toc
+  pg_restore -U postgres -d school_kit --no-owner --role=school_kit \
+    --exit-on-error --single-transaction -L /tmp/import.toc /tmp/import.dump'
+echo "restore ok"
+
+# Jobs queued against the previous copy refer to rows that no longer exist.
+compose exec -T redis redis-cli FLUSHALL
+
+if [ "${1:-}" = "--no-start" ]; then
+  echo "apps left stopped (--no-start)"
+else
+  compose up -d
+  echo "apps started"
+fi

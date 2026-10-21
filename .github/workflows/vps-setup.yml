@@ -1,0 +1,23 @@
+# Run once on a fresh VPS (Actions → vps-setup → Run workflow); safe to run
+# again. Logs in as root with VPS_SSH_KEY, so order the server with that key's
+# public half. docs/runbooks/vps-migration.md.
+name: vps-setup
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          user: root
+      - name: Harden and install Docker
+        run: ssh vps 'bash -s /opt/school-kit' < infra/vps/server-setup.sh
+      - name: Check the deploy user can log in
+        run: ssh -o User=deploy vps 'docker version --format "docker {{.Server.Version}}" && id'

@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+# Self-hosted image for one of the Next.js apps (web, portal, cbt), built from
+# the repo root:
+#   docker build -f infra/vps/Dockerfile.next --build-arg APP=web .
+# docs/runbooks/vps-migration.md. Vercel does not use this file.
+#
+# NEXT_PUBLIC_* values are inlined into the browser bundle at build time, so
+# they are build arguments: changing one means rebuilding the image.
+
+FROM node:22-slim AS builder
+WORKDIR /app
+RUN corepack enable
+ENV PUPPETEER_SKIP_DOWNLOAD=true NEXT_TELEMETRY_DISABLED=1
+COPY . .
+RUN pnpm install --frozen-lockfile
+
+ARG APP
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_PORTAL_URL
+ARG NEXT_PUBLIC_CBT_URL
+ARG NEXT_PUBLIC_SENTRY_DSN
+ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT
+ARG NEXT_PUBLIC_POSTHOG_KEY
+ARG NEXT_PUBLIC_POSTHOG_HOST
+ARG NEXT_PUBLIC_PAYSTACK_TEST_MODE
+# Read at build time by apps/web/session-cookie-config.mjs, which refuses a
+# production build that would sign every member of staff out.
+ARG SESSION_COOKIE_DOMAIN
+# APP_ENV=production marks a production build, as VERCEL_ENV does on Vercel.
+ENV APP_ENV=production NEXT_OUTPUT=standalone
+RUN test -n "$APP" && test -d "apps/$APP" \
+ && pnpm --filter "@school-kit/${APP}^..." run --if-present build \
+ && pnpm --filter "@school-kit/${APP}" run build
+
+FROM node:22-slim AS runtime
+WORKDIR /app
+ARG APP
+ENV NODE_ENV=production APP_ENV=production NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 HOSTNAME=0.0.0.0 APP=${APP}
+COPY --from=builder /app/apps/${APP}/.next/standalone ./
+COPY --from=builder /app/apps/${APP}/.next/static ./apps/${APP}/.next/static
+COPY --from=builder /app/apps/${APP}/public ./apps/${APP}/public
+RUN mkdir -p apps/${APP}/.next/cache && chown -R node:node apps/${APP}/.next
+USER node
+EXPOSE 3000
+CMD ["sh", "-c", "exec node apps/$APP/server.js"]

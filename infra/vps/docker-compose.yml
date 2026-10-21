@@ -1,0 +1,166 @@
+# School Kit on one VPS (docs/runbooks/vps-migration.md). Lives at
+# /opt/school-kit on the server; .github/workflows/deploy-vps.yml copies this
+# folder there and runs `./deploy.sh <commit>`.
+#
+# Settings files beside it, written by the deploy from GitHub secrets:
+#   deploy.env  image tag, host names, database passwords (compose itself)
+#   api.env     the API and render worker (as on Fly today)
+#   web.env, portal.env, cbt.env   the Next.js servers (as on Vercel today)
+#   backup.env  object storage for backups and WAL archiving
+#
+# Nothing but Caddy listens on a public address: every other port is bound
+# to 127.0.0.1, for the deploy's health checks and SSH tunnels only.
+
+name: school-kit
+
+x-app: &app
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  postgres:
+    <<: *app
+    build:
+      context: ./postgres
+      args:
+        PG_MAJOR: ${PG_MAJOR:-16}
+    image: school-kit-postgres:pg${PG_MAJOR:-16}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: school_kit
+      SCHOOL_KIT_PASSWORD: ${SCHOOL_KIT_PASSWORD}
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD}
+    env_file: backup.env
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-3GB}
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=/usr/local/bin/archive-wal.sh %p
+      # A segment is archived at least every minute, so a restore loses at
+      # most about a minute of writes.
+      - -c
+      - archive_timeout=60
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    shm_size: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d school_kit"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    <<: *app
+    image: redis:7.4-alpine
+    # BullMQ needs noeviction; appendonly keeps queued jobs across a restart.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *app
+    image: ${IMAGE_PREFIX}/school-kit-api:${APP_TAG}
+    env_file: api.env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports:
+      - "127.0.0.1:4000:4000"
+
+  # One instance only, as on Fly ("Enforce single render worker machine").
+  # Always running here, so RENDER_WORKER_URL's wake is just a health check.
+  render-worker:
+    <<: *app
+    image: ${IMAGE_PREFIX}/school-kit-render:${APP_TAG}
+    env_file: api.env
+    environment:
+      RENDER_WORKER_PORT: "4001"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    mem_limit: 2g
+
+  web:
+    <<: *app
+    image: ${IMAGE_PREFIX}/school-kit-web:${APP_TAG}
+    env_file: web.env
+    ports:
+      - "127.0.0.1:3001:3000"
+
+  portal:
+    <<: *app
+    image: ${IMAGE_PREFIX}/school-kit-portal:${APP_TAG}
+    env_file: portal.env
+    ports:
+      - "127.0.0.1:3002:3000"
+
+  # Online exams: off until VPS_CBT_ENABLED=true (deploy.sh turns on the
+  # `cbt` profile and the Caddy site). docs/runbooks/cbt-go-live.md.
+  cbt:
+    <<: *app
+    profiles: ["cbt"]
+    image: ${IMAGE_PREFIX}/school-kit-cbt:${APP_TAG}
+    env_file: cbt.env
+    ports:
+      - "127.0.0.1:3003:3000"
+
+  caddy:
+    <<: *app
+    image: caddy:2.8-alpine
+    environment:
+      API_HOST: ${API_HOST}
+      WEB_HOST: ${WEB_HOST}
+      PORTAL_HOST: ${PORTAL_HOST}
+      CBT_HOST: ${CBT_HOST:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # Nightly dump + WAL-G base backup (postgres/ops/backup.sh). Reads the data
+  # directory read-only for the base backup.
+  ops:
+    <<: *app
+    image: school-kit-postgres:pg${PG_MAJOR:-16}
+    entrypoint: ["/ops/entrypoint.sh"]
+    env_file: backup.env
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGDATABASE: school_kit
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - pgdata:/var/lib/postgresql/data:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:

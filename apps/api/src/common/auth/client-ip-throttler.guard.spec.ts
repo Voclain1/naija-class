@@ -5,7 +5,7 @@ import { Throttle, ThrottlerModule } from "@nestjs/throttler";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { ClientIpThrottlerGuard, clientIp } from "./client-ip-throttler.guard";
+import { ClientIpThrottlerGuard, clientIp, clientIpHeader } from "./client-ip-throttler.guard";
 import { signClientIp, verifiedForwardedIp } from "./forwarded-client-ip";
 
 // Per-client throttling behind Fly's proxy (client-ip-throttler.guard.ts).
@@ -25,6 +25,16 @@ describe("clientIp", () => {
     expect(clientIp({ headers: { "fly-client-ip": ["102.89.1.8"] }, ip: "fdaa::1" })).toBe("102.89.1.8");
     expect(clientIp({ headers: {}, ip: "127.0.0.1" })).toBe("127.0.0.1");
     expect(clientIp({ headers: { "fly-client-ip": "" }, socket: { remoteAddress: "::1" } })).toBe("::1");
+  });
+
+  it("reads the header CLIENT_IP_HEADER names when self-hosted, and then ignores Fly-Client-IP", () => {
+    expect(clientIpHeader({})).toBe("fly-client-ip");
+    expect(clientIpHeader({ CLIENT_IP_HEADER: " X-Real-IP " })).toBe("x-real-ip");
+    const header = clientIpHeader({ CLIENT_IP_HEADER: "x-real-ip" });
+    // A caller sending Fly-Client-IP to a self-hosted API must not choose its own key.
+    const forged = { headers: { "fly-client-ip": "1.2.3.4", "x-real-ip": "102.89.1.9" }, ip: "172.18.0.5" };
+    expect(clientIp(forged, {}, header)).toBe("102.89.1.9");
+    expect(clientIp({ headers: { "fly-client-ip": "1.2.3.4" }, ip: "172.18.0.5" }, {}, header)).toBe("172.18.0.5");
   });
 });
 

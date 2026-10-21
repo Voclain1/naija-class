@@ -1,12 +1,12 @@
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
-import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule } from "@nestjs/throttler";
 
 import { EmailModule } from "./common/email/email.module.js";
 import { EmbeddingsModule } from "./common/embeddings/embeddings.module.js";
 import { PaystackModule } from "./common/paystack/paystack.module.js";
+import { scheduledJobsModules } from "./common/schedule/scheduled-jobs.js";
 import { TermiiModule } from "./common/termii/termii.module.js";
 import { RedisAuthModule } from "./common/auth/redis-auth.module";
 import { RedisThrottlerStorage } from "./common/auth/redis-throttler-storage";
@@ -122,7 +122,8 @@ const isProd = process.env.NODE_ENV === "production";
     // (Phase 4 / Slice 6) provide EmailService/TermiiService to
     // GuardiansModule, FinanceModule, and NotificationsModule. All must be
     // imported before the feature modules that consume them.
-    ScheduleModule.forRoot(),
+    // SCHEDULED_JOBS=off runs no @Cron job (rehearsals on a copy of production).
+    ...scheduledJobsModules(),
     QueueModule,
     StorageModule,
     PaystackModule,

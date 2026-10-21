@@ -50,9 +50,13 @@ jobs:
     timeout-minutes: 30
 
     # Only run when CI passed (or manual dispatch).
+    # FLY_DEPLOY_DISABLED=true once production runs on the VPS (deploy-vps.yml,
+    # docs/runbooks/vps-migration.md §6), so a merge no longer migrates Neon
+    # or deploys to Fly.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      vars.FLY_DEPLOY_DISABLED != 'true' && (
+        github.event_name == 'workflow_dispatch' ||
+        github.event.workflow_run.conclusion == 'success')
 
     steps:
       - name: Checkout

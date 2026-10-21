@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import { withSentryConfig } from "@sentry/nextjs";
 
 import { sessionCookieConfigProblem } from "./session-cookie-config.mjs";
@@ -9,8 +11,17 @@ if (sessionCookieProblem) {
   throw new Error(`Staff session cookie misconfigured: ${sessionCookieProblem}`);
 }
 
+// Self-hosted image (infra/vps/Dockerfile.next) builds with NEXT_OUTPUT=standalone:
+// a minimal server traced from the monorepo root, so workspace packages are
+// included. Unset on Vercel, so its builds are unchanged.
+const standalone =
+  process.env.NEXT_OUTPUT === "standalone"
+    ? { output: "standalone", outputFileTracingRoot: fileURLToPath(new URL("../../", import.meta.url)) }
+    : {};
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  ...standalone,
   reactStrictMode: true,
   // Preview builds send the browser's API calls through /api/preview-api (see
   // that route). Decided here, at build time, from Vercel's own VERCEL_ENV, so
