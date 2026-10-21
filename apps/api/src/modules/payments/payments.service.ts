@@ -29,6 +29,7 @@ import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalid
 import { PaymentPlanService } from "./payment-plan.service.js";
 import { issueReceipt, loadReceiptLogo } from "./receipt.js";
 import { EventNotifierService } from "../notifications/event-notifier.service.js";
+import { PaymentConfirmationService } from "./payment-confirmation.service.js";
 import { Sentry } from "../../observability/sentry";
 
 const RECEIPT_URL_TTL_SECONDS = 15 * 60; // 15 minutes
@@ -222,6 +223,9 @@ export class PaymentsService {
     // working: a missing notifier means no notification, never a failed
     // payment — the same contract as the rest of this path (N7).
     @Optional() private readonly events?: EventNotifierService,
+    // The family's confirmation of an online payment (email + push), sent once
+    // whichever success path saw it first. Optional for the same reason.
+    @Optional() private readonly confirmations?: PaymentConfirmationService,
   ) {}
 
   // ─── Record manual payment ────────────────────────────────────────────────
@@ -562,7 +566,10 @@ export class PaymentsService {
     if (balanceChanged) {
       await this.paymentLinkInvalidation?.archivePending(schoolId);
     }
-    if (succeeded) await this.tryIssueReceipt(schoolId, paymentId);
+    if (succeeded) {
+      await this.tryIssueReceipt(schoolId, paymentId);
+      await this.confirmations?.onlinePaymentSucceeded(schoolId, paymentId);
+    }
   }
 
   async handlePaymentRequestWebhook(event: PaystackWebhookEvent): Promise<void> {
@@ -694,6 +701,7 @@ export class PaymentsService {
       await this.paymentLinkInvalidation?.archivePending(schoolId, invoiceId);
       // Payment-link payments had no receipt at all before 2026-09-22.
       await this.tryIssueReceipt(schoolId, applied);
+      await this.confirmations?.onlinePaymentSucceeded(schoolId, applied);
     }
   }
 
@@ -793,7 +801,11 @@ export class PaymentsService {
       const row = await db.payment.findUniqueOrThrow({ where: { id: payment.id } });
       return toDto(row as PaymentRow);
     }).then(async (dto) => {
-      if (dto.status !== "SUCCESS" || dto.receiptNumber) return dto;
+      if (dto.status !== "SUCCESS") return dto;
+      // Sent once per guardian whichever path got here first, so a poll that
+      // lost the race to the webhook adds nothing.
+      await this.confirmations?.onlinePaymentSucceeded(schoolId, dto.id);
+      if (dto.receiptNumber) return dto;
       const receipt = await this.tryIssueReceipt(schoolId, dto.id);
       return receipt ? { ...dto, ...receipt } : dto;
     });

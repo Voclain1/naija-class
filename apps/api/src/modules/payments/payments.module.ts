@@ -1,9 +1,11 @@
 import { Module } from "@nestjs/common";
 
+import { EmailModule } from "../../common/email/email.module.js";
 import { NotificationDispatchModule } from "../notifications/notification-dispatch.module";
 import { PaystackModule } from "../../common/paystack/paystack.module.js";
 import { PayrollModule } from "../payroll/payroll.module.js";
 import { InvoicesModule } from "../invoices/invoices.module.js";
+import { PaymentConfirmationService } from "./payment-confirmation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
 import { PaymentPlansController } from "./payment-plans.controller.js";
 import { PaystackController } from "./paystack.controller.js";
@@ -21,9 +23,9 @@ import { RefundsService } from "./refunds.service.js";
 // -> PayrollModule -> PaystackModule, no cycle.
 
 @Module({
-  imports: [PaystackModule, PayrollModule, InvoicesModule, NotificationDispatchModule],
+  imports: [PaystackModule, PayrollModule, InvoicesModule, NotificationDispatchModule, EmailModule],
   controllers: [PaymentsController, PaystackController, PaymentPlansController, RefundsController],
-  providers: [PaymentsService, PaymentPlanService, RefundsService],
+  providers: [PaymentsService, PaymentPlanService, RefundsService, PaymentConfirmationService],
   exports: [PaymentsService, PaymentPlanService, RefundsService],
 })
 export class PaymentsModule {}

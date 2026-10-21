@@ -23,7 +23,7 @@ import type {
   PortalStudentDto,
   SchoolBankDetails,
 } from "@school-kit/types";
-import { invoiceStatusLabel } from "@school-kit/types";
+import { invoiceStatusLabel, ONLINE_PAYMENT_NOTE } from "@school-kit/types";
 
 import { Appear, EmptyState, PageHeader, PageSkeleton, SectionHeader } from "@school-kit/ui";
 
@@ -567,6 +567,7 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
           >
             {payState.kind === "starting" ? "Redirecting to payment…" : `Pay ${formatNaira(balance)}`}
           </button>
+          <p className="text-xs text-muted-foreground">{ONLINE_PAYMENT_NOTE}</p>
         </div>
       )}
     </div>
