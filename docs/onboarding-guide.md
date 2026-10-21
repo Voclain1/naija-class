@@ -386,6 +386,8 @@ We set it up and tell you when it is done. **There is nothing to copy or paste**
 - If we cannot finish the setup (usually because the account name does not match the bank's records), the page tells you why so you can correct it and send it again.
 - You can switch online payment off at any time with **Accept Paystack payments** on the same page, then press **Save**.
 - When a parent pays online, the invoice updates by itself. You do not need to record it.
+- **What the parent receives:** an email from **your school's name** ("<your school> via SchoolKit") saying how much was received for which child, the payment reference, and what is left to pay. It says **your school will issue the receipt**, so send it as you do for cash. Parents with the SchoolKit app also get a "payment recorded" notification.
+- **Why parents may see "SchoolKit":** online payments for every school go through SchoolKit's Paystack account and are passed straight on to yours. So the parent's bank statement, and Paystack's payment page, may name SchoolKit. The line under every **Pay** button tells parents this before they pay.
 
 ## Sending a message to parents or staff
 

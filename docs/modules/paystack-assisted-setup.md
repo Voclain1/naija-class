@@ -306,3 +306,31 @@ wearing a nicer hat.
 
 Out of scope, tracked separately: PR #179's live-mode/settlement
 confirmation hold is unrelated to this work and is not closed by it.
+
+## 6. As built, 2026-10-21: the family's confirmation, in the school's name
+
+Found in the first live payment (2026-10-20, ₦100 to a test school): Paystack's
+own receipt email to the parent says "payment to SchoolKit", because every
+school's payment runs through SchoolKit's one integration. Paystack offers no
+way to put a subaccount's name on that email or on the parent's statement.
+
+- **Our own email replaces Paystack's.** `PaymentConfirmationService`
+  (`apps/api/src/modules/payments/payment-confirmation.service.ts`) emails each
+  of the child's guardians once per online payment, from "<school> via
+  SchoolKit": amount, child, term, date, Paystack reference and balance left.
+  It says the school will issue the receipt (schools issue receipts
+  themselves, as for cash). Guardians with no email, or whose address bounced
+  or complained (`ALL` suppression), are skipped.
+- **Once, whichever path sees the payment first.** It runs after all three
+  success paths commit (webhook, the portal's verify poll, a payment link).
+  The `notification_deliveries` row (`payment.confirmation-email`) is claimed
+  before each send, so racing paths send one email and a crash means a missed
+  email, never a duplicate. A failed send never touches the payment.
+- **The app's push too.** Online payments now send the same "payment recorded"
+  notification cash payments always did.
+- **Before they pay.** `ONLINE_PAYMENT_NOTE` (`@school-kit/types`) sits under
+  every Pay button, on the portal and in the parent app, saying the statement
+  may show SchoolKit.
+- **Owner's step after deploy:** switch off customer receipt emails in the
+  Paystack dashboard (`docs/runbooks/launch-checklist.md`). Not before the
+  deploy, or parents get no confirmation in between.

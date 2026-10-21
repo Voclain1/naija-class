@@ -13,7 +13,7 @@ Status key: **Done**, **Open** (needs doing), **Waiting** (on someone outside).
 |---|---|---|
 | `RESEND_WEBHOOK_SECRET` on `school-kit-api` | Fly → school-kit-api → Secrets | **Staged** 2026-10-19. Takes effect at the next deploy (the next merged PR). Then an announcement's outbox should show "delivered". |
 | Resend webhook to `https://api.schoolkit.ng/api/v1/webhooks/resend` (delivered, bounced, complained) | Resend → Webhooks | **Done** 2026-10-19, enabled. |
-| `STORAGE_DRIVER=r2` and the four `R2_*` values on `school-kit-api` | Fly → Secrets | **Check.** Any other value keeps uploads on the machine, and a deploy replaces the machine. Photos, receipts and homework files would vanish. |
+| `STORAGE_DRIVER=r2` and the four `R2_*` values on `school-kit-api` | Fly → Secrets | **Done** 2026-10-20: confirmed `r2` (image addresses are served from R2). Any other value would keep uploads on the machine, which a deploy replaces. |
 | `RESULT_PIN_HMAC_KEY` on `school-kit-api` | Fly → Secrets | **Check.** The API refuses to start in production without it, so a running API means it is set. |
 | `PORTAL_PROXY_SECRET`, same value on `school-kit-portal` (Vercel) and `school-kit-api` (Fly) | Vercel → Environment Variables; Fly → Secrets | **Check** with `vercel env ls`. On one side only, it silently does nothing. |
 | `SESSION_COOKIE_DOMAIN=schoolkit.ng` on `school-kit-web` | Vercel | **Done** 2026-10-07 (`docs/runbooks/web-session-cookie.md`). |
@@ -26,7 +26,9 @@ Status key: **Done**, **Open** (needs doing), **Waiting** (on someone outside).
 | Item | Status |
 |---|---|
 | Paystack webhook URL in the Paystack dashboard | **Done** 2026-10-11. |
-| One real test payment from a phone in the parent app: checkout closes and the invoice updates | **Open.** Needs a Paystack test-mode subaccount on a dev school (`docs/runbooks/paystack-setup.md`). |
+| One real payment from a phone: checkout closes and the invoice updates | **Done** 2026-10-20. Production runs on the live key, so it was a real ₦100 payment from the portal on a phone, to a test school whose subaccount is the owner's own account. Checkout closed, the invoice showed Paid, and the split reached the subaccount. |
+| Switch off Paystack's own customer receipt emails (Paystack dashboard → Settings → Preferences) | **Open.** Do it **after** the deploy carrying the school-named payment confirmation email (2026-10-21), never before, or parents get no confirmation at all in between. Paystack's email says "payment to SchoolKit"; ours names the school. |
+| SchoolKit's Paystack trading name | **Open** (optional). Suggested: "SchoolKit School Fees" (21 characters, so statements do not cut it off). It is what parents see on bank statements. Paystack may ask for it to match the registered business. |
 | SMS sender name: SchoolKit's CAC registration, then `TERMII_SENDER_ID` | **Waiting** (CAC). Schools with their own CAC can request their own name now. |
 | WhatsApp (CP9) | **Waiting** on a Meta-approved business number. |
 | AI: `AI_ENABLED` is on; each school's own AI switch is off until the operator turns it on | **Done.** Turn on per school in the platform admin. |

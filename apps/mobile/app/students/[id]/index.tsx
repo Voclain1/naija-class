@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { Redirect, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatKobo, type PortalInvoiceDto } from "@school-kit/types";
+import { formatKobo, ONLINE_PAYMENT_NOTE, type PortalInvoiceDto } from "@school-kit/types";
 
 import { classLabel } from "../../../src/lib/family/class-label";
 import { getBankDetails, getStudent, listInvoices } from "../../../src/lib/api/portal";
@@ -259,6 +259,7 @@ export default function StudentDetailScreen() {
                     onPress={() => pay.mutate(invoice.id)}
                   />
                 ) : null}
+                {payable ? <Caption>{ONLINE_PAYMENT_NOTE}</Caption> : null}
               </Card>
             );
           })
