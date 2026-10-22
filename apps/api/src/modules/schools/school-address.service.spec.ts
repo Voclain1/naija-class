@@ -182,3 +182,30 @@ describe("the database keeps codes apart (triggers and RLS)", () => {
     expect(deleted.count).toBe(0);
   });
 });
+
+describe("the school's public front page data", () => {
+  it("resolves an old code to the school's current one, and shows only the school's own public details", async () => {
+    const { StorageService } = await import("../../common/storage/storage.service.js");
+    const { FilesystemStorageDriver } = await import("../../common/storage/filesystem-storage.driver.js");
+    const { SchoolPublicService } = await import("./school-public.service.js");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const storage = new StorageService(
+      new FilesystemStorageDriver(path.join(os.tmpdir(), `sk-addr-${runId}`), { baseUrl: "http://localhost:4000/api/v1", secret: "s" }),
+    );
+    const svc = new SchoolPublicService(storage);
+
+    const a = await makeSchool("public");
+    await basePrisma.school.update({ where: { id: a.schoolId }, data: { phone: "+2348012345678", email: "office@example.test", address: "1 School Road, Enugu" } });
+    const next = `public-new-${runId}`;
+    await changeSchoolAddress(a.schoolId, next, { kind: "PLATFORM", userId: a.ownerId });
+
+    const dto = await svc.get(a.slug.toUpperCase());
+    expect(dto).toMatchObject({ code: next, name: `Addr public ${runId}`, phone: "+2348012345678", email: "office@example.test", address: "1 School Road, Enugu", resultChecker: false });
+    expect(Object.keys(dto).sort()).toEqual(["address", "admissionsOpen", "code", "email", "logoUrl", "motto", "name", "phone", "resultChecker"]);
+
+    await expect(svc.get(`nobody-${runId}`)).rejects.toMatchObject({ httpStatus: 404 });
+    await basePrisma.school.update({ where: { id: a.schoolId }, data: { suspendedAt: new Date() } });
+    await expect(svc.get(next)).rejects.toMatchObject({ httpStatus: 404 });
+  });
+});

@@ -86,3 +86,24 @@ export interface SchoolAddressPreviewDto {
   code: string;
   host: string;
 }
+
+/**
+ * GET /school-addresses/:code — PUBLIC. What the school's front page at
+ * "<code>.schoolkit.ng" shows (docs/modules/school-addresses.md slice 2): the
+ * school's own public details, never anything about a child or a parent.
+ */
+export interface SchoolPublicDto {
+  /** The school's CURRENT code. A page reached through an older one redirects here. */
+  code: string;
+  name: string;
+  motto: string | null;
+  /** Signed for an hour, or null: the page shows SchoolKit's mark instead. */
+  logoUrl: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  /** The admission form is open to at least one class. */
+  admissionsOpen: boolean;
+  /** Results can be checked with a PIN for at least one term. */
+  resultChecker: boolean;
+}

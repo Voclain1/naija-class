@@ -92,4 +92,5 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   "accounts",
   "id",
   "ids",
+  "preview",
 ]);

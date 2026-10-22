@@ -57,6 +57,7 @@ Every button name in **bold** in this guide is exactly what you will see on your
 
 **The rest**
 
+- [Your school's web address](#your-schools-web-address)
 - [What parents see](#what-parents-see)
 - [Who does what in your school](#who-does-what-in-your-school)
 - [More things SchoolKit can do](#more-things-schoolkit-can-do)
@@ -112,7 +113,7 @@ Do these steps in order the first time. Each one builds on the one before.
 ## Step 1. Create your account
 
 1. Go to **app.schoolkit.ng/signup**.
-2. Fill in your **School name**, your **First name** and **Last name**, your **Email** and your **Phone** number (for example `08012345678`).
+2. Fill in your **School name**, your **First name** and **Last name**, your **Email** and your **Phone** number (for example `08012345678`). Under the school name you will see your school's web address, for example **virgo-fidelis.schoolkit.ng**. You can change it later (see [Your school's web address](#your-schools-web-address)).
 3. Choose a **Password**. It must be at least 8 characters and include a capital letter, a small letter, a number and a symbol such as `!`.
 4. Tick the box to accept the data handling terms.
 5. Press **Create school**.
@@ -482,6 +483,25 @@ If a card is lost or stolen, use **Void one PIN** with the serial number printed
 
 ---
 
+# Your school's web address
+
+Every school has its own address, for example **virgo-fidelis.schoolkit.ng**. Families who open it see your school's page:
+
+- your **logo** and **name** (and motto), or the SchoolKit logo until you upload yours;
+- **Sign in** for **Parents** and **Staff**, and the **school code** students type in the SchoolKit app;
+- **Apply for admission**, while your admission form is open, and **Check results with a PIN**, once you have released results that need a PIN;
+- your school's **address**, **phone** and **email** from **Settings → School**.
+
+The part before **.schoolkit.ng** is also your **school code**: the code students type to sign in, and the one printed on result PIN cards.
+
+**Changing it:** the owner goes to **Settings → School** and presses **Change address** under **School web address**. Type the new address; the page says whether it is **Available** before you save.
+
+- You can change it as often as you like in your school's **first 30 days** (and while you are still answering the welcome questions). After that, **2 changes a year**, at least 30 days apart. If you need another change, ask SchoolKit.
+- **Your old address keeps working.** Links you have shared, result PIN cards you have printed and the code on students' phones all still reach your school, and no other school can ever take it.
+- Only the **owner** can change it. Admins can see it.
+
+---
+
 # What parents see
 
 Parents sign in at **portal.schoolkit.ng** with the email and password they chose from your invitation. They see:
@@ -495,6 +515,8 @@ Parents sign in at **portal.schoolkit.ng** with the email and password they chos
 Parents can reset their own password from **Forgot password?** on the portal sign‑in page.
 
 **Your school's result checker page** works without signing in — parents only need the admission number and a PIN card.
+
+**Your school's page:** parents can also start from your school's web address, which has a **Parents** sign-in button. The sign-in page then shows your school's name and logo.
 
 **The SchoolKit phone app:** there is also a SchoolKit app for phones. We will let you know when it is ready for your parents; until then, the parent portal website is the way in.
 

@@ -10,6 +10,7 @@ import { NestFactory } from "@nestjs/core";
 import { Logger } from "@nestjs/common";
 import type { CorsOptions } from "@nestjs/common/interfaces/external/cors-options.interface";
 import { rootModuleFor } from "./root-module";
+import { isSchoolAddressOrigin } from "./common/school-origin";
 
 async function bootstrap() {
   // rawBody: true makes req.rawBody (Buffer) available alongside the parsed
@@ -45,8 +46,11 @@ async function bootstrap() {
   // from its side (common/auth/staff-session-token.ts).
   app.enableCors((req: { headers: { origin?: string } }, callback: (err: Error | null, options: CorsOptions) => void) => {
     const origin = req.headers.origin;
+    // A school's own address ("<code>.schoolkit.ng") may call the API too,
+    // never with credentials (common/school-origin.ts).
+    const schoolOrigin = isSchoolAddressOrigin(origin, process.env.SCHOOL_ADDRESS_DOMAIN);
     callback(null, {
-      origin: corsOrigins,
+      origin: schoolOrigin && origin ? [...corsOrigins, origin] : corsOrigins,
       methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "X-CBT-Signature"],
       // A cross-origin page can read only the response headers listed here.

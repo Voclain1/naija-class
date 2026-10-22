@@ -45,6 +45,7 @@ import { redactEmail } from "../../common/redact";
 import { portalBaseUrl } from "../../common/portal-url";
 import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
 import { TotpService } from "./totp.service.js";
+import { publicSiteUrls } from "../../common/school-site-url.js";
 
 const SIGNUP_AUDIT_ACTION = "auth.signup_owner";
 const LOGIN_AUDIT_ACTION = "auth.login";
@@ -914,6 +915,7 @@ export class AuthService {
         paystackSubaccountBusinessName: null,
         // Server-derived, from the one shared helper. See SchoolMeDto.
         portalUrl: portalBaseUrl(),
+        siteUrls: publicSiteUrls(school.slug),
       },
       roles,
       permissions,

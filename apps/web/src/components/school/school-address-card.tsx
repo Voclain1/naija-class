@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
  * the old one keeps working, so nothing printed or shared breaks.
  */
 export function SchoolAddressCard() {
-  const { setSchool } = useAuth();
+  const { school, setSchool } = useAuth();
   const [address, setAddress] = useState<SchoolAddressDto | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -89,6 +89,11 @@ export function SchoolAddressCard() {
         <p className="text-sm text-muted-foreground">
           Families use this address to find your school. It is also the school code students type to sign in.
         </p>
+        {school?.siteUrls?.home && (
+          <a href={school.siteUrls.home} target="_blank" rel="noreferrer" className="self-start text-sm text-primary underline-offset-2 hover:underline">
+            View your school&apos;s page
+          </a>
+        )}
       </div>
 
       {address.previousCodes.length > 0 && (

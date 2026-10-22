@@ -30,7 +30,6 @@ import {
 } from "@school-kit/types";
 
 import { EmailService } from "../../common/email/email.service.js";
-import { portalBaseUrl } from "../../common/portal-url.js";
 import { assertPrivateFile } from "../../common/storage/private-file.js";
 import { LOGO_URL_TTL_SECONDS, parseLogoExt } from "../../common/storage/school-logo.js";
 import { StorageService } from "../../common/storage/storage.service.js";
@@ -40,6 +39,7 @@ import { AdmissionMailService } from "./admission-mail.service.js";
 import { admissionTrackingToken } from "./admission-tracking.js";
 import { escapeHtml, hashToken, loadAdmissionSettings, openClassLevels } from "./admissions.shared.js";
 import { resolveSchoolCode } from "../../common/slug/school-code.js";
+import { schoolSiteUrls } from "../../common/school-site-url.js";
 
 // Phase 9 / CP7.1 — the PUBLIC side of admissions (docs/modules/phase-9.md
 // §16, §16.8). No login: anyone may read a school's form and send one
@@ -300,7 +300,7 @@ export class AdmissionsPublicService {
 
   private async acknowledge(schoolName: string, slug: string, to: string, childFirstName: string, levelName: string, reference: string, token: string) {
     if (!this.email.isConfigured) return;
-    const link = `${portalBaseUrl()}/apply/${slug}/track/${token}`;
+    const link = schoolSiteUrls(slug).track(token);
     try {
       await this.email.send({
         to,

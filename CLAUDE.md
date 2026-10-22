@@ -931,6 +931,8 @@ RESULT_PIN_HMAC_KEY
 PORTAL_PROXY_SECRET
 SESSION_COOKIE_DOMAIN
 RESEND_WEBHOOK_SECRET
+SCHOOL_ADDRESS_DOMAIN
+SCHOOL_ADDRESSES_LIVE
 ```
 
 Never commit. Never log. Test keys and live keys are different env files.
@@ -995,6 +997,18 @@ the Resend dashboard's webhook at that URL for `email.delivered`,
 announcement emails show as "sent" but never "delivered". Without it, bounced
 and complained addresses are not suppressed automatically. Announcement emails
 still go out. Rotating it in Resend means setting it again here.
+
+`SCHOOL_ADDRESS_DOMAIN` / `SCHOOL_ADDRESSES_LIVE` — school web addresses,
+`<code>.schoolkit.ng` (2026-10-22, `docs/modules/school-addresses.md`). On
+`school-kit-api`: the first (`schoolkit.ng`) lets each school's address call
+the API, never with credentials (`common/school-origin.ts`); the second, `on`
+only once the wildcard DNS and certificate work, makes the links we send and
+print use the school's address (`common/school-site-url.ts`). The portal
+needs `NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN` and `NEXT_PUBLIC_WEB_URL`. The steps,
+for Vercel now and the VPS later, are in `docs/runbooks/school-addresses.md`.
+The address is `schools.slug`; old codes live in `school_previous_addresses`
+and keep working, so resolve a code with `resolveSchoolCode`
+(`common/slug/school-code.ts`), never `school.findUnique({ where: { slug } })`.
 
 `CORS_ORIGIN_CBT` / `NEXT_PUBLIC_CBT_URL` — online exams (`docs/modules/cbt.md`).
 The first is the exam app's origin (`https://cbt.schoolkit.ng`), allowed by

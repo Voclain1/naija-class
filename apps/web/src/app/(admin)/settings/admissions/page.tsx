@@ -79,7 +79,7 @@ function SettingsForm({ initial, onSaved }: { initial: AdmissionSettingsDto; onS
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const link = `${PORTAL_URL}${initial.applyPath}`;
+  const link = initial.applyUrl ?? `${PORTAL_URL}${initial.applyPath}`;
 
   async function save() {
     setSaving(true);

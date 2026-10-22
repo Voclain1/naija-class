@@ -11,6 +11,7 @@ import { SchoolsService } from "./schools.service";
 import { SmsSenderService } from "./sms-sender.service";
 import { SchoolAddressPublicController } from "./school-address-public.controller";
 import { SchoolAddressService } from "./school-address.service";
+import { SchoolPublicService } from "./school-public.service";
 
 @Module({
   // Imports AuthModule so the controller's @UseGuards(AuthGuard) can resolve
@@ -24,7 +25,7 @@ import { SchoolAddressService } from "./school-address.service";
   // activates it — see applyStep5 and #198.
   imports: [AuthModule, PaystackModule, EmailModule, AcademicCalendarModule],
   controllers: [SchoolsController, SchoolAddressPublicController],
-  providers: [SchoolsService, PaystackSetupService, SmsSenderService, AdmissionNumberSettingsService, SchoolAddressService],
+  providers: [SchoolsService, PaystackSetupService, SmsSenderService, AdmissionNumberSettingsService, SchoolAddressService, SchoolPublicService],
   exports: [SchoolsService],
 })
 export class SchoolsModule {}
