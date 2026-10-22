@@ -1,5 +1,6 @@
-import { basePrisma } from "@school-kit/db";
 import { InternalError, RESERVED_SLUGS } from "@school-kit/types";
+
+import { schoolCodeTaken } from "./school-code.js";
 
 // Derives a School.slug from the school's name and guarantees uniqueness.
 //
@@ -42,11 +43,9 @@ export async function generateUniqueSchoolSlug(schoolName: string): Promise<stri
   for (let attempt = 0; attempt < MAX_SLUG_COLLISION_ATTEMPTS; attempt++) {
     const candidate = attempt === 0 ? base : `${base}-${attempt + 1}`;
     if (!SLUG_RE.test(candidate) || RESERVED_SLUGS.has(candidate)) continue;
-    const existing = await basePrisma.school.findUnique({
-      where: { slug: candidate },
-      select: { id: true },
-    });
-    if (!existing) return candidate;
+    // Any school's old code is taken too: it still leads to that school
+    // (school-code.ts), so it can never be handed to a new one.
+    if (!(await schoolCodeTaken(candidate))) return candidate;
   }
   // Should never happen in practice — MAX_SLUG_COLLISION_ATTEMPTS collisions
   // in a row on the same base slug. Fail loudly rather than create a school

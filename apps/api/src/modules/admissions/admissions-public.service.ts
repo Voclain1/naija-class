@@ -39,6 +39,7 @@ import { AdmissionAlertsService } from "./admission-alerts.service.js";
 import { AdmissionMailService } from "./admission-mail.service.js";
 import { admissionTrackingToken } from "./admission-tracking.js";
 import { escapeHtml, hashToken, loadAdmissionSettings, openClassLevels } from "./admissions.shared.js";
+import { resolveSchoolCode } from "../../common/slug/school-code.js";
 
 // Phase 9 / CP7.1 — the PUBLIC side of admissions (docs/modules/phase-9.md
 // §16, §16.8). No login: anyone may read a school's form and send one
@@ -200,7 +201,7 @@ export class AdmissionsPublicService {
       throw err;
     }
 
-    await this.acknowledge(school.name, slug, prepared.email, input.child.firstName, prepared.level.name, created.reference, token);
+    await this.acknowledge(school.name, school.slug, prepared.email, input.child.firstName, prepared.level.name, created.reference, token);
     await this.alerts.newApplication(school.id, created.id);
     return { reference: created.reference };
   }
@@ -350,9 +351,11 @@ async function findByToken(db: Db, schoolId: string, token: string) {
 }
 
 async function resolveSchool(slug: string) {
-  const trimmed = slug.trim().toLowerCase();
-  if (!/^[a-z0-9-]{1,80}$/.test(trimmed)) throw new NotFoundError("There is no school at this address.");
-  const school = await basePrisma.school.findUnique({ where: { slug: trimmed }, select: { id: true, name: true, logoUrl: true, suspendedAt: true } });
+  // An earlier address still finds the school (school-code.ts): admission
+  // links shared before a change keep working.
+  const found = await resolveSchoolCode(slug);
+  if (!found) throw new NotFoundError("There is no school at this address.");
+  const school = await basePrisma.school.findUnique({ where: { id: found.schoolId }, select: { id: true, slug: true, name: true, logoUrl: true, suspendedAt: true } });
   if (!school || school.suspendedAt) throw new NotFoundError("There is no school at this address.");
   return school;
 }

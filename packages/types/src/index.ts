@@ -32,6 +32,7 @@ export * from './exam-papers/index.js';
 export * from './cbt/index.js';
 export * from './school-contact/index.js';
 export * from './sms-sender/index.js';
+export * from './school-address/index.js';
 export * from './admission-numbers/index.js';
 export * from './guardians/index.js';
 export * from './imports/index.js';

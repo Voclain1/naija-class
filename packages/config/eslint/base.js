@@ -322,6 +322,11 @@ export const baseConfig = [
       // reasoning); it moved out when self-serve signup became a second
       // caller.
       "**/common/slug/school-slug.ts",
+      // School addresses (docs/modules/school-addresses.md, 2026-10-22):
+      // resolves a school code, current or earlier, before any school is
+      // known. Reads `schools` (no RLS) and school_previous_addresses, whose
+      // only read policy is USING (true): codes are public. It never writes.
+      "**/common/slug/school-code.ts",
     ],
     rules: {
       // Exempts basePrisma ONLY. The Anthropic ban is deliberately re-asserted

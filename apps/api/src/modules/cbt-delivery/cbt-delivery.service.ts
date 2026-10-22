@@ -18,6 +18,7 @@ import {
   type CbtSyncBatch,
   type CbtSyncResultDto,
 } from "@school-kit/types";
+import { resolveSchoolCode } from "../../common/slug/school-code.js";
 
 // ---------------------------------------------------------------------------
 // Online exams (CBT2) — the two public endpoints a lab machine calls
@@ -219,10 +220,11 @@ export class CbtDeliveryService {
 
   private async resolveSchool(slug: string): Promise<{ id: string }> {
     // `schools` is the tenant table and carries no RLS policy.
-    const school = await basePrisma.school.findUnique({
-      where: { slug: slug.trim().toLowerCase() },
-      select: { id: true, suspendedAt: true },
-    });
+    // An earlier code resolves too: packs downloaded before a change still sync.
+    const found = await resolveSchoolCode(slug);
+    const school = found
+      ? await basePrisma.school.findUnique({ where: { id: found.schoolId }, select: { id: true, suspendedAt: true } })
+      : null;
     if (!school) throw new NotFoundError(NO_PACK);
     // Suspension blocks every sign-in (platform-admin D6); sitting an exam is one.
     if (school.suspendedAt) {

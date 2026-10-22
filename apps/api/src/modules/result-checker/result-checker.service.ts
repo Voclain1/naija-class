@@ -13,6 +13,7 @@ import { LoginLockoutService, lockoutIdentity } from "../../common/auth/login-lo
 import { StorageService } from "../../common/storage";
 import { ReleasedResultsService } from "../report-cards/released-results.service";
 import { RedeemRefusedError, ResultPinService, type RedeemRefusal } from "./result-pin.service";
+import { currentSchoolCode, resolveSchoolCode } from "../../common/slug/school-code.js";
 
 // The public Result Checker (Phase 8c / CP6b, docs/modules/phase-8.md §21.5).
 //
@@ -94,7 +95,9 @@ export class ResultCheckerService {
 
   // POST /result-checker/:slug/check
   async check(slug: string, input: ResultCheckerCheckInput, ctx: RequestContext): Promise<ResultCheckerResultDto> {
-    const identity = lockoutIdentity("checker", slug, input.admissionNumber);
+    // One counter per school, whichever of its codes was typed (an old code
+    // from a printed PIN card still works, and must not double the attempts).
+    const identity = lockoutIdentity("checker", await currentSchoolCode(slug), input.admissionNumber);
     await this.lockout.check(identity);
 
     const school = await this.resolveSchool(slug);
@@ -179,11 +182,14 @@ export class ResultCheckerService {
     throw noMatch();
   }
 
-  private resolveSchool(slug: string) {
+  private async resolveSchool(slug: string) {
     // `schools` is the tenant table and carries no RLS policy, so this read
-    // needs no tenant and no SECURITY DEFINER function (§21.0).
+    // needs no tenant and no SECURITY DEFINER function (§21.0). An earlier
+    // code resolves too: PIN cards printed before a change keep working.
+    const found = await resolveSchoolCode(slug);
+    if (!found) return null;
     return basePrisma.school.findUnique({
-      where: { slug: slug.trim().toLowerCase() },
+      where: { id: found.schoolId },
       select: { id: true, name: true },
     });
   }

@@ -58,6 +58,7 @@ import { redactEmail } from "../../common/redact";
 import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
 
 import { deleteSchoolRows, holdsPlatformAdmin, readDeletionFacts } from "./school-deletion";
+import { changeSchoolAddress } from "../../common/slug/school-address-change.js";
 
 // Cross-tenant service. Reads go through the platform_admin_* SECURITY
 // DEFINER functions (see CLAUDE.md's inventory) via basePrisma directly —
@@ -284,6 +285,7 @@ const SCHOOLS_SET_STAFF_MOBILE_AUDIT_ACTION = "platform_admin.schools.set-staff-
 const SCHOOLS_SET_SMART_IMPORT_AUDIT_ACTION = "platform_admin.schools.set-smart-import";
 const SCHOOLS_DECIDE_SMS_SENDER_AUDIT_ACTION = "platform_admin.schools.decide-sms-sender";
 const SCHOOLS_SET_PLAN_AUDIT_ACTION = "platform_admin.schools.set-plan";
+const SCHOOLS_SET_ADDRESS_AUDIT_ACTION = "platform_admin.schools.set-address";
 // Same action name the hand-written production row used on 2026-08-16, so
 // that row and every later one read as one history.
 const SCHOOLS_SET_AI_BUDGET_AUDIT_ACTION = "platform_admin.schools.set-ai-budget";
@@ -846,6 +848,31 @@ export class PlatformAdminService {
       studentCapOverride: updated.studentCapOverride,
       studentCap: studentCapFor(updated.plan, updated.studentCapOverride),
     };
+  }
+
+  // The school's web address, set by SchoolKit (docs/modules/school-addresses.md).
+  // Same path as the owner's change, without the limits and never counted.
+  async setAddress(
+    schoolId: string,
+    code: string,
+    adminCtx: PlatformAdminContext,
+    reqCtx: { ipAddress: string | null },
+  ): Promise<{ schoolId: string; slug: string }> {
+    const existing = await basePrisma.school.findUnique({ where: { id: schoolId }, select: { id: true } });
+    if (!existing) throw new NotFoundError("School not found.");
+    const result = await changeSchoolAddress(schoolId, code, { kind: "PLATFORM", userId: adminCtx.userId });
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_SET_ADDRESS_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: { from: result.from, to: result.to },
+      },
+    });
+    return { schoolId, slug: result.to };
   }
 
   async setStaffMobileEnabled(

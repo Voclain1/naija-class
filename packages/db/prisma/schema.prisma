@@ -283,8 +283,37 @@ model School {
 
   admissionNumberCounters AdmissionNumberCounter[]
   reportExports           ReportExport[]
+  previousAddresses       SchoolPreviousAddress[]
 
   @@map("schools")
+}
+
+// A school's earlier web addresses (docs/modules/school-addresses.md,
+// 2026-10-22). When a school changes its address (schools.slug, the
+// "<code>.schoolkit.ng" part and the school code students type), the old one
+// moves here and keeps working forever: printed PIN cards, shared admission
+// links, remembered sign-in codes and exam packs all resolve through it. An
+// old code is never given to another school (unique here, and triggers keep it
+// apart from every school's current code), so nobody can pose as a school at
+// an address its families already know.
+//
+// Readable by everyone (codes are public, like schools.slug); written only
+// under the school's own GUC. RLS in policies/school-addresses.sql.
+model SchoolPreviousAddress {
+  id                String   @id @default(uuid())
+  schoolId          String   @map("school_id")
+  slug              String   @unique
+  retiredAt         DateTime @default(now()) @map("retired_at")
+  retiredBy         String?  @map("retired_by") // user id; null when SchoolKit changed it
+  // False for changes made in the free window (first 30 days, or still
+  // onboarding) and for changes made by SchoolKit; true when the change used
+  // one of the school's yearly allowance.
+  countsTowardLimit Boolean  @default(false) @map("counts_toward_limit")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, retiredAt])
+  @@map("school_previous_addresses")
 }
 
 enum SchoolStatus {
