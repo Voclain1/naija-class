@@ -25,6 +25,11 @@ export function withdrawAnnouncement(id: string): Promise<AnnouncementDto> {
 }
 
 /** What the signed-in staff member should read themselves. */
+/** On or off the school's public website (docs/modules/school-website.md). */
+export function setAnnouncementOnWebsite(id: string, show: boolean): Promise<AnnouncementDto> {
+  return apiFetch<AnnouncementDto>(`/announcements/${encodeURIComponent(id)}/website`, { method: "POST", body: { show } });
+}
+
 export function getStaffAnnouncementFeed(): Promise<AnnouncementFeedResponse> {
   return apiFetch<AnnouncementFeedResponse>("/announcements/feed");
 }

@@ -271,6 +271,11 @@ model School {
   // The school store's price list for parents (2026-10-19). On by default;
   // owner and admin switch it off on the Store page.
   storePricesForParents Boolean @default(true) @map("store_prices_for_parents")
+  // The school's public website (2026-10-22, docs/modules/school-website.md):
+  // reports from the public page that SchoolKit has not yet looked at. Kept
+  // here (schools has no RLS) so the operator's queue can list the schools
+  // with reports without reading every school's reports table.
+  websiteOpenReports   Int      @default(0) @map("website_open_reports")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
@@ -3192,6 +3197,8 @@ model SchoolEvent {
   rsvpClassArmIds String[]            @default([]) @map("rsvp_class_arm_ids")
   rsvpRemindedAt  DateTime?           @map("rsvp_reminded_at")
   rsvps           EventRsvp[]
+  // 2026-10-22: shown on the school's public website (school-website.md).
+  showOnWebsite   Boolean             @default(false) @map("show_on_website")
 
   @@index([schoolId])
   @@index([schoolId, startDate, endDate])
@@ -3659,6 +3666,9 @@ model Announcement {
   emailFamilies  Boolean              @default(false) @map("email_families")
   // Families in the audience with no address when the email was prepared.
   emailNoAddress Int                  @default(0) @map("email_no_address")
+  // 2026-10-22: also shown on the school's public website (Everyone or
+  // Parents only; CHECK in SQL). Withdrawn ones never show.
+  showOnWebsite  Boolean              @default(false) @map("show_on_website")
 
   reads  AnnouncementRead[]
   emails AnnouncementEmail[]
@@ -5351,4 +5361,115 @@ model FixedAssetEvent {
 
   @@index([assetId, createdAt])
   @@map("fixed_asset_events")
+}
+
+// ─── The school's public website (2026-10-22, docs/modules/school-website.md)
+
+// One row per school: the page details as the editor last saved them (draft)
+// and as families see them (published). Both are the checked shape of
+// websiteDetailsSchema in @school-kit/types.
+model SchoolWebsite {
+  id          String    @id @default(uuid())
+  schoolId    String    @unique @map("school_id")
+  draft       Json      @default("{}")
+  published   Json?
+  publishedAt DateTime? @map("published_at")
+  publishedBy String?   @map("published_by")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  updatedBy   String?   @map("updated_by")
+
+  @@map("school_websites")
+}
+
+enum WebsitePostStatus {
+  DRAFT
+  PUBLISHED
+
+  @@map("website_post_status")
+}
+
+// News posts: public only, never sent to phones (announcements do that).
+model SchoolWebsitePost {
+  id             String            @id @default(uuid())
+  schoolId       String            @map("school_id")
+  title          String
+  body           String
+  status         WebsitePostStatus @default(DRAFT)
+  publishedAt    DateTime?         @map("published_at")
+  createdBy      String            @map("created_by")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  // SchoolKit's take-down: hidden, and the school cannot republish it.
+  takenDownAt    DateTime?         @map("taken_down_at")
+  takenDownBy    String?           @map("taken_down_by")
+  takeDownReason String?           @map("take_down_reason")
+
+  photos SchoolWebsitePhoto[]
+
+  @@index([schoolId, status, publishedAt])
+  @@map("school_website_posts")
+}
+
+model SchoolWebsiteAlbum {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  title     String
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  photos SchoolWebsitePhoto[]
+
+  @@index([schoolId])
+  @@map("school_website_albums")
+}
+
+enum WebsitePhotoKind {
+  COVER
+  POST
+  GALLERY
+  LEADER
+
+  @@map("website_photo_kind")
+}
+
+// Every photo on the website. Two JPEGs in storage (large, thumb). The
+// uploader's "This photo shows no pupils" tick is recorded with who gave it
+// (W4: no pupils on public pages); there is no photo without one.
+model SchoolWebsitePhoto {
+  id                 String           @id @default(uuid())
+  schoolId           String           @map("school_id")
+  kind               WebsitePhotoKind
+  postId             String?          @map("post_id")
+  albumId            String?          @map("album_id")
+  caption            String?
+  position           Int              @default(0)
+  noPupilsConfirmedBy String          @map("no_pupils_confirmed_by")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  takenDownAt        DateTime?        @map("taken_down_at")
+  takenDownBy        String?          @map("taken_down_by")
+  takeDownReason     String?          @map("take_down_reason")
+
+  post  SchoolWebsitePost?  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  album SchoolWebsiteAlbum? @relation(fields: [albumId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, kind])
+  @@index([postId])
+  @@map("school_website_photos")
+}
+
+// "Report this photo" from the public page. Read by SchoolKit's operator.
+model SchoolWebsiteReport {
+  id         String    @id @default(uuid())
+  schoolId   String    @map("school_id")
+  photoId    String?   @map("photo_id")
+  postId     String?   @map("post_id")
+  reason     String
+  createdAt  DateTime  @default(now()) @map("created_at")
+  resolvedAt DateTime? @map("resolved_at")
+  resolvedBy String?   @map("resolved_by")
+  // TAKEN_DOWN or DISMISSED.
+  resolution String?
+
+  @@index([schoolId, resolvedAt])
+  @@map("school_website_reports")
 }

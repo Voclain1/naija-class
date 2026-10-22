@@ -7,6 +7,7 @@ import { resolveSchoolCode } from "../../common/slug/school-code.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import { signSchoolLogoUrl } from "../../common/storage/school-logo.js";
 import { loadAdmissionSettings, openClassLevels } from "../admissions/admissions.shared.js";
+import { buildPublicWebsite, verifyPreviewToken } from "../school-website/website-content.js";
 
 // The school's public front page, "<code>.schoolkit.ng"
 // (docs/modules/school-addresses.md slice 2). PUBLIC, so it returns the
@@ -24,7 +25,8 @@ const NOT_FOUND = "There is no school at this address.";
 export class SchoolPublicService {
   constructor(private readonly storage: StorageService) {}
 
-  async get(rawCode: string): Promise<SchoolPublicDto> {
+  /** `previewToken`: the editor's 30-minute link, which shows the draft details. */
+  async get(rawCode: string, previewToken?: string): Promise<SchoolPublicDto> {
     const found = await resolveSchoolCode(rawCode);
     if (!found) throw new NotFoundError(NOT_FOUND);
     return withTenant(found.schoolId, async (db) => {
@@ -41,6 +43,8 @@ export class SchoolPublicService {
       const resultChecker =
         (await db.reportCard.findFirst({ where: { status: "RELEASED", accessMode: "PIN" }, select: { id: true } })) !== null;
       const logoUrl = await signSchoolLogoUrl(this.storage, found.schoolId, school.logoUrl).catch(() => null);
+      const preview = verifyPreviewToken(found.schoolId, previewToken);
+      const website = await buildPublicWebsite(db, this.storage, found.schoolId, { preview, admissionsOpen });
 
       return {
         code: school.slug,
@@ -52,6 +56,7 @@ export class SchoolPublicService {
         email: school.email?.trim() || null,
         admissionsOpen,
         resultChecker,
+        website,
       };
     });
   }

@@ -129,6 +129,15 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/photos/staff/${key.userId}.jpg`;
     }
+    case "website-photo": {
+      if (!UUID_RE.test(key.photoId)) {
+        throw new Error(`storage: photoId is not a UUID: ${redact(key.photoId)}`);
+      }
+      if (key.size !== "large" && key.size !== "thumb") {
+        throw new Error(`storage: unsupported website-photo size: ${redact(String(key.size))}`);
+      }
+      return `schools/${schoolId}/website/${key.photoId}-${key.size}.jpg`;
+    }
   }
 }
 

@@ -33,6 +33,8 @@ export const createAnnouncementSchema = z
     urgent: z.boolean().optional(),
     /** Phase 9 / CP8.3: also email the families (not for STAFF). */
     emailFamilies: z.boolean().optional(),
+    /** 2026-10-22: also on the school's public website (Everyone or Parents only). */
+    showOnWebsite: z.boolean().optional(),
   })
   .strict()
   .refine((v) => (v.audience === "CLASS") === (v.classArmId !== undefined), {
@@ -42,7 +44,14 @@ export const createAnnouncementSchema = z
   .refine((v) => !(v.emailFamilies && v.audience === "STAFF"), {
     message: "Staff announcements are not emailed.",
     path: ["emailFamilies"],
+  })
+  .refine((v) => !v.showOnWebsite || ANNOUNCEMENT_WEBSITE_AUDIENCES.includes(v.audience), {
+    message: "Only announcements to everyone or to parents can go on the website.",
+    path: ["showOnWebsite"],
   });
+
+/** The audiences whose announcements may be shown on the public website. */
+export const ANNOUNCEMENT_WEBSITE_AUDIENCES: readonly AnnouncementAudience[] = ["EVERYONE", "PARENTS"];
 export type CreateAnnouncementInput = z.infer<typeof createAnnouncementSchema>;
 
 export interface AnnouncementDto {
@@ -60,6 +69,8 @@ export interface AnnouncementDto {
   withdrawnAt: string | Date | null;
   /** CP8.3: how the email to families went; null when it was not emailed. */
   email: AnnouncementEmailSummaryDto | null;
+  /** On the school's public website. */
+  showOnWebsite: boolean;
 }
 
 export interface AnnouncementListResponse {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { RESERVED_SLUGS } from "../auth/reserved-slugs.js";
+import type { PublicWebsiteDto } from "../school-website/school-website.dto.js";
 
 // A school's web address (docs/modules/school-addresses.md, 2026-10-22).
 //
@@ -106,4 +107,6 @@ export interface SchoolPublicDto {
   admissionsOpen: boolean;
   /** Results can be checked with a PIN for at least one term. */
   resultChecker: boolean;
+  /** The school's own sections, by plan (docs/modules/school-website.md). */
+  website: PublicWebsiteDto;
 }

@@ -25,7 +25,7 @@ export class SchoolAddressPublicController {
   // Declared after "preview", which is reserved and so never a school's code.
   @Get(":code")
   @Throttle({ default: { ttl: 60_000, limit: 60 } })
-  school(@Param("code") code: string): Promise<SchoolPublicDto> {
-    return this.publicSchool.get(code);
+  school(@Param("code") code: string, @Query("preview") preview: string | undefined): Promise<SchoolPublicDto> {
+    return this.publicSchool.get(code, preview?.slice(0, 200));
   }
 }

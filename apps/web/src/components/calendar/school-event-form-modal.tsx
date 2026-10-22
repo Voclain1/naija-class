@@ -29,6 +29,8 @@ export interface SchoolEventFormValues {
   endDate: string;
   /** Phase 9 / CP10.1: null when families are not asked to reply. */
   rsvp: EventRsvpSettingsInput;
+  /** 2026-10-22: on the school's public website (docs/modules/school-website.md). */
+  showOnWebsite: boolean;
 }
 
 const FIELD =
@@ -61,6 +63,7 @@ export function SchoolEventFormModal({
   const [deadline, setDeadline] = useState("");
   const [askCount, setAskCount] = useState(false);
   const [classArmIds, setClassArmIds] = useState<string[]>([]);
+  const [showOnWebsite, setShowOnWebsite] = useState(false);
   const [arms, setArms] = useState<ClassArmDto[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +80,7 @@ export function SchoolEventFormModal({
       setDeadline(editing.rsvp?.deadline ?? "");
       setAskCount(editing.rsvp?.askCount ?? false);
       setClassArmIds(editing.rsvp?.classArmIds ?? []);
+      setShowOnWebsite(editing.showOnWebsite);
     } else {
       const today = lagosTodayIso();
       setTitle("");
@@ -88,6 +92,7 @@ export function SchoolEventFormModal({
       setDeadline("");
       setAskCount(false);
       setClassArmIds([]);
+      setShowOnWebsite(false);
     }
     setError(null);
     setSubmitting(false);
@@ -118,6 +123,7 @@ export function SchoolEventFormModal({
         startDate,
         endDate,
         rsvp: askReply ? { deadline: deadline || null, askCount, classArmIds } : null,
+        showOnWebsite,
       });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not save the event.");
@@ -217,6 +223,14 @@ export function SchoolEventFormModal({
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
+
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-1" checked={showOnWebsite} onChange={(e) => setShowOnWebsite(e.target.checked)} />
+            <span>
+              <span className="font-medium">Show on the school website</span>
+              <span className="block text-muted-foreground">Anyone on the internet can see it on your school&apos;s page until the event is over.</span>
+            </span>
+          </label>
 
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" className="mt-1" checked={askReply} onChange={(e) => setAskReply(e.target.checked)} />
