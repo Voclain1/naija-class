@@ -74,3 +74,82 @@ win over the wildcard, so those keep working unchanged.
 On `school-kit-api`: `SCHOOL_ADDRESSES_LIVE=on`. Admission emails, the
 admissions settings link and the PIN card link now use the school's own
 address. To undo, unset it; both kinds of link keep working.
+
+## 5. Schools working from their own address (parents and staff)
+
+Since 2026-10-23 (`docs/modules/school-hosted-apps.md`) parents sign in at
+`<code>.schoolkit.ng/parents` and staff at `<code>.schoolkit.ng/staff`. The
+staff app moves to `/staff` everywhere: `app.schoolkit.ng/dashboard` now
+redirects to `app.schoolkit.ng/staff/dashboard`, so old links keep working.
+
+**One new variable:**
+
+| Where | Variable | Value |
+|---|---|---|
+| `school-kit-web` (Vercel) | `NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN` | `schoolkit.ng` |
+
+Set it as type **Config**, like the portal's, then redeploy `school-kit-web`.
+These must already be set (steps 1 and 4, and the staff cookie runbook):
+
+- `school-kit-portal`: `NEXT_PUBLIC_WEB_URL=https://app.schoolkit.ng`. The
+  portal forwards `/staff` there.
+- `school-kit-web`: `SESSION_COOKIE_DOMAIN=schoolkit.ng`. Without it the staff
+  cookie would not reach the API from a school's address.
+- `school-kit-api`: `SCHOOL_ADDRESS_DOMAIN=schoolkit.ng` and
+  `SCHOOL_ADDRESSES_LIVE=on`.
+
+**Deploy order:** the API first, then both Vercel projects. Merging deploys all
+three within minutes. In the gap, a parent's **Forgot password?** at a school's
+address can fail, because the older API refuses the new school field.
+
+### While on Vercel
+
+Nothing else to do. The wildcard domain from step 2 already sends every
+school's address to `school-kit-portal`. The portal forwards `/staff` to
+`app.schoolkit.ng` itself and names the school's address in an
+`x-schoolkit-host` header. That header keeps the staff app's redirects on the
+school's address.
+
+### On the VPS (after the move)
+
+Send `/staff` on a school's address straight to the staff app, and set the same
+header. **Overwrite** any value the browser sent. With Caddy:
+
+```
+*.schoolkit.ng {
+  tls {
+    dns cloudflare {env.CF_API_TOKEN}
+  }
+  handle /staff* {
+    reverse_proxy 127.0.0.1:3001 {
+      header_up X-Schoolkit-Host {host}
+    }
+  }
+  handle {
+    reverse_proxy 127.0.0.1:3002
+  }
+}
+```
+
+With nginx, use a `location /staff` block proxying to the staff app with
+`proxy_set_header X-Schoolkit-Host $host;`, and keep everything else going to
+the portal. The staff app itself must still be served at `app.schoolkit.ng`,
+with its `/staff` base path.
+
+### Checks (a phone is enough)
+
+1. Open `https://<a real school's code>.schoolkit.ng` and press **Staff**. The
+   address is now `<code>.schoolkit.ng/staff/login`, and the page names the
+   school. There is no "Create an account" link.
+2. Sign in as a member of that school's staff. You land on the dashboard and the
+   address stays `<code>.schoolkit.ng/staff/…`. Open a few pages.
+3. Go back to the school's page and press **Parents**. The address is
+   `<code>.schoolkit.ng/parents/login`. A parent of that school can sign in and
+   open a child's page; the address stays `<code>.schoolkit.ng/parents/…`.
+4. Open `https://app.schoolkit.ng/dashboard`. It moves to
+   `app.schoolkit.ng/staff/dashboard` and works as before.
+5. `https://portal.schoolkit.ng` still signs parents in.
+
+**If step 2 lands on `app.schoolkit.ng`**, the `x-schoolkit-host` header is not
+reaching the staff app. **If it bounces back to sign-in**, check
+`SESSION_COOKIE_DOMAIN` on `school-kit-web`.

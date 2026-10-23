@@ -121,7 +121,7 @@ Do these steps in order the first time. Each one builds on the one before.
 
 The welcome questions start straight away.
 
-**Next time you come back,** go to **app.schoolkit.ng/login** and sign in with the same email and password. If you forget your password, press **Forgot password?** on that page.
+**Next time you come back,** go to your school's own address followed by **/staff**, for example **virgo-fidelis.schoolkit.ng/staff**, and sign in with the same email and password. (**app.schoolkit.ng** still works too.) If you forget your password, press **Forgot password?** on that page.
 
 ## Step 2. Answer the welcome questions
 
@@ -276,7 +276,7 @@ A teacher only sees the classes and subjects they have been given. **A teacher w
 
 ## Step 10. Add parents
 
-Parents can see their children's fees, results, timetable and school messages on the **parent portal** (portal.schoolkit.ng). This step is optional — do it when you are ready.
+Parents can see their children's fees, results, timetable and school messages on the **parent portal**, at your school's own address followed by **/parents** (for example **virgo-fidelis.schoolkit.ng/parents**). This step is optional — do it when you are ready.
 
 **Adding a parent to a child**
 
@@ -294,7 +294,7 @@ Parents can see their children's fees, results, timetable and school messages on
 1. The parent must have an **email address** saved.
 2. On the child's **Guardians** tab, press **Invite to portal**.
 3. **SchoolKit emails the invitation to the parent for you.** The link is also shown on your screen once, with a **Copy** button, in case the parent cannot find the email (ask them to check their spam folder first).
-4. The parent opens the link, chooses a password, and can then sign in at **portal.schoolkit.ng**.
+4. The parent opens the link, chooses a password, and can then sign in at your school's address followed by **/parents**. The **Parents** button on your school's page goes there too.
 
 The **Parents & guardians** page in the menu lists every parent and whether they can sign in. From there you can **Invite again**, **Cancel invite**, or **Switch off access** for a parent who should no longer see anything. Switching off access signs them out straight away.
 
@@ -320,7 +320,7 @@ The **form teacher** normally takes the register each morning, from **Attendance
 2. Press **Mark all present**, then change the few who are **Absent**, **Late** or **Excused**.
 3. Press **Save**.
 
-**If you need to take a register yourself** (for example when a teacher is away), go to **app.schoolkit.ng/teacher/attendance**. Owners and admins can mark any class there.
+**If you need to take a register yourself** (for example when a teacher is away), go to **Attendance** under **My classes** in the menu, or to your school's address followed by **/staff/teacher/attendance**. Owners and admins can mark any class there.
 
 Only the class's form teacher, you and your admins can mark a class register. If a teacher cannot see their class, check [Step 8](#step-8-choose-a-form-teacher-for-each-class).
 
@@ -503,6 +503,15 @@ The part before **.schoolkit.ng** is also your **school code**: the code student
 - **Your old address keeps working.** Links you have shared, result PIN cards you have printed and the code on students' phones all still reach your school, and no other school can ever take it.
 - Only the **owner** can change it. Admins can see it.
 
+**Signing in at your address.** Your school works from its own address:
+
+- **Staff** sign in at **your-address/staff**, for example **virgo-fidelis.schoolkit.ng/staff**.
+- **Parents** sign in at **your-address/parents**, for example **virgo-fidelis.schoolkit.ng/parents**.
+- The **Parents** and **Staff** buttons on your school's page open those sign-in pages, already naming your school.
+- Invitations, password resets, the page parents return to after paying online, and the other links we send all use your address.
+- Only accounts at your school can sign in there. A parent with children at two SchoolKit schools signs in at each school's address separately. So does a teacher who works at two schools.
+- **app.schoolkit.ng** and **portal.schoolkit.ng** keep working, so older links and bookmarks still open.
+
 ---
 
 # Your school's website
@@ -546,7 +555,7 @@ Your school's page can say much more than the basics. Go to **Settings → Schoo
 
 # What parents see
 
-Parents sign in at **portal.schoolkit.ng** with the email and password they chose from your invitation. They see:
+Parents sign in at your school's address followed by **/parents** (for example **virgo-fidelis.schoolkit.ng/parents**) with the email and password they chose from your invitation. They see:
 
 - **Your children** — each child linked to them, with their class.
 - **Fees** — every invoice with **Total due**, **Paid so far** and the balance. If online payment is on, a **Pay** button pays the full balance by card. If you have shared your bank details, they see your account number too.
@@ -578,7 +587,7 @@ Parents can reset their own password from **Forgot password?** on the portal sig
 - **Teacher** — their own classes only: registers (form teachers), scores for the subjects they teach, report card comments (form teachers), homework, lesson plans and their timetable.
 - **Parents** — only their own children, on the parent portal.
 
-**For your teachers, in short:** sign in at **app.schoolkit.ng/login**, then use the menu on the left. It has the same kind of sections: **My classes** (Classes, Attendance for the morning register, Homework, Behaviour & discipline, My timetable), **Lesson notes** (Lesson notes, Scheme of work, Library resources), **Examinations & results** (Gradebook for scores, Report cards for form teachers' comments, Question bank, Exam papers, CBT exams) and **School** (Calendar, Messages, School news). Teachers add their own photo for their staff ID card under **Profile**.
+**For your teachers, in short:** sign in at your school's address followed by **/staff** (for example **virgo-fidelis.schoolkit.ng/staff**), then use the menu on the left. It has the same kind of sections: **My classes** (Classes, Attendance for the morning register, Homework, Behaviour & discipline, My timetable), **Lesson notes** (Lesson notes, Scheme of work, Library resources), **Examinations & results** (Gradebook for scores, Report cards for form teachers' comments, Question bank, Exam papers, CBT exams) and **School** (Calendar, Messages, School news). Teachers add their own photo for their staff ID card under **Profile**.
 
 ---
 

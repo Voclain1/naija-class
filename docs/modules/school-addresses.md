@@ -38,6 +38,9 @@ sheets and in offline exam packs. A school may now change it, within limits.
   checker (`/results`). Signing in, and everything after, stays on
   `portal.schoolkit.ng` and `app.schoolkit.ng`, so sessions never spread across
   schools' hosts and the staff cookie's Origin rule is untouched.
+  **Superseded 2026-10-23** by `docs/modules/school-hosted-apps.md`: parents
+  and staff now sign in at `<code>.schoolkit.ng/parents` and `/staff`, and the
+  Origin rule accepts a school's address for that school's sessions only.
 - **D6. One switch for links.** `SCHOOL_ADDRESSES_LIVE=on` (API) makes the links
   we send and print use the school's address. Off, they stay on the portal.
   Both forms work either way, so flipping it never breaks a link already out.

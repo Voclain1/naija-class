@@ -1,7 +1,8 @@
 // School addresses, "<code>.schoolkit.ng" (docs/modules/school-addresses.md
 // slice 2). The portal serves every school's front page, admission form and
-// result checker at the school's own address; everything signed-in stays on
-// portal.schoolkit.ng.
+// result checker at the school's own address, and since 2026-10-23 its
+// parents' pages under /parents and the staff app under /staff
+// (docs/modules/school-hosted-apps.md).
 //
 // Plain host parsing, no platform features: the same code runs on Vercel and
 // on a VPS behind a wildcard proxy. NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN names the
