@@ -1,9 +1,11 @@
 # Moving School Kit to a VPS
 
-Status: **repo side built 21 Oct 2026, nothing live.** Fly, Vercel and Neon
-are untouched until the cutover in §6. Decided Oct 2026: move off Fly, Vercel
-and Neon to a Contabo VPS, to cut monthly cost, within 9 days, together with
-betgenius (`betgenius/docs/VPS_MIGRATION.md`).
+Status: **repo side built 21–23 Oct 2026, nothing live.** Fly, Vercel and
+Neon are untouched until the cutover in §6. Decided Oct 2026: move all of
+School Kit (the apps and the marketing site) off Fly, Vercel and Neon to a
+Contabo VPS, to cut monthly cost, before Vercel renews on **28 October**,
+together with betgenius (`betgenius/docs/VPS_MIGRATION.md`). Other projects
+follow afterwards.
 
 Everything is driven from GitHub Actions, so it can be run from a phone.
 
@@ -15,6 +17,7 @@ Everything is driven from GitHub Actions, so it can be run from a phone.
 | Fly `school-kit-render-worker` (stops when idle, woken over HTTP) | `render-worker` container (`apps/api/Dockerfile.render`), always running, one instance |
 | Vercel `school-kit-web`, `school-kit-portal` | `web`, `portal` containers (`infra/vps/Dockerfile.next`, Next.js standalone) |
 | Exam app (`apps/cbt`, not live yet) | `cbt` container, off until `VPS_CBT_ENABLED=true` |
+| Vercel `schoolkit` (the marketing site, `schoolkit.ng`, repo `schoolkit-landing`) | `landing` container, deployed by that repo's own `deploy-vps.yml` through `infra/vps/deploy-landing.sh` |
 | Neon Postgres | Postgres 16 + pgvector in Docker (`infra/vps/postgres`), loopback only |
 | Fly/Upstash Redis | `redis` container, append-only, `noeviction` (BullMQ) |
 | Fly and Vercel HTTPS | Caddy, certificates from Let's Encrypt; Cloudflare in front |
@@ -22,8 +25,9 @@ Everything is driven from GitHub Actions, so it can be run from a phone.
 
 Unchanged: Cloudflare R2 (files), Paystack, Termii, Resend, Expo push,
 Anthropic, Voyage, Sentry, PostHog. Their webhooks use `api.schoolkit.ng`,
-which keeps its name. The marketing site (`schoolkit.ng`, separate repo) stays
-on Vercel for now.
+which keeps its name. The marketing site keeps its Upstash Redis (rate
+limits over HTTPS, works from anywhere) and its Resend webhook
+(`schoolkit.ng/api/webhooks/resend`, same name).
 
 ## 2. What changed in the code, and why
 
@@ -38,20 +42,26 @@ Each of these silently stops working off Fly or Vercel unless fixed:
 | `NEXT_OUTPUT=standalone` in the three `next.config.mjs` | Self-contained Next.js servers for the images. Unset on Vercel, so nothing changes there. |
 | `FLY_DEPLOY_DISABLED` in `deploy-staging.yml` | Stops merges deploying to Fly and migrating Neon after cutover. |
 
-## 3. The 9 days
+## 3. The days before Vercel renews (28 October)
 
 | Day | What | Who |
 |---|---|---|
-| 1 | Merge the PRs (the mobile fix before any store build). Order the VPS. Cloudflare: add `schoolkit.ng`, check every record, switch nameservers (§5). Create the object storage bucket. | Owner |
-| 2 | Add the GitHub settings (§4). Run `vps-setup`. Run `deploy-vps`, then `vps-db-copy`. The rehearsal is up on `*.vps.schoolkit.ng`. | Owner, from GitHub |
-| 3–4 | Rehearsal checks (§6.1). Fix what they find. Run `db-restore-test` and check the bucket has `wal/` and `dumps/`. | Both |
-| 5 | Second rehearsal: `vps-db-copy` again, repeat the checks. It should be boring. | Both |
-| 6 | **Cutover**, 04:00 Lagos, on a day with no exams or report-card release (§6.2). | Owner, from GitHub |
-| 7–9 | Watch: Sentry, `/api/v1/health`, the backup ping, one real payment. Day 9, if clean: cancel per §7. | Owner |
+| Thu 23 Oct | Merge the branches in naija-class and schoolkit-landing (the mobile fix before any store build). Order the VPS. Cloudflare: add `schoolkit.ng`, check every record, switch nameservers (§5). Create the object storage bucket. | Owner |
+| Fri 24 Oct | Add the GitHub settings (§4) in both repos. Run `vps-setup`, `deploy-vps`, then `vps-db-copy`; then schoolkit-landing's `deploy-vps`. The rehearsal is up on `*.vps.schoolkit.ng` and `vps.schoolkit.ng`. | Owner, from GitHub |
+| Sat 25 Oct | Rehearsal checks (§6.1). Fix what they find. Run `db-restore-test` and check the bucket has `wal/` and `dumps/`. | Both |
+| Sun 26 Oct | If anything was fixed: `vps-db-copy` again and repeat the checks. **Go / no-go by the evening.** | Both |
+| **Mon 27 Oct, 04:00 Lagos** | **Cutover** (§6.2): apps and marketing site together. | Owner, from GitHub |
+| Mon 27 Oct, afternoon | If all is well, downgrade Vercel before it renews (§7). | Owner |
+| Following week | Watch: Sentry, `/api/v1/health`, the backup ping, one real payment. Then cancel Fly and Neon (§7). | Owner |
 
-The 9-day limit leaves only about 3 days between cutover and cancelling, not
-the usual 7. Keep Neon on its cheapest plan for one extra month if you can.
-It is the cheapest insurance in this whole plan.
+This leaves a single rehearsal with one day of slack. **If the rehearsal
+finds something that is not fixed by Sunday evening, do not cut over on
+Monday:** pay one more Vercel month and cut over the following weekend.
+
+Vercel's free Hobby plan does not allow commercial use, so Pro can only end
+once every commercial project has left it (betgenius, and the other
+projects that follow, such as credocatholica). Until then, cutting builds
+(Build Machine "Standard", previews off) keeps Pro close to its bare $20.
 
 ## 4. Settings
 
@@ -82,6 +92,7 @@ Secrets:
 | `WEB_ENV_FILE` | The `school-kit-web` Vercel variables (`vercel env pull`). Must include `NEXT_PUBLIC_API_URL` and `SESSION_COOKIE_DOMAIN=schoolkit.ng`. |
 | `PORTAL_ENV_FILE` | The `school-kit-portal` Vercel variables, including `PORTAL_PROXY_SECRET` (the same value as in `API_ENV_FILE`). |
 | `CBT_ENV_FILE` | The exam app's, when it goes live (`docs/runbooks/cbt-go-live.md`). |
+| In **schoolkit-landing**: `VPS_HOST`, `VPS_SSH_KEY` (the same values), `LANDING_ENV_FILE` | The marketing site's Vercel variables (`RESEND_*`, `UPSTASH_*`, `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `PIONEER_LEADS_TO`). |
 | `BACKUP_ENV_FILE` | `BACKUP_BUCKET=<bucket>`, `WALG_S3_PREFIX=s3://<bucket>/wal`, `AWS_ACCESS_KEY_ID=…`, `AWS_SECRET_ACCESS_KEY=…`, `AWS_ENDPOINT=https://…` (the provider's S3 address), `AWS_REGION=…`, `AWS_S3_FORCE_PATH_STYLE=true`, and `HEALTHCHECK_PING_URL=…` (healthchecks.io, free: it emails when a night's backup does not arrive). |
 | `STAGING_DIRECT_URL`, `FLY_API_TOKEN` | Already set. `vps-db-copy` reads Neon through the first and stops Fly with the second. |
 
@@ -97,6 +108,8 @@ Variables:
 | `VPS_DEPLOY_ENABLED` | unset (deploy by hand) | `true` (every merge that passes `ci`) |
 | `FLY_DEPLOY_DISABLED` | unset | `true` |
 | `PG_MAJOR` | `16` unless `vps-db-copy` says otherwise | same |
+| schoolkit-landing: `VPS_LANDING_HOST` | `vps.schoolkit.ng` | `schoolkit.ng` |
+| schoolkit-landing: `VPS_DEPLOY_ENABLED` | unset | `true` |
 
 `VPS_MODE=rehearsal` adds `infra/vps/docker-compose.rehearsal.yml`:
 scheduled jobs off, and the hosts for Expo push, Resend and Termii resolve to
@@ -115,8 +128,9 @@ a real family, even if a tester presses "send".
 4. Set the TTL of `api`, `app` and `portal` to 5 minutes.
 5. SSL/TLS: **Full (strict)**. Leave "Always Use HTTPS" **off**: Caddy
    redirects to HTTPS itself, and Let's Encrypt's check arrives on port 80.
-6. Day 2: add `api.vps`, `app.vps` and `portal.vps` as A records to the VPS
-   IP, proxied.
+6. Day 2: add `api.vps`, `app.vps`, `portal.vps` and `vps` as A records to
+   the VPS IP, proxied. Also write down the apex and `www` targets (the
+   marketing site's rollback).
 
 Behind Cloudflare, Caddy trusts `CF-Connecting-IP` only from Cloudflare's
 address ranges, which are listed in `infra/vps/Caddyfile`. Re-check that list
@@ -139,7 +153,9 @@ once a year against https://www.cloudflare.com/ips/.
    - a test payment on Paystack test keys;
    - a student import;
    - `/help/guide`;
-   - `https://api.vps.schoolkit.ng/api/v1/health`.
+   - `https://api.vps.schoolkit.ng/api/v1/health`;
+   - `https://vps.schoolkit.ng`: the home page, the blog, the pricing page
+     (a test waitlist sign-up reaches the real Resend list; delete it after).
 
    No family should receive anything: the rehearsal guards block it.
 4. Run `db-restore-test`. In the bucket, `dumps/daily/` and `wal/` should
@@ -160,13 +176,17 @@ once a year against https://www.cloudflare.com/ips/.
    certificates, and the smoke test runs against `https://api.schoolkit.ng`.
 6. Check: staff sign-in, portal sign-in, the mobile app, one real ₦100
    payment (as on 20 Oct), a report-card PDF.
-7. Disconnect the Vercel projects `school-kit-web` and `school-kit-portal`
-   from GitHub, so merges stop building them.
+7. Marketing site: in schoolkit-landing set `VPS_LANDING_HOST=schoolkit.ng`
+   and `VPS_DEPLOY_ENABLED=true`, point the apex and `www` at the VPS IP
+   (proxied), run its `deploy-vps`, and check `https://schoolkit.ng`.
+8. Disconnect the Vercel projects `school-kit-web`, `school-kit-portal` and
+   `schoolkit` from GitHub, so merges stop building them.
 
 ### 6.3 Rollback
 
 While Fly is stopped and Neon untouched, rollback is three steps:
-- point `api`, `app` and `portal` back at the targets written down in §5;
+- point `api`, `app` and `portal` (and the apex and `www`, for the marketing
+  site) back at the targets written down in §5;
 - `flyctl scale count 1 --app school-kit-api` and the same for
   `school-kit-render-worker`;
 - set `FLY_DEPLOY_DISABLED` back to unset.
@@ -175,14 +195,15 @@ Anything written on the VPS after cutover is not in Neon. Payments can be
 reconciled from Paystack. The sooner a rollback is decided, the less there is
 to carry back.
 
-## 7. Cancelling (day 9, only if clean)
+## 7. Cancelling (only if clean)
 
 1. Take a last Neon dump into the bucket (`vps-db-copy`'s dump step, or
    `pg_dump` with `STAGING_DIRECT_URL`).
 2. Fly: destroy `school-kit-api` and `school-kit-render-worker`, and the Fly
    Redis.
-3. Vercel: delete `school-kit-web` and `school-kit-portal` (not the marketing
-   site).
+3. Vercel: delete `school-kit-web`, `school-kit-portal` and `schoolkit`.
+   Downgrade the account to Hobby once no commercial project is left on it
+   (§3).
 4. Neon: downgrade to free, or delete the project once you are comfortable.
 
 ## 8. Backups and restoring

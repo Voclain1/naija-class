@@ -17,11 +17,7 @@
 # skipped are the three COMMENT ON EXTENSION lines, which need the extension's
 # owner and change nothing.
 set -euo pipefail
-cd "$(dirname "$0")"
-files=(-f docker-compose.yml)
-if grep -q '^VPS_MODE=rehearsal$' deploy.env; then files+=(-f docker-compose.rehearsal.yml); fi
-if grep -q '^CBT_ENABLED=true$' deploy.env; then export COMPOSE_PROFILES=cbt; fi
-compose() { docker compose --env-file deploy.env "${files[@]}" "$@"; }
+. "$(dirname "$0")/lib.sh"
 
 echo "stopping the apps (no writes during the restore)"
 compose stop api render-worker web portal cbt 2>/dev/null || compose stop api render-worker web portal

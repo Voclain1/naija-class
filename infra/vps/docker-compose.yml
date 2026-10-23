@@ -7,6 +7,8 @@
 #   api.env     the API and render worker (as on Fly today)
 #   web.env, portal.env, cbt.env   the Next.js servers (as on Vercel today)
 #   backup.env  object storage for backups and WAL archiving
+#   landing.env, landing.deploy.env   the marketing site, written by
+#               schoolkit-landing's deploy (deploy-landing.sh)
 #
 # Nothing but Caddy listens on a public address: every other port is bound
 # to 127.0.0.1, for the deploy's health checks and SSH tunnels only.
@@ -123,6 +125,18 @@ services:
     ports:
       - "127.0.0.1:3003:3000"
 
+  # schoolkit.ng, the marketing site (its own repo, schoolkit-landing, which
+  # deploys it here with deploy-landing.sh). Off until that first deploy.
+  landing:
+    <<: *app
+    profiles: ["landing"]
+    image: ${LANDING_IMAGE:-ghcr.io/voclain1/schoolkit-landing}:${LANDING_TAG:-none}
+    env_file:
+      - path: landing.env
+        required: false
+    ports:
+      - "127.0.0.1:3004:3000"
+
   caddy:
     <<: *app
     image: caddy:2.8-alpine
@@ -131,6 +145,7 @@ services:
       WEB_HOST: ${WEB_HOST}
       PORTAL_HOST: ${PORTAL_HOST}
       CBT_HOST: ${CBT_HOST:-}
+      LANDING_HOST: ${LANDING_HOST:-}
     ports:
       - "80:80"
       - "443:443"

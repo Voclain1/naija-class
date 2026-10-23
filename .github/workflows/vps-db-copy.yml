@@ -76,7 +76,7 @@ jobs:
 
       - name: Replace the VPS database
         run: |
-          tar -C infra/vps -cf - db-replace.sh start-apps.sh verify.sql | ssh vps 'tar -C /opt/school-kit -xf -'
+          tar -C infra/vps -cf - lib.sh db-replace.sh start-apps.sh verify.sql | ssh vps 'tar -C /opt/school-kit -xf -'
           ssh vps '/opt/school-kit/db-replace.sh --no-start' < "$RUNNER_TEMP/neon.dump"
 
       - name: Compare
