@@ -4,8 +4,7 @@
 // docs/modules/id-cards-and-store.md §4b): what the store sells and for how
 // much, by size, available or not. Read-only: buying is done at the school.
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/components/portal-link";
 import { useEffect, useState } from "react";
 
 import { STORE_CATEGORY_LABELS, formatKobo, type PortalStorePriceListDto } from "@school-kit/types";
@@ -15,11 +14,12 @@ import { Appear, EmptyState, PageHeader, PageSkeleton } from "@school-kit/ui";
 import { SchoolBanner } from "@/components/school-banner";
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
+import { usePortalRouter } from "@/lib/portal-router";
 
 type LoadState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "loaded"; list: PortalStorePriceListDto };
 
 export default function StorePricesPage() {
-  const router = useRouter();
+  const router = usePortalRouter();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 
   useEffect(() => {

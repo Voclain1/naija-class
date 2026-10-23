@@ -1,5 +1,7 @@
 import type { Request } from "express";
 
+import { schoolCodeFromOrigin } from "../school-origin.js";
+
 // Where a staff request's session token comes from (docs/deferred.md item 1,
 // 2026-10-05).
 //
@@ -23,12 +25,20 @@ import type { Request } from "express";
 //     and web → API is cross-origin, so the real web app always passes.
 // A request with no Origin (curl, a server) gets no cookie auth: it has a
 // bearer token to use instead.
+//
+// Since 2026-10-23 staff also work at their school's own address
+// (<code>.schoolkit.ng/staff, docs/modules/school-hosted-apps.md), so the
+// cookie is also honoured from a school address Origin, and the result then
+// carries that address's code. The guard accepts it only when the session
+// belongs to that school: a Virgo Fidelis session sent from another school's
+// address is refused, and the school's own pages are the only other origin
+// that can use it.
 export const STAFF_SESSION_COOKIE = "sk_session";
 
 const BEARER_PREFIX = "Bearer ";
 
 export type StaffTokenResult =
-  | { kind: "token"; token: string; via: "bearer" | "cookie" }
+  | { kind: "token"; token: string; via: "bearer" | "cookie"; schoolCode?: string }
   | { kind: "missing" };
 
 /** The cookie's value from a raw Cookie header, or null. No cookie-parser dependency. */
@@ -52,6 +62,7 @@ export function readCookie(header: string | undefined, name: string): string | n
 export function staffSessionToken(
   req: Pick<Request, "header">,
   webOrigin: string | undefined = process.env.CORS_ORIGIN ?? "http://localhost:3001",
+  schoolDomain: string | undefined = process.env.SCHOOL_ADDRESS_DOMAIN,
 ): StaffTokenResult {
   const header = req.header("authorization");
   if (header !== undefined) {
@@ -61,7 +72,12 @@ export function staffSessionToken(
   }
 
   const origin = req.header("origin");
-  if (!webOrigin || !origin || origin !== webOrigin) return { kind: "missing" };
+  if (!origin) return { kind: "missing" };
+  // The web app's own origin first: "app.schoolkit.ng" has the shape of a
+  // school address too.
+  const schoolCode = webOrigin && origin === webOrigin ? null : schoolCodeFromOrigin(origin, schoolDomain);
+  if (schoolCode === null && (!webOrigin || origin !== webOrigin)) return { kind: "missing" };
   const token = readCookie(req.header("cookie"), STAFF_SESSION_COOKIE);
-  return token ? { kind: "token", token, via: "cookie" } : { kind: "missing" };
+  if (!token) return { kind: "missing" };
+  return schoolCode === null ? { kind: "token", token, via: "cookie" } : { kind: "token", token, via: "cookie", schoolCode };
 }

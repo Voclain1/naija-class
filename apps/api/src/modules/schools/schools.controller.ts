@@ -8,6 +8,8 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
+  Query,
   Req,
   UploadedFile,
   UseFilters,
@@ -25,6 +27,10 @@ import {
   onboardingStep5Schema,
   patchSchoolSchema,
   requestSmsSenderSchema,
+  changeSchoolAddressSchema,
+  type ChangeSchoolAddressInput,
+  type SchoolAddressCheckDto,
+  type SchoolAddressDto,
   updateAdmissionNumberSettingsSchema,
   type CreatePaystackSetupRequestInput,
   type OnboardingStepResponse,
@@ -49,6 +55,7 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { PaystackSetupService } from "./paystack-setup.service";
 import { AdmissionNumberSettingsService } from "./admission-number-settings.service";
 import { SmsSenderService } from "./sms-sender.service";
+import { SchoolAddressService } from "./school-address.service";
 import {
   LOGO_MAX_FILE_SIZE_BYTES,
   SchoolsService,
@@ -63,6 +70,7 @@ export class SchoolsController {
     private readonly paystackSetup: PaystackSetupService,
     private readonly smsSender: SmsSenderService,
     private readonly admissionNumbers: AdmissionNumberSettingsService,
+    private readonly address: SchoolAddressService,
   ) {}
 
   // GET /schools/me — any authed user can read their own school.
@@ -182,6 +190,31 @@ export class SchoolsController {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });
+  }
+
+  // GET /schools/me/address — owner/admin. The school's web address
+  // ("<code>.schoolkit.ng"), its earlier codes, and whether the owner may
+  // change it now (docs/modules/school-addresses.md).
+  @Get("me/address")
+  async getAddress(@CurrentUser() authCtx: AuthContext): Promise<SchoolAddressDto> {
+    return this.address.get(authCtx);
+  }
+
+  // GET /schools/me/address/check?code= — owner/admin, as the owner types.
+  @Get("me/address/check")
+  async checkAddress(@Query("code") code: string | undefined, @CurrentUser() authCtx: AuthContext): Promise<SchoolAddressCheckDto> {
+    return this.address.check(authCtx, code ?? "");
+  }
+
+  // PUT /schools/me/address — OWNER only, inside the limits. Audited.
+  @Put("me/address")
+  async changeAddress(
+    @Body(new ZodValidationPipe(changeSchoolAddressSchema)) dto: ChangeSchoolAddressInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<SchoolAddressDto> {
+    return this.address.change(authCtx, dto.code, { ipAddress: ip, userAgent: req.header("user-agent") ?? null });
   }
 
   // GET /schools/me/admission-numbers — owner/admin. How the school's

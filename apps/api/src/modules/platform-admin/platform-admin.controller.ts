@@ -63,6 +63,8 @@ import {
   type PlatformAdminSetStaffMobileInput,
   type PlatformAdminSetStaffMobileResponse,
   type PlatformAdminUserDto,
+  changeSchoolAddressSchema,
+  type ChangeSchoolAddressInput,
 } from "@school-kit/types";
 import type { Request } from "express";
 
@@ -276,6 +278,21 @@ export class PlatformAdminController {
     return this.platformAdminService.decideSmsSender(schoolId, dto, adminCtx, {
       ipAddress: ip, userAgent: req.header("user-agent") ?? null,
     });
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/address — SchoolKit changes a
+  // school's web address (docs/modules/school-addresses.md): beyond the
+  // school's own limits, never counted against them. Audited.
+  @Patch("schools/:schoolId/address")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async setAddress(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(changeSchoolAddressSchema)) dto: ChangeSchoolAddressInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+  ): Promise<{ schoolId: string; slug: string }> {
+    return this.platformAdminService.setAddress(schoolId, dto.code, adminCtx, { ipAddress: ip });
   }
 
   // PATCH /platform-admin/schools/:schoolId/plan — the school's plan and an

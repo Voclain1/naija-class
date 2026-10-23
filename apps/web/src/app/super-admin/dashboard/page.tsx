@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { PlatformAdminDashboard } from "@/components/super-admin/platform-admin-dashboard";
+import { withBasePath } from "@/lib/base-path";
 
 export default function PlatformAdminDashboardPage() {
   const router = useRouter();
@@ -16,7 +17,7 @@ export default function PlatformAdminDashboardPage() {
           variant="outline"
           size="sm"
           onClick={async () => {
-            await fetch("/api/platform-admin/logout", { method: "DELETE" });
+            await fetch(withBasePath("/api/platform-admin/logout"), { method: "DELETE" });
             router.replace("/super-admin/login");
           }}
         >

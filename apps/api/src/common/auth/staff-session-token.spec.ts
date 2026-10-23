@@ -20,13 +20,30 @@ describe("staffSessionToken", () => {
     }
   });
 
-  it("reads the cookie only with the web app's exact Origin", () => {
+  it("reads the cookie only with the web app's exact Origin (no school addresses)", () => {
     expect(staffSessionToken(req({ origin: WEB, cookie: "a=1; sk_session=xyz" }), WEB)).toEqual({ kind: "token", token: "xyz", via: "cookie" });
     for (const origin of ["https://portal.schoolkit.ng", "https://cbt.schoolkit.ng", "https://schoolkit.ng", "http://app.schoolkit.ng", "null"]) {
-      expect(staffSessionToken(req({ origin, cookie: "sk_session=xyz" }), WEB), origin).toEqual({ kind: "missing" });
+      expect(staffSessionToken(req({ origin, cookie: "sk_session=xyz" }), WEB, undefined), origin).toEqual({ kind: "missing" });
     }
     expect(staffSessionToken(req({ cookie: "sk_session=xyz" }), WEB)).toEqual({ kind: "missing" });
     expect(staffSessionToken(req({ origin: WEB, cookie: "sk_session=xyz" }), undefined)).toEqual({ kind: "missing" });
+  });
+
+  it("reads the cookie from a school's own address and names that school", () => {
+    const D = "schoolkit.ng";
+    expect(staffSessionToken(req({ origin: "https://virgo.schoolkit.ng", cookie: "sk_session=xyz" }), WEB, D)).toEqual({
+      kind: "token",
+      token: "xyz",
+      via: "cookie",
+      schoolCode: "virgo",
+    });
+    // The web app's own origin carries no school code.
+    expect(staffSessionToken(req({ origin: WEB, cookie: "sk_session=xyz" }), WEB, D)).toEqual({ kind: "token", token: "xyz", via: "cookie" });
+    for (const origin of ["http://virgo.schoolkit.ng", "https://a.b.schoolkit.ng", "https://virgo.schoolkit.ng.evil.com", "https://evilschoolkit.ng"]) {
+      expect(staffSessionToken(req({ origin, cookie: "sk_session=xyz" }), WEB, D), origin).toEqual({ kind: "missing" });
+    }
+    // No domain configured: no school address counts.
+    expect(staffSessionToken(req({ origin: "https://virgo.schoolkit.ng", cookie: "sk_session=xyz" }), WEB, undefined)).toEqual({ kind: "missing" });
   });
 
   it("is missing when there is no cookie of that name", () => {

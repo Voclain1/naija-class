@@ -1,5 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { schoolCodeFromHost, STAFF_URL } from "./lib/school-host";
+
+// Not imported from lib/portal-path.ts, which is a client module.
+const PARENTS_PREFIX = "/parents";
+// The staff web app's base path (apps/web/next.config.mjs).
+const STAFF_PREFIX = "/staff";
+
 // Route protection for the guardian portal.
 //
 // WHY THIS DID NOT EXIST BEFORE, and why it does now. Until 2026-08-27 the
@@ -26,18 +33,91 @@ import { NextResponse, type NextRequest } from "next/server";
 // through the SECURITY DEFINER resolver, which is exactly what the API does).
 const COOKIE_NAME = "sk_portal_session";
 
+// The signed-in surfaces. Since 2026-10-22 middleware runs on every page (a
+// school's own address is routed below), so this list, not the matcher, now
+// decides which paths need a session.
+const PROTECTED = [/^\/$/, /^\/students(\/|$)/, /^\/calendar$/, /^\/messages(\/|$)/, /^\/settings$/, /^\/store$/];
+
 export function middleware(req: NextRequest): NextResponse {
+  const code = schoolCodeFromHost(req.headers.get("host"));
+  if (code) return schoolAddress(req, code);
+  if (!PROTECTED.some((re) => re.test(req.nextUrl.pathname))) return NextResponse.next();
+  return requireSession(req);
+}
+
+// A school's own address, "<code>.schoolkit.ng" (docs/modules/school-addresses.md).
+// It serves the school's public pages, and since 2026-10-23 the parents' pages
+// under /parents (docs/modules/school-hosted-apps.md):
+//   /                 the school's front page
+//   /apply[/...]      the admission form and its tracking pages
+//   /results          the result checker
+//   /news[/<post>]    the school's news (docs/modules/school-website.md)
+//   /gallery          its photo gallery
+//   /id/...           ID card checks, as anywhere
+//   /parents[/...]    the parents' pages, signed in at this address only (the
+//                     session cookie is host-only here)
+// Any other path is a parents' page reached without the prefix (an older
+// link, or one followed before the page had read its address), and is sent
+// to its /parents form.
+function schoolAddress(req: NextRequest, code: string): NextResponse {
+  const path = req.nextUrl.pathname;
+  const rewrite = (to: string) => {
+    const url = req.nextUrl.clone();
+    url.pathname = to;
+    return NextResponse.rewrite(url);
+  };
+  if (path === "/") return rewrite(`/school/${code}`);
+  if (path === "/apply" || path.startsWith("/apply/")) return rewrite(`/apply/${code}${path.slice("/apply".length)}`);
+  if (path === "/results") return rewrite(`/result-checker/${code}`);
+  if (path === "/news" || /^\/news\/[0-9a-f-]{36}$/i.test(path) || path === "/gallery") return rewrite(`/school/${code}${path}`);
+  if (path.startsWith("/id/")) return NextResponse.next();
+  if (path === STAFF_PREFIX || path.startsWith(`${STAFF_PREFIX}/`)) return staffArea(req, path);
+  if (path === PARENTS_PREFIX || path.startsWith(`${PARENTS_PREFIX}/`)) {
+    const inner = path.slice(PARENTS_PREFIX.length) || "/";
+    // Another school's public pages are never served inside this one's.
+    if (PUBLIC_ONLY.some((re) => re.test(inner))) return NextResponse.redirect(new URL("/", req.url));
+    if (!PROTECTED.some((re) => re.test(inner))) return rewrite(inner);
+    return requireSession(req, () => rewrite(inner), `${PARENTS_PREFIX}/login`);
+  }
+  const target = req.nextUrl.clone();
+  target.pathname = `${PARENTS_PREFIX}${path}`;
+  return NextResponse.redirect(target);
+}
+
+// The staff area at a school's address: the staff web app, whose base path is
+// /staff, served through this host (Next.js multi-zones). The forwarded
+// request names this address in x-schoolkit-host, so the staff app's own
+// redirects stay on it (apps/web/src/lib/public-origin.ts). New-school sign-up
+// and SchoolKit's super-admin are never served at a school's address.
+function staffArea(req: NextRequest, path: string): NextResponse {
+  if (/^\/staff\/(super-admin|signup)(\/|$)/.test(path)) {
+    return NextResponse.redirect(new URL(`${STAFF_PREFIX}/login`, req.url));
+  }
+  const headers = new Headers(req.headers);
+  headers.set("x-schoolkit-host", req.headers.get("host") ?? "");
+  return NextResponse.rewrite(new URL(`${STAFF_URL}${path}${req.nextUrl.search}`), { request: { headers } });
+}
+
+// The portal's pages that take a school code in the path. At a school's
+// address they are reached by their short forms above, never under /parents.
+const PUBLIC_ONLY = [/^\/school(\/|$)/, /^\/apply(\/|$)/, /^\/result-checker(\/|$)/];
+
+function requireSession(
+  req: NextRequest,
+  pass: () => NextResponse = () => NextResponse.next(),
+  loginPath = "/login",
+): NextResponse {
   const hasSession = Boolean(req.cookies.get(COOKIE_NAME)?.value);
 
   if (!hasSession) {
-    const login = new URL("/login", req.url);
+    const login = new URL(loginPath, req.url);
     // Preserve the intended destination so a guardian who followed a link to
     // a specific child (or clicked one in a reminder email) lands there after
     // signing in, rather than on a generic home screen. Only the path+query
     // is carried, never an absolute URL — see the `next` handling in
     // login/page.tsx for the open-redirect guard on the way back out.
     const target = `${req.nextUrl.pathname}${req.nextUrl.search}`;
-    if (target && target !== "/") {
+    if (target && target !== "/" && target !== PARENTS_PREFIX) {
       login.searchParams.set("next", target);
     }
     const res = NextResponse.redirect(login);
@@ -48,7 +128,7 @@ export function middleware(req: NextRequest): NextResponse {
     return res;
   }
 
-  const res = NextResponse.next();
+  const res = pass();
   // Authenticated pages must not sit in a shared browser's disk cache or be
   // restorable from the back/forward cache after sign-out. This is the other
   // half of the shared-device story: the Sign out button destroys the
@@ -59,12 +139,12 @@ export function middleware(req: NextRequest): NextResponse {
   return res;
 }
 
-// The matcher IS the gate — the function above never runs for anything not
-// listed here. Deliberately narrow: only the authenticated surfaces. /calendar
+// PROTECTED (above) is the gate: only the authenticated surfaces. /calendar
 // joined on 2026-09-13 (Phase 8 / CP1) — it is authenticated like the others,
-// and needs the same no-store headers on a shared device.
+// and needs the same no-store headers on a shared device. Until 2026-10-22
+// this list was the matcher itself.
 //
-// NOT matched, and each for a reason:
+// NOT protected, and each for a reason:
 //   /login                     — the destination of the redirect; matching it
 //                                would loop.
 //   /invitations/:token        — public by design, the token is the auth.
@@ -78,6 +158,13 @@ export function middleware(req: NextRequest): NextResponse {
 //                                strand a parent who has just paid.
 //   /api/*                     — the proxy route handles its own auth by
 //                                forwarding (or not forwarding) the cookie.
+//
+// The matcher now takes every page (2026-10-22), because a school's address can
+// arrive on any path; Next's own files, the API proxy and static assets stay
+// out. Which pages need a session is the PROTECTED list above.
+//
+// /staff/:path* is listed on its own because the first pattern skips image
+// files, and the staff app's own images (/staff/brand/…) must be forwarded too.
 export const config = {
-  matcher: ["/", "/students/:path*", "/calendar", "/messages/:path*", "/settings", "/store"],
+  matcher: ["/((?!_next/|api/|favicon|.*\\.(?:png|jpg|jpeg|svg|webp|ico|txt|xml)$).*)", "/staff/:path*"],
 };

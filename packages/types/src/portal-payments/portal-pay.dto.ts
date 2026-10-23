@@ -9,7 +9,12 @@ import { z } from "zod";
 //   - "app": a portal page that hands straight back to the School Kit app
 //     (schoolkit://payments/callback), which then polls. Without it, a parent
 //     paying in the app finishes inside the in-app browser and has to close it.
-export const PORTAL_PAY_RETURN_TO = ["portal", "app"] as const;
+//   - "school": the same callback page at the school's own address
+//     (<code>.schoolkit.ng/parents/payments/callback), for a parent paying
+//     there, whose sign-in lives on that address only
+//     (docs/modules/school-hosted-apps.md). Falls back to "portal" while
+//     school addresses are not live.
+export const PORTAL_PAY_RETURN_TO = ["portal", "app", "school"] as const;
 export type PortalPayReturnTo = (typeof PORTAL_PAY_RETURN_TO)[number];
 
 // No body at all (the portal, and app builds from before this field) means

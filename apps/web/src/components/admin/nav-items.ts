@@ -11,6 +11,7 @@ import {
   Megaphone,
   CalendarClock,
   CalendarDays,
+  Globe,
   ClipboardList,
   Contact,
   FileBarChart,
@@ -200,6 +201,7 @@ export const NAV_ITEMS: NavItem[] = [
   // (D4: visible to all users) — so bursar's filtered sidebar shows it too, and
   // the page itself hides management controls from anyone without the write
   // permissions.
+  { label: "School website", href: "/settings/website", icon: Globe, group: "communication", keywords: ["website", "public page", "news", "gallery", "photos"], enabled: true, requiredPermission: "website.manage" },
   { label: "Events calendar", href: "/events", icon: CalendarDays, group: "communication", keywords: ["event calendar", "calendar", "holidays", "PTA", "RSVP"], enabled: true, requiredPermission: "calendar-event.read" },
   // Phase 8 / CP2 (docs/modules/phase-8.md §16). Promoted from "Coming soon".
   // v1 is a recording-completeness report, not outcome analytics (§16.1).

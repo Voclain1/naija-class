@@ -74,6 +74,8 @@ export const createSchoolEventSchema = z
     startDate: z.string().date("Start date must be a real date."),
     endDate: z.string().date("End date must be a real date."),
     rsvp: eventRsvpSettingsSchema.optional(),
+    /** 2026-10-22: shown on the school's public website (school-website.md). */
+    showOnWebsite: z.boolean().optional(),
   })
   .refine(dateRangeRefine, dateRangeMessage)
   .refine(rsvpDeadlineRefine, rsvpDeadlineMessage);
@@ -90,6 +92,7 @@ export const updateSchoolEventSchema = z
     startDate: z.string().date().optional(),
     endDate: z.string().date().optional(),
     rsvp: eventRsvpSettingsSchema.optional(),
+    showOnWebsite: z.boolean().optional(),
   })
   .refine((v) => (v.startDate === undefined) === (v.endDate === undefined), {
     message: "Send startDate and endDate together.",
@@ -112,6 +115,8 @@ export interface SchoolEventDto {
   updatedAt: string;
   /** CP10.1: null when families are not asked to reply. */
   rsvp: SchoolEventRsvpDto | null;
+  /** On the school's public website. */
+  showOnWebsite: boolean;
 }
 
 export interface SchoolEventRsvpDto {

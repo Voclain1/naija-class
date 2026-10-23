@@ -3,6 +3,7 @@ import { Body, Controller, Get, HttpCode, Ip, Param, ParseUUIDPipe, Post, Query,
 import {
   announcementEmailPreviewSchema,
   createAnnouncementSchema,
+  websiteShowSchema,
   type AnnouncementBouncedDto,
   type AnnouncementEmailPreviewDto,
   type AnnouncementEmailPreviewInput,
@@ -10,6 +11,7 @@ import {
   type AnnouncementFeedResponse,
   type AnnouncementListResponse,
   type CreateAnnouncementInput,
+  type WebsiteShowInput,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
@@ -94,6 +96,19 @@ export class AnnouncementsController {
     @Ip() ip: string,
   ): Promise<AnnouncementDto> {
     return this.service.withdraw(authCtx, id, { ipAddress: ip });
+  }
+
+  // On or off the school's public website (docs/modules/school-website.md).
+  @Post(":id/website")
+  @HttpCode(200)
+  @Permissions("announcement.create")
+  async website(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(websiteShowSchema)) body: WebsiteShowInput,
+    @Ip() ip: string,
+  ): Promise<AnnouncementDto> {
+    return this.service.setShowOnWebsite(authCtx, id, body.show, { ipAddress: ip });
   }
 
   @Post(":id/read")

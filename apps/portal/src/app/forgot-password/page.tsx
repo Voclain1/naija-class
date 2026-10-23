@@ -15,7 +15,7 @@
 // page open.
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import Link from "next/link";
+import Link from "@/components/portal-link";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -24,6 +24,7 @@ import {
   type GuardianForgotPasswordInput,
 } from "@school-kit/types";
 import { BrandHeading } from "@/components/brand-mark";
+import { schoolCodeHere } from "@/lib/portal-path";
 
 type SubmitState =
   | { kind: "idle" }
@@ -46,7 +47,8 @@ export default function ForgotPasswordPage() {
       const res = await fetch("/api/portal/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        // At a school's own address, only that school's account (docs/modules/school-hosted-apps.md).
+        body: JSON.stringify({ ...values, ...(schoolCodeHere() ? { schoolCode: schoolCodeHere() } : {}) }),
       });
 
       if (!res.ok) {

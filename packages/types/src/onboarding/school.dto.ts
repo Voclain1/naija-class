@@ -61,6 +61,15 @@ export interface SchoolMeDto {
    * cross-platform drift.
    */
   portalUrl: string;
+  /**
+   * The school's public links (docs/modules/school-addresses.md): its front
+   * page, admission form and result checker. On the school's own address
+   * ("<code>.schoolkit.ng") once school addresses are live, else on the
+   * portal's. Server-derived, like portalUrl. `parents` and `staff` are the
+   * sign-in pages at the school's own address
+   * (docs/modules/school-hosted-apps.md), or the portal's and staff app's.
+   */
+  siteUrls: { home: string; apply: string; results: string; parents: string; staff: string };
   // Paystack subaccount routing (compressed plan-first, 2026-07-31). The raw
   // code is safe to echo back — it's an opaque Paystack identifier, not a
   // secret (same trust level as a bank account's last-4, not its full BVN).

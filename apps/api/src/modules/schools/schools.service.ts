@@ -27,6 +27,7 @@ import { portalBaseUrl } from "../../common/portal-url";
 import { LOGO_URL_TTL_SECONDS, parseLogoExt } from "../../common/storage/school-logo";
 import { StorageService } from "../../common/storage/storage.service";
 import { AcademicCalendarService } from "../academic-calendar/academic-calendar.service.js";
+import { publicSiteUrls } from "../../common/school-site-url.js";
 
 const INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
@@ -688,6 +689,7 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     bankAccountNumber: school.bankAccountNumber,
     bankDetailsEnabled: school.bankDetailsEnabled,
     portalUrl: portalBaseUrl(),
+    siteUrls: publicSiteUrls(school.slug),
     paystackSubaccountCode: school.paystackSubaccountCode,
     paystackSplitCode: school.paystackSplitCode,
     paystackPaymentsEnabled: school.paystackPaymentsEnabled,

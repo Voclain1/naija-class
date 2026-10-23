@@ -58,6 +58,9 @@ import { redactEmail } from "../../common/redact";
 import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
 
 import { deleteSchoolRows, holdsPlatformAdmin, readDeletionFacts } from "./school-deletion";
+import { changeSchoolAddress } from "../../common/slug/school-address-change.js";
+import { staffSiteUrl } from "../../common/school-site-url";
+import { schoolSlugOf } from "../../common/slug/school-slug-of";
 
 // Cross-tenant service. Reads go through the platform_admin_* SECURITY
 // DEFINER functions (see CLAUDE.md's inventory) via basePrisma directly —
@@ -100,14 +103,6 @@ const OWNER_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 14;
 // that one is module-private there, and this module's import-boundary spec
 // keeps platform-admin from reaching into other services.
 const CREATE_SCHOOL_TRANSACTION_TIMEOUT_MS = 20_000;
-
-// Same WEB_BASE_URL convention as UsersService.invite() / GuardiansService
-// (PORTAL_BASE_URL) — dev default matches the web dev port, production must
-// set it explicitly. Duplicated rather than imported: it's three lines, and
-// there's no shared module either sibling already reaches into.
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
-}
 
 
 interface RequestContext {
@@ -284,6 +279,7 @@ const SCHOOLS_SET_STAFF_MOBILE_AUDIT_ACTION = "platform_admin.schools.set-staff-
 const SCHOOLS_SET_SMART_IMPORT_AUDIT_ACTION = "platform_admin.schools.set-smart-import";
 const SCHOOLS_DECIDE_SMS_SENDER_AUDIT_ACTION = "platform_admin.schools.decide-sms-sender";
 const SCHOOLS_SET_PLAN_AUDIT_ACTION = "platform_admin.schools.set-plan";
+const SCHOOLS_SET_ADDRESS_AUDIT_ACTION = "platform_admin.schools.set-address";
 // Same action name the hand-written production row used on 2026-08-16, so
 // that row and every later one read as one history.
 const SCHOOLS_SET_AI_BUDGET_AUDIT_ACTION = "platform_admin.schools.set-ai-budget";
@@ -848,6 +844,31 @@ export class PlatformAdminService {
     };
   }
 
+  // The school's web address, set by SchoolKit (docs/modules/school-addresses.md).
+  // Same path as the owner's change, without the limits and never counted.
+  async setAddress(
+    schoolId: string,
+    code: string,
+    adminCtx: PlatformAdminContext,
+    reqCtx: { ipAddress: string | null },
+  ): Promise<{ schoolId: string; slug: string }> {
+    const existing = await basePrisma.school.findUnique({ where: { id: schoolId }, select: { id: true } });
+    if (!existing) throw new NotFoundError("School not found.");
+    const result = await changeSchoolAddress(schoolId, code, { kind: "PLATFORM", userId: adminCtx.userId });
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_SET_ADDRESS_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: { from: result.from, to: result.to },
+      },
+    });
+    return { schoolId, slug: result.to };
+  }
+
   async setStaffMobileEnabled(
     schoolId: string,
     input: { staffMobileEnabled: boolean },
@@ -989,7 +1010,7 @@ export class PlatformAdminService {
       return { school };
     }, { timeout: CREATE_SCHOOL_TRANSACTION_TIMEOUT_MS });
 
-    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = staffSiteUrl(created.school.slug, `/invitations/${rawToken}`);
 
     // Unconditional send — unlike GuardiansService, there's no
     // NotificationPreference row to gate on yet (the school was just
@@ -1132,7 +1153,7 @@ export class PlatformAdminService {
       return email;
     });
 
-    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = staffSiteUrl(await schoolSlugOf(schoolId), `/invitations/${rawToken}`);
     await this.sendOwnerInvitation(ownerEmail, school.name, acceptUrl);
 
     return {

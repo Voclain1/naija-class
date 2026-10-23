@@ -4,7 +4,6 @@ import { Prisma, withTenant } from "@school-kit/db";
 import { MESSAGE_FLAG_LABEL, MESSAGE_LIMITS, type MessageFlagReason } from "@school-kit/types";
 
 import { EmailService } from "../../common/email/email.service.js";
-import { portalBaseUrl } from "../../common/portal-url.js";
 import { redactPhone } from "../../common/redact.js";
 import { smsSenderFor } from "../../common/termii/sms-sender.js";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
@@ -12,6 +11,8 @@ import { isSuppressedForAll } from "../announcements/announcement-email.shared.j
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service.js";
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
 import { holdersOf, lagosToday, recipientsOf } from "./messages.shared.js";
+import { parentSiteUrl, staffSiteUrl } from "../../common/school-site-url.js";
+import { schoolSlugOf } from "../../common/slug/school-slug-of.js";
 
 // Phase 9 / CP8.1 — telling people of a new message (docs/modules/phase-9.md
 // §17.2 CP8-D6, §17.8 answer 6). Never the text, and never a child's name on
@@ -96,7 +97,7 @@ export class MessageAlertsService {
       if (pushed === "PUSH") return "PUSH";
 
       const channels = await this.preferences.getEnabledChannels(schoolId);
-      const link = `${portalBaseUrl()}/messages/${threadId}`;
+      const link = parentSiteUrl(await schoolSlugOf(schoolId), `/messages/${threadId}`);
       if (channels.email && guardian.email && !ctx.emailBlocked && this.email.isConfigured) {
         try {
           await this.email.send({
@@ -141,7 +142,7 @@ export class MessageAlertsService {
         return { users, school };
       });
       const why = MESSAGE_FLAG_LABEL[reason];
-      const link = `${webBaseUrl()}/messages/${threadId}`;
+      const link = staffSiteUrl(await schoolSlugOf(schoolId), `/messages/${threadId}`);
       for (const u of found.users) {
         await this.dispatch.notifyOfEvent({
           schoolId,
@@ -181,10 +182,6 @@ export class MessageAlertsService {
     );
     return rows[0]?.sent ?? null;
   }
-}
-
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
 }
 
 function escape(text: string): string {

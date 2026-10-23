@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
+import { previewSchoolAddress } from "@/lib/school-address/school-address-api";
 
 // School owner signup. Calls POST /auth/signup-owner via auth-provider's
 // signup(), which stores the bearer, fetches /auth/me, fires the
@@ -106,6 +107,7 @@ export function SignupForm() {
             error={form.formState.errors.schoolName?.message}
             autoFocus
           />
+          <AddressPreview name={form.watch("schoolName")} />
           <div className="flex gap-2">
             <div className="flex-1">
               <Field
@@ -223,5 +225,32 @@ function Field({
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
+  );
+}
+
+// "Your school's web address will be …" under the school name, as it is typed
+// (docs/modules/school-addresses.md). A preview only: the address is fixed when
+// the school is created, and the owner can change it in Settings → School.
+function AddressPreview({ name }: { name: string }) {
+  const [host, setHost] = useState<string | null>(null);
+  const trimmed = name.trim();
+  useEffect(() => {
+    if (trimmed.length < 3) {
+      setHost(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      previewSchoolAddress(trimmed)
+        .then((p) => setHost(p.host))
+        .catch(() => setHost(null));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [trimmed]);
+  if (!host) return null;
+  return (
+    <p className="-mt-2 text-xs text-muted-foreground" data-testid="address-preview">
+      Your school&apos;s web address will be <span className="font-medium text-foreground">{host}</span>. You can change it
+      later in Settings.
+    </p>
   );
 }

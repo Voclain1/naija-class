@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth/use-auth";
 
 import { BrandLoadingScreen } from "../brand-loading-screen";
 import { SchoolDocumentTitle } from "../school/school-document-title";
+import { stripBasePath } from "@/lib/base-path";
 
 // Client-side gate wrapping any (admin) page. Three states like before, with
 // an extra branch for ONBOARDING schools so the dashboard becomes structurally
@@ -66,7 +67,8 @@ export function RequireAuth({ children, roles }: { children: ReactNode; roles?: 
       router.replace(
         buildLoginUrl({
           reason: consumeSessionEndReason(),
-          next: `${window.location.pathname}${window.location.search}`,
+          // Without the base path: the login page hands `next` to the router.
+          next: `${stripBasePath(window.location.pathname)}${window.location.search}`,
         }),
       );
       return;

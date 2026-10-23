@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { portalPath } from "@/lib/portal-path";
+
 // The guardian portal's Sign out control (F-06).
 //
 // Before this existed there was NO way to end a portal session from the UI at
@@ -41,7 +43,7 @@ export function SignOutButton() {
         return;
       }
       // Full-document navigation — see (2) above.
-      window.location.replace("/login");
+      window.location.replace(portalPath("/login"));
     } catch {
       setState("error");
     }

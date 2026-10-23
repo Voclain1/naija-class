@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LogoUpload } from "@/components/school/logo-upload";
+import { SchoolAddressCard } from "@/components/school/school-address-card";
 import { useTour } from "@/components/tour/first-login-tour";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
@@ -107,6 +108,8 @@ export default function SchoolSettingsPage() {
         </Button>
         {dirty && <span className="text-xs text-amber-700">Unsaved change.</span>}
       </div>
+
+      <SchoolAddressCard />
 
       <div className="flex flex-col gap-2 border-t border-border pt-6">
         <Label>Getting-started tour</Label>

@@ -12,6 +12,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 import { applyPath, loadAdmissionSettings } from "./admissions.shared.js";
+import { schoolSiteUrls } from "../../common/school-site-url.js";
 
 // Phase 9 / CP7.1 — Settings → Admissions (docs/modules/phase-9.md §16.8).
 // Owner and admin: the switch (on by default), the classes open, the school's
@@ -51,6 +52,7 @@ export class AdmissionsSettingsService {
         form: s.form,
         classLevels: levels.map((l) => ({ ...l, open: !s.closedClassLevelIds.includes(l.id) })),
         applyPath: applyPath(school.slug),
+        applyUrl: schoolSiteUrls(school.slug).apply,
       };
     });
   }

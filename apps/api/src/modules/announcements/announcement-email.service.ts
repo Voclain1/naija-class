@@ -131,7 +131,7 @@ export class AnnouncementEmailService {
             return {
               to: r.email,
               subject: ctx.title,
-              html: announcementEmailHtml({ schoolName: ctx.schoolName, title: ctx.title, body: ctx.body, unsubscribeUrl: links.page }),
+              html: announcementEmailHtml({ schoolName: ctx.schoolName, slug: ctx.slug, title: ctx.title, body: ctx.body, unsubscribeUrl: links.page }),
               headers: { "List-Unsubscribe": `<${links.oneClick}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
               tags: [
                 { name: "school", value: schoolId },

@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { forgotPasswordRequest } from "@/lib/auth/auth-api";
+import { schoolCodeHere } from "@/lib/school-host";
 
 // No error branch on submit — the API always returns the same generic
 // 200 response regardless of whether the email matched an account (account-
@@ -40,7 +41,9 @@ export function ForgotPasswordForm() {
     setSubmitting(true);
     setNetworkError(null);
     try {
-      await forgotPasswordRequest(values);
+      // At a school's own address, only that school's account.
+      const here = schoolCodeHere();
+      await forgotPasswordRequest(here ? { ...values, schoolCode: here } : values);
       setSent(true);
     } catch {
       setNetworkError("Could not reach the server. Try again in a moment.");

@@ -28,6 +28,8 @@ import { Label } from "@/components/ui/label";
 import { ApiError, proxyFetch } from "@/lib/api-client";
 
 import { PlatformActivity } from "./platform-activity";
+import { SchoolAddressSection } from "./school-address-section";
+import { WebsiteReviewPanel } from "./website-review";
 import { PlanSection, SmartImportSection, SmsSenderSection } from "./school-features-section";
 import { DeleteSchoolSection, SchoolAccessSection } from "./school-lifecycle-sections";
 import { ownerStatusOf, parseTokenCount } from "./school-manage";
@@ -265,6 +267,8 @@ export function SchoolManageDialog({ school, onClose, onChanged, onDeleted }: Pr
         <PlanSection school={school} onChanged={onChanged} />
         <SmartImportSection school={school} onChanged={onChanged} />
         <SmsSenderSection school={school} onChanged={onChanged} />
+        <SchoolAddressSection school={school} onChanged={onChanged} />
+        <WebsiteSection schoolId={school.schoolId} />
 
         <section
           className="flex flex-col gap-3 border-t pt-4"
@@ -369,5 +373,25 @@ export function SchoolManageDialog({ school, onClose, onChanged, onDeleted }: Pr
         </section>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// The school's website, as SchoolKit sees it (docs/modules/school-website.md):
+// every photo and post, with take-down. Opened on demand, so the dialog does
+// not sign every photo link each time it opens.
+function WebsiteSection({ schoolId }: { schoolId: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="flex flex-col gap-3 border-t pt-4" aria-labelledby="manage-website">
+      <div className="flex items-center gap-3">
+        <h3 id="manage-website" className="font-medium">
+          Website
+        </h3>
+        <Button type="button" variant="outline" size="sm" onClick={() => setOpen((v) => !v)}>
+          {open ? "Close" : "Review photos and posts"}
+        </Button>
+      </div>
+      {open && <WebsiteReviewPanel schoolId={schoolId} />}
+    </section>
   );
 }

@@ -85,7 +85,7 @@ describe("the forced navigation marks itself before it starts", () => {
     // location.replace(), so a mark that lands afterwards is never read and
     // the dialog appears exactly as it did before.
     const mark = provider.indexOf("beginAuthForcedNavigation(");
-    const replace = provider.indexOf("window.location.replace(target)");
+    const replace = provider.indexOf("window.location.replace(withBasePath(target))");
     expect(mark).toBeGreaterThan(-1);
     expect(replace).toBeGreaterThan(-1);
     expect(mark).toBeLessThan(replace);
@@ -118,7 +118,7 @@ describe("a deliberate sign-out asks about unsaved work before ending the sessio
 
   it("marks the sign-out confirmed before the document replace", () => {
     const confirmed = logout.indexOf("beginConfirmedSignOut()");
-    const replace = logout.indexOf('window.location.replace("/login")');
+    const replace = logout.indexOf('window.location.replace(withBasePath("/login"))');
     expect(confirmed).toBeGreaterThan(-1);
     expect(confirmed).toBeLessThan(replace);
   });

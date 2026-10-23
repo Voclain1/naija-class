@@ -45,6 +45,10 @@ import { redactEmail } from "../../common/redact";
 import { portalBaseUrl } from "../../common/portal-url";
 import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
 import { TotpService } from "./totp.service.js";
+import { publicSiteUrls } from "../../common/school-site-url.js";
+import { staffSiteUrl } from "../../common/school-site-url";
+import { signInSchoolScope } from "../../common/slug/school-code.js";
+import { schoolSlugOf } from "../../common/slug/school-slug-of.js";
 
 const SIGNUP_AUDIT_ACTION = "auth.signup_owner";
 const LOGIN_AUDIT_ACTION = "auth.login";
@@ -93,15 +97,6 @@ const SIGNUP_TRANSACTION_TIMEOUT_MS = 20_000;
 const PASSWORD_RESET_TTL_MS = 1000 * 60 * 60; // 1 hour
 // Sign-in that finds an old-rules password: the person is at the screen now.
 const PASSWORD_UPDATE_TTL_MS = 1000 * 60 * 15;
-
-// Same purpose as users.service.ts's webBaseUrl() / commit-teachers.row.ts's
-// copy — duplicated rather than shared, matching this codebase's existing
-// convention for this exact one-liner (see both call sites for the same
-// "why not shared" non-reasoning: it's genuinely one line, not worth an
-// import for two other modules to already duplicate).
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
-}
 
 // Fixed argon2id hash used as a target when login is attempted against an
 // unknown email or a user without a password_hash. Verifying against it
@@ -354,6 +349,13 @@ export class AuthService {
     if (!row.is_active) {
       // Same code as wrong-password. We do NOT want a deactivated user to
       // know whether the password they typed was correct.
+      throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid email or password.");
+    }
+
+    // Signed in at a school's own address: only that school's accounts. Same
+    // error, so another school's address says nothing about the account.
+    const atThisSchool = await signInSchoolScope("schoolCode" in input ? input.schoolCode : undefined);
+    if (!atThisSchool(row.school_id)) {
       throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid email or password.");
     }
 
@@ -690,7 +692,9 @@ export class AuthService {
     // no token issued, no email sent. Deactivated is treated the same as
     // unknown for the same reason login() treats it the same as a wrong
     // password — we do not want this endpoint to reveal account state.
-    if (!row || !row.is_active) {
+    // Asked at a school's own address: only that school's account.
+    const atThisSchool = await signInSchoolScope(input.schoolCode);
+    if (!row || !row.is_active || !atThisSchool(row.school_id)) {
       return GENERIC_RESPONSE;
     }
 
@@ -724,7 +728,7 @@ export class AuthService {
       });
     });
 
-    const resetUrl = `${webBaseUrl()}/reset-password/${rawToken}`;
+    const resetUrl = staffSiteUrl(await schoolSlugOf(row.school_id), `/reset-password/${rawToken}`);
     // Manual-copy fallback, same established pattern as guardian invite's
     // `[GUARDIAN INVITATION]` log line (guardians.service.ts) — logged
     // unconditionally, before the best-effort send below, so a Resend
@@ -914,6 +918,7 @@ export class AuthService {
         paystackSubaccountBusinessName: null,
         // Server-derived, from the one shared helper. See SchoolMeDto.
         portalUrl: portalBaseUrl(),
+        siteUrls: publicSiteUrls(school.slug),
       },
       roles,
       permissions,

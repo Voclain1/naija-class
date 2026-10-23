@@ -146,6 +146,11 @@ export interface AdmissionSettingsDto {
   classLevels: { id: string; name: string; open: boolean }[];
   /** The address the public form lives at. */
   applyPath: string;
+  /**
+   * The full link to share: the school's own address once school addresses are
+   * live (docs/modules/school-addresses.md), else the portal's.
+   */
+  applyUrl: string;
 }
 
 export const updateAdmissionSettingsSchema = z.object({

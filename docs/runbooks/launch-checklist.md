@@ -20,6 +20,7 @@ Status key: **Done**, **Open** (needs doing), **Waiting** (on someone outside).
 | `POSTHOG_API_KEY` on `school-kit-api` | Fly → Secrets | **Open** (optional). Unset sends nothing. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` on `school-kit-web` | Vercel | **Open** (optional). Uploads source maps, so browser errors show real file names. |
 | Public addresses (`PORTAL_BASE_URL`, `WEB_BASE_URL`, `CORS_ORIGIN`, `CORS_ORIGIN_PORTAL`) moved from secrets to `fly.toml [env]` | `apps/api/fly.toml` | **Open.** Tidy-up, not urgent. Do it while watching a deploy. |
+| School web addresses (`<code>.schoolkit.ng`): the wildcard domain and the variables | Vercel (DNS is on Vercel today), then the VPS | **Open.** Steps for both in `docs/runbooks/school-addresses.md`. Until done, school pages work at `portal.schoolkit.ng/school/<code>` and every link stays on the portal. |
 
 ## 2. Payments, messages and AI
 

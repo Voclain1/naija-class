@@ -10,6 +10,10 @@ import type { SignupOwnerSchoolDto, SignupOwnerUserDto } from "./signup-owner.dt
 export const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(1, "password is required").max(128),
+  // The school's own address the person signed in at
+  // (docs/modules/school-hosted-apps.md). When given, only an account at that
+  // school is considered; absent (portal.schoolkit.ng, the apps), any school.
+  schoolCode: z.string().trim().toLowerCase().min(1).max(63).optional(),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

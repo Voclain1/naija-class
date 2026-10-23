@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { withBasePath } from "@/lib/base-path";
 
 // Real brand assets (2026-08-01), replacing the plain-text "School Kit"
 // placeholder used everywhere up to this point. Source: the SchoolKit brand
@@ -15,8 +16,8 @@ import Image from "next/image";
 // approach (the transparent/knockout variant's Deep Emerald stroke has poor
 // contrast against the dark-mode background specifically, confirmed by
 // sampling its pixels against --background's dark value).
-const ICON_LIGHT = "/brand/schoolkit-icon.png";
-const ICON_DARK = "/brand/schoolkit-icon-dark.png";
+const ICON_LIGHT = withBasePath("/brand/schoolkit-icon.png");
+const ICON_DARK = withBasePath("/brand/schoolkit-icon-dark.png");
 
 export function SchoolKitIcon({
   size = 28,

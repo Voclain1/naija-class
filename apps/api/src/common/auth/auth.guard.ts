@@ -10,6 +10,7 @@ import type { AuthContext } from "./auth-context";
 import { REDIS_AUTH_CLIENT } from "./redis-auth.provider.js";
 import { schoolSuspendedError } from "./school-suspension";
 import { getCachedSession, setCachedSession } from "./session-cache.js";
+import { resolveSchoolCode } from "../slug/school-code.js";
 import { staffSessionToken } from "./staff-session-token.js";
 
 // Staff AuthGuard. The token comes from `Authorization: Bearer` or, for the
@@ -49,6 +50,24 @@ interface ResolveSessionRow {
   expires_at: Date;
   user_is_active: boolean;
   school_suspended: boolean;
+}
+
+// A school address's code → its school id, for the check in canActivate. Remembered
+// for a minute, so a busy staff area does not read `schools` per request; a
+// changed address keeps resolving (old codes are never given to another
+// school), so staleness is harmless. Unknown codes are not remembered, so a
+// school created a moment ago is found at once.
+const ADDRESS_CACHE_MS = 60_000;
+const addressCache = new Map<string, { schoolId: string; at: number }>();
+
+async function schoolIdForAddress(code: string): Promise<string | null> {
+  const hit = addressCache.get(code);
+  if (hit && Date.now() - hit.at < ADDRESS_CACHE_MS) return hit.schoolId;
+  const schoolId = (await resolveSchoolCode(code))?.schoolId ?? null;
+  if (schoolId === null) return null;
+  if (addressCache.size > 5000) addressCache.clear();
+  addressCache.set(code, { schoolId, at: Date.now() });
+  return schoolId;
 }
 
 @Injectable()
@@ -120,6 +139,13 @@ export class AuthGuard implements CanActivate {
     // 30-second session cache, like user_is_active above.
     if (row.school_suspended) {
       throw schoolSuspendedError();
+    }
+
+    // The cookie sent from a school's own address (staff-session-token.ts):
+    // only a session of that school. Any other is refused as if signed out,
+    // so the staff area there asks for that school's sign-in.
+    if (found.schoolCode !== undefined && (await schoolIdForAddress(found.schoolCode)) !== row.school_id) {
+      throw new UnauthorizedError("INVALID_SESSION", "Session is invalid or has been revoked.");
     }
 
     req.user = {

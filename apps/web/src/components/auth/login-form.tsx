@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -30,6 +30,9 @@ import {
 } from "@/lib/auth/session-end";
 import { useAuth } from "@/lib/auth/use-auth";
 
+import { SchoolSignInHeading } from "./school-sign-in-heading";
+import { schoolCodeHere } from "@/lib/school-host";
+
 // Two-step login: credentials → (if 2FA enabled) TOTP code.
 type FormStep =
   | { kind: "credentials" }
@@ -47,6 +50,12 @@ export function LoginForm() {
   const { login, loginWithChallenge } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+  // At a school's own address (<code>.schoolkit.ng/staff) sign-in is for that
+  // school only (docs/modules/school-hosted-apps.md); elsewhere, any school,
+  // with ?school= from a school's front page naming it in the heading.
+  const [schoolHere, setSchoolHere] = useState<string | null>(null);
+  useEffect(() => setSchoolHere(schoolCodeHere()), []);
+  const headingSchool = schoolHere ?? searchParams.get("school");
 
   // Why the user is here, and where they were trying to go (F-10). Both
   // arrive as query parameters and both are treated as untrusted:
@@ -78,7 +87,7 @@ export function LoginForm() {
   const onCredSubmit = credForm.handleSubmit(async (values) => {
     setSubmitting(true);
     try {
-      const result = await login(values);
+      const result = await login(schoolHere ? { ...values, schoolCode: schoolHere } : values);
       if (result.requiresTwoFactor) {
         setStep({ kind: "totp", challengeToken: result.challengeToken });
       } else if (result.passwordUpdateRequired) {
@@ -186,6 +195,7 @@ export function LoginForm() {
         <CardDescription>
           Use your school owner or admin credentials.
         </CardDescription>
+        {headingSchool && <SchoolSignInHeading code={headingSchool} />}
         {/* Why you are looking at this screen (F-10). Rendered only when the
             redirect actually carried a reason — a deliberate Sign out and a
             first visit both show nothing, because neither is a failure.
@@ -246,12 +256,15 @@ export function LoginForm() {
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {submitting ? "Signing in…" : "Sign in"}
           </Button>
-          <p className="mt-2 text-center text-sm text-muted-foreground">
-            New school?{" "}
-            <Link href="/signup" className="underline">
-              Create an account
-            </Link>
-          </p>
+          {/* New schools sign up at app.schoolkit.ng, never at a school's address. */}
+          {!schoolHere && (
+            <p className="mt-2 text-center text-sm text-muted-foreground">
+              New school?{" "}
+              <Link href="/signup" className="underline">
+                Create an account
+              </Link>
+            </p>
+          )}
         </form>
       </CardContent>
     </Card>

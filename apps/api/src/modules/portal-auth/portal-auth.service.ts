@@ -22,9 +22,11 @@ import * as password from "../../common/auth/password";
 import { EmailService } from "../../common/email/email.service";
 import { createGuardianSession } from "../../common/auth/guardian-sessions";
 import { LoginLockoutService, lockoutIdentity } from "../../common/auth/login-lockout";
-import { portalBaseUrl } from "../../common/portal-url";
 import { redactEmail } from "../../common/redact";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
+import { parentSiteUrl } from "../../common/school-site-url";
+import { signInSchoolScope } from "../../common/slug/school-code.js";
+import { schoolSlugOf } from "../../common/slug/school-slug-of.js";
 
 const LOGIN_AUDIT_ACTION = "guardian.login";
 const ACCEPT_AUDIT_ACTION = "guardian-invitation.accept";
@@ -123,9 +125,15 @@ export class PortalAuthService {
     const identity = lockoutIdentity("guardian", input.email);
     await this.lockout.check(identity);
 
-    const rows = await basePrisma.$queryRaw<LookupGuardianForLoginRow[]>`
-      SELECT * FROM auth_lookup_guardians_for_login(${input.email})
-    `;
+    // At a school's own address only that school's account takes part, which
+    // is also what ends AMBIGUOUS_GUARDIAN_ACCOUNT for a parent at two schools
+    // (docs/modules/school-hosted-apps.md).
+    const atThisSchool = await signInSchoolScope(input.schoolCode);
+    const rows = (
+      await basePrisma.$queryRaw<LookupGuardianForLoginRow[]>`
+        SELECT * FROM auth_lookup_guardians_for_login(${input.email})
+      `
+    ).filter((row) => atThisSchool(row.school_id));
 
     if (rows.length === 0) {
       const dummy = await getDummyVerifyHash();
@@ -408,9 +416,12 @@ export class PortalAuthService {
     // The SQL function already filters to password_hash IS NOT NULL, so a
     // guardian who was never invited cannot acquire a password here — that
     // would be an activation backdoor around the invitation flow.
-    const rows = await basePrisma.$queryRaw<LookupGuardianForPasswordResetRow[]>`
-      SELECT * FROM auth_lookup_guardians_for_password_reset(${input.email})
-    `;
+    const atThisSchool = await signInSchoolScope(input.schoolCode);
+    const rows = (
+      await basePrisma.$queryRaw<LookupGuardianForPasswordResetRow[]>`
+        SELECT * FROM auth_lookup_guardians_for_password_reset(${input.email})
+      `
+    ).filter((row) => atThisSchool(row.school_id));
 
     for (const row of rows) {
       const rawToken = crypto.randomBytes(32).toString("base64url");
@@ -443,7 +454,7 @@ export class PortalAuthService {
         });
       });
 
-      const resetUrl = `${portalBaseUrl()}/reset-password/${rawToken}`;
+      const resetUrl = parentSiteUrl(await schoolSlugOf(row.school_id), `/reset-password/${rawToken}`);
       // Manual-copy fallback, same established pattern as the guardian
       // invite's [GUARDIAN INVITATION] line — logged unconditionally and
       // BEFORE the best-effort send, so a Resend outage never loses the link

@@ -11,8 +11,8 @@
 // unknown id, so the page never confirms or denies another family's child
 // exists at this URL.
 
-import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import Link from "@/components/portal-link";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import type {
@@ -41,6 +41,8 @@ import { LibraryCard } from "@/components/library-card";
 import { TransportCard } from "@/components/transport-card";
 import { StudentPortalAccess } from "@/components/student-portal-access";
 import { SchoolBanner } from "@/components/school-banner";
+import { schoolCodeHere } from "@/lib/portal-path";
+import { usePortalRouter } from "@/lib/portal-router";
 
 type LoadState =
   | { kind: "loading" }
@@ -125,7 +127,7 @@ async function parseErrorMessage(res: Response): Promise<string> {
 
 export default function StudentDetailPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
+  const router = usePortalRouter();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 
   useEffect(() => {
@@ -472,7 +474,11 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
     try {
       const res = await fetch(
         `/api/portal/students/${invoice.studentId}/invoices/${invoice.id}/pay`,
-        { method: "POST" },
+        // At the school's own address, Paystack returns the parent there,
+        // where their sign-in lives (docs/modules/school-hosted-apps.md).
+        schoolCodeHere()
+          ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ returnTo: "school" }) }
+          : { method: "POST" },
       );
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {

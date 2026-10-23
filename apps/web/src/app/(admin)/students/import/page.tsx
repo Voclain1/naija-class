@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { uploadStudentsCsv } from "@/lib/imports/api";
 import { saveUploadResponse } from "@/lib/imports/session";
+import { withBasePath } from "@/lib/base-path";
 
 // /students/import — Slice 6 cp4 step 1.
 //
@@ -121,7 +122,7 @@ export default function ImportStudentsUploadPage() {
           </div>
         </div>
         <Button asChild variant="outline" size="sm">
-          <a href="/students-import-template.csv" download>
+          <a href={withBasePath("/students-import-template.csv")} download>
             <Download className="mr-1 h-4 w-4" />
             Template CSV
           </a>

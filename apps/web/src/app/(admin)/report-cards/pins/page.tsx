@@ -124,7 +124,7 @@ export default function ResultPinsPage() {
 
   function onPrint(): void {
     if (!fresh || !school) return;
-    const checkerUrl = `${school.portalUrl.replace(/\/$/, "")}/result-checker/${school.slug}`;
+    const checkerUrl = school.siteUrls?.results ?? `${school.portalUrl.replace(/\/$/, "")}/result-checker/${school.slug}`;
     const win = window.open("", "_blank");
     if (!win) {
       toast.error("Your browser blocked the print window. Allow pop-ups for this site, or download the CSV.");

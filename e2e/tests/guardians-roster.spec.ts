@@ -98,7 +98,7 @@ test("the guardian roster shows every parent's portal access and lets an owner a
     await expect(rowOf(page, "Nneka")).toContainText("Not invited");
     await expect(rowOf(page, "Nneka").getByRole("link", { name: "Tobenna Eze" })).toHaveAttribute(
       "href",
-      `/students/${child.id}`,
+      `/staff/students/${child.id}`,
     );
     await expect(rowOf(page, "Obiageli")).toContainText("Invitation expired");
     await expect(rowOf(page, "Obiageli")).toContainText("Not linked to a student");

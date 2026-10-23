@@ -2,8 +2,10 @@ import { Injectable, Logger, Optional } from "@nestjs/common";
 
 import { withTenant } from "@school-kit/db";
 import {
+  ANNOUNCEMENT_WEBSITE_AUDIENCES,
   ConflictError,
   NotFoundError,
+  ValidationError,
   type AnnouncementDto,
   type AnnouncementEmailSummaryDto,
   type AnnouncementFeedItemDto,
@@ -39,6 +41,7 @@ import { AnnouncementEmailService } from "./announcement-email.service.js";
 const AUDIT = {
   create: "announcement.create",
   withdraw: "announcement.withdraw",
+  website: "announcement.website",
 } as const;
 
 // Sending is owner/admin (A1) — a teacher messaging the whole school is a
@@ -75,6 +78,7 @@ export class AnnouncementsService {
           classArmId: input.classArmId ?? null,
           urgent: input.urgent ?? false,
           emailFamilies: (input.emailFamilies ?? false) && input.audience !== "STAFF",
+          showOnWebsite: (input.showOnWebsite ?? false) && ANNOUNCEMENT_WEBSITE_AUDIENCES.includes(input.audience),
           createdBy: authCtx.userId,
         },
       });
@@ -88,7 +92,7 @@ export class AnnouncementsService {
           ipAddress: reqCtx.ipAddress,
           // Urgent is recorded because it wakes phones at any hour (A4) —
           // a decision someone should be accountable for.
-          metadata: { audience: row.audience, classArmId: row.classArmId, urgent: row.urgent, emailFamilies: row.emailFamilies },
+          metadata: { audience: row.audience, classArmId: row.classArmId, urgent: row.urgent, emailFamilies: row.emailFamilies, showOnWebsite: row.showOnWebsite },
         },
       });
       return row;
@@ -159,6 +163,43 @@ export class AnnouncementsService {
           entityId: id,
           ipAddress: reqCtx.ipAddress,
           metadata: { audience: row.audience },
+        },
+      });
+      return this.toDto(row, null, null, null);
+    });
+  }
+
+  /**
+   * On or off the school's public website (docs/modules/school-website.md).
+   * Only whole-school announcements (Everyone or Parents); the text itself
+   * never changes (A2), and a withdrawn one stays off.
+   */
+  async setShowOnWebsite(
+    authCtx: AuthContext,
+    id: string,
+    show: boolean,
+    reqCtx: { ipAddress: string | null },
+  ): Promise<AnnouncementDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.announcement.findUnique({ where: { id } });
+      if (!existing || existing.schoolId !== authCtx.schoolId) throw new NotFoundError("Announcement not found.");
+      if (show && !ANNOUNCEMENT_WEBSITE_AUDIENCES.includes(existing.audience)) {
+        throw new ValidationError("WEBSITE_AUDIENCE", "Only announcements to everyone or to parents can go on the website.");
+      }
+      if (show && existing.withdrawnAt) {
+        throw new ConflictError("ALREADY_WITHDRAWN", "A withdrawn announcement cannot go on the website.");
+      }
+      const row = await db.announcement.update({ where: { id }, data: { showOnWebsite: show } });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.website,
+          entityType: "announcement",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { show },
         },
       });
       return this.toDto(row, null, null, null);
@@ -267,6 +308,7 @@ export class AnnouncementsService {
       createdAt: Date;
       createdBy: string;
       withdrawnAt: Date | null;
+      showOnWebsite: boolean;
     },
     className: string | null,
     createdByName: string | null,
@@ -284,6 +326,7 @@ export class AnnouncementsService {
       createdByName,
       withdrawnAt: row.withdrawnAt,
       email,
+      showOnWebsite: row.showOnWebsite,
     };
   }
 }

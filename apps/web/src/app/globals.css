@@ -280,11 +280,9 @@
   .metric-card.metric-gold { background: #fcf1d5; }
   .dark .metric-card.metric-mint { background: #18372e; }
   .dark .metric-card.metric-gold { background: #363120; }
-  .metric-content { container-type: inline-size; }
-  .metric-value { font-weight: 750; letter-spacing: -.055em; overflow-wrap: anywhere; }
-  /* A tablet still has a sidebar plus two/three KPI columns. Size long
-   * amounts against their actual card, rather than the viewport. */
-  .metric-value[data-metric-length="long"] { font-size: clamp(.9rem, 9cqi, 1.875rem); }
+  .metric-card, .metric-content { min-width: 0; }
+  .metric-value { min-width: 0; font-weight: 750; letter-spacing: -.055em; white-space: nowrap; overflow: hidden; }
+  .metric-value-text { display: inline-block; }
   .dashboard-stats .metric-value { font-size: clamp(1.15rem, 2.2vw, 2.2rem); }
   .dashboard-stats .metric-label > p { letter-spacing: .02em; text-transform: none; font-size: .76rem; }
   .dashboard-stats .metric-label > span { background: hsl(var(--primary) / .10); }
@@ -299,7 +297,7 @@
   .dashboard-stats .metric-label { gap: .3rem; align-items: center; }
   .dashboard-stats .metric-label > p { font-size: .69rem; }
   .dashboard-stats .metric-label > span { width: 1.65rem; height: 1.65rem; flex-shrink: 0; }
-  .dashboard-stats .metric-value { font-size: clamp(.92rem, 3.5vw, 1.3rem); overflow-wrap: anywhere; margin-top: .6rem; }
+  .dashboard-stats .metric-value { font-size: 1.5rem; margin-top: .6rem; }
   .dashboard-stats .metric-value[data-metric-length="short"] { font-size: 2rem; line-height: 1.15; }
   .dashboard-stats .metric-content > p.text-xs,
   .dashboard-stats .metric-content > div.text-xs { font-size: .68rem; line-height: 1.5; }

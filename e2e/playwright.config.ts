@@ -17,6 +17,7 @@ dotenv.config({
 
 const isolated = process.env.E2E_ISOLATED === "1";
 const webUrl = process.env.E2E_WEB_URL ?? "http://localhost:3001";
+const SCHOOL_ADDRESS_DOMAIN = process.env.SCHOOL_ADDRESS_DOMAIN || "localhost:3002";
 const apiUrl = (process.env.E2E_API_URL ?? "http://localhost:4000/api/v1/").replace(/\/?api\/v1\/?$/, "");
 
 // Phase 0 smoke seeded this harness; slice 11 cp4 grows it into a small
@@ -67,6 +68,9 @@ export default defineConfig({
           stdout: "pipe",
           stderr: "pipe",
           cwd: "..",
+          // Schools' own addresses in development: "<code>.localhost:3002",
+          // which browsers resolve to this machine (school-hosted-apps.spec.ts).
+          env: { SCHOOL_ADDRESS_DOMAIN: SCHOOL_ADDRESS_DOMAIN },
         },
         {
           command: "pnpm --filter @school-kit/web dev",
@@ -80,7 +84,10 @@ export default defineConfig({
           // dev server restarts mid-run ("approaching the used memory
           // threshold") and the test on screen stalls until the job times
           // out (#454, #456). More heap; GitHub's runners have 16 GB.
-          env: { NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --max-old-space-size=6144`.trim() },
+          env: {
+            NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --max-old-space-size=6144`.trim(),
+            NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN: SCHOOL_ADDRESS_DOMAIN,
+          },
         },
     // apps/portal (:3002), added 2026-08-27 for the guardian auth suite.
     // Until then this harness only ever booted api + web, so the guardian
@@ -99,6 +106,7 @@ export default defineConfig({
       stdout: "pipe",
       stderr: "pipe",
       cwd: "..",
+      env: { NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN: SCHOOL_ADDRESS_DOMAIN },
         },
     // apps/cbt (:3003), the lab computers' exam app (docs/modules/cbt.md
     // D9), added with CBT2. Its specs use absolute URLs, like the portal's.

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { uploadTeachersCsv } from "@/lib/imports/api";
 import { saveUploadResponse } from "@/lib/imports/session";
+import { withBasePath } from "@/lib/base-path";
 
 // /staff/import — Slice 10 cp3 step 1 (fourth wizard-ui.tsx consumer).
 //
@@ -92,7 +93,7 @@ export default function ImportTeachersUploadPage() {
           </div>
         </div>
         <Button asChild variant="outline" size="sm">
-          <a href="/teachers-import-template.csv" download>
+          <a href={withBasePath("/teachers-import-template.csv")} download>
             <Download className="mr-1 h-4 w-4" />
             Template CSV
           </a>

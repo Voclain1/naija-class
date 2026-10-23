@@ -47,7 +47,8 @@ When upgrading any of these, update this file in the same PR.
 
 ```
 apps/
-  web/      Next.js — admin + teacher
+  web/      Next.js — admin + teacher, base path /staff (served at app.schoolkit.ng/staff
+            and at each school's <code>.schoolkit.ng/staff, docs/modules/school-hosted-apps.md)
   portal/   Next.js — parent portal (Phase 4), own Vercel project + deploy
   cbt/      Next.js — online exams on school lab computers (docs/modules/cbt.md),
             offline-first, calls the API's public cbt-delivery routes directly
@@ -607,6 +608,12 @@ is public, printed on every SMS the school sends. The school's own request
 the school's GUC. Count stays 23, verified with `SELECT count(*) FROM pg_proc
 WHERE prosecdef` after applying.
 
+**School website (2026-10-22):** no function added or changed; count stays 23.
+The public pages resolve the school from its code (`resolveSchoolCode`) and then
+read under that school's GUC, and SchoolKit's report queue reads a count on
+`schools` (no RLS), `website_open_reports`, rather than every school's
+`school_website_reports` (`docs/modules/school-website.md`).
+
 **Next review due at 26.**
 
 **Current count: 23.**
@@ -931,6 +938,8 @@ RESULT_PIN_HMAC_KEY
 PORTAL_PROXY_SECRET
 SESSION_COOKIE_DOMAIN
 RESEND_WEBHOOK_SECRET
+SCHOOL_ADDRESS_DOMAIN
+SCHOOL_ADDRESSES_LIVE
 ```
 
 Never commit. Never log. Test keys and live keys are different env files.
@@ -973,10 +982,13 @@ recreated-project note below): a secret on only one side silently does nothing.
 `sk_session` cookie, set on `school-kit-web` (Vercel) only, to `schoolkit.ng`.
 **The page never holds the staff session token** (2026-10-05): the browser
 sends the cookie straight to the API at `api.schoolkit.ng`, and `AuthGuard`
-accepts it only when the request's Origin is `CORS_ORIGIN`
-(`apps/api/src/common/auth/staff-session-token.ts`). That Origin rule is the
-CSRF defence, since sibling `*.schoolkit.ng` apps are same-site to the
-browser. Bearer tokens keep working for every other client. Empty in
+accepts it only when the request's Origin is `CORS_ORIGIN`, or (since
+2026-10-23) a school's own address for a session of **that same school**
+(`apps/api/src/common/auth/staff-session-token.ts`, `auth.guard.ts`). That
+Origin rule is the CSRF defence, since sibling `*.schoolkit.ng` apps are
+same-site to the browser. At a school's address the parents' pages and the
+staff area share one origin, so an injection bug in either reaches the other;
+treat portal XSS as staff-session XSS. Bearer tokens keep working for every other client. Empty in
 development: a host-only cookie on `localhost` already reaches `localhost:4000`.
 A Vercel production build **refuses to start** unless both are true
 (`apps/web/session-cookie-config.mjs`):
@@ -995,6 +1007,29 @@ the Resend dashboard's webhook at that URL for `email.delivered`,
 announcement emails show as "sent" but never "delivered". Without it, bounced
 and complained addresses are not suppressed automatically. Announcement emails
 still go out. Rotating it in Resend means setting it again here.
+
+`SCHOOL_ADDRESS_DOMAIN` / `SCHOOL_ADDRESSES_LIVE` — school web addresses,
+`<code>.schoolkit.ng` (2026-10-22, `docs/modules/school-addresses.md`). On
+`school-kit-api`: the first (`schoolkit.ng`) lets each school's address call
+the API, never with credentials (`common/school-origin.ts`); the second, `on`
+only once the wildcard DNS and certificate work, makes the links we send and
+print use the school's address (`common/school-site-url.ts`). The portal
+needs `NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN` and `NEXT_PUBLIC_WEB_URL`. The steps,
+for Vercel now and the VPS later, are in `docs/runbooks/school-addresses.md`.
+The address is `schools.slug`; old codes live in `school_previous_addresses`
+and keep working, so resolve a code with `resolveSchoolCode`
+(`common/slug/school-code.ts`), never `school.findUnique({ where: { slug } })`.
+
+Since 2026-10-23 schools work from that address
+(`docs/modules/school-hosted-apps.md`): parents at `<code>.schoolkit.ng/parents`
+(the portal, rewritten by its middleware), staff at `<code>.schoolkit.ng/staff`
+(the portal forwards `/staff` to `school-kit-web`, whose base path is
+`/staff`). `school-kit-web` needs `NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN` too. Build
+every link to a parent or member of staff with `parentSiteUrl` /
+`staffSiteUrl` (`common/school-site-url.ts`), never from `PORTAL_BASE_URL` or
+`WEB_BASE_URL` directly. In `apps/web`, any path Next does not prefix itself
+(fetch to our own `/api`, `window.location`, files in `public/`) goes through
+`withBasePath` (`src/lib/base-path.ts`).
 
 `CORS_ORIGIN_CBT` / `NEXT_PUBLIC_CBT_URL` — online exams (`docs/modules/cbt.md`).
 The first is the exam app's origin (`https://cbt.schoolkit.ng`), allowed by

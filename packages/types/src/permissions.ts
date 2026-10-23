@@ -874,6 +874,11 @@ export const ID_CARD_PERMISSIONS = ["id-card.read", "id-card.issue"] as const;
 export const STORE_PERMISSIONS = ["store.read", "store.manage", "store.sell", "store.approve"] as const;
 export const ASSET_PERMISSIONS = ["asset.read", "asset.manage"] as const;
 
+// The school's public website (2026-10-22, docs/modules/school-website.md).
+// Edits the page, posts news and photos, and puts events and announcements on
+// it. Owner and admin.
+export const WEBSITE_MANAGE_PERMISSIONS = ["website.manage"] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -919,6 +924,7 @@ export const ALL_PERMISSIONS = [
   ...ID_CARD_PERMISSIONS,
   ...STORE_PERMISSIONS,
   ...ASSET_PERMISSIONS,
+  ...WEBSITE_MANAGE_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

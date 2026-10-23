@@ -6,8 +6,7 @@
 // Read-only by definition; a guardian has no calendar controls. CP10.1: the
 // one exception is replying to an event that asks this family.
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/components/portal-link";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -26,6 +25,7 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
 import { RsvpAnswer } from "@/components/rsvp-answer";
 import { SchoolBanner } from "@/components/school-banner";
+import { usePortalRouter } from "@/lib/portal-router";
 
 type LoadState =
   | { kind: "loading" }
@@ -33,7 +33,7 @@ type LoadState =
   | { kind: "loaded"; entries: CalendarEntryDto[] };
 
 export default function CalendarPage() {
-  const router = useRouter();
+  const router = usePortalRouter();
   const calendarWindow = useMemo(() => defaultCalendarWindow(), []);
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 

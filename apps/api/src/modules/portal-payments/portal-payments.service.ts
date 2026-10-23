@@ -13,6 +13,7 @@ import {
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { portalBaseUrl } from "../../common/portal-url";
+import { parentSiteUrl } from "../../common/school-site-url.js";
 import { assertNoPaystackInFlight, parsePaystackReference, PaymentsService } from "../payments/payments.service.js";
 
 interface RequestContext {
@@ -68,7 +69,7 @@ export class PortalPaymentsService {
     reqCtx: RequestContext,
     returnTo: PortalPayReturnTo = "portal",
   ): Promise<PaystackInitResponseDto> {
-    const { paymentId, customerEmail, amount, subaccountCode } = await withTenant(
+    const { paymentId, customerEmail, amount, subaccountCode, schoolCode } = await withTenant(
       guardianCtx.schoolId,
       (db) =>
         withGuardian(guardianCtx.guardianId, studentId, db, async (db2) => {
@@ -95,7 +96,7 @@ export class PortalPaymentsService {
           // layer, not just hide the "Pay with Paystack" button in the portal.
           const school = await db2.school.findUnique({
             where: { id: guardianCtx.schoolId },
-            select: { paystackPaymentsEnabled: true, paystackSubaccountCode: true },
+            select: { paystackPaymentsEnabled: true, paystackSubaccountCode: true, slug: true },
           });
           if (!school?.paystackPaymentsEnabled || !school.paystackSubaccountCode) {
             throw new ConflictError(
@@ -158,6 +159,7 @@ export class PortalPaymentsService {
             customerEmail: resolvedEmail,
             amount: remaining,
             subaccountCode: school.paystackSubaccountCode,
+            schoolCode: school.slug,
           };
         }),
     );
@@ -177,7 +179,7 @@ export class PortalPaymentsService {
         // no callbackUrl and relies on Paystack's dashboard-configured
         // default (apps/web) — that default would land a guardian on the
         // wrong app entirely.
-        callbackUrl: paymentCallbackUrl(returnTo),
+        callbackUrl: paymentCallbackUrl(returnTo, schoolCode),
       });
     } catch (err) {
       this.logger.error(`Paystack init failed for guardian-initiated payment ${paymentId}: ${String(err)}`);
@@ -246,10 +248,11 @@ export class PortalPaymentsService {
  * Where Paystack sends the browser after checkout. Chosen from a fixed list,
  * never from a client-supplied URL (see portal-pay.dto.ts). Both are portal
  * pages: an https callback is what Paystack expects, and the "app" page is the
- * one that hands over to schoolkit://payments/callback.
+ * one that hands over to schoolkit://payments/callback. "school" is the same
+ * page at the school's own address, where that parent's sign-in lives.
  */
-export function paymentCallbackUrl(returnTo: PortalPayReturnTo): string {
-  return returnTo === "app"
-    ? `${portalBaseUrl()}/payments/callback/app`
-    : `${portalBaseUrl()}/payments/callback`;
+export function paymentCallbackUrl(returnTo: PortalPayReturnTo, schoolCode?: string | null): string {
+  if (returnTo === "app") return `${portalBaseUrl()}/payments/callback/app`;
+  if (returnTo === "school") return parentSiteUrl(schoolCode, "/payments/callback");
+  return `${portalBaseUrl()}/payments/callback`;
 }

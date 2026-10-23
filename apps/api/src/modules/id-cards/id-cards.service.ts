@@ -26,6 +26,7 @@ import { portalBaseUrl } from "../../common/portal-url.js";
 import { signSchoolLogoUrl } from "../../common/storage/school-logo.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import { idCardToken, readIdCardToken } from "./id-card-token.js";
+import { resolveSchoolCode } from "../../common/slug/school-code.js";
 
 // ID cards (2026-10-19, docs/modules/id-cards-and-store.md §3).
 //
@@ -373,7 +374,9 @@ export class IdCardsService {
   async verify(token: string): Promise<IdCardVerificationDto> {
     const read = readIdCardToken(token);
     if (!read) throw new NotFoundError("This code is not a School Kit ID card.");
-    const school = await basePrisma.school.findUnique({ where: { slug: read.slug }, select: { id: true, name: true } });
+    // Cards carry the code they were printed with; an earlier code still resolves.
+    const found = await resolveSchoolCode(read.slug);
+    const school = found ? await basePrisma.school.findUnique({ where: { id: found.schoolId }, select: { id: true, name: true } }) : null;
     if (!school) throw new NotFoundError("This code is not a School Kit ID card.");
     return withTenant(school.id, async (db) => {
       const card = await db.idCard.findUnique({ where: { id: read.cardId }, select: CARD_SELECT });
