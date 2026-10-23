@@ -47,7 +47,7 @@ Each of these silently stops working off Fly or Vercel unless fixed:
 
 | Day | What | Who |
 |---|---|---|
-| Thu 23 Oct | Merge the branches in naija-class and schoolkit-landing (the mobile fix before any store build). Order the VPS. Cloudflare: add `schoolkit.ng`, check every record, switch nameservers (§5). Create the object storage bucket. | Owner |
+| Thu 23 Oct | Merge the branches in naija-class and schoolkit-landing (the mobile fix before any store build). Order the VPS (one, shared with betgenius, §4). Cloudflare: add `schoolkit.ng`, check every record, switch nameservers (§5). Create the object storage bucket. | Owner |
 | Fri 24 Oct | Add the GitHub settings (§4) in both repos. Run `vps-setup`, `deploy-vps`, then `vps-db-copy`; then schoolkit-landing's `deploy-vps`. The rehearsal is up on `*.vps.schoolkit.ng` and `vps.schoolkit.ng`. | Owner, from GitHub |
 | Sat 25 Oct | Rehearsal checks (§6.1). Fix what they find. Run `db-restore-test` and check the bucket has `wal/` and `dumps/`. | Both |
 | Sun 26 Oct | If anything was fixed: `vps-db-copy` again and repeat the checks. **Go / no-go by the evening.** | Both |
@@ -68,13 +68,27 @@ projects that follow, such as credocatholica). Until then, cutting builds
 
 ### The server
 
-One Contabo Cloud VPS for School Kit alone: **at least 8 GB RAM, 4 vCPU, NVMe**
-(Postgres, Redis, the API, the 2 GB render worker and two Next.js servers).
-Run betgenius on its own server so a traffic spike there cannot slow schools
-down. Order it with Ubuntu 24.04 and an **SSH key**. Then set the
-`PG_SHARED_BUFFERS` variable to a quarter of the RAM and
-`PG_EFFECTIVE_CACHE_SIZE` to half, unless you keep the defaults
-(1 GB / 3 GB, which suit 8 GB).
+**One server for School Kit and betgenius** (decided 23 Oct 2026; the other
+sites follow later): a Contabo **Cloud VPS 6**, 6 vCPU, 12 GB RAM, the
+**100 GB NVMe** storage option, EU region, Ubuntu 24.04. Order it with a
+generated root password, then add an SSH key in Contabo's control panel and
+reinstall Ubuntu 24.04 with the key selected; `vps-setup` turns password
+login off. No Auto Backup add-on (§8 covers backups).
+
+At busy moments School Kit uses about 5–6 GB, betgenius about 1.5 GB, and
+the system about 0.5 GB. Keep School Kit's Postgres at its defaults
+(`PG_SHARED_BUFFERS` 1 GB, `PG_EFFECTIVE_CACHE_SIZE` 3 GB). betgenius has
+hard memory limits so it can never squeeze the schools. **If memory regularly
+passes about 80%, upgrade to Cloud VPS 8 (24 GB)** in Contabo's panel, then
+raise those two settings to 3 GB / 6 GB.
+
+**Sharing the server.** School Kit's Caddy serves HTTPS for every site on
+it. Other projects (betgenius now, the smaller sites later) join a Docker
+network called `edge`, which School Kit's compose creates and only its Caddy
+shares, so they can reach Caddy but never School Kit's Postgres or Redis.
+Each project writes its own `sites/<name>.caddy` and reloads Caddy. **So
+deploy School Kit first.** betgenius's Postgres listens on port 5433;
+School Kit's keeps 5432.
 
 **Postgres version.** The VPS runs 16, like CI. `vps-db-copy` refuses to copy
 from a newer Neon and names the version to set as `PG_MAJOR`. Settle that
