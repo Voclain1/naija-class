@@ -26,6 +26,18 @@ const nextConfig = {
     return [
       { source: "/", destination: BASE_PATH, basePath: false, permanent: false },
       { source: "/:path((?!staff(?:/|$)).*)", destination: `${BASE_PATH}/:path`, basePath: false, permanent: false },
+      // The staff list's own pages were /staff/… before the move, and now sit
+      // at /staff/staff/…. The older forms of those that cannot be pages of
+      // their own under /staff (no route is called /invite, /import or an id)
+      // still lead there. Plain /staff is now the app's home.
+      { source: "/staff/invite", destination: `${BASE_PATH}/staff/invite`, basePath: false, permanent: false },
+      { source: "/staff/import/:path*", destination: `${BASE_PATH}/staff/import/:path*`, basePath: false, permanent: false },
+      {
+        source: "/staff/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/:path*",
+        destination: `${BASE_PATH}/staff/:id/:path*`,
+        basePath: false,
+        permanent: false,
+      },
     ];
   },
   // Preview builds send the browser's API calls through /api/preview-api (see

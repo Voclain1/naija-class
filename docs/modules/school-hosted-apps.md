@@ -61,6 +61,9 @@ or staff app's sign-in (with `?school=`) when it is not.
 
 - **Base path `/staff`** (`next.config.mjs`), everywhere. Every older address
   redirects (307, method and query kept) to the same page under `/staff`.
+  The staff list's own pages used to be `/staff/…` and are now
+  `/staff/staff/…`; their older forms (`/staff/invite`, `/staff/import/…`,
+  `/staff/<id>`) redirect there too. Plain `/staff` is now the app's home.
   Next prefixes `<Link>`, the router and `redirect()` itself. Everything else
   goes through `withBasePath` (`src/lib/base-path.ts`): `proxyFetch` to our own
   `/api` routes, the preview proxy, `window.location`, the import templates and
