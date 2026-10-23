@@ -35,15 +35,6 @@ const INVITE_AUDIT_ACTION = "user.invite";
 const INVITE_RESEND_AUDIT_ACTION = "user.invite-resend";
 const INVITE_REVOKE_AUDIT_ACTION = "user.invite-revoke";
 
-// Where the accept URL points. Dev default matches the web dev port noted in
-// .env.example. Production deploys MUST set WEB_BASE_URL explicitly; we don't
-// throw on a missing value here because a misconfigured prod would still
-// successfully create the invitation row — the URL would just be wrong,
-// which is recoverable (re-issue) rather than catastrophic.
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
-}
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface RequestContext {

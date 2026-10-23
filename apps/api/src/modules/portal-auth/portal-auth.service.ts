@@ -22,7 +22,6 @@ import * as password from "../../common/auth/password";
 import { EmailService } from "../../common/email/email.service";
 import { createGuardianSession } from "../../common/auth/guardian-sessions";
 import { LoginLockoutService, lockoutIdentity } from "../../common/auth/login-lockout";
-import { portalBaseUrl } from "../../common/portal-url";
 import { redactEmail } from "../../common/redact";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
 import { parentSiteUrl } from "../../common/school-site-url";

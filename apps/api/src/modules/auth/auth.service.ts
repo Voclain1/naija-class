@@ -98,15 +98,6 @@ const PASSWORD_RESET_TTL_MS = 1000 * 60 * 60; // 1 hour
 // Sign-in that finds an old-rules password: the person is at the screen now.
 const PASSWORD_UPDATE_TTL_MS = 1000 * 60 * 15;
 
-// Same purpose as users.service.ts's webBaseUrl() / commit-teachers.row.ts's
-// copy — duplicated rather than shared, matching this codebase's existing
-// convention for this exact one-liner (see both call sites for the same
-// "why not shared" non-reasoning: it's genuinely one line, not worth an
-// import for two other modules to already duplicate).
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
-}
-
 // Fixed argon2id hash used as a target when login is attempted against an
 // unknown email or a user without a password_hash. Verifying against it
 // keeps total response time on the same order as a real verification, so

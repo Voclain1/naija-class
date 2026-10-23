@@ -29,15 +29,23 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { publicOrigin } from "./lib/public-origin";
+
 const COOKIE_NAME = "sk_session";
 const PLATFORM_ADMIN_COOKIE_NAME = "sk_platform_session";
+
+// Redirects are built on the address the browser is on: at a school's own
+// address, that school's, not ours (lib/public-origin.ts). The paths here are
+// without the base path (/staff), as req.nextUrl.pathname is.
+function redirectTo(req: NextRequest, path: string, search = ""): NextResponse {
+  const url = new URL(`${req.nextUrl.basePath}${path}${search}`, publicOrigin(req.headers, req.nextUrl.origin));
+  return NextResponse.redirect(url);
+}
 
 export function middleware(req: NextRequest): NextResponse {
   if (req.nextUrl.pathname.startsWith("/super-admin")) {
     if (req.cookies.has(PLATFORM_ADMIN_COOKIE_NAME)) return NextResponse.next();
-    const loginUrl = req.nextUrl.clone();
-    loginUrl.pathname = "/super-admin/login";
-    return NextResponse.redirect(loginUrl);
+    return redirectTo(req, "/super-admin/login");
   }
 
   if (req.cookies.has(COOKIE_NAME)) return NextResponse.next();
@@ -51,12 +59,11 @@ export function middleware(req: NextRequest): NextResponse {
   // Only the path+query is carried, never an absolute URL. The login page
   // re-validates it with isSafeNextPath before navigating, so this side is a
   // convenience and that side is the guard.
-  const loginUrl = new URL("/login", req.url);
   const target = `${req.nextUrl.pathname}${req.nextUrl.search}`;
-  if (target && target !== "/" && !target.startsWith("/login")) {
-    loginUrl.searchParams.set("next", target);
-  }
-  return NextResponse.redirect(loginUrl);
+  const params = new URLSearchParams();
+  if (target && target !== "/" && !target.startsWith("/login")) params.set("next", target);
+  const query = params.toString();
+  return redirectTo(req, "/login", query ? `?${query}` : "");
 }
 
 export const config = {

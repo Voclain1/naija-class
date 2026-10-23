@@ -27,7 +27,6 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { EmailService } from "../../common/email/email.service.js";
-import { portalBaseUrl } from "../../common/portal-url";
 import { redactEmail, redactPhone } from "../../common/redact";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service";

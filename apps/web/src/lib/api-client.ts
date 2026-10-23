@@ -12,6 +12,7 @@
 // and handles the redirect.
 
 import type { ErrorBody } from "@school-kit/types";
+import { withBasePath } from "@/lib/base-path";
 
 export const AUTH_UNAUTHORIZED_EVENT = "sk:auth:unauthorized";
 
@@ -30,7 +31,7 @@ export interface UnauthorizedEventDetail {
 // builds only; production and development call the API directly.
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_VIA_PREVIEW_PROXY === "1"
-    ? "/api/preview-api"
+    ? withBasePath("/api/preview-api")
     : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1");
 
 export class ApiError extends Error {
@@ -199,7 +200,7 @@ export async function apiFetchResponse(
 // session must go through one of these proxy routes, never plain apiFetch,
 // or the sk_session cookie never gets set/cleared on the web origin.
 export async function proxyFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetchOrNetworkError(path, {
+  const res = await fetchOrNetworkError(withBasePath(path), {
     ...init,
     headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
   });

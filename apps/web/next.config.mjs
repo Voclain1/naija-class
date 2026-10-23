@@ -9,14 +9,31 @@ if (sessionCookieProblem) {
   throw new Error(`Staff session cookie misconfigured: ${sessionCookieProblem}`);
 }
 
+// The staff app lives at /staff (docs/modules/school-hosted-apps.md): at
+// app.schoolkit.ng/staff, and at each school's own address, where the portal
+// forwards /staff here. src/lib/base-path.ts reads it back for the paths Next
+// does not prefix itself.
+const BASE_PATH = "/staff";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  basePath: BASE_PATH,
+  // Every older address (app.schoolkit.ng/dashboard, an invitation link sent
+  // before the move, a bookmark) still works: it is sent to the same page
+  // under /staff, query string and method kept (307).
+  async redirects() {
+    return [
+      { source: "/", destination: BASE_PATH, basePath: false, permanent: false },
+      { source: "/:path((?!staff(?:/|$)).*)", destination: `${BASE_PATH}/:path`, basePath: false, permanent: false },
+    ];
+  },
   // Preview builds send the browser's API calls through /api/preview-api (see
   // that route). Decided here, at build time, from Vercel's own VERCEL_ENV, so
   // no one has to remember to set it per environment.
   env: {
     NEXT_PUBLIC_API_VIA_PREVIEW_PROXY: process.env.VERCEL_ENV === "preview" ? "1" : "",
+    NEXT_PUBLIC_BASE_PATH: BASE_PATH,
   },
   // Workspace packages are TS-source — let Next transpile them.
   //

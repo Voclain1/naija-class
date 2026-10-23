@@ -2,6 +2,7 @@ import { DM_Sans } from "next/font/google";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { withBasePath } from "@/lib/base-path";
 import { Providers } from "@/lib/providers";
 
 import "./globals.css";
@@ -25,13 +26,13 @@ export const metadata: Metadata = {
     "Student records, fees, attendance and report cards for Nigerian private schools — in one place.",
   icons: {
     icon: [
-      { url: "/brand/schoolkit-favicon-32.png", sizes: "32x32", type: "image/png" },
-      { url: "/brand/schoolkit-favicon-64.png", sizes: "64x64", type: "image/png" },
-      { url: "/brand/schoolkit-favicon-128.png", sizes: "128x128", type: "image/png" },
-      { url: "/brand/schoolkit-favicon-256.png", sizes: "256x256", type: "image/png" },
+      { url: withBasePath("/brand/schoolkit-favicon-32.png"), sizes: "32x32", type: "image/png" },
+      { url: withBasePath("/brand/schoolkit-favicon-64.png"), sizes: "64x64", type: "image/png" },
+      { url: withBasePath("/brand/schoolkit-favicon-128.png"), sizes: "128x128", type: "image/png" },
+      { url: withBasePath("/brand/schoolkit-favicon-256.png"), sizes: "256x256", type: "image/png" },
     ],
-    shortcut: "/brand/schoolkit-favicon-32.png",
-    apple: "/brand/schoolkit-favicon-256.png",
+    shortcut: withBasePath("/brand/schoolkit-favicon-32.png"),
+    apple: withBasePath("/brand/schoolkit-favicon-256.png"),
   },
 };
 

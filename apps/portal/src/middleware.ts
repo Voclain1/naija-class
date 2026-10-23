@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { schoolCodeFromHost } from "./lib/school-host";
+import { schoolCodeFromHost, STAFF_URL } from "./lib/school-host";
 
 // Not imported from lib/portal-path.ts, which is a client module.
 const PARENTS_PREFIX = "/parents";
+// The staff web app's base path (apps/web/next.config.mjs).
+const STAFF_PREFIX = "/staff";
 
 // Route protection for the guardian portal.
 //
@@ -69,6 +71,7 @@ function schoolAddress(req: NextRequest, code: string): NextResponse {
   if (path === "/results") return rewrite(`/result-checker/${code}`);
   if (path === "/news" || /^\/news\/[0-9a-f-]{36}$/i.test(path) || path === "/gallery") return rewrite(`/school/${code}${path}`);
   if (path.startsWith("/id/")) return NextResponse.next();
+  if (path === STAFF_PREFIX || path.startsWith(`${STAFF_PREFIX}/`)) return staffArea(req, path);
   if (path === PARENTS_PREFIX || path.startsWith(`${PARENTS_PREFIX}/`)) {
     const inner = path.slice(PARENTS_PREFIX.length) || "/";
     // Another school's public pages are never served inside this one's.
@@ -79,6 +82,20 @@ function schoolAddress(req: NextRequest, code: string): NextResponse {
   const target = req.nextUrl.clone();
   target.pathname = `${PARENTS_PREFIX}${path}`;
   return NextResponse.redirect(target);
+}
+
+// The staff area at a school's address: the staff web app, whose base path is
+// /staff, served through this host (Next.js multi-zones). The forwarded
+// request names this address in x-schoolkit-host, so the staff app's own
+// redirects stay on it (apps/web/src/lib/public-origin.ts). New-school sign-up
+// and SchoolKit's super-admin are never served at a school's address.
+function staffArea(req: NextRequest, path: string): NextResponse {
+  if (/^\/staff\/(super-admin|signup)(\/|$)/.test(path)) {
+    return NextResponse.redirect(new URL(`${STAFF_PREFIX}/login`, req.url));
+  }
+  const headers = new Headers(req.headers);
+  headers.set("x-schoolkit-host", req.headers.get("host") ?? "");
+  return NextResponse.rewrite(new URL(`${STAFF_URL}${path}${req.nextUrl.search}`), { request: { headers } });
 }
 
 // The portal's pages that take a school code in the path. At a school's
@@ -145,6 +162,9 @@ function requireSession(
 // The matcher now takes every page (2026-10-22), because a school's address can
 // arrive on any path; Next's own files, the API proxy and static assets stay
 // out. Which pages need a session is the PROTECTED list above.
+//
+// /staff/:path* is listed on its own because the first pattern skips image
+// files, and the staff app's own images (/staff/brand/…) must be forwarded too.
 export const config = {
-  matcher: ["/((?!_next/|api/|favicon|.*\\.(?:png|jpg|jpeg|svg|webp|ico|txt|xml)$).*)"],
+  matcher: ["/((?!_next/|api/|favicon|.*\\.(?:png|jpg|jpeg|svg|webp|ico|txt|xml)$).*)", "/staff/:path*"],
 };

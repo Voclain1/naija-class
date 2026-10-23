@@ -104,14 +104,6 @@ const OWNER_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 14;
 // keeps platform-admin from reaching into other services.
 const CREATE_SCHOOL_TRANSACTION_TIMEOUT_MS = 20_000;
 
-// Same WEB_BASE_URL convention as UsersService.invite() / GuardiansService
-// (PORTAL_BASE_URL) — dev default matches the web dev port, production must
-// set it explicitly. Duplicated rather than imported: it's three lines, and
-// there's no shared module either sibling already reaches into.
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
-}
-
 
 interface RequestContext {
   ipAddress: string | null;

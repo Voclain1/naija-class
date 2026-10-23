@@ -10,6 +10,7 @@ let middleware: (req: NextRequest) => Response;
 beforeAll(async () => {
   process.env.NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN = "schoolkit.ng";
   process.env.NEXT_PUBLIC_PORTAL_URL = "https://portal.schoolkit.ng";
+  process.env.NEXT_PUBLIC_WEB_URL = "https://app.schoolkit.ng";
   ({ middleware } = await import("./middleware"));
 });
 
@@ -58,6 +59,16 @@ describe("a school's own address", () => {
     expect(middleware(at("https://virgo.schoolkit.ng/students/123?x=1")).headers.get("location")).toBe(
       "https://virgo.schoolkit.ng/parents/students/123?x=1",
     );
+  });
+
+  it("forwards /staff to the staff app, naming this address, but never sign-up or the super-admin", () => {
+    const res = middleware(at("https://virgo.schoolkit.ng/staff/students/1?tab=fees"));
+    expect(rewrittenTo(res)).toBe("https://app.schoolkit.ng/staff/students/1?tab=fees");
+    expect(res.headers.get("x-middleware-request-x-schoolkit-host")).toBe("virgo.schoolkit.ng");
+    expect(rewrittenTo(middleware(at("https://virgo.schoolkit.ng/staff")))).toBe("https://app.schoolkit.ng/staff");
+    for (const path of ["/staff/signup", "/staff/super-admin/dashboard"]) {
+      expect(middleware(at(`https://virgo.schoolkit.ng${path}`)).headers.get("location"), path).toBe("https://virgo.schoolkit.ng/staff/login");
+    }
   });
 
   it("never serves another school's public pages inside /parents", () => {

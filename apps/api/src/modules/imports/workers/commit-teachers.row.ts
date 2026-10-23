@@ -39,12 +39,6 @@ import { schoolSlugOf } from "../../../common/slug/school-slug-of";
 // into a per-school setting.
 const INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
-// Where the accept URL points. Mirrors UsersService.webBaseUrl(). Production
-// MUST set WEB_BASE_URL; dev defaults to the :3001 web port.
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
-}
-
 const logger = new Logger("commitTeacherRow");
 
 export async function commitTeacherRow(

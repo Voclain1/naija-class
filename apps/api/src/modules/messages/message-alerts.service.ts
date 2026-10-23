@@ -4,7 +4,6 @@ import { Prisma, withTenant } from "@school-kit/db";
 import { MESSAGE_FLAG_LABEL, MESSAGE_LIMITS, type MessageFlagReason } from "@school-kit/types";
 
 import { EmailService } from "../../common/email/email.service.js";
-import { portalBaseUrl } from "../../common/portal-url.js";
 import { redactPhone } from "../../common/redact.js";
 import { smsSenderFor } from "../../common/termii/sms-sender.js";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
@@ -183,10 +182,6 @@ export class MessageAlertsService {
     );
     return rows[0]?.sent ?? null;
   }
-}
-
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
 }
 
 function escape(text: string): string {

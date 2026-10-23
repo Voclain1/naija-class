@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { uploadGuardiansCsv } from "@/lib/imports/api";
 import { saveUploadResponse } from "@/lib/imports/session";
+import { withBasePath } from "@/lib/base-path";
 
 // /guardians/import — Slice 8 cp2 step 1.
 //
@@ -99,7 +100,7 @@ export default function ImportGuardiansUploadPage() {
           </div>
         </div>
         <Button asChild variant="outline" size="sm">
-          <a href="/guardians-import-template.csv" download>
+          <a href={withBasePath("/guardians-import-template.csv")} download>
             <Download className="mr-1 h-4 w-4" />
             Template CSV
           </a>
