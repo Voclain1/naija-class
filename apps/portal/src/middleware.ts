@@ -46,6 +46,8 @@ export function middleware(req: NextRequest): NextResponse {
 //   /                 the school's front page
 //   /apply[/...]      the admission form and its tracking pages
 //   /results          the result checker
+//   /news[/<post>]    the school's news (docs/modules/school-website.md)
+//   /gallery          its photo gallery
 //   /id/...           ID card checks, as anywhere
 function schoolAddress(req: NextRequest, code: string): NextResponse {
   const path = req.nextUrl.pathname;
@@ -57,6 +59,7 @@ function schoolAddress(req: NextRequest, code: string): NextResponse {
   if (path === "/") return rewrite(`/school/${code}`);
   if (path === "/apply" || path.startsWith("/apply/")) return rewrite(`/apply/${code}${path.slice("/apply".length)}`);
   if (path === "/results") return rewrite(`/result-checker/${code}`);
+  if (path === "/news" || /^\/news\/[0-9a-f-]{36}$/i.test(path) || path === "/gallery") return rewrite(`/school/${code}${path}`);
   if (path.startsWith("/id/")) return NextResponse.next();
   const target = new URL(`${PORTAL_URL}${path}${req.nextUrl.search}`);
   if (path === "/login") target.searchParams.set("school", code);

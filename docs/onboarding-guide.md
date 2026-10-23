@@ -58,6 +58,7 @@ Every button name in **bold** in this guide is exactly what you will see on your
 **The rest**
 
 - [Your school's web address](#your-schools-web-address)
+- [Your school's website](#your-schools-website)
 - [What parents see](#what-parents-see)
 - [Who does what in your school](#who-does-what-in-your-school)
 - [More things SchoolKit can do](#more-things-schoolkit-can-do)
@@ -401,9 +402,11 @@ Go to **Announcements** in the menu and press **New announcement**.
 
 **Announcements cannot be unsent**, so read it through first. Parents see them in the parent portal under **From the school**.
 
+To show an announcement on your school's public page too, tick **Show on the school website** (only for announcements to everyone or to parents). See [Your school's website](#your-schools-website).
+
 ## The school calendar
 
-Go to **Event Calendar** in the menu and press **Add event** to add a PTA meeting, open day, mid‑term break and so on. Everyone at your school can see the calendar, including parents. Nigerian public holidays are already on it; you can hide any your school does not observe.
+Go to **Event Calendar** in the menu and press **Add event** to add a PTA meeting, open day, mid‑term break and so on. Everyone at your school can see the calendar, including parents. Nigerian public holidays are already on it; you can hide any your school does not observe. Tick **Show on the school website** to show an event on your school's public page until it is over.
 
 ---
 
@@ -499,6 +502,45 @@ The part before **.schoolkit.ng** is also your **school code**: the code student
 - You can change it as often as you like in your school's **first 30 days** (and while you are still answering the welcome questions). After that, **2 changes a year**, at least 30 days apart. If you need another change, ask SchoolKit.
 - **Your old address keeps working.** Links you have shared, result PIN cards you have printed and the code on students' phones all still reach your school, and no other school can ever take it.
 - Only the **owner** can change it. Admins can see it.
+
+---
+
+# Your school's website
+
+Your school's page can say much more than the basics. Go to **Settings → School website** (owner and admins).
+
+**Page details.** Add a **cover photo** and a **welcome line**, an **About us** section (a welcome from your head, and your school's story), **Quick facts** (year founded, levels, curriculum, day or boarding, boys and girls), **Leadership** (names, roles and photos), an **Admissions box** (entry classes, your fees range in your own words, and when families can visit) and an **accent colour**.
+
+- Press **Save draft** as you go. Families do not see your changes yet.
+- Press **Preview** to open your page with your changes, exactly as families will see it. The preview link works for 30 minutes.
+- Press **Publish page details** when you are happy.
+
+**News.** On the **News** tab, write a post, save it as a draft, add photos, then press **Publish**. News is for your public page only; it does not go to parents' phones. Use **Announcements** for that.
+
+**Gallery.** On the **Gallery** tab, add photos, with captions, and group them into albums if you like.
+
+**Events and announcements.** Tick **Show on the school website** when you add an event (**Events calendar → Add event**) or send an announcement to everyone or to parents. Staff and single-class announcements never go on the website. You can take an announcement off the website later from the **Announcements** page; a withdrawn one leaves the page at once.
+
+**Photos: no pupils.** Photos of pupils never go on your public page, even from behind or in a crowd. Before each photo you must tick **This photo shows no pupils**. Buildings, classrooms, staff, trophies, the school bus and events without pupils are fine.
+
+- SchoolKit cannot spot children in photos by machine, so please check every photo yourself.
+- Anyone can press **Report this photo** on your page. SchoolKit looks at every report and may take a photo or post down. You will see the reason in **Settings → School website**, and it cannot go back up.
+- SchoolKit resizes each photo on your computer before it is sent, and removes the hidden location information phones add to photos.
+
+**What your plan includes.**
+
+| | Free | Starter | Growth | Professional |
+|---|---|---|---|---|
+| Events on the page | next 3 | next 10 | all upcoming | all upcoming |
+| Announcements on the page | latest 3 | latest 10 | latest 20 | latest 20 |
+| Cover, about us, quick facts | | ✓ | ✓ | ✓ |
+| News | | 10 latest, 2 photos each | all, 4 photos each | all, 4 photos each |
+| Gallery | | | 60 photos | 300 photos |
+| Leadership | | | 6 people | 12 people |
+| Admissions box | | | ✓ | ✓ |
+| Accent colour | | | | ✓ |
+
+**During early access every school has every section**, and each one says which plan it will need later. If your plan does not include a section later, it stays in your settings but does not show on your page; nothing is deleted.
 
 ---
 

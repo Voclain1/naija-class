@@ -27,6 +27,16 @@ describe("a school's own address", () => {
     expect(rewrittenTo(middleware(at("https://virgo.schoolkit.ng/results")))).toBe("https://virgo.schoolkit.ng/result-checker/virgo");
   });
 
+  it("serves the website's news, each post and the gallery, and keeps a preview link's token", () => {
+    const post = "0b6f3c1e-2a4d-4e5f-9a8b-7c6d5e4f3a2b";
+    expect(rewrittenTo(middleware(at("https://virgo.schoolkit.ng/news")))).toBe("https://virgo.schoolkit.ng/school/virgo/news");
+    expect(rewrittenTo(middleware(at(`https://virgo.schoolkit.ng/news/${post}`)))).toBe(`https://virgo.schoolkit.ng/school/virgo/news/${post}`);
+    expect(rewrittenTo(middleware(at("https://virgo.schoolkit.ng/gallery")))).toBe("https://virgo.schoolkit.ng/school/virgo/gallery");
+    expect(rewrittenTo(middleware(at("https://virgo.schoolkit.ng/?preview=abc")))).toBe("https://virgo.schoolkit.ng/school/virgo?preview=abc");
+    // Anything else under /news is not a page of the school's.
+    expect(middleware(at("https://virgo.schoolkit.ng/news/x/y")).status).toBe(307);
+  });
+
   it("sends signing in, and anything else, to the portal's own address", () => {
     const login = middleware(at("https://virgo.schoolkit.ng/login"));
     expect(login.status).toBe(307);

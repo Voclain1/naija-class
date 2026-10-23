@@ -607,6 +607,12 @@ is public, printed on every SMS the school sends. The school's own request
 the school's GUC. Count stays 23, verified with `SELECT count(*) FROM pg_proc
 WHERE prosecdef` after applying.
 
+**School website (2026-10-22):** no function added or changed; count stays 23.
+The public pages resolve the school from its code (`resolveSchoolCode`) and then
+read under that school's GUC, and SchoolKit's report queue reads a count on
+`schools` (no RLS), `website_open_reports`, rather than every school's
+`school_website_reports` (`docs/modules/school-website.md`).
+
 **Next review due at 26.**
 
 **Current count: 23.**

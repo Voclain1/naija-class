@@ -64,7 +64,9 @@ export function WebsitePhotoUpload({
         type="file"
         accept="image/jpeg,image/png,image/webp"
         className="sr-only"
-        aria-label={label}
+        aria-hidden
+        tabIndex={-1}
+        data-testid="website-photo-file"
         onChange={(e) => void choose(e.target.files?.[0])}
       />
       <Button type="button" variant="outline" size="sm" className="self-start" disabled={!ticked || disabled || busy} onClick={() => input.current?.click()}>

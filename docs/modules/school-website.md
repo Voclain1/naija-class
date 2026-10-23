@@ -1,7 +1,8 @@
 # School website: the front page, by plan
 
 Plan-first, 2026-10-22. Decisions answered by the owner 2026-10-22 (below).
-**Waiting for the owner's Start.** Builds on
+Started by the owner the same day; **built 2026-10-22** (see "As built" at
+the end, including what differs from this plan). Builds on
 `docs/modules/school-addresses.md`, which gave every school its address and
 the basic front page.
 
@@ -222,3 +223,82 @@ pages, by level.
    operator take-down, and the per-plan caps.
 
 Own domains come later, after the VPS move.
+
+## As built (2026-10-22)
+
+**What differs from the plan above.**
+- **Photos are resized in the browser**, not on the server: the editor makes a
+  1600 px JPEG and a 480 px thumbnail through a canvas before upload
+  (`apps/web/src/lib/school-website/resize.ts`). This also drops EXIF,
+  location included. The API only checks both are JPEGs within size (3 MB and
+  512 KB), so it needs no image library on Fly or the VPS.
+- **The staff app is not done yet.** News and photos from the staff app are a
+  follow-up; the web editor works on a phone browser in the meantime.
+- **The report queue** is a count on `schools.website_open_reports`, so
+  SchoolKit's queue never reads across schools' reports and no SECURITY
+  DEFINER function was needed (count stays 23).
+
+**Data.** Migration `20261118120000_school_website`:
+- `school_websites` (draft and published details, as JSON checked by
+  `websiteDetailsSchema`), `school_website_posts`, `school_website_albums`,
+  `school_website_photos` (`no_pupils_confirmed_by` NOT NULL: W4) and
+  `school_website_reports`. FORCE RLS on all five, keyed on the school's GUC
+  (`policies/school-website.sql`).
+- `school_events.show_on_website`; `announcements.show_on_website`, with a
+  CHECK that only EVERYONE or PARENTS announcements can carry it.
+- `website.manage` for admin (owner holds `*`).
+
+**Plan levels.** `WEBSITE_PLAN_LIMITS` and `websiteLimitsFor` in
+`@school-kit/types`: the top tier under `PLAN_ENFORCEMENT=warn`, the plan's
+own under `enforce`. The public page filters by them; the editor refuses only
+adding past them (more gallery photos, photos on a post, publishing news on
+Free). Nothing is deleted when a plan stops covering a section.
+
+**API.**
+- Staff (`website.manage`, owner and admin):
+  - `GET /school-website`, `PUT /school-website/draft`, `POST /school-website/publish`.
+  - `POST /school-website/preview`: a 30-minute link to the page with the
+    draft (an HMAC of the school and expiry under the result-checker key,
+    label `website-preview:v1:`).
+  - `GET|POST /school-website/photos` (multipart `file` + `thumb` +
+    `noPupils=true`), `PATCH|DELETE /school-website/photos/:id`.
+  - `POST|PATCH|DELETE /school-website/albums[/:id]`.
+  - `GET|POST /school-website/posts`, `PATCH|DELETE /school-website/posts/:id`,
+    `POST …/:id/publish`, `POST …/:id/unpublish`.
+  - `POST /announcements/:id/website` (`{ show }`); events carry
+    `showOnWebsite` on create and update.
+- Public (throttled): `GET /school-addresses/:code` now carries `website`
+  (and takes `?preview=`); `GET /school-addresses/:code/news?page=`,
+  `GET /school-addresses/:code/news/:postId`, `GET /school-addresses/:code/gallery`,
+  `POST /school-addresses/:code/reports` (5 an hour per address).
+- SchoolKit: `GET /platform-admin/website-reports`,
+  `GET /platform-admin/schools/:id/website`,
+  `POST /platform-admin/schools/:id/website/take-down`,
+  `POST /platform-admin/schools/:id/website/reports/:reportId/dismiss`.
+- Every write is audited (`website.*`, `announcement.website`,
+  `platform_admin.website.*`); a public report writes `website.report`.
+
+**Portal.** The front page (`/school/[code]`) shows, in order: cover and
+welcome, sign in, for families (with the admissions box), announcements,
+coming up, news, about us, quick facts, leadership, gallery, contact. New
+pages `/school/[code]/news`, `/news/[postId]` and `/gallery`; on a school's own
+address they are `/news`, `/news/<id>` and `/gallery` (middleware). Every
+gallery and post photo has **Report this photo**. The accent colour tints
+headings and the Apply button; the footer is "Powered by SchoolKit" on the top
+tier.
+
+**Web.** Settings → School website (`/settings/website`, also in the menu
+under communication): status with Preview and Publish, then tabs for page
+details, news and the gallery. Locked sections say which plan opens them
+(tinted, never hidden). The event form and the announcement composer have
+**Show on the school website**; the announcements list can switch it later.
+The super-admin dashboard lists schools with reports, and Manage → Website
+reviews any school's photos and posts with **Take down**.
+
+**Tests.** `school-website.service.spec.ts` (real database and disk): plan
+levels, the tick, preview tokens, events and announcements (including the
+database CHECK), draft/preview/publish, another school's photo refused,
+non-JPEG refused, sections hidden not deleted, admin yes / teacher no, posts
+and per-post caps, the gallery and its cap, reports and take-downs (photos and
+posts), files deleted with a post, RLS. Portal `middleware.spec.ts`; web
+`resize.spec.ts`; e2e `school-website.spec.ts`.

@@ -34,7 +34,9 @@ test("the owner changes the school's address, and the old one still leads to the
     await expect(page.getByRole("heading", { level: 1, name: school.name })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     await expect(page.getByText(`school code ${next}`)).toBeVisible();
-    await expect(page.getByText(`© ${new Date().getFullYear()} SchoolKit`)).toBeVisible();
+    // "© <year> SchoolKit", or "Powered by SchoolKit" on the top tier (every
+    // school during early access; docs/modules/school-website.md).
+    await expect(page.getByRole("contentinfo")).toContainText("SchoolKit");
 
     // The parent sign-in reached from the page names the school.
     await page.getByRole("link", { name: /Parents/ }).click();
