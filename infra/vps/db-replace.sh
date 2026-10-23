@@ -17,7 +17,9 @@
 # skipped are comments that need an owner other than school_kit and change
 # nothing: the three COMMENT ON EXTENSION lines, and the empty COMMENT ON
 # SCHEMA public that Neon's dumps carry (the schema belongs to the database
-# owner, postgres).
+# owner, postgres). Also skipped: every DEFAULT ACL entry. Neon's are for its
+# own roles (cloud_admin, neon_superuser, neondb_owner), which do not exist
+# here; school_kit's defaults come from database-setup.sql.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
@@ -35,7 +37,7 @@ compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U postgres -d school_kit \
 compose exec -T postgres sh -c '
   set -e
   trap "rm -f /tmp/import.dump /tmp/import.toc" EXIT
-  pg_restore -l /tmp/import.dump | grep -vE "COMMENT - (EXTENSION|SCHEMA public)" > /tmp/import.toc
+  pg_restore -l /tmp/import.dump | grep -vE "COMMENT - (EXTENSION|SCHEMA public)|DEFAULT ACL" > /tmp/import.toc
   pg_restore -U postgres -d school_kit --no-owner --role=school_kit \
     --exit-on-error --single-transaction -L /tmp/import.toc /tmp/import.dump'
 echo "restore ok"
