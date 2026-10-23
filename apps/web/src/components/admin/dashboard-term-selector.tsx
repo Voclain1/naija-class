@@ -7,6 +7,7 @@ import type { TermDto } from "@school-kit/types";
 
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { NAVIGATION_INTENT_EVENT, intentPathname } from "@/lib/navigation-intent";
+import { stripBasePath } from "@/lib/base-path";
 
 // Lives in the topbar (per the mockup) and means something on the routes in
 // TERM_AWARE_ROUTES below — the selected term is carried in the URL
@@ -41,7 +42,8 @@ function isLeavingClick(event: MouseEvent, currentPath: string): boolean {
   const anchor = (event.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
   if (!anchor || (anchor.target && anchor.target !== "_self")) return false;
   const url = new URL(anchor.href, window.location.href);
-  return url.origin === window.location.origin && url.pathname !== currentPath;
+  // The browser's path carries the base path (/staff); usePathname's does not.
+  return url.origin === window.location.origin && stripBasePath(url.pathname) !== currentPath;
 }
 
 export function DashboardTermSelector() {
@@ -86,7 +88,7 @@ export function DashboardTermSelector() {
   }, [isTermAware, pathname]);
 
   function writeDefaultParam(key: string, value: string) {
-    if (leaving.current || window.location.pathname !== startedOn.current) return;
+    if (leaving.current || stripBasePath(window.location.pathname) !== startedOn.current) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get(key) === value) return;
     params.set(key, value);
