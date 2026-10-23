@@ -8,9 +8,8 @@
 // invalid/expired, so it redirects to /login there, which is the real
 // validity check the slice 2 code deferred to "slice 4's parent view."
 
-import Link from "next/link";
+import Link from "@/components/portal-link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { callSchoolHref, type AnnouncementFeedResponse, type PortalMessageListDto, type PortalStudentDto, type SchoolContactResponse } from "@school-kit/types";
 
@@ -24,6 +23,7 @@ import { Appear, EmptyState, PageHeader, PageSkeleton } from "@school-kit/ui";
 
 import { SignOutButton } from "@/components/sign-out-button";
 import { SchoolBanner } from "@/components/school-banner";
+import { usePortalRouter } from "@/lib/portal-router";
 
 type LoadState =
   | { kind: "loading" }
@@ -31,7 +31,7 @@ type LoadState =
   | { kind: "loaded"; students: PortalStudentDto[] };
 
 export default function DashboardPage() {
-  const router = useRouter();
+  const router = usePortalRouter();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   // The unread count next to the announcements link. Fetched separately and
   // deliberately silent on failure: the children list is what this page is

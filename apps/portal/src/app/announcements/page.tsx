@@ -9,8 +9,7 @@
 // been on screen; the request is fire-and-forget (a failed mark leaves it
 // unread, which is the safe direction).
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/components/portal-link";
 import { useEffect, useRef, useState } from "react";
 
 import { callSchoolHref, type AnnouncementFeedItemDto, type AnnouncementFeedResponse, type SchoolContactResponse } from "@school-kit/types";
@@ -20,6 +19,7 @@ import { Appear, EmptyState, PageHeader, PageSkeleton } from "@school-kit/ui";
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
 import { SchoolBanner } from "@/components/school-banner";
+import { usePortalRouter } from "@/lib/portal-router";
 
 type LoadState =
   | { kind: "loading" }
@@ -36,7 +36,7 @@ function when(value: string | Date): string {
 }
 
 export default function AnnouncementsPage() {
-  const router = useRouter();
+  const router = usePortalRouter();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   // Fetched separately and silent on failure: the messages are what this page
   // is for, and a missing number means no button rather than an error.

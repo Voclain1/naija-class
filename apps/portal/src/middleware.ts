@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { PORTAL_URL, schoolCodeFromHost } from "./lib/school-host";
+import { schoolCodeFromHost } from "./lib/school-host";
+
+// Not imported from lib/portal-path.ts, which is a client module.
+const PARENTS_PREFIX = "/parents";
 
 // Route protection for the guardian portal.
 //
@@ -41,14 +44,19 @@ export function middleware(req: NextRequest): NextResponse {
 }
 
 // A school's own address, "<code>.schoolkit.ng" (docs/modules/school-addresses.md).
-// It serves three public pages; everything else, signing in included, lives on
-// the portal's own address, so sessions never spread across schools' hosts.
+// It serves the school's public pages, and since 2026-10-23 the parents' pages
+// under /parents (docs/modules/school-hosted-apps.md):
 //   /                 the school's front page
 //   /apply[/...]      the admission form and its tracking pages
 //   /results          the result checker
 //   /news[/<post>]    the school's news (docs/modules/school-website.md)
 //   /gallery          its photo gallery
 //   /id/...           ID card checks, as anywhere
+//   /parents[/...]    the parents' pages, signed in at this address only (the
+//                     session cookie is host-only here)
+// Any other path is a parents' page reached without the prefix (an older
+// link, or one followed before the page had read its address), and is sent
+// to its /parents form.
 function schoolAddress(req: NextRequest, code: string): NextResponse {
   const path = req.nextUrl.pathname;
   const rewrite = (to: string) => {
@@ -61,23 +69,38 @@ function schoolAddress(req: NextRequest, code: string): NextResponse {
   if (path === "/results") return rewrite(`/result-checker/${code}`);
   if (path === "/news" || /^\/news\/[0-9a-f-]{36}$/i.test(path) || path === "/gallery") return rewrite(`/school/${code}${path}`);
   if (path.startsWith("/id/")) return NextResponse.next();
-  const target = new URL(`${PORTAL_URL}${path}${req.nextUrl.search}`);
-  if (path === "/login") target.searchParams.set("school", code);
+  if (path === PARENTS_PREFIX || path.startsWith(`${PARENTS_PREFIX}/`)) {
+    const inner = path.slice(PARENTS_PREFIX.length) || "/";
+    // Another school's public pages are never served inside this one's.
+    if (PUBLIC_ONLY.some((re) => re.test(inner))) return NextResponse.redirect(new URL("/", req.url));
+    if (!PROTECTED.some((re) => re.test(inner))) return rewrite(inner);
+    return requireSession(req, () => rewrite(inner), `${PARENTS_PREFIX}/login`);
+  }
+  const target = req.nextUrl.clone();
+  target.pathname = `${PARENTS_PREFIX}${path}`;
   return NextResponse.redirect(target);
 }
 
-function requireSession(req: NextRequest): NextResponse {
+// The portal's pages that take a school code in the path. At a school's
+// address they are reached by their short forms above, never under /parents.
+const PUBLIC_ONLY = [/^\/school(\/|$)/, /^\/apply(\/|$)/, /^\/result-checker(\/|$)/];
+
+function requireSession(
+  req: NextRequest,
+  pass: () => NextResponse = () => NextResponse.next(),
+  loginPath = "/login",
+): NextResponse {
   const hasSession = Boolean(req.cookies.get(COOKIE_NAME)?.value);
 
   if (!hasSession) {
-    const login = new URL("/login", req.url);
+    const login = new URL(loginPath, req.url);
     // Preserve the intended destination so a guardian who followed a link to
     // a specific child (or clicked one in a reminder email) lands there after
     // signing in, rather than on a generic home screen. Only the path+query
     // is carried, never an absolute URL — see the `next` handling in
     // login/page.tsx for the open-redirect guard on the way back out.
     const target = `${req.nextUrl.pathname}${req.nextUrl.search}`;
-    if (target && target !== "/") {
+    if (target && target !== "/" && target !== PARENTS_PREFIX) {
       login.searchParams.set("next", target);
     }
     const res = NextResponse.redirect(login);
@@ -88,7 +111,7 @@ function requireSession(req: NextRequest): NextResponse {
     return res;
   }
 
-  const res = NextResponse.next();
+  const res = pass();
   // Authenticated pages must not sit in a shared browser's disk cache or be
   // restorable from the back/forward cache after sign-out. This is the other
   // half of the shared-device story: the Sign out button destroys the

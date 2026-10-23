@@ -17,7 +17,7 @@
 // webhook. After a few failed attempts, the page offers a manual
 // "Check again" instead of silently giving up.
 
-import Link from "next/link";
+import Link from "@/components/portal-link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 

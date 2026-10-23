@@ -5,8 +5,8 @@
 // which returns only what the school PUBLISHED for the child's class this term.
 // A timetable the school is still editing is never shown here.
 
-import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import Link from "@/components/portal-link";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
@@ -22,6 +22,7 @@ import { Appear, EmptyState, PageHeader, PageSkeleton, SectionHeader } from "@sc
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
 import { SchoolBanner } from "@/components/school-banner";
+import { usePortalRouter } from "@/lib/portal-router";
 
 type LoadState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "loaded"; data: FamilyTimetableDto };
 
@@ -40,7 +41,7 @@ const EMPTY_NEXT: Record<keyof typeof EMPTY, string> = {
 };
 
 export default function ChildTimetablePage() {
-  const router = useRouter();
+  const router = usePortalRouter();
   const params = useParams<{ id: string }>();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 

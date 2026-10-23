@@ -134,6 +134,8 @@ export function isSafeNextPath(raw: string | null | undefined): raw is string {
   if (value.startsWith("//")) return false;
   if (value.startsWith("/\\")) return false;
   if (value.startsWith("/login")) return false;
+  // The same page at a school's own address (lib/portal-path.ts).
+  if (value.startsWith("/parents/login")) return false;
 
   return true;
 }

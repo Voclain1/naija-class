@@ -4,8 +4,7 @@
 // (docs/modules/phase-9.md §17.8). Each one is with the person or office the
 // parent chose; only they (and anyone it is passed to) see it.
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/components/portal-link";
 import { useEffect, useState } from "react";
 
 import type { PortalMessageListDto } from "@school-kit/types";
@@ -15,11 +14,12 @@ import { Appear, EmptyState, PageHeader, PageSkeleton } from "@school-kit/ui";
 import { SchoolBanner } from "@/components/school-banner";
 import { SignOutButton } from "@/components/sign-out-button";
 import { messageTime, portalJson } from "@/lib/portal-api";
+import { usePortalRouter } from "@/lib/portal-router";
 
 type State = { kind: "loading" } | { kind: "error"; message: string } | { kind: "loaded"; data: PortalMessageListDto };
 
 export default function MessagesPage() {
-  const router = useRouter();
+  const router = usePortalRouter();
   const [state, setState] = useState<State>({ kind: "loading" });
 
   useEffect(() => {

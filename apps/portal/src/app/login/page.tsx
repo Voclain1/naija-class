@@ -19,9 +19,9 @@
 // ever sees the response body.
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import Link from "next/link";
+import Link from "@/components/portal-link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { guardianLoginSchema, type GuardianLoginInput } from "@school-kit/types";
@@ -32,6 +32,7 @@ import {
   sessionEndNotice,
 } from "@/lib/session-end";
 import { BrandHeading } from "@/components/brand-mark";
+import { portalPath, schoolCodeHere } from "@/lib/portal-path";
 import { SchoolSignInHeading } from "@/components/school-sign-in-heading";
 
 type SubmitState =
@@ -43,6 +44,13 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const [state, setState] = useState<SubmitState>({ kind: "idle" });
   const [showPassword, setShowPassword] = useState(false);
+  // The school this sign-in is for: the address it is open at, or the
+  // ?school= a link from a school's page carried to portal.schoolkit.ng.
+  const [schoolCode, setSchoolCode] = useState<string | null>(searchParams.get("school"));
+  useEffect(() => {
+    const here = schoolCodeHere();
+    if (here) setSchoolCode(here);
+  }, []);
 
   // Why the parent is looking at this screen (F-10). Both parameters are
   // untrusted: parseSessionEndReason narrows to a known reason so nobody can
@@ -62,7 +70,9 @@ function LoginForm() {
       const res = await fetch("/api/portal/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        // At a school's own address only that school's account signs in
+        // (docs/modules/school-hosted-apps.md).
+        body: JSON.stringify({ ...values, ...(schoolCodeHere() ? { schoolCode: schoolCodeHere() } : {}) }),
       });
       const body: unknown = await res.json().catch(() => null);
 
@@ -85,7 +95,7 @@ function LoginForm() {
       // rather than racing a client-side transition. It also replaces the
       // /login entry in history, so pressing Back from the dashboard does
       // not land on a login form the guardian has already passed.
-      window.location.replace(resolveNextPath(searchParams.get("next")));
+      window.location.replace(portalPath(resolveNextPath(searchParams.get("next"))));
     } catch {
       setState({ kind: "error", message: "Could not reach the server. Try again in a moment." });
     }
@@ -96,7 +106,7 @@ function LoginForm() {
   return (
     <main className="sk-entry flex min-h-screen flex-col items-center justify-center gap-8 px-4 py-10">
       <BrandHeading />
-      {searchParams.get("school") && <SchoolSignInHeading code={searchParams.get("school") as string} />}
+      {schoolCode && <SchoolSignInHeading code={schoolCode} />}
 
       {/* Shown only when the redirect actually carried a reason. A parent who
           pressed Sign out, or who is simply signing in, sees nothing —

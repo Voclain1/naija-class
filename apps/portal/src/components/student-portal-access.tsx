@@ -7,6 +7,8 @@ import type {
   StudentPortalStatusDto,
 } from "@school-kit/types";
 
+import { portalPath } from "@/lib/portal-path";
+
 // Phase 6 / Slice 3 — the guardian's control over their child's own School
 // Kit account, on the child's detail page.
 //
@@ -184,7 +186,7 @@ export function StudentPortalAccess({ studentId, firstName }: Props) {
             </p>
             <code className="break-all text-xs">
               {typeof window !== "undefined" ? window.location.origin : ""}
-              /student-invite/{issued.token}
+              {portalPath(`/student-invite/${issued.token}`)}
             </code>
             <p className="text-xs text-muted-foreground">
               Give this to {firstName}. We can&apos;t show it again — if it&apos;s lost,

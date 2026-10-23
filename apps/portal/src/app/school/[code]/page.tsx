@@ -70,7 +70,7 @@ export default async function SchoolFrontPage({ params, searchParams }: Params) 
         </h2>
         <div className="grid gap-3 sm:grid-cols-3">
           <a
-            href={`${PORTAL_URL}/login?school=${encodeURIComponent(school.code)}`}
+            href={own ? "/parents/login" : `${PORTAL_URL}/login?school=${encodeURIComponent(school.code)}`}
             className="flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm hover:bg-muted/40"
           >
             <span className="font-medium">Parents</span>
@@ -83,7 +83,7 @@ export default async function SchoolFrontPage({ params, searchParams }: Params) 
             </span>
           </div>
           <a
-            href={`${STAFF_URL}/login?school=${encodeURIComponent(school.code)}`}
+            href={own ? "/staff/login" : `${STAFF_URL}/login?school=${encodeURIComponent(school.code)}`}
             className="flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm hover:bg-muted/40"
           >
             <span className="font-medium">Staff</span>

@@ -9,7 +9,7 @@
 // for no benefit at this size.
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import Link from "next/link";
+import Link from "@/components/portal-link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";

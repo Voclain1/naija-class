@@ -2,8 +2,8 @@ import { NextRequest } from "next/server";
 import { beforeAll, describe, expect, it } from "vitest";
 
 // School addresses (docs/modules/school-addresses.md): the middleware routes a
-// school's own host to its public pages and sends everything else to the
-// portal's own address.
+// school's own host to its public pages and, since 2026-10-23, its parents'
+// pages under /parents (docs/modules/school-hosted-apps.md).
 
 let middleware: (req: NextRequest) => Response;
 
@@ -37,11 +37,33 @@ describe("a school's own address", () => {
     expect(middleware(at("https://virgo.schoolkit.ng/news/x/y")).status).toBe(307);
   });
 
-  it("sends signing in, and anything else, to the portal's own address", () => {
-    const login = middleware(at("https://virgo.schoolkit.ng/login"));
-    expect(login.status).toBe(307);
-    expect(login.headers.get("location")).toBe("https://portal.schoolkit.ng/login?school=virgo");
-    expect(middleware(at("https://virgo.schoolkit.ng/students/123")).headers.get("location")).toBe("https://portal.schoolkit.ng/students/123");
+  it("serves the parents' pages under /parents, asking for a session where the portal does", () => {
+    expect(rewrittenTo(middleware(at("https://virgo.schoolkit.ng/parents/login")))).toBe("https://virgo.schoolkit.ng/login");
+    expect(rewrittenTo(middleware(at("https://virgo.schoolkit.ng/parents/invitations/t1")))).toBe("https://virgo.schoolkit.ng/invitations/t1");
+    // Signed out: to this address's own sign-in, keeping where they were going.
+    const home = middleware(at("https://virgo.schoolkit.ng/parents"));
+    expect(home.headers.get("location")).toBe("https://virgo.schoolkit.ng/parents/login");
+    const child = middleware(at("https://virgo.schoolkit.ng/parents/students/123"));
+    expect(child.headers.get("location")).toBe("https://virgo.schoolkit.ng/parents/login?next=%2Fparents%2Fstudents%2F123");
+    // Signed in: the portal's page, uncached.
+    const req = at("https://virgo.schoolkit.ng/parents/students/123");
+    req.cookies.set("sk_portal_session", "t");
+    const signedIn = middleware(req);
+    expect(rewrittenTo(signedIn)).toBe("https://virgo.schoolkit.ng/students/123");
+    expect(signedIn.headers.get("cache-control")).toContain("no-store");
+  });
+
+  it("sends a parents' page reached without /parents to its /parents form", () => {
+    expect(middleware(at("https://virgo.schoolkit.ng/login")).headers.get("location")).toBe("https://virgo.schoolkit.ng/parents/login");
+    expect(middleware(at("https://virgo.schoolkit.ng/students/123?x=1")).headers.get("location")).toBe(
+      "https://virgo.schoolkit.ng/parents/students/123?x=1",
+    );
+  });
+
+  it("never serves another school's public pages inside /parents", () => {
+    for (const path of ["/parents/school/other", "/parents/apply/other", "/parents/result-checker/other"]) {
+      expect(middleware(at(`https://virgo.schoolkit.ng${path}`)).headers.get("location"), path).toBe("https://virgo.schoolkit.ng/");
+    }
   });
 });
 
