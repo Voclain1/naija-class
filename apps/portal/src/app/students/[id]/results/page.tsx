@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import Link from "@/components/portal-link";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import type { PortalStudentDto, ReleasedResultSummaryDto } from "@school-kit/types";
@@ -11,6 +11,7 @@ import { Appear, PageHeader, PageSkeleton } from "@school-kit/ui";
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
 import { SchoolBanner } from "@/components/school-banner";
+import { usePortalRouter } from "@/lib/portal-router";
 
 type State =
   | { kind: "loading" }
@@ -26,7 +27,7 @@ function formatAverage(hundredths: number | null): string {
 
 export default function ResultsPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
+  const router = usePortalRouter();
   const [state, setState] = useState<State>({ kind: "loading" });
 
   useEffect(() => {

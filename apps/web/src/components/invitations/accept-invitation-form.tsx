@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import { acceptInvitation } from "@/lib/invitations/invitations-api";
 import { track } from "@/lib/observability/events";
+import { withBasePath } from "@/lib/base-path";
 
 // Extend the shared accept-invitation schema with a confirmPassword field +
 // a refinement that the two passwords match. The server has no
@@ -120,7 +121,7 @@ export function AcceptInvitationForm({ token, invitation }: Props) {
       // from this response body — nothing here reads res.token) — the
       // cookie is what survives the reload and lets middleware.ts and the
       // fresh AuthProvider mount both see a real session.
-      window.location.href = "/dashboard";
+      window.location.href = withBasePath("/dashboard");
     } catch (error) {
       if (error instanceof ApiError) {
         // Surface the API code to the user — they may need to take action

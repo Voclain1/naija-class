@@ -22,6 +22,8 @@ import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf, userHoldsPermission } from "../../common/auth/role-check";
 import { redactEmail } from "../../common/redact";
 import { USER_RESPONSE_SELECT } from "../auth/auth.service";
+import { staffSiteUrl } from "../../common/school-site-url";
+import { schoolSlugOf } from "../../common/slug/school-slug-of";
 
 // 7 days. Slice 6's onboarding step 3 uses the same value inline; both copies
 // agree because both copies derive from "1 week of inbox attention is plenty
@@ -32,15 +34,6 @@ const INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const INVITE_AUDIT_ACTION = "user.invite";
 const INVITE_RESEND_AUDIT_ACTION = "user.invite-resend";
 const INVITE_REVOKE_AUDIT_ACTION = "user.invite-revoke";
-
-// Where the accept URL points. Dev default matches the web dev port noted in
-// .env.example. Production deploys MUST set WEB_BASE_URL explicitly; we don't
-// throw on a missing value here because a misconfigured prod would still
-// successfully create the invitation row — the URL would just be wrong,
-// which is recoverable (re-issue) rather than catastrophic.
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
-}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -247,7 +240,7 @@ export class UsersService {
       return invitation;
     });
 
-    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = staffSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
 
     // Email delivery via Resend is deferred to Phase 4. For now, log the
     // accept URL to the server console so the operator can copy it manually
@@ -334,7 +327,7 @@ export class UsersService {
       return invitation;
     });
 
-    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = staffSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
     this.logger.log(`[INVITATION] ${acceptUrl}`);
     return { invitation: toInvitationCreatedDto(created), token: rawToken, acceptUrl };
   }

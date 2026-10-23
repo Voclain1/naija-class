@@ -317,6 +317,44 @@ describe("Auth session endpoints (Phase 0 Prompt 4)", () => {
     }
   });
 
+  // Staff at the school's own address (docs/modules/school-hosted-apps.md):
+  // the cookie is honoured from <code>.<domain>, for that school's session only.
+  it("AuthGuard — the cookie from the session's own school address is accepted; another school's is not", async () => {
+    const saved = process.env.SCHOOL_ADDRESS_DOMAIN;
+    process.env.SCHOOL_ADDRESS_DOMAIN = "schoolkit.ng";
+    try {
+      const token = await loginAndGetToken();
+      const own = await request(app.getHttpServer())
+        .get("/api/v1/auth/me")
+        .set("Origin", `https://sess-${runId}.schoolkit.ng`)
+        .set("Cookie", `sk_session=${token}`);
+      expect(own.status).toBe(200);
+      expect(own.body.user.id).toBe(userId);
+      for (const origin of [`https://other-${runId}.schoolkit.ng`, "https://portal.schoolkit.ng"]) {
+        const res = await request(app.getHttpServer())
+          .get("/api/v1/auth/me")
+          .set("Origin", origin)
+          .set("Cookie", `sk_session=${token}`);
+        expect(res.status, origin).toBe(401);
+      }
+    } finally {
+      if (saved === undefined) delete process.env.SCHOOL_ADDRESS_DOMAIN;
+      else process.env.SCHOOL_ADDRESS_DOMAIN = saved;
+    }
+  });
+
+  it("POST /auth/login — at a school's own address only that school's account signs in", async () => {
+    const ok = await request(app.getHttpServer())
+      .post("/api/v1/auth/login")
+      .send({ email, password, schoolCode: `sess-${runId}` });
+    expect(ok.status).toBe(200);
+    for (const schoolCode of [`other-${runId}`, "no-such-school-xyz"]) {
+      const res = await request(app.getHttpServer()).post("/api/v1/auth/login").send({ email, password, schoolCode });
+      expect(res.status, schoolCode).toBe(401);
+      expect(res.body.error?.code).toBe("INVALID_CREDENTIALS");
+    }
+  });
+
   it("AuthGuard — the cookie with no Origin at all is refused", async () => {
     const token = await loginAndGetToken();
     const res = await request(app.getHttpServer())

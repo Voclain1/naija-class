@@ -4,6 +4,7 @@ import { Prisma, withTenant } from "@school-kit/db";
 import { ADMISSION_LIMITS } from "@school-kit/types";
 
 import { EmailService } from "../../common/email/email.service.js";
+import { staffSiteUrl } from "../../common/school-site-url.js";
 import { redactPhone } from "../../common/redact.js";
 import { smsSenderFor } from "../../common/termii/sms-sender.js";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
@@ -21,10 +22,6 @@ import { ADMISSION_ROLES, escapeHtml, lagosToday, loadAdmissionSettings } from "
 // is logged and never fails the application, which is already saved.
 
 export const ADMISSION_EVENT = "admission.applied";
-
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
-}
 
 @Injectable()
 export class AdmissionAlertsService {
@@ -50,7 +47,7 @@ export class AdmissionAlertsService {
         where: { id: applicationId },
         select: { reference: true, childFirstName: true, childLastName: true, classLevel: { select: { name: true } } },
       });
-      const school = await db.school.findUnique({ where: { id: schoolId }, select: { name: true, smsSenderId: true, smsSenderStatus: true } });
+      const school = await db.school.findUnique({ where: { id: schoolId }, select: { name: true, slug: true, smsSenderId: true, smsSenderStatus: true } });
       const settings = await loadAdmissionSettings(db, schoolId);
       const staff = await db.user.findMany({
         where: { schoolId, isActive: true, roles: { some: { role: { key: { in: [...ADMISSION_ROLES] } } } } },
@@ -60,7 +57,7 @@ export class AdmissionAlertsService {
     });
     if (!ctx.app || !ctx.school) return;
     const { app, school, settings, staff } = ctx;
-    const link = `${webBaseUrl()}/admissions/${applicationId}`;
+    const link = staffSiteUrl(school.slug, `/admissions/${applicationId}`);
 
     // Push: lockscreen-safe, no name (N3).
     for (const user of staff) {

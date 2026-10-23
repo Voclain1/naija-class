@@ -5,8 +5,7 @@
 // child's form or class teacher, the bursar, the principal or head teacher,
 // the school admin, or the school office. Only that person or office sees it.
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/components/portal-link";
 import { useEffect, useState } from "react";
 
 import { MESSAGE_LIMITS, type MessageRecipient, type MessageRecipientOptionDto, type PortalMessageThreadDto, type PortalStudentDto } from "@school-kit/types";
@@ -16,11 +15,12 @@ import { PageHeader } from "@school-kit/ui";
 import { PhotoPicker, type PickedPhoto } from "@/components/message-photos";
 import { SchoolBanner } from "@/components/school-banner";
 import { portalJson } from "@/lib/portal-api";
+import { usePortalRouter } from "@/lib/portal-router";
 
 const FIELD = "w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm";
 
 export default function NewMessagePage() {
-  const router = useRouter();
+  const router = usePortalRouter();
   const [children, setChildren] = useState<PortalStudentDto[] | null>(null);
   const [studentId, setStudentId] = useState<string>("");
   const [options, setOptions] = useState<MessageRecipientOptionDto[] | null>(null);

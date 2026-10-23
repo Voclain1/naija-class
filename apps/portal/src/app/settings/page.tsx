@@ -5,8 +5,7 @@
 // An address that bounced or was marked as spam is blocked until the school
 // fixes it.
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link from "@/components/portal-link";
 import { useEffect, useState } from "react";
 
 import type { PortalEmailPreferencesDto } from "@school-kit/types";
@@ -15,9 +14,10 @@ import { PageHeader, PageSkeleton } from "@school-kit/ui";
 
 import { SchoolBanner } from "@/components/school-banner";
 import { portalJson } from "@/lib/portal-api";
+import { usePortalRouter } from "@/lib/portal-router";
 
 export default function SettingsPage() {
-  const router = useRouter();
+  const router = usePortalRouter();
   const [prefs, setPrefs] = useState<PortalEmailPreferencesDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

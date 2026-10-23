@@ -221,7 +221,7 @@ export default function DebtorsPage() {
             // is included only when LIVE and for exactly this balance — see
             // shareablePaymentLinkUrl.
             paymentLinkUrl,
-            portalUrl: school?.portalUrl ?? null,
+            portalUrl: school?.siteUrls?.parents ?? school?.portalUrl ?? null,
             bankDetails: shareBankDetails,
           }),
         );

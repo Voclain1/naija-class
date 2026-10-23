@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { setSessionCookie } from "@/lib/server/session-cookie";
+import { publicOrigin } from "@/lib/public-origin";
 
 // Opening the website from the app, already signed in
 // (docs/modules/web-handoff-signin.md).
@@ -34,11 +35,13 @@ function safeNext(raw: string | null): string {
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const token = request.nextUrl.searchParams.get("t");
   const next = safeNext(request.nextUrl.searchParams.get("next"));
-  const origin = request.nextUrl.origin;
+  // Built on the address the browser is on, under the base path (/staff).
+  const origin = publicOrigin(request.headers, request.nextUrl.origin);
+  const base = request.nextUrl.basePath;
 
   // A failed handoff lands on the ordinary sign-in page with an explanation,
   // never a blank screen: the person still has a password and a keyboard.
-  const failed = NextResponse.redirect(new URL("/login?handoff=expired", origin));
+  const failed = NextResponse.redirect(new URL(`${base}/login?handoff=expired`, origin));
 
   if (!token) return failed;
 
@@ -54,7 +57,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const data = (await response.json()) as { token?: string };
     if (!data.token) return failed;
 
-    const out = NextResponse.redirect(new URL(next, origin));
+    const out = NextResponse.redirect(new URL(`${base}${next}`, origin));
     setSessionCookie(out, data.token);
     return out;
   } catch {

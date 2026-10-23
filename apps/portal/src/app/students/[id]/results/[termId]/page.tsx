@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import Link from "@/components/portal-link";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import type { ReleasedResultDetailDto } from "@school-kit/types";
@@ -13,6 +13,7 @@ import { ResultCard } from "@/components/result-card";
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
 import { SchoolBanner } from "@/components/school-banner";
+import { usePortalRouter } from "@/lib/portal-router";
 
 // One released term, in full (Phase 8 / CP6a, §20.4). The portal had only the
 // list until now; this is the card a parent opens, carrying what the printed
@@ -33,7 +34,7 @@ type State =
 
 export default function ResultDetailPage() {
   const params = useParams<{ id: string; termId: string }>();
-  const router = useRouter();
+  const router = usePortalRouter();
   const [state, setState] = useState<State>({ kind: "loading" });
 
   useEffect(() => {

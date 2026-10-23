@@ -34,6 +34,7 @@ import {
   parkSessionEndReason,
 } from "./session-end-navigation";
 import { buildLoginUrl, reasonFromErrorCode } from "./session-end";
+import { stripBasePath, withBasePath } from "@/lib/base-path";
 
 export type AuthStatus = "loading" | "authed" | "guest";
 
@@ -167,7 +168,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const code = (event as CustomEvent<UnauthorizedEventDetail | undefined>).detail?.code;
       const reason = reasonFromErrorCode(code);
-      const current = `${window.location.pathname}${window.location.search}`;
+      // Without the base path: the login page hands `next` to the router.
+      const current = `${stripBasePath(window.location.pathname)}${window.location.search}`;
       const target = buildLoginUrl({ reason, next: current });
 
       // Mark this as an EVICTION before the navigation starts, so the app's
@@ -195,7 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       //
       // It also guarantees no stale authenticated data is left in memory
       // behind the login screen, which router.replace alone does not.
-      window.location.replace(target);
+      window.location.replace(withBasePath(target));
     };
     window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handler);
     return () => window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handler);
@@ -321,7 +323,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Second, it takes the authenticated URL out of the history stack, so
     // Back cannot return to it — the same shared-device reasoning as the
     // guardian portal's SignOutButton, which uses this for both reasons.
-    window.location.replace("/login");
+    window.location.replace(withBasePath("/login"));
   }, []);
 
   return (

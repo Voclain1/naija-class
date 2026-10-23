@@ -16,6 +16,10 @@ import { loginAsAdmin, uniqueSuffix } from "../fixtures/index.js";
 // school data is touched.
 
 const WEB = "http://localhost:3001";
+// The staff app's base path (docs/modules/school-hosted-apps.md). Pages are
+// visited at their older addresses and redirected; what the browser ends on
+// carries the base path.
+const BASE = "/staff";
 
 /**
  * Assert the browser is on `path`, ignoring query parameters the PAGE adds
@@ -29,7 +33,7 @@ const WEB = "http://localhost:3001";
 async function expectPath(page: Page, path: string): Promise<void> {
   await expect
     .poll(() => new URL(page.url()).pathname, { timeout: 15_000 })
-    .toBe(path);
+    .toBe(`${BASE}${path}`);
   expect(new URL(page.url()).origin).toBe(WEB);
 }
 
@@ -66,7 +70,7 @@ test.describe("deep-link continuity (F-10)", () => {
     await page.getByRole("button", { name: /sign in|log in/i }).click();
 
     // Back to what they actually asked for.
-    await expect(page).toHaveURL(`${WEB}${target}`);
+    await expect(page).toHaveURL(`${WEB}${BASE}${target}`);
     await expect(page.getByRole("heading", { name: "Invoices" })).toBeVisible();
 
     await context.close();
@@ -88,7 +92,7 @@ test.describe("deep-link continuity (F-10)", () => {
     await page.goto(`${WEB}/students?status=ACTIVE`);
 
     const url = new URL(page.url());
-    expect(url.pathname).toBe("/login");
+    expect(url.pathname).toBe(`${BASE}/login`);
     expect(url.searchParams.get("next")).toBe("/students?status=ACTIVE");
     // The stray leak is gone: /login itself no longer carries the page's own
     // parameters at the top level.
@@ -191,7 +195,7 @@ test.describe("session-expiry communication (F-10)", () => {
 
     await expect
       .poll(() => new URL(page.url()).pathname, { timeout: 15_000 })
-      .toBe("/login");
+      .toBe(`${BASE}/login`);
     const url = new URL(page.url());
     // The EXACT reason the server gave, not a guess.
     expect(url.searchParams.get("reason")).toBe("expired");
@@ -250,7 +254,7 @@ test.describe("session-expiry communication (F-10)", () => {
     await page.getByRole("button", { name: /Eve Owner/ }).click();
     await page.getByRole("menuitem", { name: /log out|sign out/i }).click();
 
-    await expect(page).toHaveURL(new RegExp(`^${WEB}/login/?$`));
+    await expect(page).toHaveURL(new RegExp(`^${WEB}${BASE}/login/?$`));
     // No reason parameter, and no notice — leaving on purpose is not a
     // failure and must not be dressed as one.
     expect(new URL(page.url()).searchParams.get("reason")).toBeNull();

@@ -59,6 +59,8 @@ import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
 
 import { deleteSchoolRows, holdsPlatformAdmin, readDeletionFacts } from "./school-deletion";
 import { changeSchoolAddress } from "../../common/slug/school-address-change.js";
+import { staffSiteUrl } from "../../common/school-site-url";
+import { schoolSlugOf } from "../../common/slug/school-slug-of";
 
 // Cross-tenant service. Reads go through the platform_admin_* SECURITY
 // DEFINER functions (see CLAUDE.md's inventory) via basePrisma directly —
@@ -101,14 +103,6 @@ const OWNER_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 14;
 // that one is module-private there, and this module's import-boundary spec
 // keeps platform-admin from reaching into other services.
 const CREATE_SCHOOL_TRANSACTION_TIMEOUT_MS = 20_000;
-
-// Same WEB_BASE_URL convention as UsersService.invite() / GuardiansService
-// (PORTAL_BASE_URL) — dev default matches the web dev port, production must
-// set it explicitly. Duplicated rather than imported: it's three lines, and
-// there's no shared module either sibling already reaches into.
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
-}
 
 
 interface RequestContext {
@@ -1016,7 +1010,7 @@ export class PlatformAdminService {
       return { school };
     }, { timeout: CREATE_SCHOOL_TRANSACTION_TIMEOUT_MS });
 
-    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = staffSiteUrl(created.school.slug, `/invitations/${rawToken}`);
 
     // Unconditional send — unlike GuardiansService, there's no
     // NotificationPreference row to gate on yet (the school was just
@@ -1159,7 +1153,7 @@ export class PlatformAdminService {
       return email;
     });
 
-    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = staffSiteUrl(await schoolSlugOf(schoolId), `/invitations/${rawToken}`);
     await this.sendOwnerInvitation(ownerEmail, school.name, acceptUrl);
 
     return {

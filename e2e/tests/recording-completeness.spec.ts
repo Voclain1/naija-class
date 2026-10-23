@@ -94,7 +94,7 @@ test("owner sees the ended term and '1 of 18 school days'; opening teacher activ
     // The ended term, with its fix link.
     const ended = admin.page.getByRole("status").filter({ hasText: "The current term ended on Fri 27 Mar 2026" });
     await expect(ended).toBeVisible();
-    await expect(ended.getByRole("link", { name: "Fix this" })).toHaveAttribute("href", "/settings/academic");
+    await expect(ended.getByRole("link", { name: "Fix this" })).toHaveAttribute("href", "/staff/settings/academic");
 
     // 18 school days, and one register on the one class.
     await expect(admin.page.getByText("counted up to Fri 27 Mar 2026: 18 school days")).toBeVisible();

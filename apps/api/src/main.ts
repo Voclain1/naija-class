@@ -41,13 +41,15 @@ async function bootstrap() {
   const corsOriginCbt = process.env.CORS_ORIGIN_CBT ?? "http://localhost:3003";
   const corsOrigins = [corsOrigin, corsOriginPortal, corsOriginCbt].filter(Boolean);
   // Credentials (the sk_session cookie) are allowed for the staff web app's
-  // origin ONLY. The portal and the exam app never send it and must not be
-  // able to read a response made with it; the guard enforces the same rule
-  // from its side (common/auth/staff-session-token.ts).
+  // origin and the schools' own addresses, where the staff area is served too
+  // (docs/modules/school-hosted-apps.md). The portal and the exam app never
+  // send it and must not be able to read a response made with it; the guard
+  // enforces the same rule from its side, and ties a school address to its
+  // own school's sessions (common/auth/staff-session-token.ts).
   app.enableCors((req: { headers: { origin?: string } }, callback: (err: Error | null, options: CorsOptions) => void) => {
     const origin = req.headers.origin;
-    // A school's own address ("<code>.schoolkit.ng") may call the API too,
-    // never with credentials (common/school-origin.ts).
+    // A school's own address ("<code>.schoolkit.ng") may call the API too
+    // (common/school-origin.ts).
     const schoolOrigin = isSchoolAddressOrigin(origin, process.env.SCHOOL_ADDRESS_DOMAIN);
     callback(null, {
       origin: schoolOrigin && origin ? [...corsOrigins, origin] : corsOrigins,
@@ -57,7 +59,7 @@ async function bootstrap() {
       // Without it every file download (report exports, import reports) lost
       // the file name the API chose and fell back to the page's default.
       exposedHeaders: ["Content-Disposition"],
-      credentials: origin !== undefined && origin === corsOrigin,
+      credentials: origin !== undefined && (origin === corsOrigin || schoolOrigin),
     });
   });
 

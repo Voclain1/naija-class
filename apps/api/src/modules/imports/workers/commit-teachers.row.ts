@@ -6,6 +6,8 @@ import { Prisma, type PrismaClient } from "@school-kit/db";
 import type { TeacherImportRow } from "@school-kit/types";
 
 import { CommitRowError } from "./commit-guardians.row";
+import { staffSiteUrl } from "../../../common/school-site-url";
+import { schoolSlugOf } from "../../../common/slug/school-slug-of";
 
 // Per-row commit for TEACHERS (slice 10 cp2). Each good row becomes ONE
 // Invitation with roleKey="teacher" — the bulk equivalent of the Phase 0
@@ -36,12 +38,6 @@ import { CommitRowError } from "./commit-guardians.row";
 // inbox attention is plenty"). When Resend email delivery lands these merge
 // into a per-school setting.
 const INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
-
-// Where the accept URL points. Mirrors UsersService.webBaseUrl(). Production
-// MUST set WEB_BASE_URL; dev defaults to the :3001 web port.
-function webBaseUrl(): string {
-  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
-}
 
 const logger = new Logger("commitTeacherRow");
 
@@ -111,6 +107,6 @@ export async function commitTeacherRow(
   //    UsersService.invite does for the single-invite flow. The URL
   //    contains the raw token; logging the URL (not the bare token) is the
   //    established, intentional pattern.
-  const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+  const acceptUrl = staffSiteUrl(await schoolSlugOf(schoolId), `/invitations/${rawToken}`);
   logger.log(`[INVITATION] ${acceptUrl}`);
 }

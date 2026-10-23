@@ -8,8 +8,8 @@
 // CP8.2: photos, and "Report this conversation", which lets the school's owner
 // and admins read it. The parent sees that they reported it, nothing more.
 
-import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import Link from "@/components/portal-link";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { MESSAGE_LIMITS, type PortalMessageThreadDto } from "@school-kit/types";
@@ -19,9 +19,10 @@ import { PageHeader, PageSkeleton } from "@school-kit/ui";
 import { MessagePhotos, PhotoPicker, type PickedPhoto } from "@/components/message-photos";
 import { SchoolBanner } from "@/components/school-banner";
 import { messageTime, portalJson } from "@/lib/portal-api";
+import { usePortalRouter } from "@/lib/portal-router";
 
 export default function MessageThreadPage() {
-  const router = useRouter();
+  const router = usePortalRouter();
   const params = useParams<{ id: string }>();
   const [thread, setThread] = useState<PortalMessageThreadDto | null>(null);
   const [error, setError] = useState<string | null>(null);
