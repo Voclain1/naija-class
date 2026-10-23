@@ -198,8 +198,20 @@ once a year against https://www.cloudflare.com/ips/.
    `API_ENV_FILE`'s addresses to the real names and its Paystack keys back to
    **live**. Change `WEB_ENV_FILE` and `PORTAL_ENV_FILE`'s `NEXT_PUBLIC_API_URL`
    to `https://api.schoolkit.ng/api/v1`.
-4. In Cloudflare, point `api`, `app`, `portal` and `*` (school addresses) at
-   the VPS IP, proxied. With the proxy, the switch is immediate.
+4. In Cloudflare (proxied, so the switch is immediate):
+   - `api`: replace the CNAME to `school-kit-api.fly.dev` with an A record
+     to the VPS IP;
+   - `*`: replace its two A records with one to the VPS IP (school
+     addresses);
+   - **add** A records for `app` and `portal` to the VPS IP. Today they have
+     no record of their own and reach Vercel through `*`;
+   - the apex and `www` move with the marketing site (step 7).
+
+   Today's values, for rollback (recorded 23 Oct 2026): `api` CNAME
+   `school-kit-api.fly.dev`; `*` A 216.150.1.1 and 216.150.16.193;
+   `schoolkit.ng` A 216.150.1.193 and 216.150.1.65; `www` A 216.150.16.129
+   and 216.150.1.1. Mail (ImprovMX MX, SPF), Resend (`send`, DKIM), Google
+   verification and CAA records never change.
 5. Run `deploy-vps`. It rebuilds with the real names, Caddy gets the
    certificates, and the smoke test runs against `https://api.schoolkit.ng`.
 6. Check: staff sign-in, portal sign-in, a school's own address (staff and
@@ -214,8 +226,8 @@ once a year against https://www.cloudflare.com/ips/.
 ### 6.3 Rollback
 
 While Fly is stopped and Neon untouched, rollback is three steps:
-- point `api`, `app`, `portal` and `*` (and the apex and `www`, for the
-  marketing site) back at the targets written down in §5;
+- point `api`, `*`, the apex and `www` back at the values in §6.2 step 4,
+  and delete the `app` and `portal` records added at cutover;
 - `flyctl scale count 1 --app school-kit-api` and the same for
   `school-kit-render-worker`;
 - set `FLY_DEPLOY_DISABLED` back to unset.
