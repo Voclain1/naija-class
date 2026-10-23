@@ -161,6 +161,10 @@ services:
       - ./sites:/etc/caddy/sites:ro
       - caddy_data:/data
       - caddy_config:/config
+    # `edge` is how Caddy reaches other projects on this server (betgenius,
+    # later the smaller sites). Only Caddy is on both networks: those
+    # projects can reach Caddy, never School Kit's Postgres or Redis.
+    networks: [default, edge]
 
   # Nightly dump + WAL-G base backup (postgres/ops/backup.sh). Reads the data
   # directory read-only for the base backup.
@@ -179,6 +183,11 @@ services:
       - pgdata:/var/lib/postgresql/data:ro
     depends_on:
       postgres: { condition: service_healthy }
+
+networks:
+  default:
+  edge:
+    name: edge
 
 volumes:
   pgdata:
