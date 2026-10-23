@@ -9,6 +9,9 @@ import { PaystackSetupService } from "./paystack-setup.service";
 import { SchoolsController } from "./schools.controller";
 import { SchoolsService } from "./schools.service";
 import { SmsSenderService } from "./sms-sender.service";
+import { SchoolAddressPublicController } from "./school-address-public.controller";
+import { SchoolAddressService } from "./school-address.service";
+import { SchoolPublicService } from "./school-public.service";
 
 @Module({
   // Imports AuthModule so the controller's @UseGuards(AuthGuard) can resolve
@@ -21,8 +24,8 @@ import { SmsSenderService } from "./sms-sender.service";
   // create the school's first year + terms in the same transaction that
   // activates it — see applyStep5 and #198.
   imports: [AuthModule, PaystackModule, EmailModule, AcademicCalendarModule],
-  controllers: [SchoolsController],
-  providers: [SchoolsService, PaystackSetupService, SmsSenderService, AdmissionNumberSettingsService],
+  controllers: [SchoolsController, SchoolAddressPublicController],
+  providers: [SchoolsService, PaystackSetupService, SmsSenderService, AdmissionNumberSettingsService, SchoolAddressService, SchoolPublicService],
   exports: [SchoolsService],
 })
 export class SchoolsModule {}

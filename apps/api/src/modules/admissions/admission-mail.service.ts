@@ -4,10 +4,10 @@ import { withTenant } from "@school-kit/db";
 import { ADMISSION_ASSESSMENT_LABEL, formatSickbayDay, formatSickbayTime, type AdmissionAssessmentKind } from "@school-kit/types";
 
 import { EmailService } from "../../common/email/email.service.js";
-import { portalBaseUrl } from "../../common/portal-url.js";
 import { isSuppressedForAll } from "../announcements/announcement-email.shared.js";
 import { rebuildTrackingToken } from "./admission-tracking.js";
 import { escapeHtml } from "./admissions.shared.js";
+import { schoolSiteUrls } from "../../common/school-site-url.js";
 
 // Phase 9 / CP7.2 — the family's status emails (docs/modules/phase-9.md §16
 // CP7-D4, §16.8). One email per step: the assessment booked (or changed), an
@@ -57,7 +57,7 @@ export class AdmissionMailService {
       // An address that bounced or complained gets no more mail from the school.
       if (await withTenant(schoolId, (db) => isSuppressedForAll(db, schoolId, app.guardianEmail))) return;
       const token = rebuildTrackingToken(applicationId, app.trackingTokenHash);
-      const link = token ? `${portalBaseUrl()}/apply/${school.slug}/track/${token}` : null;
+      const link = token ? schoolSiteUrls(school.slug).track(token) : null;
       const child = escapeHtml(app.childFirstName);
       const schoolName = escapeHtml(school.name);
       const level = escapeHtml(app.classLevel.name);

@@ -1,6 +1,6 @@
 "use client";
 
-import { MessagesSquare, Award, BarChart3, Inbox, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Globe, MessagesSquare, Award, BarChart3, Inbox, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/page-primitives";
@@ -27,6 +27,13 @@ const LINKS: SettingsLink[] = [
     href: "/settings/school",
     description: "Name, contact info, and logo shown across the app.",
     icon: Building2,
+  },
+  {
+    label: "School website",
+    href: "/settings/website",
+    description: "Your public page: your story, news, photos, events and announcements.",
+    icon: Globe,
+    requiredPermission: "website.manage",
   },
   {
     label: "Admission numbers",

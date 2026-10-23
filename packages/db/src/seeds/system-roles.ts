@@ -46,6 +46,7 @@ import {
   ID_CARD_PERMISSIONS,
   STORE_PERMISSIONS,
   ASSET_PERMISSIONS,
+  WEBSITE_MANAGE_PERMISSIONS,
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
@@ -209,6 +210,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // prisma/migrations/20261115120000_store.
   ...STORE_PERMISSIONS,
   ...ASSET_PERMISSIONS,
+  // The school's public website (2026-10-22). Kept IN SYNC with
+  // prisma/migrations/20261118120000_school_website.
+  ...WEBSITE_MANAGE_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced

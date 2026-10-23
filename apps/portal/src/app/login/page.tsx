@@ -32,6 +32,7 @@ import {
   sessionEndNotice,
 } from "@/lib/session-end";
 import { BrandHeading } from "@/components/brand-mark";
+import { SchoolSignInHeading } from "@/components/school-sign-in-heading";
 
 type SubmitState =
   | { kind: "idle" }
@@ -95,6 +96,7 @@ function LoginForm() {
   return (
     <main className="sk-entry flex min-h-screen flex-col items-center justify-center gap-8 px-4 py-10">
       <BrandHeading />
+      {searchParams.get("school") && <SchoolSignInHeading code={searchParams.get("school") as string} />}
 
       {/* Shown only when the redirect actually carried a reason. A parent who
           pressed Sign out, or who is simply signing in, sees nothing —

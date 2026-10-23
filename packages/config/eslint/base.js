@@ -322,6 +322,17 @@ export const baseConfig = [
       // reasoning); it moved out when self-serve signup became a second
       // caller.
       "**/common/slug/school-slug.ts",
+      // School addresses (docs/modules/school-addresses.md, 2026-10-22):
+      // resolves a school code, current or earlier, before any school is
+      // known. Reads `schools` (no RLS) and school_previous_addresses, whose
+      // only read policy is USING (true): codes are public. It never writes.
+      "**/common/slug/school-code.ts",
+      // School website, SchoolKit's side (docs/modules/school-website.md,
+      // 2026-10-22). Cross-tenant by definition, like platform-admin.service.ts:
+      // its queue reads `schools` (no RLS) for website_open_reports, and its
+      // audit rows carry no school. Everything about a school's content runs
+      // under that school's GUC through withTenant.
+      "**/modules/school-website/school-website-platform.service.ts",
     ],
     rules: {
       // Exempts basePrisma ONLY. The Anthropic ban is deliberately re-asserted

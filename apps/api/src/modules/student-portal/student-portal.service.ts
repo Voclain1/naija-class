@@ -30,6 +30,7 @@ import { PortalInvoicesService } from "../portal-finance/portal-invoices.service
 import { rateHundredths } from "../attendance/shared/attendance-shared.util";
 import { unlockForPortal } from "../result-checker/portal-unlock";
 import { ResultPinService } from "../result-checker/result-pin.service";
+import { currentSchoolCode } from "../../common/slug/school-code.js";
 
 const LOGIN_AUDIT_ACTION = "student.login";
 const LOGIN_FAILED_AUDIT_ACTION = "student.login-failed";
@@ -123,11 +124,18 @@ export class StudentPortalService {
     // and slugs public, so a counter that only ran for real students would
     // tell an attacker which admission numbers exist. Every failure branch
     // below records, the unknown-student one included.
-    const identity = lockoutIdentity("student", input.schoolSlug, input.admissionNumber);
+    //
+    // The school code is resolved to the school's CURRENT code first
+    // (docs/modules/school-addresses.md): a student who remembers, or whose
+    // phone saved, an earlier code still signs in, and one school never has
+    // two counters. An unknown code passes through unchanged, so the work done
+    // is the same for a real and an invented school.
+    const schoolCode = await currentSchoolCode(input.schoolSlug);
+    const identity = lockoutIdentity("student", schoolCode, input.admissionNumber);
     await this.lockout.check(identity);
 
     const rows = await basePrisma.$queryRaw<LookupStudentForLoginRow[]>`
-      SELECT * FROM auth_lookup_student_for_login(${input.schoolSlug}, ${input.admissionNumber})
+      SELECT * FROM auth_lookup_student_for_login(${schoolCode}, ${input.admissionNumber})
     `;
 
     // Single-row by construction (D20): schools.slug is globally unique and

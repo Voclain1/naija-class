@@ -71,6 +71,7 @@ const SCHOOL_EVENT_SELECT = {
   rsvpDeadline: true,
   rsvpAskCount: true,
   rsvpClassArmIds: true,
+  showOnWebsite: true,
 } as const;
 
 type SchoolEventRow = {
@@ -82,6 +83,7 @@ type SchoolEventRow = {
   endDate: Date;
   createdAt: Date;
   updatedAt: Date;
+  showOnWebsite: boolean;
 } & RsvpEventRow;
 
 /** A @db.Date value as YYYY-MM-DD. Prisma returns DATE columns at UTC midnight. */
@@ -112,6 +114,7 @@ function toSchoolEventDto(row: SchoolEventRow, counts?: RsvpCountsDto): SchoolEv
           counts: counts ?? { asked: 0, yes: 0, no: 0, maybe: 0, notAnswered: 0, attending: 0, maybeAttending: 0 },
         }
       : null,
+    showOnWebsite: row.showOnWebsite,
   };
 }
 
@@ -328,6 +331,7 @@ export class CalendarService {
           endDate: dateOnly(input.endDate),
           createdBy: authCtx.userId,
           updatedBy: authCtx.userId,
+          showOnWebsite: input.showOnWebsite ?? false,
           ...(await rsvpData(db, authCtx.schoolId, input.rsvp)),
         },
         select: SCHOOL_EVENT_SELECT,
@@ -347,6 +351,7 @@ export class CalendarService {
             startDate: input.startDate,
             endDate: input.endDate,
             rsvp: input.rsvp ? { deadline: input.rsvp.deadline, askCount: input.rsvp.askCount, classes: input.rsvp.classArmIds.length } : null,
+            showOnWebsite: input.showOnWebsite ?? false,
           },
         },
       });
@@ -387,6 +392,7 @@ export class CalendarService {
           ...(input.category !== undefined ? { category: input.category } : {}),
           ...(input.startDate !== undefined ? { startDate: dateOnly(input.startDate) } : {}),
           ...(input.endDate !== undefined ? { endDate: dateOnly(input.endDate) } : {}),
+          ...(input.showOnWebsite !== undefined ? { showOnWebsite: input.showOnWebsite } : {}),
           ...(await rsvpData(db, authCtx.schoolId, input.rsvp)),
           updatedBy: authCtx.userId,
         },

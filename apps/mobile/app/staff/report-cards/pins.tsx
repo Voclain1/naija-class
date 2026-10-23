@@ -181,7 +181,7 @@ export default function ResultPinsScreen() {
   }
 
   const school = staff?.school;
-  const checkerUrl = school ? `${school.portalUrl.replace(/\/$/, "")}/result-checker/${school.slug}` : "";
+  const checkerUrl = school ? (school.siteUrls?.results ?? `${school.portalUrl.replace(/\/$/, "")}/result-checker/${school.slug}`) : "";
 
   function onGenerate(): void {
     const parsed = parsePinBatchForm(quantity, maxUses);

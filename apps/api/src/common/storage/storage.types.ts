@@ -99,7 +99,14 @@ export type StorageObjectKey =
   // person, so a new photo overwrites the old in place (the extension never
   // changes, unlike school-logo). Private; read through short-lived links.
   | { kind: "student-photo"; studentId: string }
-  | { kind: "staff-photo"; userId: string };
+  | { kind: "staff-photo"; userId: string }
+  // 2026-10-22 — a photo on the school's public website
+  // (docs/modules/school-website.md). Layout:
+  // schools/<schoolId>/website/<photoId>-{large|thumb}.jpg. Always JPEG: the
+  // browser resizes and re-encodes before sending, which also drops the
+  // file's location data. Not public in the bucket: the page signs a
+  // short-lived link on each visit.
+  | { kind: "website-photo"; photoId: string; size: "large" | "thumb" };
 
 // The file types a private upload may be (F1). Decided from the file's own
 // first bytes, never from the name or the browser's declared type.

@@ -19,7 +19,9 @@ SchoolKit stays visible, smaller, as the platform ("Powered by SchoolKit").
 - **D2. SMS first; WhatsApp later, as its own module** with the same
   "school's own name, else SchoolKit" design.
 - **D3. School subdomains (`<slug>.schoolkit.ng`) later, as their own slice.**
-  `schools.slug` is already reserved for it.
+  `schools.slug` is already reserved for it. *Built 2026-10-22:*
+  `docs/modules/school-addresses.md`. The sign-in pages reached from a school's
+  address now name the school.
 - **D4. SchoolKit registers with CAC** for its own sender name (in progress).
 
 ## Slice 1: the school's name and logo on screens
@@ -121,9 +123,9 @@ it cannot be self-service.
 
 - WhatsApp (D2): needs each school's own WhatsApp Business number, verified by
   Meta, for its own name; SchoolKit's number as the fallback.
-- Subdomains (D3): wildcard domain on Vercel, school lookup by host, and a
-  change to the staff cookie's Origin rule, which is the CSRF defence and
-  needs its own security review.
+- Subdomains (D3): built 2026-10-22 (`docs/modules/school-addresses.md`),
+  without touching the staff cookie's Origin rule: signed-in pages stay on
+  `app.` and `portal.`, and a school's address serves only public pages.
 
 ## Dashboard: logo reminder and setup progress (2026-10-11)
 

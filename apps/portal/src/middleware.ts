@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { PORTAL_URL, schoolCodeFromHost } from "./lib/school-host";
+
 // Route protection for the guardian portal.
 //
 // WHY THIS DID NOT EXIST BEFORE, and why it does now. Until 2026-08-27 the
@@ -26,7 +28,45 @@ import { NextResponse, type NextRequest } from "next/server";
 // through the SECURITY DEFINER resolver, which is exactly what the API does).
 const COOKIE_NAME = "sk_portal_session";
 
+// The signed-in surfaces. Since 2026-10-22 middleware runs on every page (a
+// school's own address is routed below), so this list, not the matcher, now
+// decides which paths need a session.
+const PROTECTED = [/^\/$/, /^\/students(\/|$)/, /^\/calendar$/, /^\/messages(\/|$)/, /^\/settings$/, /^\/store$/];
+
 export function middleware(req: NextRequest): NextResponse {
+  const code = schoolCodeFromHost(req.headers.get("host"));
+  if (code) return schoolAddress(req, code);
+  if (!PROTECTED.some((re) => re.test(req.nextUrl.pathname))) return NextResponse.next();
+  return requireSession(req);
+}
+
+// A school's own address, "<code>.schoolkit.ng" (docs/modules/school-addresses.md).
+// It serves three public pages; everything else, signing in included, lives on
+// the portal's own address, so sessions never spread across schools' hosts.
+//   /                 the school's front page
+//   /apply[/...]      the admission form and its tracking pages
+//   /results          the result checker
+//   /news[/<post>]    the school's news (docs/modules/school-website.md)
+//   /gallery          its photo gallery
+//   /id/...           ID card checks, as anywhere
+function schoolAddress(req: NextRequest, code: string): NextResponse {
+  const path = req.nextUrl.pathname;
+  const rewrite = (to: string) => {
+    const url = req.nextUrl.clone();
+    url.pathname = to;
+    return NextResponse.rewrite(url);
+  };
+  if (path === "/") return rewrite(`/school/${code}`);
+  if (path === "/apply" || path.startsWith("/apply/")) return rewrite(`/apply/${code}${path.slice("/apply".length)}`);
+  if (path === "/results") return rewrite(`/result-checker/${code}`);
+  if (path === "/news" || /^\/news\/[0-9a-f-]{36}$/i.test(path) || path === "/gallery") return rewrite(`/school/${code}${path}`);
+  if (path.startsWith("/id/")) return NextResponse.next();
+  const target = new URL(`${PORTAL_URL}${path}${req.nextUrl.search}`);
+  if (path === "/login") target.searchParams.set("school", code);
+  return NextResponse.redirect(target);
+}
+
+function requireSession(req: NextRequest): NextResponse {
   const hasSession = Boolean(req.cookies.get(COOKIE_NAME)?.value);
 
   if (!hasSession) {
@@ -59,12 +99,12 @@ export function middleware(req: NextRequest): NextResponse {
   return res;
 }
 
-// The matcher IS the gate — the function above never runs for anything not
-// listed here. Deliberately narrow: only the authenticated surfaces. /calendar
+// PROTECTED (above) is the gate: only the authenticated surfaces. /calendar
 // joined on 2026-09-13 (Phase 8 / CP1) — it is authenticated like the others,
-// and needs the same no-store headers on a shared device.
+// and needs the same no-store headers on a shared device. Until 2026-10-22
+// this list was the matcher itself.
 //
-// NOT matched, and each for a reason:
+// NOT protected, and each for a reason:
 //   /login                     — the destination of the redirect; matching it
 //                                would loop.
 //   /invitations/:token        — public by design, the token is the auth.
@@ -78,6 +118,10 @@ export function middleware(req: NextRequest): NextResponse {
 //                                strand a parent who has just paid.
 //   /api/*                     — the proxy route handles its own auth by
 //                                forwarding (or not forwarding) the cookie.
+//
+// The matcher now takes every page (2026-10-22), because a school's address can
+// arrive on any path; Next's own files, the API proxy and static assets stay
+// out. Which pages need a session is the PROTECTED list above.
 export const config = {
-  matcher: ["/", "/students/:path*", "/calendar", "/messages/:path*", "/settings", "/store"],
+  matcher: ["/((?!_next/|api/|favicon|.*\\.(?:png|jpg|jpeg|svg|webp|ico|txt|xml)$).*)"],
 };

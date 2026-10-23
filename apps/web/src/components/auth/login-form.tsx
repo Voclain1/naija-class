@@ -30,6 +30,8 @@ import {
 } from "@/lib/auth/session-end";
 import { useAuth } from "@/lib/auth/use-auth";
 
+import { SchoolSignInHeading } from "./school-sign-in-heading";
+
 // Two-step login: credentials → (if 2FA enabled) TOTP code.
 type FormStep =
   | { kind: "credentials" }
@@ -186,6 +188,7 @@ export function LoginForm() {
         <CardDescription>
           Use your school owner or admin credentials.
         </CardDescription>
+        {searchParams.get("school") && <SchoolSignInHeading code={searchParams.get("school") as string} />}
         {/* Why you are looking at this screen (F-10). Rendered only when the
             redirect actually carried a reason — a deliberate Sign out and a
             first visit both show nothing, because neither is a failure.

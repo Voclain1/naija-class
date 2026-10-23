@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ANNOUNCEMENT_BODY_MAX,
   ANNOUNCEMENT_TITLE_MAX,
+  ANNOUNCEMENT_WEBSITE_AUDIENCES,
   announcementEmailLines,
   type AnnouncementAudience,
   type AnnouncementBouncedDto,
@@ -22,6 +23,7 @@ import {
   getAnnouncementBounced,
   getAnnouncementEmailPreview,
   listAnnouncements,
+  setAnnouncementOnWebsite,
   withdrawAnnouncement,
 } from "@/lib/announcements/announcements-api";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
@@ -57,6 +59,11 @@ function when(value: string | Date): string {
   });
 }
 
+/** Only whole-school announcements may go on the public website. */
+function onWebsiteAllowed(audience: AnnouncementAudience): boolean {
+  return ANNOUNCEMENT_WEBSITE_AUDIENCES.includes(audience);
+}
+
 export default function AnnouncementsPage() {
   const [items, setItems] = useState<AnnouncementDto[]>([]);
   const [arms, setArms] = useState<ClassArmDto[]>([]);
@@ -69,6 +76,7 @@ export default function AnnouncementsPage() {
   const [classArmId, setClassArmId] = useState("");
   const [urgent, setUrgent] = useState(false);
   const [emailFamilies, setEmailFamilies] = useState(false);
+  const [showOnWebsite, setShowOnWebsite] = useState(false);
   const [preview, setPreview] = useState<AnnouncementEmailPreviewDto | null>(null);
   const [bounced, setBounced] = useState<Record<string, AnnouncementBouncedDto[]>>({});
   const [sending, setSending] = useState(false);
@@ -152,11 +160,13 @@ export default function AnnouncementsPage() {
         ...(audience === "CLASS" ? { classArmId } : {}),
         ...(urgent ? { urgent: true } : {}),
         ...(emailFamilies && audience !== "STAFF" ? { emailFamilies: true } : {}),
+        ...(showOnWebsite && onWebsiteAllowed(audience) ? { showOnWebsite: true } : {}),
       });
       setTitle("");
       setBody("");
       setUrgent(false);
       setEmailFamilies(false);
+      setShowOnWebsite(false);
       setClassArmId("");
       setAudience("EVERYONE");
       setSent("Sent.");
@@ -178,6 +188,15 @@ export default function AnnouncementsPage() {
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not withdraw the announcement.");
+    }
+  }
+
+  async function toggleWebsite(item: AnnouncementDto) {
+    try {
+      await setAnnouncementOnWebsite(item.id, !item.showOnWebsite);
+      await load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not change the website.");
     }
   }
 
@@ -297,6 +316,16 @@ export default function AnnouncementsPage() {
             </div>
           )}
 
+          {onWebsiteAllowed(audience) && (
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-1" checked={showOnWebsite} onChange={(e) => setShowOnWebsite(e.target.checked)} />
+              <span>
+                <span className="font-medium">Show on the school website</span>
+                <span className="block text-xs text-muted-foreground">Anyone on the internet can read this. Never name a pupil.</span>
+              </span>
+            </label>
+          )}
+
           {sendError && <InlineAlert>{sendError}</InlineAlert>}
           {sent && <p className="text-sm text-primary">{sent}</p>}
 
@@ -339,6 +368,11 @@ export default function AnnouncementsPage() {
                           Withdrawn
                         </span>
                       )}
+                      {item.showOnWebsite && !item.withdrawnAt && (
+                        <span className="ml-2 rounded bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
+                          On the website
+                        </span>
+                      )}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {item.audience === "CLASS" ? (item.className ?? "One class") : AUDIENCE_LABELS[item.audience]}
@@ -348,9 +382,16 @@ export default function AnnouncementsPage() {
                     </p>
                   </div>
                   {!item.withdrawnAt && (
-                    <Button size="sm" variant="outline" onClick={() => void withdraw(item)}>
-                      Withdraw
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      {onWebsiteAllowed(item.audience) && (
+                        <Button size="sm" variant="ghost" onClick={() => void toggleWebsite(item)}>
+                          {item.showOnWebsite ? "Take off the website" : "Show on the website"}
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => void withdraw(item)}>
+                        Withdraw
+                      </Button>
+                    </div>
                   )}
                 </div>
                 <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{item.body}</p>
