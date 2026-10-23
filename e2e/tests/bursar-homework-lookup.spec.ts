@@ -23,7 +23,7 @@ test("a bursar looks up what a class has been set", async ({ browser }) => {
   const suffix = uniqueSuffix();
   const admin = await loginAsAdmin(browser);
   const structure = await setupAcademicStructure(admin.api, {
-    arms: [{ name: "JSS 3 Green", code: `jss3-green-${suffix}` }],
+    arms: [{ name: "JSS 3 Green", code: `jss3g-${suffix}`.slice(0, 20) }],
   });
   const classArmId = armId(structure, "JSS 3 Green");
 
