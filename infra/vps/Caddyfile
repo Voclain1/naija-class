@@ -22,6 +22,8 @@
 	encode zstd gzip
 	reverse_proxy {args[0]} {
 		header_up X-Real-IP {client_ip}
+		# Only a school's own address may name itself (sites/school-addresses.caddy).
+		header_up -X-Schoolkit-Host
 	}
 }
 
@@ -30,13 +32,19 @@
 }
 
 {$WEB_HOST} {
-	import upstream web:3000
+	encode zstd gzip
+	reverse_proxy web:3000 {
+		header_up X-Real-IP {client_ip}
+		# Only a school's own address may name itself (sites/school-addresses.caddy).
+		header_up -X-Schoolkit-Host
+	}
 }
 
 {$PORTAL_HOST} {
 	import upstream portal:3000
 }
 
-# The exam app is served only once VPS_CBT_ENABLED=true: deploy.sh then
-# writes sites/cbt.caddy (docs/runbooks/cbt-go-live.md decides when).
+# Optional sites, written by the deploy scripts: the exam app (deploy.sh, once
+# VPS_CBT_ENABLED=true), school addresses (deploy.sh, once
+# SCHOOL_ADDRESS_DOMAIN is set) and the marketing site (deploy-landing.sh).
 import sites/*.caddy

@@ -19,10 +19,44 @@ else
   rm -f sites/cbt.caddy
 fi
 
+# Every school's address goes to the portal, except /staff, which goes to the
+# staff app with the address named in X-Schoolkit-Host, overwriting whatever a
+# browser sent (docs/runbooks/school-addresses.md §5). The exact hosts above
+# (api., app., portal., cbt., www.) are more specific, so they win.
+# Without a token Caddy would refuse its whole configuration, taking every
+# site down, so the wildcard site waits for one.
+if grep -q '^SCHOOL_ADDRESS_DOMAIN=..*' deploy.env && ! grep -q '^CLOUDFLARE_API_TOKEN=..*' deploy.env; then
+  echo "::warning::SCHOOL_ADDRESS_DOMAIN is set but CLOUDFLARE_DNS_API_TOKEN is not: school addresses stay off."
+  rm -f sites/school-addresses.caddy
+elif grep -q '^SCHOOL_ADDRESS_DOMAIN=..*' deploy.env; then
+  cat > sites/school-addresses.caddy <<'CADDY'
+*.{$SCHOOL_ADDRESS_DOMAIN} {
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
+	encode zstd gzip
+	handle /staff* {
+		reverse_proxy web:3000 {
+			header_up X-Real-IP {client_ip}
+			header_up X-Schoolkit-Host {host}
+		}
+	}
+	handle {
+		reverse_proxy portal:3000 {
+			header_up X-Real-IP {client_ip}
+			header_up -X-Schoolkit-Host
+		}
+	}
+}
+CADDY
+else
+  rm -f sites/school-addresses.caddy
+fi
+
 set_tag() { sed -i '/^APP_TAG=/d' deploy.env; echo "APP_TAG=$1" >> deploy.env; }
 healthy() {
   curl -fsS -m 5 -o /dev/null http://127.0.0.1:4000/api/v1/health &&
-  curl -fsS -m 5 -o /dev/null http://127.0.0.1:3001/login &&
+  curl -fsS -m 5 -o /dev/null http://127.0.0.1:3001/staff/login &&
   curl -fsS -m 5 -o /dev/null http://127.0.0.1:3002/api/health &&
   { [[ " ${apps[*]} " != *" cbt "* ]] || curl -fsS -m 5 -o /dev/null http://127.0.0.1:3003/; } &&
   [ "$(docker inspect -f '{{.State.Running}}' "$(compose ps -q render-worker)")" = true ]

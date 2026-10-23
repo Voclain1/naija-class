@@ -20,7 +20,8 @@ Everything is driven from GitHub Actions, so it can be run from a phone.
 | Vercel `schoolkit` (the marketing site, `schoolkit.ng`, repo `schoolkit-landing`) | `landing` container, deployed by that repo's own `deploy-vps.yml` through `infra/vps/deploy-landing.sh` |
 | Neon Postgres | Postgres 16 + pgvector in Docker (`infra/vps/postgres`), loopback only |
 | Fly/Upstash Redis | `redis` container, append-only, `noeviction` (BullMQ) |
-| Fly and Vercel HTTPS | Caddy, certificates from Let's Encrypt; Cloudflare in front |
+| Fly and Vercel HTTPS | Caddy (2.10, with the Cloudflare DNS plugin), certificates from Let's Encrypt; Cloudflare in front |
+| Vercel's `*.schoolkit.ng` wildcard on `school-kit-portal` (school addresses) | Caddy's wildcard site: a school's address goes to the portal, `/staff` to the staff app with `X-Schoolkit-Host` (`docs/runbooks/school-addresses.md`) |
 | Neon's backups and point-in-time restore | Nightly `pg_dump` plus continuous WAL archiving (WAL-G) to object storage, §8 |
 
 Unchanged: Cloudflare R2 (files), Paystack, Termii, Resend, Expo push,
@@ -88,10 +89,11 @@ Secrets:
 | `VPS_HOST` | The server's IP address |
 | `VPS_SSH_KEY` | The private half of the key the server was ordered with |
 | `VPS_POSTGRES_PASSWORD`, `VPS_SCHOOL_KIT_DB_PASSWORD`, `VPS_APP_USER_DB_PASSWORD` | Three different `openssl rand -hex 24` values. **Set once.** They are written into the database on its first start; changing them later does not change the database. |
-| `API_ENV_FILE` | Everything the Fly API has today, one `NAME=value` per line: `flyctl secrets list` names them, and `apps/api/fly.toml [env]`. The deploy replaces `DATABASE_URL`, `DIRECT_URL`, `REDIS_URL`, `RENDER_WORKER_URL`, `API_PORT`, `NODE_ENV` and sets `CLIENT_IP_HEADER=x-real-ip`. For the rehearsal: `CORS_ORIGIN`, `CORS_ORIGIN_PORTAL`, `WEB_BASE_URL`, `PORTAL_BASE_URL`, `API_URL`, `BETTER_AUTH_URL` use the rehearsal names, and Paystack's **test** keys. |
-| `WEB_ENV_FILE` | The `school-kit-web` Vercel variables (`vercel env pull`). Must include `NEXT_PUBLIC_API_URL` and `SESSION_COOKIE_DOMAIN=schoolkit.ng`. |
-| `PORTAL_ENV_FILE` | The `school-kit-portal` Vercel variables, including `PORTAL_PROXY_SECRET` (the same value as in `API_ENV_FILE`). |
+| `API_ENV_FILE` | Everything the Fly API has today, one `NAME=value` per line: `flyctl secrets list` names them, and `apps/api/fly.toml [env]`. The deploy replaces `DATABASE_URL`, `DIRECT_URL`, `REDIS_URL`, `RENDER_WORKER_URL`, `API_PORT`, `NODE_ENV` and sets `CLIENT_IP_HEADER=x-real-ip`. For the rehearsal: `CORS_ORIGIN`, `CORS_ORIGIN_PORTAL`, `WEB_BASE_URL`, `PORTAL_BASE_URL`, `API_URL`, `BETTER_AUTH_URL` and `SCHOOL_ADDRESS_DOMAIN` use the rehearsal names, and Paystack's **test** keys. Keep `SCHOOL_ADDRESSES_LIVE` as production has it. |
+| `WEB_ENV_FILE` | The `school-kit-web` Vercel variables (`vercel env pull`). Must include `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN` and `SESSION_COOKIE_DOMAIN=schoolkit.ng`. Its `NEXT_PUBLIC_*` lines and `SESSION_COOKIE_DOMAIN` are built into the image; the rest are runtime settings. |
+| `PORTAL_ENV_FILE` | The `school-kit-portal` Vercel variables, including `PORTAL_PROXY_SECRET` (the same value as in `API_ENV_FILE`), `NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN`, `NEXT_PUBLIC_WEB_URL` and `NEXT_PUBLIC_PORTAL_URL`. |
 | `CBT_ENV_FILE` | The exam app's, when it goes live (`docs/runbooks/cbt-go-live.md`). |
+| `CLOUDFLARE_DNS_API_TOKEN` | For school addresses' wildcard certificate. Cloudflare → My Profile → API Tokens → "Edit zone DNS", limited to the `schoolkit.ng` zone. Without it the wildcard site stays off (the deploy warns), and every other site still works. |
 | In **schoolkit-landing**: `VPS_HOST`, `VPS_SSH_KEY` (the same values), `LANDING_ENV_FILE` | The marketing site's Vercel variables (`RESEND_*`, `UPSTASH_*`, `NEXT_PUBLIC_GA_MEASUREMENT_ID`, `PIONEER_LEADS_TO`). |
 | `BACKUP_ENV_FILE` | `BACKUP_BUCKET=<bucket>`, `WALG_S3_PREFIX=s3://<bucket>/wal`, `AWS_ACCESS_KEY_ID=…`, `AWS_SECRET_ACCESS_KEY=…`, `AWS_ENDPOINT=https://…` (the provider's S3 address), `AWS_REGION=…`, `AWS_S3_FORCE_PATH_STYLE=true`, and `HEALTHCHECK_PING_URL=…` (healthchecks.io, free: it emails when a night's backup does not arrive). |
 | `STAGING_DIRECT_URL`, `FLY_API_TOKEN` | Already set. `vps-db-copy` reads Neon through the first and stops Fly with the second. |
@@ -105,6 +107,7 @@ Variables:
 | `VPS_WEB_HOST` | `app.vps.schoolkit.ng` | `app.schoolkit.ng` |
 | `VPS_PORTAL_HOST` | `portal.vps.schoolkit.ng` | `portal.schoolkit.ng` |
 | `VPS_CBT_HOST`, `VPS_CBT_ENABLED` | unset | when the exam app goes live |
+| `VPS_SCHOOL_ADDRESS_DOMAIN` | `vps.schoolkit.ng` | `schoolkit.ng` |
 | `VPS_DEPLOY_ENABLED` | unset (deploy by hand) | `true` (every merge that passes `ci`) |
 | `FLY_DEPLOY_DISABLED` | unset | `true` |
 | `PG_MAJOR` | `16` unless `vps-db-copy` says otherwise | same |
@@ -128,8 +131,15 @@ a real family, even if a tester presses "send".
 4. Set the TTL of `api`, `app` and `portal` to 5 minutes.
 5. SSL/TLS: **Full (strict)**. Leave "Always Use HTTPS" **off**: Caddy
    redirects to HTTPS itself, and Let's Encrypt's check arrives on port 80.
-6. Day 2: add `api.vps`, `app.vps`, `portal.vps` and `vps` as A records to
-   the VPS IP, proxied. Also write down the apex and `www` targets (the
+6. **School addresses:** if `*.schoolkit.ng` is on Vercel today, Cloudflare
+   imports it. Keep it pointing at Vercel (`cname.vercel-dns.com`) until
+   cutover. Vercel can no longer renew its wildcard certificate once the
+   nameservers move, but the current one lasts weeks, longer than this move.
+7. Day 2: add `api.vps`, `app.vps`, `portal.vps`, `*.vps` and `vps` as A
+   records to the VPS IP, **DNS only (grey cloud), not proxied**. Cloudflare's
+   free certificate covers `schoolkit.ng` and one level below it, never two
+   (`api.vps.schoolkit.ng`), so for the rehearsal Caddy's own certificates
+   serve them directly. Also write down the apex and `www` targets (the
    marketing site's rollback).
 
 Behind Cloudflare, Caddy trusts `CF-Connecting-IP` only from Cloudflare's
@@ -147,7 +157,11 @@ once a year against https://www.cloudflare.com/ips/.
    and row counts with Neon, and refuses to start the apps on any difference.
 3. Use a **private browser window** (the rehearsal's staff cookie shares
    `schoolkit.ng` with production) and check:
-   - staff sign-in, a parent's portal sign-in, a student sign-in;
+   - staff sign-in at `app.vps.schoolkit.ng/staff/login`, a parent's portal
+     sign-in, a student sign-in;
+   - a school's address: `<code>.vps.schoolkit.ng` shows the school's page,
+     **Staff** stays on `<code>.vps.schoolkit.ng/staff/…` after sign-in,
+     **Parents** on `<code>.vps.schoolkit.ng/parents/…`;
    - a report card released and its PDF appearing (the render worker);
    - a file upload and its image (R2);
    - a test payment on Paystack test keys;
@@ -170,12 +184,13 @@ once a year against https://www.cloudflare.com/ips/.
    `API_ENV_FILE`'s addresses to the real names and its Paystack keys back to
    **live**. Change `WEB_ENV_FILE` and `PORTAL_ENV_FILE`'s `NEXT_PUBLIC_API_URL`
    to `https://api.schoolkit.ng/api/v1`.
-4. In Cloudflare, point `api`, `app` and `portal` at the VPS IP, proxied. With
-   the proxy, the switch is immediate.
+4. In Cloudflare, point `api`, `app`, `portal` and `*` (school addresses) at
+   the VPS IP, proxied. With the proxy, the switch is immediate.
 5. Run `deploy-vps`. It rebuilds with the real names, Caddy gets the
    certificates, and the smoke test runs against `https://api.schoolkit.ng`.
-6. Check: staff sign-in, portal sign-in, the mobile app, one real ₦100
-   payment (as on 20 Oct), a report-card PDF.
+6. Check: staff sign-in, portal sign-in, a school's own address (staff and
+   parents, `docs/runbooks/school-addresses.md` §5 checks), the mobile app,
+   one real ₦100 payment (as on 20 Oct), a report-card PDF.
 7. Marketing site: in schoolkit-landing set `VPS_LANDING_HOST=schoolkit.ng`
    and `VPS_DEPLOY_ENABLED=true`, point the apex and `www` at the VPS IP
    (proxied), run its `deploy-vps`, and check `https://schoolkit.ng`.
@@ -185,8 +200,8 @@ once a year against https://www.cloudflare.com/ips/.
 ### 6.3 Rollback
 
 While Fly is stopped and Neon untouched, rollback is three steps:
-- point `api`, `app` and `portal` (and the apex and `www`, for the marketing
-  site) back at the targets written down in §5;
+- point `api`, `app`, `portal` and `*` (and the apex and `www`, for the
+  marketing site) back at the targets written down in §5;
 - `flyctl scale count 1 --app school-kit-api` and the same for
   `school-kit-render-worker`;
 - set `FLY_DEPLOY_DISABLED` back to unset.

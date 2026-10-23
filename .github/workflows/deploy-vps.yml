@@ -59,8 +59,10 @@ jobs:
           case "$VPS_MODE" in rehearsal|live) ;; *) echo "::error::VPS_MODE must be rehearsal or live"; missing=1;; esac
           exit $missing
 
-      # NEXT_PUBLIC_* are inlined into the browser bundle, so they are read
-      # from each app's settings secret at build time, one source of truth.
+      # NEXT_PUBLIC_* are inlined into the browser bundle at build time. Each
+      # app's public lines (and SESSION_COOKIE_DOMAIN, which the web build
+      # checks) go to the build as a secret file, and their hash as a build
+      # argument, because the build cache ignores a secret's contents.
       - name: Public build settings
         id: public
         env:
@@ -68,15 +70,13 @@ jobs:
           PORTAL_ENV_FILE: ${{ secrets.PORTAL_ENV_FILE }}
           CBT_ENV_FILE: ${{ secrets.CBT_ENV_FILE }}
         run: |
+          mkdir -p "$RUNNER_TEMP/public"
           for app in web portal cbt; do
             var="${app^^}_ENV_FILE"
-            {
-              echo "${app}<<ARGS"
-              echo "APP=$app"
-              printf '%s\n' "${!var}" | grep -E '^(NEXT_PUBLIC_[A-Z_]+|SESSION_COOKIE_DOMAIN)=' || true
-              echo "ARGS"
-            } >> "$GITHUB_OUTPUT"
+            printf '%s\n' "${!var}" | grep -E '^(NEXT_PUBLIC_[A-Z_]+|SESSION_COOKIE_DOMAIN)=' > "$RUNNER_TEMP/public/$app.env" || true
+            echo "${app}_sha=$(sha256sum "$RUNNER_TEMP/public/$app.env" | cut -c1-16)" >> "$GITHUB_OUTPUT"
           done
+          echo "dir=$RUNNER_TEMP/public" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -112,7 +112,10 @@ jobs:
           file: infra/vps/Dockerfile.next
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/school-kit-web:${{ env.TAG }}
-          build-args: ${{ steps.public.outputs.web }}
+          build-args: |
+            APP=web
+            PUBLIC_ENV_SHA=${{ steps.public.outputs.web_sha }}
+          secret-files: public_env=${{ steps.public.outputs.dir }}/web.env
           cache-from: type=gha,scope=web
           cache-to: type=gha,scope=web,mode=max
       - name: Build portal
@@ -122,7 +125,10 @@ jobs:
           file: infra/vps/Dockerfile.next
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/school-kit-portal:${{ env.TAG }}
-          build-args: ${{ steps.public.outputs.portal }}
+          build-args: |
+            APP=portal
+            PUBLIC_ENV_SHA=${{ steps.public.outputs.portal_sha }}
+          secret-files: public_env=${{ steps.public.outputs.dir }}/portal.env
           cache-from: type=gha,scope=portal
           cache-to: type=gha,scope=portal,mode=max
       - name: Build exam app
@@ -133,7 +139,10 @@ jobs:
           file: infra/vps/Dockerfile.next
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/school-kit-cbt:${{ env.TAG }}
-          build-args: ${{ steps.public.outputs.cbt }}
+          build-args: |
+            APP=cbt
+            PUBLIC_ENV_SHA=${{ steps.public.outputs.cbt_sha }}
+          secret-files: public_env=${{ steps.public.outputs.dir }}/cbt.env
           cache-from: type=gha,scope=cbt
           cache-to: type=gha,scope=cbt,mode=max
 
@@ -184,6 +193,7 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.VPS_POSTGRES_PASSWORD }}
           SCHOOL_KIT_DB_PASSWORD: ${{ secrets.VPS_SCHOOL_KIT_DB_PASSWORD }}
           APP_USER_DB_PASSWORD: ${{ secrets.VPS_APP_USER_DB_PASSWORD }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_API_TOKEN }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           umask 077
@@ -219,6 +229,8 @@ jobs:
           PORTAL_HOST=${{ vars.VPS_PORTAL_HOST }}
           CBT_HOST=${{ vars.VPS_CBT_HOST }}
           CBT_ENABLED=${{ vars.VPS_CBT_ENABLED == 'true' }}
+          SCHOOL_ADDRESS_DOMAIN=${{ vars.VPS_SCHOOL_ADDRESS_DOMAIN }}
+          CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
           VPS_MODE=${{ vars.VPS_MODE }}
           ENV
           sed -i 's/^ *//' out/deploy.env

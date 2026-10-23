@@ -37,6 +37,10 @@ win over the wildcard, so those keep working unchanged.
 
 ### On the VPS (after the move)
 
+Built in `infra/vps` (`docs/runbooks/vps-migration.md`): set
+`VPS_SCHOOL_ADDRESS_DOMAIN` and `CLOUDFLARE_DNS_API_TOKEN`, and `deploy.sh`
+writes the wildcard site below, with §5's `/staff` routing. What it does:
+
 1. **DNS:** an `A` (and `AAAA`) record for `*.schoolkit.ng` pointing at the VPS.
    Keep the exact records for the other hosts.
 2. **Certificate:** a wildcard certificate needs the **DNS-01** challenge, so the

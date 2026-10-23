@@ -4,8 +4,8 @@
 #   docker build -f infra/vps/Dockerfile.next --build-arg APP=web .
 # docs/runbooks/vps-migration.md. Vercel does not use this file.
 #
-# NEXT_PUBLIC_* values are inlined into the browser bundle at build time, so
-# they are build arguments: changing one means rebuilding the image.
+# NEXT_PUBLIC_* values are inlined into the browser bundle at build time:
+# changing one means rebuilding the image.
 
 FROM node:22-slim AS builder
 WORKDIR /app
@@ -15,20 +15,22 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 
 ARG APP
-ARG NEXT_PUBLIC_API_URL
-ARG NEXT_PUBLIC_PORTAL_URL
-ARG NEXT_PUBLIC_CBT_URL
-ARG NEXT_PUBLIC_SENTRY_DSN
-ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT
-ARG NEXT_PUBLIC_POSTHOG_KEY
-ARG NEXT_PUBLIC_POSTHOG_HOST
-ARG NEXT_PUBLIC_PAYSTACK_TEST_MODE
-# Read at build time by apps/web/session-cookie-config.mjs, which refuses a
-# production build that would sign every member of staff out.
-ARG SESSION_COOKIE_DOMAIN
-# APP_ENV=production marks a production build, as VERCEL_ENV does on Vercel.
+# The app's public build settings (NEXT_PUBLIC_*, and SESSION_COOKIE_DOMAIN,
+# which apps/web/session-cookie-config.mjs checks) arrive as a build secret
+# and become .env.production, which `next build` reads. deploy-vps.yml takes
+# them from the app's settings secret, so a new NEXT_PUBLIC_ variable needs no
+# change here. APP_ENV=production marks a production build, as VERCEL_ENV
+# does on Vercel.
+#
+# Docker's build cache ignores a secret's contents, so PUBLIC_ENV_SHA (a hash
+# of the settings, passed by the workflow) is what makes a changed setting
+# rebuild instead of reusing an image built with the old one.
+ARG PUBLIC_ENV_SHA=none
 ENV APP_ENV=production NEXT_OUTPUT=standalone
-RUN test -n "$APP" && test -d "apps/$APP" \
+RUN --mount=type=secret,id=public_env \
+    echo "public settings ${PUBLIC_ENV_SHA}" \
+ && test -n "$APP" && test -d "apps/$APP" \
+ && if [ -s /run/secrets/public_env ]; then cp /run/secrets/public_env "apps/$APP/.env.production"; fi \
  && pnpm --filter "@school-kit/${APP}^..." run --if-present build \
  && pnpm --filter "@school-kit/${APP}" run build
 

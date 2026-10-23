@@ -139,13 +139,19 @@ services:
 
   caddy:
     <<: *app
-    image: caddy:2.8-alpine
+    build: ./caddy
+    image: school-kit-caddy:2.10
     environment:
       API_HOST: ${API_HOST}
       WEB_HOST: ${WEB_HOST}
       PORTAL_HOST: ${PORTAL_HOST}
       CBT_HOST: ${CBT_HOST:-}
       LANDING_HOST: ${LANDING_HOST:-}
+      # School addresses (<code>.schoolkit.ng): the wildcard site deploy.sh
+      # writes when SCHOOL_ADDRESS_DOMAIN is set. Its certificate comes from
+      # Cloudflare's DNS API, with a token limited to editing this zone's DNS.
+      SCHOOL_ADDRESS_DOMAIN: ${SCHOOL_ADDRESS_DOMAIN:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
     ports:
       - "80:80"
       - "443:443"
