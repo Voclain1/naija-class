@@ -124,7 +124,7 @@ Variables:
 | `VPS_SCHOOL_ADDRESS_DOMAIN` | `vps.schoolkit.ng` | `schoolkit.ng` |
 | `VPS_DEPLOY_ENABLED` | unset (deploy by hand) | `true` (every merge that passes `ci`) |
 | `FLY_DEPLOY_DISABLED` | unset | `true` |
-| `PG_MAJOR` | `16` unless `vps-db-copy` says otherwise | same |
+| `PG_MAJOR` | `18` (Neon's version, checked by `vps-db-copy` on 2026-10-23) | same |
 | schoolkit-landing: `VPS_LANDING_HOST` | `vps.schoolkit.ng` | `schoolkit.ng` |
 | schoolkit-landing: `VPS_DEPLOY_ENABLED` | unset | `true` |
 

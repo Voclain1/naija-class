@@ -33,6 +33,10 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: school_kit
+      # Postgres 18's image moved its default data directory to
+      # /var/lib/postgresql/18/docker; naming it keeps the volume below working
+      # for every PG_MAJOR (and is a no-op before 18).
+      PGDATA: /var/lib/postgresql/data
       SCHOOL_KIT_PASSWORD: ${SCHOOL_KIT_PASSWORD}
       APP_USER_PASSWORD: ${APP_USER_PASSWORD}
     env_file: backup.env
