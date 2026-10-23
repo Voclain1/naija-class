@@ -14,8 +14,10 @@
 #
 # --exit-on-error and --single-transaction: any error leaves an EMPTY
 # database and the apps stopped, never a half-restored one. The only entries
-# skipped are the three COMMENT ON EXTENSION lines, which need the extension's
-# owner and change nothing.
+# skipped are comments that need an owner other than school_kit and change
+# nothing: the three COMMENT ON EXTENSION lines, and the empty COMMENT ON
+# SCHEMA public that Neon's dumps carry (the schema belongs to the database
+# owner, postgres).
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
@@ -33,7 +35,7 @@ compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U postgres -d school_kit \
 compose exec -T postgres sh -c '
   set -e
   trap "rm -f /tmp/import.dump /tmp/import.toc" EXIT
-  pg_restore -l /tmp/import.dump | grep -v "COMMENT - EXTENSION" > /tmp/import.toc
+  pg_restore -l /tmp/import.dump | grep -vE "COMMENT - (EXTENSION|SCHEMA public)" > /tmp/import.toc
   pg_restore -U postgres -d school_kit --no-owner --role=school_kit \
     --exit-on-error --single-transaction -L /tmp/import.toc /tmp/import.dump'
 echo "restore ok"
