@@ -24,6 +24,10 @@ import { z } from "zod";
 export const guardianForgotPasswordSchema = z
   .object({
     email: z.string().trim().toLowerCase().email(),
+    // The school's own address the person signed in at
+    // (docs/modules/school-hosted-apps.md). When given, only an account at that
+    // school is considered; absent (portal.schoolkit.ng, the apps), any school.
+    schoolCode: z.string().trim().toLowerCase().min(1).max(63).optional(),
   })
   .strict();
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isSchoolAddressOrigin } from "./school-origin.js";
+import { isSchoolAddressOrigin, schoolCodeFromOrigin } from "./school-origin.js";
 
 describe("isSchoolAddressOrigin", () => {
   it("allows a school's own address, over https, one label deep", () => {
@@ -21,5 +21,18 @@ describe("isSchoolAddressOrigin", () => {
   it("allows plain http on a localhost domain, for development", () => {
     expect(isSchoolAddressOrigin("http://virgo.localhost:3002", "localhost:3002")).toBe(true);
     expect(isSchoolAddressOrigin("http://virgo.localhost:3009", "localhost:3002")).toBe(false);
+  });
+});
+
+describe("schoolCodeFromOrigin", () => {
+  it("reads the code from a school's own address only", () => {
+    expect(schoolCodeFromOrigin("https://virgo.schoolkit.ng", "schoolkit.ng")).toBe("virgo");
+    expect(schoolCodeFromOrigin("http://virgo.localhost:3002", "localhost:3002")).toBe("virgo");
+    expect(schoolCodeFromOrigin("https://app.example.com", "schoolkit.ng")).toBeNull();
+    for (const ours of ["app", "portal", "cbt", "api"]) {
+      expect(schoolCodeFromOrigin(`https://${ours}.schoolkit.ng`, "schoolkit.ng"), ours).toBeNull();
+    }
+    expect(schoolCodeFromOrigin("https://virgo.schoolkit.ng", undefined)).toBeNull();
+    expect(schoolCodeFromOrigin(undefined, "schoolkit.ng")).toBeNull();
   });
 });

@@ -32,6 +32,8 @@ import { redactEmail, redactPhone } from "../../common/redact";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service";
 import { smsSenderFor } from "../../common/termii/sms-sender";
+import { parentSiteUrl } from "../../common/school-site-url";
+import { schoolSlugOf } from "../../common/slug/school-slug-of";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -406,7 +408,7 @@ export class GuardiansService {
     // invitation row + audit log are already committed by this point, and
     // acceptUrl is always returned regardless of send outcome, so a Resend/
     // Termii failure never breaks the endpoint's response contract.
-    const acceptUrl = `${portalBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = parentSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
     this.logger.log(`[GUARDIAN INVITATION] ${acceptUrl}`);
 
     await this.deliverInvitation({
@@ -539,7 +541,7 @@ export class GuardiansService {
       };
     });
 
-    const acceptUrl = `${portalBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = parentSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
     this.logger.log(`[GUARDIAN INVITATION RESEND] ${acceptUrl}`);
 
     await this.deliverInvitation({

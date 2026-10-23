@@ -4,6 +4,7 @@ import type { PrismaClient } from "@school-kit/db";
 import { sickbayDayOf } from "@school-kit/types";
 
 import { portalBaseUrl } from "../../common/portal-url.js";
+import { parentSiteUrl } from "../../common/school-site-url.js";
 import { resolveResultPinKey } from "../result-checker/result-pin-key.js";
 
 // Phase 9 / CP8.3 — email broadcasts for announcements
@@ -87,7 +88,7 @@ export function unsubscribeLinks(schoolId: string, slug: string, email: string):
 
 // ─── The email ─────────────────────────────────────────────────────────────
 
-export function announcementEmailHtml(p: { schoolName: string; title: string; body: string; unsubscribeUrl: string }): string {
+export function announcementEmailHtml(p: { schoolName: string; slug: string; title: string; body: string; unsubscribeUrl: string }): string {
   const paragraphs = escapeHtml(p.body)
     .split(/\n{2,}/)
     .map((para) => `<p style="margin:0 0 12px">${para.replace(/\n/g, "<br>")}</p>`)
@@ -97,7 +98,7 @@ export function announcementEmailHtml(p: { schoolName: string; title: string; bo
     `<p style="margin:0 0 4px;color:#5B6B72">${escapeHtml(p.schoolName)}</p>`,
     `<h1 style="font-size:20px;margin:0 0 16px">${escapeHtml(p.title)}</h1>`,
     paragraphs,
-    `<p style="margin:20px 0 12px"><a href="${portalBaseUrl()}/announcements">Read it in the parent portal</a></p>`,
+    `<p style="margin:20px 0 12px"><a href="${parentSiteUrl(p.slug, "/announcements")}">Read it in the parent portal</a></p>`,
     `<p style="margin:24px 0 0;font-size:12px;color:#5B6B72">You get this because you are a parent at ${escapeHtml(p.schoolName)}. `,
     `<a href="${escapeHtml(p.unsubscribeUrl)}">Stop announcement emails</a>. Messages from the school and receipts still arrive.</p>`,
     `</div>`,

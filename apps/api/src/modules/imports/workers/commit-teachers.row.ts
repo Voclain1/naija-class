@@ -6,6 +6,8 @@ import { Prisma, type PrismaClient } from "@school-kit/db";
 import type { TeacherImportRow } from "@school-kit/types";
 
 import { CommitRowError } from "./commit-guardians.row";
+import { staffSiteUrl } from "../../../common/school-site-url";
+import { schoolSlugOf } from "../../../common/slug/school-slug-of";
 
 // Per-row commit for TEACHERS (slice 10 cp2). Each good row becomes ONE
 // Invitation with roleKey="teacher" — the bulk equivalent of the Phase 0
@@ -111,6 +113,6 @@ export async function commitTeacherRow(
   //    UsersService.invite does for the single-invite flow. The URL
   //    contains the raw token; logging the URL (not the bare token) is the
   //    established, intentional pattern.
-  const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+  const acceptUrl = staffSiteUrl(await schoolSlugOf(schoolId), `/invitations/${rawToken}`);
   logger.log(`[INVITATION] ${acceptUrl}`);
 }

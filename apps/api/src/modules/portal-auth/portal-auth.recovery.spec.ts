@@ -696,6 +696,46 @@ describe("PortalAuthService — logout and password recovery", () => {
   // A real lockout on the test Redis; identities carry runId, so runs never
   // share a counter.
   // -----------------------------------------------------------------------
+  // Parents at the school's own address (docs/modules/school-hosted-apps.md):
+  // the sign-in page there names the school, and only that school's account
+  // takes part.
+  describe("signing in at a school's own address", () => {
+    it("signs a parent with the same email and password at two schools into the named school", async () => {
+      const email = `scoped-${runId}@example.test`;
+      const a = await makeGuardian("scoped-a", email);
+      const b = await makeGuardian("scoped-b", email);
+
+      await expect(portalAuth.login(guardianLoginSchema.parse({ email, password: "Correct-Horse-9" }), reqCtx)).rejects.toMatchObject({
+        code: "AMBIGUOUS_GUARDIAN_ACCOUNT",
+      });
+      const atB = await portalAuth.login(
+        guardianLoginSchema.parse({ email, password: "Correct-Horse-9", schoolCode: `recovery-scoped-b-${runId}` }),
+        reqCtx,
+      );
+      expect(atB.guardian.id).toBe(b.guardianId);
+      expect(atB.guardian.id).not.toBe(a.guardianId);
+    });
+
+    it("refuses another school's address like a wrong password", async () => {
+      const email = `scoped-other-${runId}@example.test`;
+      await makeGuardian("scoped-c", email);
+      await expect(
+        portalAuth.login(guardianLoginSchema.parse({ email, password: "Correct-Horse-9", schoolCode: "no-such-school-xyz" }), reqCtx),
+      ).rejects.toMatchObject({ code: "INVALID_CREDENTIALS" });
+    });
+
+    it("sends a reset only for the named school's account", async () => {
+      const email = `scoped-reset-${runId}@example.test`;
+      const a = await makeGuardian("scoped-ra", email);
+      const b = await makeGuardian("scoped-rb", email);
+      const sentBefore = sent.length;
+      await portalAuth.forgotPassword(guardianForgotPasswordSchema.parse({ email, schoolCode: `recovery-scoped-ra-${runId}` }), reqCtx);
+      expect(sent.slice(sentBefore)).toHaveLength(1);
+      expect(await withTenant(a.schoolId, (db) => db.guardianPasswordResetToken.count())).toBe(1);
+      expect(await withTenant(b.schoolId, (db) => db.guardianPasswordResetToken.count())).toBe(0);
+    });
+  });
+
   describe("login lockout", () => {
     const lockout = new LoginLockoutService(lockoutRedis);
     const fail = (email: string) =>

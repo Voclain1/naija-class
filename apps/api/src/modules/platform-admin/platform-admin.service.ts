@@ -59,6 +59,8 @@ import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
 
 import { deleteSchoolRows, holdsPlatformAdmin, readDeletionFacts } from "./school-deletion";
 import { changeSchoolAddress } from "../../common/slug/school-address-change.js";
+import { staffSiteUrl } from "../../common/school-site-url";
+import { schoolSlugOf } from "../../common/slug/school-slug-of";
 
 // Cross-tenant service. Reads go through the platform_admin_* SECURITY
 // DEFINER functions (see CLAUDE.md's inventory) via basePrisma directly —
@@ -1016,7 +1018,7 @@ export class PlatformAdminService {
       return { school };
     }, { timeout: CREATE_SCHOOL_TRANSACTION_TIMEOUT_MS });
 
-    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = staffSiteUrl(created.school.slug, `/invitations/${rawToken}`);
 
     // Unconditional send — unlike GuardiansService, there's no
     // NotificationPreference row to gate on yet (the school was just
@@ -1159,7 +1161,7 @@ export class PlatformAdminService {
       return email;
     });
 
-    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = staffSiteUrl(await schoolSlugOf(schoolId), `/invitations/${rawToken}`);
     await this.sendOwnerInvitation(ownerEmail, school.name, acceptUrl);
 
     return {

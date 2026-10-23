@@ -55,3 +55,16 @@ export async function schoolCodeTaken(code: string): Promise<boolean> {
   ]);
   return current !== null || old !== null;
 }
+
+/**
+ * Sign-in at a school's own address (docs/modules/school-hosted-apps.md): the
+ * staff and parent sign-in pages there send the school's code, and only an
+ * account at that school may sign in. No code (portal.schoolkit.ng,
+ * app.schoolkit.ng, the apps) allows any school; a code no school has allows
+ * none, so it fails exactly like a wrong password.
+ */
+export async function signInSchoolScope(rawCode: string | undefined): Promise<(schoolId: string) => boolean> {
+  if (rawCode === undefined) return () => true;
+  const found = await resolveSchoolCode(rawCode);
+  return (schoolId) => found !== null && found.schoolId === schoolId;
+}

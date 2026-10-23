@@ -19,11 +19,40 @@ export function schoolAddressesLive(): boolean {
   return process.env.SCHOOL_ADDRESSES_LIVE === "on" && !!process.env.SCHOOL_ADDRESS_DOMAIN;
 }
 
+/** "https://<code>.<domain>", or null while addresses are not live. */
+function schoolOrigin(code: string | null | undefined): string | null {
+  if (!code || !schoolAddressesLive()) return null;
+  const domain = process.env.SCHOOL_ADDRESS_DOMAIN as string;
+  const local = /^localhost(:\d+)?$/.test(domain);
+  return `${local ? "http" : "https"}://${code}.${domain}`;
+}
+
+function webBaseUrl(): string {
+  return (process.env.WEB_BASE_URL ?? "http://localhost:3001").replace(/\/$/, "");
+}
+
+// Schools work from their own address (docs/modules/school-hosted-apps.md):
+// parents at <code>.schoolkit.ng/parents, staff at <code>.schoolkit.ng/staff.
+// Every link we send to a parent or a member of staff is built here. While
+// addresses are not live, or with no school to hand (new-school sign-up), the
+// link stays on the portal's or the staff app's own address, which keeps
+// working either way: the staff app redirects its old paths to /staff.
+
+/** A link into the parents' area: `path` as the portal names it ("/invitations/x"). */
+export function parentSiteUrl(code: string | null | undefined, path: string): string {
+  const origin = schoolOrigin(code);
+  return origin ? `${origin}/parents${path}` : `${portalBaseUrl().replace(/\/$/, "")}${path}`;
+}
+
+/** A link into the staff area: `path` as the staff app names it ("/invitations/x"). */
+export function staffSiteUrl(code: string | null | undefined, path: string): string {
+  const origin = schoolOrigin(code);
+  return origin ? `${origin}/staff${path}` : `${webBaseUrl()}${path}`;
+}
+
 export function schoolSiteUrls(code: string): SchoolSiteUrls {
-  if (schoolAddressesLive()) {
-    const domain = process.env.SCHOOL_ADDRESS_DOMAIN as string;
-    const local = /^localhost(:\d+)?$/.test(domain);
-    const base = `${local ? "http" : "https"}://${code}.${domain}`;
+  const base = schoolOrigin(code);
+  if (base) {
     return {
       home: `${base}/`,
       apply: `${base}/apply`,
@@ -40,8 +69,11 @@ export function schoolSiteUrls(code: string): SchoolSiteUrls {
   };
 }
 
-/** The three links SchoolMeDto carries (no tracking link: that needs a token). */
-export function publicSiteUrls(code: string): { home: string; apply: string; results: string } {
+/**
+ * The links SchoolMeDto carries (no tracking link: that needs a token), with
+ * where the school's parents and staff sign in.
+ */
+export function publicSiteUrls(code: string): { home: string; apply: string; results: string; parents: string; staff: string } {
   const { home, apply, results } = schoolSiteUrls(code);
-  return { home, apply, results };
+  return { home, apply, results, parents: parentSiteUrl(code, "/login"), staff: staffSiteUrl(code, "/login") };
 }

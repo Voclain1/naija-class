@@ -22,6 +22,8 @@ import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf, userHoldsPermission } from "../../common/auth/role-check";
 import { redactEmail } from "../../common/redact";
 import { USER_RESPONSE_SELECT } from "../auth/auth.service";
+import { staffSiteUrl } from "../../common/school-site-url";
+import { schoolSlugOf } from "../../common/slug/school-slug-of";
 
 // 7 days. Slice 6's onboarding step 3 uses the same value inline; both copies
 // agree because both copies derive from "1 week of inbox attention is plenty
@@ -247,7 +249,7 @@ export class UsersService {
       return invitation;
     });
 
-    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = staffSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
 
     // Email delivery via Resend is deferred to Phase 4. For now, log the
     // accept URL to the server console so the operator can copy it manually
@@ -334,7 +336,7 @@ export class UsersService {
       return invitation;
     });
 
-    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    const acceptUrl = staffSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
     this.logger.log(`[INVITATION] ${acceptUrl}`);
     return { invitation: toInvitationCreatedDto(created), token: rawToken, acceptUrl };
   }
