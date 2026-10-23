@@ -1,0 +1,50 @@
+# Host names come from deploy.env: api./app./portal./cbt.schoolkit.ng after
+# cutover, rehearsal names (e.g. api.vps.schoolkit.ng) before. Caddy gets and
+# renews the certificates. In Cloudflare: SSL/TLS "Full (strict)", and
+# "Always Use HTTPS" OFF so Let's Encrypt's port-80 challenge reaches Caddy.
+#
+# CLIENT ADDRESSES. The API rate-limits per client (CLIENT_IP_HEADER=x-real-ip,
+# client-ip-throttler.guard.ts) and the portal signs the family's address
+# (client-ip-signature.ts, which reads X-Real-IP first). Both must only ever
+# see an address Caddy decided: {client_ip} is Cloudflare's CF-Connecting-IP
+# when, and only when, the connection really comes from Cloudflare's ranges
+# below; otherwise it is the connecting address. header_up OVERWRITES
+# whatever X-Real-IP a caller sent. Cloudflare's list:
+# https://www.cloudflare.com/ips/ (re-check yearly).
+{
+	servers {
+		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+(upstream) {
+	encode zstd gzip
+	reverse_proxy {args[0]} {
+		header_up X-Real-IP {client_ip}
+		# Only a school's own address may name itself (sites/school-addresses.caddy).
+		header_up -X-Schoolkit-Host
+	}
+}
+
+{$API_HOST} {
+	import upstream api:4000
+}
+
+{$WEB_HOST} {
+	encode zstd gzip
+	reverse_proxy web:3000 {
+		header_up X-Real-IP {client_ip}
+		# Only a school's own address may name itself (sites/school-addresses.caddy).
+		header_up -X-Schoolkit-Host
+	}
+}
+
+{$PORTAL_HOST} {
+	import upstream portal:3000
+}
+
+# Optional sites, written by the deploy scripts: the exam app (deploy.sh, once
+# VPS_CBT_ENABLED=true), school addresses (deploy.sh, once
+# SCHOOL_ADDRESS_DOMAIN is set) and the marketing site (deploy-landing.sh).
+import sites/*.caddy

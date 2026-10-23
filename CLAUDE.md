@@ -1050,6 +1050,14 @@ branding, AI comment drafts, positions and cumulative results). Any other
 value reads as `warn`. The render worker does not need it: each render job
 carries the API's value.
 
+`CLIENT_IP_HEADER` / `SCHEDULED_JOBS` — for the move to a VPS
+(`docs/runbooks/vps-migration.md`, 2026-10-21). `CLIENT_IP_HEADER` names the
+header the per-client rate limits read; empty means Fly's `fly-client-ip`,
+and self-hosted it is `x-real-ip`, which Caddy overwrites. Never name a
+header a caller can set. `SCHEDULED_JOBS=off` registers none of the API's
+`@Cron` jobs. It exists only for a rehearsal on a copy of production, whose
+rows hold real families' contacts, and stays empty everywhere real.
+
 `POSTHOG_API_KEY` / `POSTHOG_HOST` — server-side PostHog from the API
 (2026-10-10, `apps/api/src/observability/posthog.ts`). The same project key
 as the web app's `NEXT_PUBLIC_POSTHOG_KEY`, set as a Fly secret on
@@ -1084,6 +1092,11 @@ every migration's RLS/SECURITY DEFINER correctness accordingly. (This note
 is docs-only — the `STAGING_*` secret names and the `deploy-staging.yml`
 filename are intentionally NOT being renamed/restructured as part of this
 fix; that's a separate, larger change if ever done.)
+
+**Moving to a VPS (planned 2026-10-21).** `docs/runbooks/vps-migration.md`
+moves the API, render worker, web, portal and database off Fly, Vercel and
+Neon onto one server (`infra/vps/`, deployed by `deploy-vps.yml`). Until its
+cutover, everything above about Fly, Vercel and Neon remains true.
 
 **Recreating a Vercel project does NOT carry over its environment
 variables (confirmed 2026-07-17).** `school-kit-portal` was deleted and

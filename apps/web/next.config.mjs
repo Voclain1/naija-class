@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import { withSentryConfig } from "@sentry/nextjs";
 
 import { sessionCookieConfigProblem } from "./session-cookie-config.mjs";
@@ -9,6 +11,14 @@ if (sessionCookieProblem) {
   throw new Error(`Staff session cookie misconfigured: ${sessionCookieProblem}`);
 }
 
+// Self-hosted image (infra/vps/Dockerfile.next) builds with NEXT_OUTPUT=standalone:
+// a minimal server traced from the monorepo root, so workspace packages are
+// included. Unset on Vercel, so its builds are unchanged.
+const standalone =
+  process.env.NEXT_OUTPUT === "standalone"
+    ? { output: "standalone", outputFileTracingRoot: fileURLToPath(new URL("../../", import.meta.url)) }
+    : {};
+
 // The staff app lives at /staff (docs/modules/school-hosted-apps.md): at
 // app.schoolkit.ng/staff, and at each school's own address, where the portal
 // forwards /staff here. src/lib/base-path.ts reads it back for the paths Next
@@ -17,6 +27,7 @@ const BASE_PATH = "/staff";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  ...standalone,
   reactStrictMode: true,
   basePath: BASE_PATH,
   // Every older address (app.schoolkit.ng/dashboard, an invitation link sent

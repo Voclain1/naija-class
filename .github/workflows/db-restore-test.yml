@@ -1,0 +1,22 @@
+# Monthly proof that the backups restore (infra/vps/postgres/ops/restore-test.sh):
+# last night's dump into a scratch database, row counts compared, and the
+# WAL-G base backups listed. Active once VPS_DEPLOY_ENABLED is "true".
+name: db-restore-test
+
+on:
+  schedule:
+    - cron: "0 4 1 * *"
+  workflow_dispatch:
+
+jobs:
+  restore:
+    if: github.event_name == 'workflow_dispatch' || vars.VPS_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - run: ssh vps 'cd /opt/school-kit && docker compose --env-file deploy.env exec -T ops /ops/restore-test.sh'

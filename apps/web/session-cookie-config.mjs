@@ -11,11 +11,15 @@
 // twice (PORTAL_BASE_URL, NEXT_PUBLIC_API_URL): config that is never checked
 // against the deployed environment fails silently.
 //
+// A production build is Vercel's (VERCEL_ENV) or the self-hosted image's,
+// which sets APP_ENV=production (infra/vps/Dockerfile.next). Without the
+// second, moving off Vercel would switch this check off without a word.
+//
 // Returns null when the configuration is usable, else the reason.
 
 /** @param {Record<string, string | undefined>} env */
 export function sessionCookieConfigProblem(env) {
-  if (env.VERCEL_ENV !== "production") return null;
+  if (env.VERCEL_ENV !== "production" && env.APP_ENV !== "production") return null;
 
   const domain = (env.SESSION_COOKIE_DOMAIN ?? "").trim().replace(/^\./, "");
   if (!domain) {

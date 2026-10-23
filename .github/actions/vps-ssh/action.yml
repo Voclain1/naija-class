@@ -1,0 +1,34 @@
+name: VPS SSH
+description: >-
+  Installs the deploy key and the server's host key so later steps can run
+  `ssh vps ...`. Used by every workflow that touches the VPS.
+inputs:
+  host:
+    description: VPS address (secrets.VPS_HOST)
+    required: true
+  key:
+    description: Private SSH key (secrets.VPS_SSH_KEY)
+    required: true
+  user:
+    description: Login user
+    default: deploy
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        VPS_HOST: ${{ inputs.host }}
+        VPS_SSH_KEY: ${{ inputs.key }}
+        VPS_USER: ${{ inputs.user }}
+      run: |
+        install -m 700 -d ~/.ssh
+        printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/vps
+        chmod 600 ~/.ssh/vps
+        ssh-keyscan -T 15 -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+        cat >> ~/.ssh/config <<CFG
+        Host vps
+          HostName $VPS_HOST
+          User $VPS_USER
+          IdentityFile ~/.ssh/vps
+          ServerAliveInterval 30
+        CFG

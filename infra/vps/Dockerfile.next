@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1
+# Self-hosted image for one of the Next.js apps (web, portal, cbt), built from
+# the repo root:
+#   docker build -f infra/vps/Dockerfile.next --build-arg APP=web .
+# docs/runbooks/vps-migration.md. Vercel does not use this file.
+#
+# NEXT_PUBLIC_* values are inlined into the browser bundle at build time:
+# changing one means rebuilding the image.
+
+FROM node:22-slim AS builder
+WORKDIR /app
+RUN corepack enable
+ENV PUPPETEER_SKIP_DOWNLOAD=true NEXT_TELEMETRY_DISABLED=1
+COPY . .
+RUN pnpm install --frozen-lockfile
+
+ARG APP
+# The app's public build settings (NEXT_PUBLIC_*, and SESSION_COOKIE_DOMAIN,
+# which apps/web/session-cookie-config.mjs checks) arrive as a build secret
+# and become .env.production, which `next build` reads. deploy-vps.yml takes
+# them from the app's settings secret, so a new NEXT_PUBLIC_ variable needs no
+# change here. APP_ENV=production marks a production build, as VERCEL_ENV
+# does on Vercel.
+#
+# Docker's build cache ignores a secret's contents, so PUBLIC_ENV_SHA (a hash
+# of the settings, passed by the workflow) is what makes a changed setting
+# rebuild instead of reusing an image built with the old one.
+ARG PUBLIC_ENV_SHA=none
+ENV APP_ENV=production NEXT_OUTPUT=standalone
+RUN --mount=type=secret,id=public_env \
+    echo "public settings ${PUBLIC_ENV_SHA}" \
+ && test -n "$APP" && test -d "apps/$APP" \
+ && if [ -s /run/secrets/public_env ]; then cp /run/secrets/public_env "apps/$APP/.env.production"; fi \
+ && pnpm --filter "@school-kit/${APP}^..." run --if-present build \
+ && pnpm --filter "@school-kit/${APP}" run build
+
+FROM node:22-slim AS runtime
+WORKDIR /app
+ARG APP
+ENV NODE_ENV=production APP_ENV=production NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 HOSTNAME=0.0.0.0 APP=${APP}
+COPY --from=builder /app/apps/${APP}/.next/standalone ./
+COPY --from=builder /app/apps/${APP}/.next/static ./apps/${APP}/.next/static
+COPY --from=builder /app/apps/${APP}/public ./apps/${APP}/public
+RUN mkdir -p apps/${APP}/.next/cache && chown -R node:node apps/${APP}/.next
+USER node
+EXPOSE 3000
+CMD ["sh", "-c", "exec node apps/$APP/server.js"]

@@ -1,0 +1,25 @@
+# Used instead of the root .dockerignore (which is written for the API image
+# and excludes the apps' source) when building infra/vps/Dockerfile.next.
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/.expo
+**/*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.git
+apps/mobile/app
+apps/mobile/assets
+apps/api/src
+e2e/tests
+infra
+# apps/web renders the Getting started guide from this file.
+docs/*
+!docs/onboarding-guide.md
+coverage
+playwright-report
+test-results
+dump.rdb
+.storage

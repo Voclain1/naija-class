@@ -1,0 +1,93 @@
+# Copies the production database from Neon onto the VPS, REPLACING the VPS
+# database (infra/vps/db-replace.sh). Used for rehearsals and, once, at
+# cutover (docs/runbooks/vps-migration.md §5–6). Neon is only read.
+#
+# Reads Neon as school_kit through STAGING_DIRECT_URL (the migration role's
+# direct URL, which deploy-staging.yml already uses): it is the one role with
+# BYPASSRLS, and pg_dump refuses to export tables whose rows RLS would hide.
+name: vps-db-copy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type REPLACE to overwrite the VPS database with a fresh copy of Neon
+        required: true
+      stop_fly:
+        description: >-
+          Cutover only. Stop the Fly API and render worker first, so nothing
+          writes to Neon during the copy. Schools see the app as down until
+          DNS points at the VPS (or Fly is scaled back to 1 to roll back).
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  copy:
+    if: inputs.confirm == 'REPLACE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PG_IMAGE: pgvector/pgvector:pg${{ vars.PG_MAJOR || '16' }}
+      PG_MAJOR: ${{ vars.PG_MAJOR || '16' }}
+      NEON_URL: ${{ secrets.STAGING_DIRECT_URL }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Check versions
+        run: |
+          [ -n "$NEON_URL" ] || { echo "::error::STAGING_DIRECT_URL is not set"; exit 1; }
+          neon=$(docker run --rm -e NEON_URL "$PG_IMAGE" sh -c 'psql "$NEON_URL" -tAc "SHOW server_version_num"')
+          echo "Neon is PostgreSQL $neon; the VPS runs $PG_MAJOR"
+          if [ $((neon / 10000)) -gt "$PG_MAJOR" ]; then
+            echo "::error::Neon is newer than the VPS Postgres. Set the PG_MAJOR variable to $((neon / 10000)) BEFORE the server's first start (runbook §4)."
+            exit 1
+          fi
+
+      - name: Stop Fly (cutover)
+        if: inputs.stop_fly
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Scale Fly to zero
+        if: inputs.stop_fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl scale count 0 --app school-kit-api --yes
+          flyctl scale count 0 --app school-kit-render-worker --yes
+          sleep 10
+
+      - name: Dump Neon
+        run: |
+          docker run --rm -e NEON_URL -v "$RUNNER_TEMP:/out" "$PG_IMAGE" \
+            sh -c 'pg_dump -Fc --no-owner -f /out/neon.dump "$NEON_URL"'
+          ls -l "$RUNNER_TEMP/neon.dump"
+          docker run --rm -e NEON_URL -v "$PWD/infra/vps:/q:ro" "$PG_IMAGE" \
+            sh -c 'psql "$NEON_URL" -tA -f /q/verify.sql' > "$RUNNER_TEMP/neon.counts"
+
+      - name: Replace the VPS database
+        run: |
+          tar -C infra/vps -cf - lib.sh db-replace.sh start-apps.sh verify.sql | ssh vps 'tar -C /opt/school-kit -xf -'
+          ssh vps '/opt/school-kit/db-replace.sh --no-start' < "$RUNNER_TEMP/neon.dump"
+
+      - name: Compare
+        run: |
+          ssh vps 'cd /opt/school-kit && docker compose --env-file deploy.env exec -T postgres psql -U postgres -d school_kit -tA' \
+            < infra/vps/verify.sql > "$RUNNER_TEMP/vps.counts"
+          echo "neon | vps"; paste -d' ' "$RUNNER_TEMP/neon.counts" "$RUNNER_TEMP/vps.counts"
+          if ! diff "$RUNNER_TEMP/neon.counts" "$RUNNER_TEMP/vps.counts"; then
+            echo "::error::The copy does not match Neon (above)."; exit 1
+          fi
+          echo "The copy matches Neon."
+
+      - name: Start the apps
+        run: ssh vps /opt/school-kit/start-apps.sh

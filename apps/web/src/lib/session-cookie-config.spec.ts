@@ -18,9 +18,16 @@ describe("sessionCookieConfigProblem", () => {
     expect(sessionCookieConfigProblem({ ...GOOD, SESSION_COOKIE_DOMAIN: ".schoolkit.ng" })).toBeNull();
   });
 
-  it("checks nothing outside a Vercel production build", () => {
+  it("checks nothing outside a production build", () => {
     expect(sessionCookieConfigProblem({})).toBeNull();
     expect(sessionCookieConfigProblem({ VERCEL_ENV: "preview" })).toBeNull();
+  });
+
+  it("checks the self-hosted production build too (APP_ENV)", () => {
+    const { VERCEL_ENV: _vercel, VERCEL_PROJECT_PRODUCTION_URL: _site, ...rest } = GOOD;
+    const selfHosted = { ...rest, APP_ENV: "production" };
+    expect(sessionCookieConfigProblem(selfHosted)).toBeNull();
+    expect(sessionCookieConfigProblem({ ...selfHosted, SESSION_COOKIE_DOMAIN: undefined })).toMatch(/SESSION_COOKIE_DOMAIN/);
   });
 
   it("refuses a missing domain", () => {
