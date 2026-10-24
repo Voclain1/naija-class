@@ -357,6 +357,11 @@ export const queryKeys = {
   // The school store: items and stock on hand, all or only those running low.
   staffStoreItems: (schoolId: string, userId: string, low: boolean) =>
     ["staff", schoolId, userId, "store-items", low] as const,
+  // The school's public website: its state and plan, news posts, and gallery
+  // photos (docs/modules/school-website.md, staff app).
+  staffWebsite: (schoolId: string, userId: string) => ["staff", schoolId, userId, "website"] as const,
+  staffWebsitePosts: (schoolId: string, userId: string) => ["staff", schoolId, userId, "website", "posts"] as const,
+  staffWebsiteGallery: (schoolId: string, userId: string) => ["staff", schoolId, userId, "website", "gallery"] as const,
   // Phase 9 / CP6.2 — the library's loans and the lending desk's look-ups:
   // children's names and books, so staff-prefixed.
   staffLibraryLoans: (schoolId: string, userId: string, state: string) =>

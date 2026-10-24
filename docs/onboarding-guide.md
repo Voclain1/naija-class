@@ -528,13 +528,15 @@ Your school's page can say much more than the basics. Go to **Settings → Schoo
 
 **Gallery.** On the **Gallery** tab, add photos, with captions, and group them into albums if you like.
 
+**From your phone.** In the staff app, owners and admins have **School website** in the menu (under *School*). It has the news and the gallery: write a post, add photos from the camera or your phone's photos, publish it or take it off, add gallery photos with captions, and make or rename albums. **Preview the page** opens your page as families will see it. The cover, about us, quick facts and leadership stay on the website, where there is room to write them.
+
 **Events and announcements.** Tick **Show on the school website** when you add an event (**Events calendar → Add event**) or send an announcement to everyone or to parents. Staff and single-class announcements never go on the website. You can take an announcement off the website later from the **Announcements** page; a withdrawn one leaves the page at once.
 
 **Photos: no pupils.** Photos of pupils never go on your public page, even from behind or in a crowd. Before each photo you must tick **This photo shows no pupils**. Buildings, classrooms, staff, trophies, the school bus and events without pupils are fine.
 
 - SchoolKit cannot spot children in photos by machine, so please check every photo yourself.
 - Anyone can press **Report this photo** on your page. SchoolKit looks at every report and may take a photo or post down. You will see the reason in **Settings → School website**, and it cannot go back up.
-- SchoolKit resizes each photo on your computer before it is sent, and removes the hidden location information phones add to photos.
+- SchoolKit resizes each photo on your computer or phone before it is sent, and removes the hidden location information phones add to photos.
 
 **What your plan includes.**
 
