@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Ip,
   Param,
   ParseUUIDPipe,
@@ -18,6 +19,7 @@ import {
   commitScanSchema,
   type CommitScanInput,
   type ScanAvailabilityDto,
+  type ScanConsentDto,
   type ScanExtractionResponse,
 } from "@school-kit/types";
 import type { Request } from "express";
@@ -62,6 +64,15 @@ export class StudentScanController {
   @Permissions("student.scan")
   availability(@CurrentUser() authCtx: AuthContext): Promise<ScanAvailabilityDto> {
     return this.service.availability(authCtx);
+  }
+
+  // POST /student-scan/consent — the beta's first-use agreement (2026-10-24).
+  // `student.scan`, like the scan it opens; the service checks owner/admin.
+  @Post("consent")
+  @HttpCode(200)
+  @Permissions("student.scan")
+  consent(@CurrentUser() authCtx: AuthContext, @Ip() ip: string): Promise<ScanConsentDto> {
+    return this.service.recordConsent(authCtx, { ipAddress: ip ?? null, userAgent: null });
   }
 
   // POST /student-scan — multipart/form-data with an `image` field.

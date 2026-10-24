@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { AiCallRequest, AiCallResult, AnthropicPort } from "@school-kit/ai";
 import { basePrisma, withTenant } from "@school-kit/db";
+import { commitScanSchema, scanReviewStatsSchema } from "@school-kit/types";
 
 import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
 import type { AuthContext } from "../../common/auth/auth-context.js";
@@ -107,6 +108,8 @@ describe("StudentScanService", () => {
         // Smart Import's own switch (2026-10-11), off by default. On here for
         // the same reason; the off case has its own tests below.
         smartImportEnabled: true,
+        // The beta's first-use agreement (2026-10-24); its own tests below.
+        smartImportConsentAt: new Date(),
       },
       select: { id: true },
     });
@@ -267,14 +270,14 @@ describe("StudentScanService", () => {
     });
 
     it("says why the camera is not offered", async () => {
-      await expect(service.availability(authCtx)).resolves.toEqual({ available: true, reason: null });
+      await expect(service.availability(authCtx)).resolves.toMatchObject({ available: true, reason: null });
       await setSwitch(false);
       try {
-        await expect(service.availability(authCtx)).resolves.toEqual({ available: false, reason: "NOT_ENABLED" });
+        await expect(service.availability(authCtx)).resolves.toMatchObject({ available: false, reason: "NOT_ENABLED" });
         // AI being off is the first thing to say: switching Smart Import on
         // would not help.
         await basePrisma.school.update({ where: { id: schoolId }, data: { aiEnabled: false } });
-        await expect(service.availability(authCtx)).resolves.toEqual({ available: false, reason: "AI_UNAVAILABLE" });
+        await expect(service.availability(authCtx)).resolves.toMatchObject({ available: false, reason: "AI_UNAVAILABLE" });
       } finally {
         await basePrisma.school.update({ where: { id: schoolId }, data: { aiEnabled: true } });
         await setSwitch(true);
@@ -315,6 +318,7 @@ describe("StudentScanService", () => {
       authCtx,
       jobId,
       {
+        checked: true,
         rows: [
           {
             rowNumber: 1,
@@ -349,6 +353,7 @@ describe("StudentScanService", () => {
         authCtx,
         jobId,
         {
+          checked: true,
           rows: [
             { rowNumber: 1, admissionNumber: "SK/2026/009", firstName: "A", lastName: "B", dateOfBirth: "2015-01-01", gender: "MALE" },
             { rowNumber: 5, admissionNumber: "SK/2026/009", firstName: "C", lastName: "D", dateOfBirth: "2015-01-01", gender: "FEMALE" },
@@ -382,6 +387,7 @@ describe("StudentScanService", () => {
       authCtx,
       jobId,
       {
+        checked: true,
         rows: [
           { rowNumber: 1, admissionNumber: "SK/2026/NEW", firstName: "Ngozi", lastName: "Eze", dateOfBirth: "2015-02-02", gender: "FEMALE" },
           { rowNumber: 2, admissionNumber: "SK/2026/TAKEN", firstName: "Clash", lastName: "Row", dateOfBirth: "2015-03-03", gender: "MALE" },
@@ -407,7 +413,7 @@ describe("StudentScanService", () => {
     ];
 
     const manual = await service.extractFromImage(authCtx, upload(), reqCtx);
-    const refused = await service.commitScan(authCtx, manual.jobId, { rows: blankRows }, reqCtx);
+    const refused = await service.commitScan(authCtx, manual.jobId, { rows: blankRows, checked: true }, reqCtx);
     expect(refused.committedRows).toBe(0);
     expect(refused.failedRows.map((r) => r.field)).toEqual(["admissionNumber", "admissionNumber"]);
 
@@ -417,7 +423,7 @@ describe("StudentScanService", () => {
     });
     try {
       const auto = await service.extractFromImage(authCtx, upload(), reqCtx);
-      const result = await service.commitScan(authCtx, auto.jobId, { rows: blankRows }, reqCtx);
+      const result = await service.commitScan(authCtx, auto.jobId, { rows: blankRows, checked: true }, reqCtx);
       expect(result.committedRows).toBe(2);
       const numbers = await withTenant(schoolId, (db) =>
         db.student.findMany({ orderBy: { admissionNumber: "asc" }, select: { admissionNumber: true } }),
@@ -442,7 +448,7 @@ describe("StudentScanService", () => {
     const saved = process.env.PLAN_ENFORCEMENT;
     process.env.PLAN_ENFORCEMENT = "enforce";
     try {
-      await expect(service.commitScan(authCtx, jobId, { rows }, reqCtx)).rejects.toMatchObject({
+      await expect(service.commitScan(authCtx, jobId, { rows, checked: true }, reqCtx)).rejects.toMatchObject({
         code: "PLAN_STUDENT_LIMIT",
       });
       expect(await withTenant(schoolId, (db) => db.student.count({ where: { schoolId } }))).toBe(0);
@@ -459,8 +465,8 @@ describe("StudentScanService", () => {
       { rowNumber: 1, admissionNumber: "SK/2026/ONCE", firstName: "One", lastName: "Time", dateOfBirth: "2015-04-04", gender: "MALE" as const },
     ];
 
-    await service.commitScan(authCtx, jobId, { rows }, reqCtx);
-    await expect(service.commitScan(authCtx, jobId, { rows }, reqCtx)).rejects.toThrow(
+    await service.commitScan(authCtx, jobId, { rows, checked: true }, reqCtx);
+    await expect(service.commitScan(authCtx, jobId, { rows, checked: true }, reqCtx)).rejects.toThrow(
       /already been committed/i,
     );
 
@@ -493,6 +499,7 @@ describe("StudentScanService", () => {
         authCtx,
         csvJobId,
         {
+          checked: true,
           rows: [
             { rowNumber: 1, admissionNumber: "SK/X", firstName: "A", lastName: "B", dateOfBirth: "2015-01-01", gender: "MALE" },
           ],
@@ -500,5 +507,65 @@ describe("StudentScanService", () => {
         reqCtx,
       ),
     ).rejects.toThrow(/not a scan/i);
+  });
+  // -------------------------------------------------------------------------
+  // The beta (2026-10-24): first-use agreement, and counts at save.
+  // -------------------------------------------------------------------------
+  describe("the beta", () => {
+    const clearConsent = () =>
+      basePrisma.school.update({ where: { id: schoolId }, data: { smartImportConsentAt: null, smartImportConsentBy: null } });
+
+    it("refuses to read a register until the school has agreed, before the image reaches the model", async () => {
+      await clearConsent();
+      try {
+        port.calls.length = 0;
+        await expect(service.extractFromImage(authCtx, upload(), reqCtx)).rejects.toMatchObject({
+          code: "SMART_IMPORT_CONSENT_REQUIRED",
+          httpStatus: 403,
+        });
+        expect(port.calls).toHaveLength(0);
+        await expect(service.availability(authCtx)).resolves.toMatchObject({ available: true, consent: null });
+      } finally {
+        await basePrisma.school.update({ where: { id: schoolId }, data: { smartImportConsentAt: new Date() } });
+      }
+    });
+
+    it("records who agreed and when, once, and audits it", async () => {
+      await clearConsent();
+      const first = await service.recordConsent(authCtx, reqCtx);
+      expect(first.byName).toBe("Scan Admin");
+      const again = await service.recordConsent(authCtx, reqCtx);
+      expect(again.at).toBe(first.at);
+      const audits = await withTenant(schoolId, (db) =>
+        db.auditLog.count({ where: { schoolId, action: "student.scan.consent" } }),
+      );
+      expect(audits).toBe(1);
+      await expect(service.availability(authCtx)).resolves.toMatchObject({ consent: { at: first.at, byName: "Scan Admin" } });
+    });
+
+    it("refuses a save without the checked tick (the schema), and stores counts, not text, with one", async () => {
+      expect(commitScanSchema.safeParse({ rows: [{ rowNumber: 1, firstName: "A", lastName: "B", dateOfBirth: "2015-01-01", gender: "MALE" }] }).success).toBe(false);
+
+      port.text = extraction([row({ lastName: "Okafo" }), row({ admissionNumber: "SK/2026/077", firstName: "Ngozi" })]);
+      const { jobId } = await service.extractFromImage(authCtx, upload(), reqCtx);
+      await service.commitScan(
+        authCtx,
+        jobId,
+        {
+          checked: true,
+          rating: "SOME_MISTAKES",
+          rows: [{ rowNumber: 1, admissionNumber: "SK/2026/301", firstName: "Chukwuemeka", lastName: "Okafor", dateOfBirth: "2015-03-04", gender: "MALE" }],
+        },
+        reqCtx,
+      );
+      const job = await withTenant(schoolId, (db) => db.importJob.findUnique({ where: { id: jobId }, select: { scanReview: true } }));
+      const stats = scanReviewStatsSchema.parse(job?.scanReview);
+      expect(stats.rowsRead).toBe(2);
+      expect(stats.readSeconds).toBeGreaterThanOrEqual(0);
+      expect(stats.review).toMatchObject({ rowsKept: 1, rowsRemoved: 1, rating: "SOME_MISTAKES" });
+      expect(stats.review?.fields.lastName.changed).toBe(1);
+      const text = JSON.stringify(job?.scanReview);
+      for (const value of ["Okafor", "Okafo", "Ngozi", "Chukwuemeka", "SK/2026"]) expect(text).not.toContain(value);
+    });
   });
 });

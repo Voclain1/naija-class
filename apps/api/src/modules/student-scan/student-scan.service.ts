@@ -12,6 +12,7 @@ import {
   ForbiddenError,
   InternalError,
   SCAN_ACCEPTED_MIME_TYPES,
+  SMART_IMPORT_CONSENT_REQUIRED,
   SMART_IMPORT_DISABLED,
   SCAN_MAX_FILE_SIZE_BYTES,
   ValidationError,
@@ -20,6 +21,8 @@ import {
   type CommitScanInput,
   type ReviewedStudentRow,
   type ScanAvailabilityDto,
+  type ScanConsentDto,
+  type ScanReviewStats,
   type ScanExtractionResponse,
   type StudentImportRow,
 } from "@school-kit/types";
@@ -30,6 +33,7 @@ import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { assertRoomForStudents } from "../../common/plans/plan-limits";
 import { commitStudentRow } from "../imports/workers/commit-students.row";
 import { readImageDimensions, sniffImageMimeType } from "./image-dimensions";
+import { scanReviewCounts, type ReadRow } from "./scan-review-stats";
 
 // ---------------------------------------------------------------------------
 // StudentScanService — Smart Student Import.
@@ -81,6 +85,13 @@ interface UploadImage {
   mimetype: string;
 }
 
+interface SchoolSwitches {
+  aiEnabled: boolean;
+  smartImportEnabled: boolean;
+  smartImportConsentAt: Date | null;
+  smartImportConsentBy: string | null;
+}
+
 interface RequestContext {
   ipAddress: string | null;
   userAgent: string | null;
@@ -89,6 +100,7 @@ interface RequestContext {
 const AUDIT = {
   scan: "student.scan",
   commit: "student.scan.commit",
+  consent: "student.scan.consent",
 } as const;
 
 @Injectable()
@@ -106,19 +118,71 @@ export class StudentScanService {
 
   async availability(authCtx: AuthContext): Promise<ScanAvailabilityDto> {
     const school = await this.loadSwitches(authCtx.schoolId);
-    if (!this.isConfigured() || !school.aiEnabled) return { available: false, reason: "AI_UNAVAILABLE" };
-    if (!school.smartImportEnabled) return { available: false, reason: "NOT_ENABLED" };
-    return { available: true, reason: null };
+    const consent = await this.readConsent(authCtx.schoolId, school);
+    if (!this.isConfigured() || !school.aiEnabled) return { available: false, reason: "AI_UNAVAILABLE", consent };
+    if (!school.smartImportEnabled) return { available: false, reason: "NOT_ENABLED", consent };
+    return { available: true, reason: null, consent };
   }
 
-  private loadSwitches(schoolId: string): Promise<{ aiEnabled: boolean; smartImportEnabled: boolean }> {
+  private loadSwitches(schoolId: string): Promise<SchoolSwitches> {
     return withTenant(schoolId, async (db) => {
       const school = await db.school.findUnique({
         where: { id: schoolId },
-        select: { aiEnabled: true, smartImportEnabled: true },
+        select: { aiEnabled: true, smartImportEnabled: true, smartImportConsentAt: true, smartImportConsentBy: true },
       });
-      return school ?? { aiEnabled: false, smartImportEnabled: false };
+      return school ?? { aiEnabled: false, smartImportEnabled: false, smartImportConsentAt: null, smartImportConsentBy: null };
     });
+  }
+
+  private async readConsent(schoolId: string, school: SchoolSwitches): Promise<ScanConsentDto | null> {
+    if (!school.smartImportConsentAt) return null;
+    const by = school.smartImportConsentBy;
+    const user = by
+      ? await withTenant(schoolId, (db) => db.user.findUnique({ where: { id: by }, select: { firstName: true, lastName: true } }))
+      : null;
+    return { at: school.smartImportConsentAt.toISOString(), byName: user ? `${user.firstName} ${user.lastName}` : null };
+  }
+
+  // -------------------------------------------------------------------------
+  // CONSENT — POST /student-scan/consent (beta, 2026-10-24).
+  //
+  // Before a school's first scan, its owner or an admin accepts how register
+  // photos are handled: sent to the AI reading service to be read, then
+  // discarded. Recorded once per school, with who and when, and audited.
+  // Asking again changes nothing. Only offered once SchoolKit has switched
+  // the feature on: there is nothing to agree to before that.
+  // -------------------------------------------------------------------------
+  async recordConsent(authCtx: AuthContext, reqCtx: RequestContext): Promise<ScanConsentDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    const school = await this.loadSwitches(authCtx.schoolId);
+    if (!school.smartImportEnabled) {
+      throw new ForbiddenError(SMART_IMPORT_DISABLED, "Reading registers from a photo isn't switched on for your school yet.");
+    }
+    if (!school.smartImportConsentAt) {
+      await withTenant(authCtx.schoolId, async (db) => {
+        // Only the first acceptance is kept: a second admin agreeing later
+        // does not overwrite who agreed for the school.
+        const updated = await db.school.updateMany({
+          where: { id: authCtx.schoolId, smartImportConsentAt: null },
+          data: { smartImportConsentAt: new Date(), smartImportConsentBy: authCtx.userId },
+        });
+        if (updated.count === 1) {
+          await db.auditLog.create({
+            data: {
+              schoolId: authCtx.schoolId,
+              userId: authCtx.userId,
+              action: AUDIT.consent,
+              entityType: "school",
+              entityId: authCtx.schoolId,
+              ipAddress: reqCtx.ipAddress,
+              metadata: {},
+            },
+          });
+        }
+      });
+    }
+    const consent = await this.readConsent(authCtx.schoolId, await this.loadSwitches(authCtx.schoolId));
+    return consent!;
   }
 
   // -------------------------------------------------------------------------
@@ -143,10 +207,18 @@ export class StudentScanService {
   ): Promise<ScanExtractionResponse> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
-    if (!(await this.loadSwitches(authCtx.schoolId)).smartImportEnabled) {
+    const switches = await this.loadSwitches(authCtx.schoolId);
+    if (!switches.smartImportEnabled) {
       throw new ForbiddenError(
         SMART_IMPORT_DISABLED,
         "Reading registers from a photo isn't switched on for your school yet. Contact SchoolKit to turn it on.",
+      );
+    }
+    // The beta's first-use agreement, checked before the image is read.
+    if (!switches.smartImportConsentAt) {
+      throw new ForbiddenError(
+        SMART_IMPORT_CONSENT_REQUIRED,
+        "Before your school's first scan, read how register photos are handled and agree to it.",
       );
     }
 
@@ -164,6 +236,7 @@ export class StudentScanService {
       return arms.map((a) => a.name);
     });
 
+    const readStarted = Date.now();
     const result = await this.ai.generate({
       schoolId: authCtx.schoolId,
       userId: authCtx.userId,
@@ -210,6 +283,12 @@ export class StudentScanService {
           // this is not nullable.
           sourceFileUrl: "",
           totalRows: parsed.rows.length,
+          // The beta's counts (no text). The review half is filled at commit.
+          scanReview: {
+            readSeconds: Math.round((Date.now() - readStarted) / 100) / 10,
+            rowsRead: parsed.rows.length,
+            review: null,
+          } satisfies ScanReviewStats,
           previewSnapshot: {
             good: parsed.rows.map((row, i) => ({ rowNumber: i + 1, parsedRow: row })),
             bad: [],
@@ -273,7 +352,7 @@ export class StudentScanService {
     const job = await withTenant(authCtx.schoolId, (db) =>
       db.importJob.findUnique({
         where: { id: jobId },
-        select: { id: true, type: true, status: true },
+        select: { id: true, type: true, status: true, previewSnapshot: true, scanReview: true },
       }),
     );
     if (!job) throw new ValidationError("JOB_NOT_FOUND", "Scan not found.");
@@ -389,10 +468,21 @@ export class StudentScanService {
       }
     }
 
+    // The beta's counts: how many cells the admin had to change, per field.
+    // Compared against what was read (previewSnapshot), never stored as text.
+    const readRows = ((job.previewSnapshot as { good?: ReadRow[] } | null)?.good ?? []) as ReadRow[];
+    const before = job.scanReview as ScanReviewStats | null;
+    const scanReview: ScanReviewStats = {
+      readSeconds: before?.readSeconds ?? 0,
+      rowsRead: before?.rowsRead ?? readRows.length,
+      review: scanReviewCounts(readRows, dto.rows, dto.rating ?? null),
+    };
+
     await withTenant(authCtx.schoolId, async (db) => {
       await db.importJob.update({
         where: { id: jobId },
         data: {
+          scanReview,
           status: "COMPLETED",
           validRows: dto.rows.length - failedRows.length,
           invalidRows: failedRows.length,

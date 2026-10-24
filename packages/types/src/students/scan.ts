@@ -246,7 +246,17 @@ export const scanReviewStatsSchema = z
         /** Rows read that the admin removed. */
         rowsRemoved: z.number().int().min(0),
         /** Per field, over the kept rows: cells the admin changed, and cells the reading flagged as unreadable. */
-        fields: z.record(z.enum(SCAN_REVIEW_FIELDS), fieldCountsSchema),
+        fields: z
+          .object({
+            admissionNumber: fieldCountsSchema,
+            firstName: fieldCountsSchema,
+            middleName: fieldCountsSchema,
+            lastName: fieldCountsSchema,
+            dateOfBirth: fieldCountsSchema,
+            gender: fieldCountsSchema,
+            classArm: fieldCountsSchema,
+          })
+          .strict(),
         rating: z.enum(SCAN_RATINGS).nullable(),
       })
       .strict()
