@@ -80,7 +80,7 @@ test("dashboard metrics stay on one line and inside their cards while resizing a
   const resizes = await admin.page.evaluate(() => new Promise<number>((resolve) => {
     let count = 0;
     const observer = new MutationObserver((records) => { count += records.length; });
-    for (const text of document.querySelectorAll(".dashboard-stats .metric-value-text")) {
+    for (const text of Array.from(document.querySelectorAll(".dashboard-stats .metric-value-text"))) {
       observer.observe(text, { attributes: true, attributeFilter: ["style"] });
     }
     setTimeout(() => { observer.disconnect(); resolve(count); }, 2000);
