@@ -90,11 +90,21 @@ const config: Config = {
           "0%": { backgroundColor: "hsl(var(--primary) / 0.16)" },
           "100%": { backgroundColor: "transparent" },
         },
+        // The route transition (app/(admin)/template.tsx): opacity only.
+        // tailwindcss-animate's `animate-in fade-in` also animates a 3D
+        // transform, which put the whole page on one GPU layer for the fade.
+        // On low-memory Android phones Chrome kept stale pieces of that layer,
+        // and the dashboard tiles smeared over each other (2026-10-24).
+        "route-fade": {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         settle: "settle 900ms ease-out 1",
+        "route-fade": "route-fade 150ms ease-out 1",
       },
     },
   },
