@@ -39,6 +39,7 @@ import { ApiError, proxyFetch } from "@/lib/api-client";
 import { PlatformActivity } from "./platform-activity";
 import { compactTokens, ownerStatusOf } from "./school-manage";
 import { SchoolManageDialog } from "./school-manage-dialog";
+import { SmartImportBetaCard } from "./smart-import-beta";
 import { WebsiteReportsCard } from "./website-review";
 
 // Cross-tenant view — schools + users, basic metadata only (see CLAUDE.md's
@@ -293,6 +294,7 @@ export function PlatformAdminDashboard() {
       {/* School website reports (docs/modules/school-website.md): also work
           waiting on the operator, and empty most days. */}
       <WebsiteReportsCard />
+      <SmartImportBetaCard />
       {/* Placed first deliberately: this is the only section that represents
           work waiting on the operator. Schools and Users are reference tables
           you browse; this is a queue, and it is empty most of the time. */}

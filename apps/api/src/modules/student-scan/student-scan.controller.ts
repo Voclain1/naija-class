@@ -21,6 +21,7 @@ import {
   type ScanAvailabilityDto,
   type ScanConsentDto,
   type ScanExtractionResponse,
+  type SmartImportBetaDto,
 } from "@school-kit/types";
 import type { Request } from "express";
 
@@ -29,8 +30,10 @@ import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { Permissions } from "../../common/auth/permissions.decorator";
 import { PermissionsGuard } from "../../common/auth/permissions.guard";
+import { PlatformAdminGuard } from "../../common/auth/platform-admin.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { UploadErrorFilter } from "../../common/upload-error.filter";
+import { SmartImportBetaService } from "./smart-import-beta.service";
 import { StudentScanService } from "./student-scan.service";
 
 // Smart Student Import — camera-captured student registers.
@@ -131,5 +134,18 @@ export class StudentScanController {
       ipAddress: ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     });
+  }
+}
+
+// SchoolKit's view of the Smart Import beta (docs/modules/smart-student-import.md
+// §9): counts per school, never text.
+@Controller("platform-admin")
+@UseGuards(PlatformAdminGuard)
+export class SmartImportBetaController {
+  constructor(private readonly beta: SmartImportBetaService) {}
+
+  @Get("smart-import-beta")
+  results(): Promise<SmartImportBetaDto> {
+    return this.beta.results();
   }
 }

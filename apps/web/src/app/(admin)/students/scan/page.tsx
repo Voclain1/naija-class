@@ -4,15 +4,20 @@ import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, Loader2, Trash2 } from 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type {
-  AdmissionNumberSettingsDto,
-  ExtractedStudentRow,
-  ReviewedStudentRow,
-  ScanUnavailableReason,
+import {
+  SCAN_RATINGS,
+  SCAN_RATING_LABELS,
+  type AdmissionNumberSettingsDto,
+  type ExtractedStudentRow,
+  type ReviewedStudentRow,
+  type ScanConsentDto,
+  type ScanRating,
+  type ScanUnavailableReason,
 } from "@school-kit/types";
 
 import { useAdmissionNumbers } from "@/components/students/admission-numbers";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +25,7 @@ import { ApiError } from "@/lib/api-client";
 import {
   commitScan,
   getScanAvailability,
+  recordScanConsent,
   scanStudentRegister,
   type ScanCommitResult,
 } from "@/lib/student-scan/api";
@@ -45,6 +51,17 @@ import {
 // ---------------------------------------------------------------------------
 
 type Phase = "capture" | "review" | "done";
+
+// The beta (2026-10-24): said plainly on every step. Tinted, never an accent
+// border. No AI company is named anywhere on this page (owner's decision).
+function BetaNotice() {
+  return (
+    <p className="rounded-md bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100" data-testid="scan-beta-notice">
+      <strong>Beta:</strong> SchoolKit reads the page with AI and can make mistakes. Check every row against
+      the paper before you save.
+    </p>
+  );
+}
 
 // A row as the admin is editing it. Everything is a string because these are
 // form inputs; the commit converts and the server re-validates.
@@ -119,12 +136,17 @@ export default function StudentScanPage() {
   const [pageNotes, setPageNotes] = useState<string | null>(null);
   const [knownArms, setKnownArms] = useState<string[]>([]);
   const [result, setResult] = useState<ScanCommitResult | null>(null);
+  const [consent, setConsent] = useState<ScanConsentDto | null>(null);
+  const [agreeing, setAgreeing] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [rating, setRating] = useState<ScanRating | null>(null);
 
   useEffect(() => {
     getScanAvailability()
       .then((r) => {
         setAvailable(r.available);
         setUnavailableReason(r.reason);
+        setConsent(r.consent);
       })
       .catch(() => setAvailable(false));
   }, []);
@@ -190,14 +212,26 @@ export default function StudentScanPage() {
         ...(r.middleName.trim() ? { middleName: r.middleName.trim() } : {}),
         ...(r.classArm.trim() ? { classArm: r.classArm.trim() } : {}),
       }));
-      setResult(await commitScan(jobId, { rows: payload }));
+      setResult(await commitScan(jobId, { rows: payload, checked: true, ...(rating ? { rating } : {}) }));
       setPhase("done");
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not save. Try again.");
     } finally {
       setBusy(false);
     }
-  }, [jobId, rows]);
+  }, [jobId, rows, rating]);
+
+  const agree = useCallback(async () => {
+    setAgreeing(true);
+    setError(null);
+    try {
+      setConsent(await recordScanConsent());
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not save your agreement. Try again.");
+    } finally {
+      setAgreeing(false);
+    }
+  }, []);
 
   const incomplete = rows.filter((r) => !rowIsComplete(r, numbering)).length;
   const flagged = rows.filter((r) => r.unreadable.size > 0).length;
@@ -253,12 +287,16 @@ export default function StudentScanPage() {
     return (
       <div className="mx-auto max-w-6xl space-y-6 p-6">
         <div>
-          <h1 className="font-serif text-3xl">Check the details</h1>
+          <h1 className="flex items-center gap-2 font-serif text-3xl">
+            Check the details <Badge variant="warning">Beta</Badge>
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Nothing is saved until you press Add students. Read every name against the page you
             photographed — a name saved wrong here follows the child through the school.
           </p>
         </div>
+
+        <BetaNotice />
 
         {pageNotes && (
           <p className="rounded-md border border-secondary/40 bg-secondary/10 p-4 text-sm">
@@ -387,19 +425,43 @@ export default function StudentScanPage() {
           </p>
         )}
 
-        <div className="flex items-center gap-4">
-          <Button onClick={handleCommit} disabled={busy || rows.length === 0 || incomplete > 0}>
+        <div className="space-y-3 rounded-md bg-muted/50 p-4">
+          <label className="flex items-start gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={checked}
+              onChange={(e) => setChecked(e.target.checked)}
+              data-testid="scan-checked"
+            />
+            I have checked these rows against the register.
+          </label>
+          <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+            <legend className="mb-1 text-muted-foreground">How did the scan do? (optional, helps us improve it)</legend>
+            {SCAN_RATINGS.map((r) => (
+              <label key={r} className="flex items-center gap-1.5">
+                <input type="radio" name="scan-rating" checked={rating === r} onChange={() => setRating(r)} />
+                {SCAN_RATING_LABELS[r]}
+              </label>
+            ))}
+          </fieldset>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-4">
+          <Button onClick={handleCommit} disabled={busy || rows.length === 0 || incomplete > 0 || !checked}>
             {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Add {rows.length} student{rows.length === 1 ? "" : "s"}
           </Button>
           <Button variant="outline" onClick={() => window.location.reload()} disabled={busy}>
             Start over
           </Button>
-          {incomplete > 0 && (
+          {incomplete > 0 ? (
             <span className="text-sm text-muted-foreground">
               {incomplete} row{incomplete === 1 ? "" : "s"} still need a required field.
             </span>
-          )}
+          ) : !checked ? (
+            <span className="text-sm text-muted-foreground">Tick the box above once you have checked every row.</span>
+          ) : null}
         </div>
       </div>
     );
@@ -416,12 +478,41 @@ export default function StudentScanPage() {
       </Link>
 
       <div>
-        <h1 className="font-serif text-3xl">Scan a student list</h1>
+        <h1 className="flex items-center gap-2 font-serif text-3xl">
+          Scan a student list <Badge variant="warning">Beta</Badge>
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Photograph one page of a class register — handwritten or printed. You will check every
           detail before anything is saved.
         </p>
       </div>
+
+      <BetaNotice />
+
+      {available === true && consent === null && (
+        <div className="space-y-3 rounded-md bg-muted/50 p-4 text-sm" data-testid="scan-consent">
+          <p className="font-medium">Before your school&apos;s first scan</p>
+          <p>
+            When you take a photo, SchoolKit sends it to the AI reading service it uses, to read the page.
+            The photo is not kept: once the page has been read, it is thrown away, and nothing from it is
+            saved except the rows you check and save.
+          </p>
+          <p>
+            A register shows children&apos;s names and dates of birth, so only photograph your own
+            school&apos;s registers. Agreeing here covers your whole school, and is recorded with your name.
+          </p>
+          <Button onClick={() => void agree()} disabled={agreeing}>
+            {agreeing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}I agree for my school
+          </Button>
+        </div>
+      )}
+
+      {available === true && consent !== null && (
+        <p className="text-xs text-muted-foreground">
+          {consent.byName ? `${consent.byName} agreed` : "Your school agreed"} to how register photos are handled on{" "}
+          {new Date(consent.at).toLocaleDateString("en-NG", { day: "numeric", month: "long", year: "numeric" })}.
+        </p>
+      )}
 
       {available === false && (
         <p className="rounded-md border border-secondary/40 bg-secondary/10 p-4 text-sm">
@@ -444,10 +535,12 @@ export default function StudentScanPage() {
 
       <div className="rounded-lg border border-dashed p-8 text-center">
         <Camera className="mx-auto h-10 w-10 text-muted-foreground" />
-        <p className="mt-3 text-sm text-muted-foreground">
-          One page at a time. Lay the page flat, fill the frame, and avoid shadows across the
-          writing.
-        </p>
+        <ul className="mx-auto mt-3 max-w-sm space-y-1 text-left text-sm text-muted-foreground" data-testid="scan-photo-tips">
+          <li>One page at a time.</li>
+          <li>Lay the page flat on a table, with good light, not under a ceiling fan&apos;s shadow.</li>
+          <li>Fill the frame with the page, edges included, and hold the phone straight above it.</li>
+          <li>Check the photo is sharp before you send it. A blurred name is a name read wrong.</li>
+        </ul>
 
         <Label htmlFor="register-photo" className="sr-only">
           Register photo
@@ -462,7 +555,7 @@ export default function StudentScanPage() {
           accept="image/jpeg,image/png,image/webp"
           capture="environment"
           className="sr-only"
-          disabled={busy || available !== true}
+          disabled={busy || available !== true || consent === null}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void handleFile(file);
@@ -471,7 +564,7 @@ export default function StudentScanPage() {
 
         <Button
           className="mt-5"
-          disabled={busy || available !== true}
+          disabled={busy || available !== true || consent === null}
           onClick={() => inputRef.current?.click()}
         >
           {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}

@@ -62,6 +62,11 @@ test("smart student import — the scan page is reachable and degrades safely", 
     // invisible to the only person it protects.
     await expect(page.getByText(/is not stored/i)).toBeVisible();
 
+    // --- The beta is said plainly (2026-10-24) ------------------------------
+    // Schools are told it can make mistakes, and how to photograph a page.
+    await expect(page.getByTestId("scan-beta-notice")).toContainText(/can make mistakes/i);
+    await expect(page.getByTestId("scan-photo-tips")).toContainText(/one page at a time/i);
+
     // --- Degradation when it cannot be used ------------------------------
     // A new school has Smart Import switched off (School.smartImportEnabled,
     // 2026-10-11, turned on per school by the platform operator), so the
