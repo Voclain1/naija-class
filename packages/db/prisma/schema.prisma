@@ -190,6 +190,13 @@ model School {
   //                          so aiEnabled alone is not enough to open it. It
   //                          only narrows: the AI gates above still apply.
   smartImportEnabled          Boolean         @default(false) @map("smart_import_enabled")
+  //   smartImportConsent*    Smart Student Import beta (2026-10-24): who at
+  //                          the school accepted, before its first scan, that
+  //                          register photos are sent to the AI reading
+  //                          service and then discarded. Null: not yet; the
+  //                          scan refuses until it is given.
+  smartImportConsentAt        DateTime?       @map("smart_import_consent_at")
+  smartImportConsentBy        String?         @map("smart_import_consent_by")
   //   assignmentFeedbackAiEnabled  Phase 9 / CP4b. The school's own opt-in to
   //                          AI drafts of marking feedback. OFF by default,
   //                          set by owner/admin; aiEnabled must be on too, and
@@ -1359,6 +1366,11 @@ model ImportJob {
   notEnrolledRows Int             @default(0) @map("not_enrolled_rows")
   errorReportUrl  String?         @map("error_report_url")
   previewSnapshot Json?           @map("preview_snapshot")
+  // STUDENTS_SCAN only (Smart Import beta, 2026-10-24): COUNTS of how the
+  // reading went, never text. How long the page took to read, then at commit
+  // how many cells the admin changed per field, rows removed, and their
+  // optional rating. `scanReviewStatsSchema` in @school-kit/types.
+  scanReview      Json?           @map("scan_review")
   failedReason    String?         @map("failed_reason")
   createdBy       String          @map("created_by")
   createdAt       DateTime        @default(now()) @map("created_at")
@@ -5473,3 +5485,22 @@ model SchoolWebsiteReport {
   @@index([schoolId, resolvedAt])
   @@map("school_website_reports")
 }
+
+// A request, from the app, to delete a person's account (2026-10-24). The app
+// stores need one; deleting is the school's call, because the school holds
+// the records, so this only tells the school. One open request per person.
+model AccountDeletionRequest {
+  id          String    @id @default(uuid())
+  schoolId    String    @map("school_id")
+  // STAFF, GUARDIAN or STUDENT (CHECK in the migration).
+  principal   String
+  // users.id, guardians.id or students.id, by `principal`.
+  subjectId   String    @map("subject_id")
+  requestedAt DateTime  @default(now()) @map("requested_at")
+  handledAt   DateTime? @map("handled_at")
+  handledBy   String?   @map("handled_by")
+
+  @@index([schoolId, handledAt])
+  @@map("account_deletion_requests")
+}
+
