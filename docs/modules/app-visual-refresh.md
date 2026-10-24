@@ -106,3 +106,21 @@ Native refinement is intentionally small: consistent form text leading and
 readable tinted notices. Existing home styling, workflows and navigation stay.
 Full source coverage and verification boundaries are recorded in
 `docs/reviews/app-visual-refresh/coverage.md`.
+
+## Dashboard tiles smearing on phones (fixed 2026-10-24)
+
+The owner's Android recording showed the dashboard's four tiles smearing over
+one another and the welcome card while scrolling. Two changes:
+
+- `MetricValue` refits a figure only when its box's width changes or the web
+  font arrives. It used to watch its own text and box size too, so each fit
+  could trigger the next.
+- The route transition (`app/(admin)/template.tsx`, `(teacher)` too) is an
+  opacity-only fade (`animate-route-fade`, `tailwind.config.ts`), no longer
+  tailwindcss-animate's `animate-in fade-in`. That also animated a 3D
+  transform, which put the whole page on one GPU layer as the data arrived;
+  low-memory phones kept stale pieces of it. Same 150 ms, same look.
+
+`e2e/tests/dashboard-mobile-metrics.spec.ts` now also fails if the figures keep
+resizing after the page settles. The glitch itself is in the phone's GPU and
+does not reproduce in desktop Chromium, so it is confirmed on the phone.

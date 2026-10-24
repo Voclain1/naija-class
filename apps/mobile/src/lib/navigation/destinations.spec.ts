@@ -87,6 +87,15 @@ describe("an owner", () => {
     expect(keys(BURSAR)).not.toContain("discipline");
   });
 
+  it("gives the owner and an admin the school website's news and photos, and nobody else", () => {
+    expect(staffDestinations(OWNER).find((d) => d.key === "website-news")?.route).toBe("/staff/website");
+    expect(keys({ ...base, roles: [{ key: "admin" }], permissions: ["website.manage"] })).toContain("website-news");
+    // The API checks the role as well as the permission.
+    expect(keys({ ...base, roles: [{ key: "teacher" }], permissions: ["website.manage"] })).not.toContain("website-news");
+    expect(keys({ ...base, roles: [{ key: "admin" }], permissions: [] })).not.toContain("website-news");
+    expect(keys(TEACHER)).not.toContain("website-news");
+  });
+
   it("gets the Store; so do the Storekeeper and a bursar holding store.read, and a teacher does not", () => {
     expect(staffDestinations(OWNER).find((d) => d.key === "store")?.route).toBe("/staff/store");
     const storekeeper = staffDestinations({ ...base, roles: [{ key: "storekeeper" }], permissions: ["store.read", "store.manage", "asset.read", "asset.manage"] });

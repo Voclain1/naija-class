@@ -232,8 +232,8 @@ Own domains come later, after the VPS move.
   (`apps/web/src/lib/school-website/resize.ts`). This also drops EXIF,
   location included. The API only checks both are JPEGs within size (3 MB and
   512 KB), so it needs no image library on Fly or the VPS.
-- **The staff app is not done yet.** News and photos from the staff app are a
-  follow-up; the web editor works on a phone browser in the meantime.
+- **The staff app** came a day later (2026-10-24): see "Staff app (as built)"
+  below.
 - **The report queue** is a count on `schools.website_open_reports`, so
   SchoolKit's queue never reads across schools' reports and no SECURITY
   DEFINER function was needed (count stays 23).
@@ -302,3 +302,45 @@ non-JPEG refused, sections hidden not deleted, admin yes / teacher no, posts
 and per-post caps, the gallery and its cap, reports and take-downs (photos and
 posts), files deleted with a post, RLS. Portal `middleware.spec.ts`; web
 `resize.spec.ts`; e2e `school-website.spec.ts`.
+
+## Staff app (as built, 2026-10-24)
+
+News and the gallery, as planned under "The editor"; the page details stay on
+the website (the menu row links there).
+
+- **Who:** owners and admins: `website.manage` and the owner or admin role,
+  because the API checks both (`staffDestinations`, key `website-news`, in
+  *School*). Teachers do not see it.
+- **Screens** (`apps/mobile/app/staff/website/`):
+  - `index.tsx`: the news list with each post's status in words, **Write a
+    post**, **Photo gallery** and **Preview the page** (the 30-minute preview
+    link, opened in the browser). The plan note uses the web's words
+    (`sectionPlanNote`).
+  - `post/[id].tsx` (`new` for a new post): title and body with a character
+    count, saved as a draft first because photos belong to a saved post; then
+    photos (up to the plan's per-post limit), **Publish** / **Take off the
+    website**, **Edit** and **Delete**. A taken-down post is read-only, with
+    SchoolKit's reason.
+  - `gallery.tsx`: the count against the plan's cap, upload with an optional
+    caption into an optional album, albums (add, rename, delete; deleting an
+    album keeps its photos), and per-photo caption, album and delete.
+- **The tick (W4):** `WebsitePhotoUpload` (`src/components/website-photo-upload.tsx`)
+  shows the rule and "This photo shows no pupils"; **Take a photo** and
+  **Choose a photo** stay disabled until it is ticked, and it clears after
+  each upload, so it is given per photo.
+- **Resizing on the phone:** `expo-image-manipulator` (native, so it lands
+  with the next app build) makes the 1600 px JPEG and the 480 px thumbnail,
+  with the web's quality steps (`src/lib/staff/website-photo.ts`). Re-encoding
+  writes a new JPEG, so the photo's location data is dropped, as on the web.
+- **One API change:** the app's native uploader (`uploadMultipart`) sends one
+  file per request, so the thumbnail travels as the `thumbBase64` form field
+  beside the `file` part. `uploadWebsitePhotoSchema` takes it (base64, at most
+  the 512 KB thumbnail limit), the controller decodes it, and the service's
+  JPEG and size checks apply exactly as to a `thumb` part. The web still sends
+  `thumb`. Proven by `school-website.controller.spec.ts` (both shapes, a PNG
+  thumbnail refused, text that is not base64 refused, no thumbnail refused,
+  the tick still required).
+- **Tests:** `src/lib/staff/website.spec.ts` (sizes, statuses, plan notes,
+  limits, album grouping, the post form), `destinations.spec.ts` (owner and
+  admin yes; a teacher, even holding the permission, no).
+
