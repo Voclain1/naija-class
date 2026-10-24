@@ -10,7 +10,8 @@ import type { ReactNode } from "react";
 // still and the panel changes, so the movement reads as "this page answered"
 // rather than as the whole screen being rebuilt.
 //
-// 150ms and a fade. D5's own words: short enough to feel like response rather
+// 150ms and a fade, opacity only (tailwind.config.ts `route-fade`). D5's own
+// words: short enough to feel like response rather
 // than animation. No slide — a horizontal or vertical push on a page this
 // dense makes text move under a reader's eye mid-sentence when they navigate
 // with the keyboard.
@@ -25,7 +26,7 @@ export default function TeacherTemplate({ children }: { children: ReactNode }) {
   return (
     <div
       data-route-transition
-      className="animate-in fade-in duration-150 motion-reduce:animate-none"
+      className="animate-route-fade motion-reduce:animate-none"
     >
       {children}
     </div>

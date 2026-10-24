@@ -70,6 +70,22 @@ test("dashboard metrics stay on one line and inside their cards while resizing a
     }), { message: `metrics fit at ${width}px` }).toEqual({ count: 4, problems: [] });
     await admin.page.evaluate(() => window.scrollTo(0, 0));
   }
+
+  // Owner's recording, 2026-10-24: the tiles smeared across the screen while
+  // scrolling on a phone, because fitting a figure resized the tile, which
+  // fitted it again, every frame. Once the page has settled, nothing may keep
+  // resizing the figures.
+  await admin.page.setViewportSize({ width: 390, height: 800 });
+  await admin.page.waitForTimeout(500);
+  const resizes = await admin.page.evaluate(() => new Promise<number>((resolve) => {
+    let count = 0;
+    const observer = new MutationObserver((records) => { count += records.length; });
+    for (const text of Array.from(document.querySelectorAll(".dashboard-stats .metric-value-text"))) {
+      observer.observe(text, { attributes: true, attributeFilter: ["style"] });
+    }
+    setTimeout(() => { observer.disconnect(); resolve(count); }, 2000);
+  }));
+  expect(resizes, "metric figures keep resizing themselves after the page has settled").toBe(0);
   await admin.context.close();
   await admin.api.dispose();
 });

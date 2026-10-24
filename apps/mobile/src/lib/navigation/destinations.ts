@@ -167,6 +167,12 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
     out.push({ key: "announcements", label: "Announcements", hint: "From the school", icon: "megaphone-outline", group: "School", route: "/staff/announcements" });
   }
 
+  // The school's public website: news and photos (docs/modules/school-website.md).
+  // website.manage AND the owner or admin role, because the API checks both.
+  if (admin && can("website.manage")) {
+    out.push({ key: "website-news", label: "School website", hint: "News and photos", icon: "newspaper-outline", group: "School", route: "/staff/website" });
+  }
+
   // Homework (the-school-day.md B8). Gated on homework.create, not .read: this
   // screen's job is SETTING work, and a bursar holds read so they can answer a
   // parent at the counter — a compose form in their menu would be a form the

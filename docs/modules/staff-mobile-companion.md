@@ -1527,3 +1527,12 @@ and permissions as the website's teacher pages:
 
 All their query keys are staff-prefixed, so unreleased exam content is never
 persisted on the handset.
+
+## School website news and photos (2026-10-24)
+
+Owners and admins get **School website** in the menu: news posts and the
+photo gallery, with the "no pupils" tick before every photo
+(`docs/modules/school-website.md`, "Staff app (as built)").
+
+Adds `expo-image-manipulator` (native — lands with the next APK build).
+

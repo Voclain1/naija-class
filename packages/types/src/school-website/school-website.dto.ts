@@ -235,10 +235,21 @@ export const WEBSITE_NO_PUPILS_TICK = "This photo shows no pupils.";
 export const WEBSITE_PHOTO_RULE =
   "No pupils on the public website, even from behind or in a crowd. Buildings, classrooms, staff, trophies, the school bus and events without pupils are fine.";
 
+/** Base64 of a thumbnail no larger than `thumbBytes`, padding included. */
+const WEBSITE_THUMB_BASE64_MAX = Math.ceil(WEBSITE_LIMITS.thumbBytes / 3) * 4;
+
 /** Multipart fields beside `file` (large) and `thumb`. Strings, as multipart sends them. */
 export const uploadWebsitePhotoSchema = z
   .object({
     kind: z.enum(WEBSITE_PHOTO_KINDS),
+    // The staff app's native uploader sends one file per request, so it sends
+    // the thumbnail as base64 in this field instead of a `thumb` part
+    // (docs/modules/school-website.md, staff app). The same JPEG checks apply.
+    thumbBase64: z
+      .string()
+      .max(WEBSITE_THUMB_BASE64_MAX, "The thumbnail is too large. Try a smaller photo.")
+      .regex(/^[A-Za-z0-9+/]+={0,2}$/, "The thumbnail must be base64.")
+      .optional(),
     postId: z.string().uuid().optional(),
     albumId: z.string().uuid().optional(),
     caption: z.string().trim().max(WEBSITE_LIMITS.caption).optional(),

@@ -117,7 +117,8 @@ export class SchoolWebsiteController {
   }
 
   // multipart/form-data: `file` (the large JPEG), `thumb` (the small one),
-  // and the fields of uploadWebsitePhotoSchema, including noPupils=true.
+  // and the fields of uploadWebsitePhotoSchema, including noPupils=true. The
+  // staff app sends the small one as the `thumbBase64` field instead.
   @Post("photos")
   @Permissions("website.manage")
   @UseInterceptors(
@@ -126,7 +127,8 @@ export class SchoolWebsiteController {
         { name: "file", maxCount: 1 },
         { name: "thumb", maxCount: 1 },
       ],
-      { limits: { fileSize: WEBSITE_LIMITS.photoBytes, files: 2 } },
+      // fieldSize: room for `thumbBase64` (512 KB as base64 is about 700 KB).
+      { limits: { fileSize: WEBSITE_LIMITS.photoBytes, files: 2, fieldSize: 1024 * 1024 } },
     ),
   )
   @UseFilters(new UploadErrorFilter("3 MB"))
@@ -136,12 +138,13 @@ export class SchoolWebsiteController {
     @Body(new ZodValidationPipe(uploadWebsitePhotoSchema)) body: UploadWebsitePhotoInput,
     @Ip() ip: string,
   ): Promise<WebsitePhotoDto> {
+    const { thumbBase64, ...fields } = body;
     const large = parts?.file?.[0]?.buffer;
-    const thumb = parts?.thumb?.[0]?.buffer;
+    const thumb = parts?.thumb?.[0]?.buffer ?? (thumbBase64 ? Buffer.from(thumbBase64, "base64") : undefined);
     if (!large || !thumb) {
       throw new ValidationError("INVALID_UPLOAD", "Send the photo as multipart/form-data with 'file' and 'thumb'.");
     }
-    return this.service.uploadPhoto(authCtx, { large, thumb }, body, { ipAddress: ip });
+    return this.service.uploadPhoto(authCtx, { large, thumb }, fields, { ipAddress: ip });
   }
 
   @Patch("photos/:id")
