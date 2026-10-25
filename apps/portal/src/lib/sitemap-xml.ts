@@ -38,7 +38,10 @@ export function schoolRobotsTxt(sitemapUrl: string): string {
 /**
  * The portal's own address: only the schools' public pages, which say where
  * their canonical address is; parents' pages, sign-in and links sent by
- * email are kept out.
+ * email are kept out. The sitemap itself, and the scripts, styles and images
+ * the public pages are drawn with, must stay open under the final
+ * `Disallow: /`: Google obeys robots.txt when it fetches a sitemap, and
+ * without the scripts it cannot render the pages it is allowed to read.
  */
 export function portalRobotsTxt(sitemapIndexUrl: string): string {
   return [
@@ -46,6 +49,10 @@ export function portalRobotsTxt(sitemapIndexUrl: string): string {
     "Allow: /school/",
     "Allow: /apply/",
     "Allow: /result-checker/",
+    "Allow: /sitemap.xml",
+    "Allow: /_next/static/",
+    "Allow: /_next/image",
+    "Allow: /brand/",
     "Disallow: /apply/*/track",
     "Disallow: /*?preview=",
     "Disallow: /",

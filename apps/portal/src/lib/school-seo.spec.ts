@@ -104,4 +104,32 @@ describe("sitemaps and robots", () => {
     expect(portal).toContain("Allow: /school/");
     expect(portal).toContain("Disallow: /\n");
   });
+
+  // Google's rule: the longest matching pattern wins, Allow on a tie.
+  function allowed(robots: string, path: string): boolean {
+    let best = { len: -1, allow: true };
+    for (const line of robots.split("\n")) {
+      const m = /^(Allow|Disallow): (.+)$/.exec(line);
+      if (!m) continue;
+      const pattern = m[2]!;
+      const re = new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*"));
+      if (!re.test(path)) continue;
+      const allow = m[1] === "Allow";
+      if (pattern.length > best.len || (pattern.length === best.len && allow)) best = { len: pattern.length, allow };
+    }
+    return best.allow;
+  }
+
+  it("lets Google fetch the sitemaps and render the public pages on the portal", () => {
+    const portal = portalRobotsTxt("https://portal.schoolkit.ng/sitemap.xml");
+    for (const path of ["/sitemap.xml", "/school/greenfield", "/school/greenfield/sitemap.xml", "/school/greenfield/share-image", "/apply/greenfield", "/_next/static/chunks/main.js", "/_next/image?url=x", "/brand/schoolkit-icon.png"]) {
+      expect(allowed(portal, path), path).toBe(true);
+    }
+    for (const path of ["/", "/login", "/children", "/apply/greenfield/track", "/school/greenfield?preview=1"]) {
+      expect(allowed(portal, path), path).toBe(false);
+    }
+    const school = schoolRobotsTxt("https://x.schoolkit.ng/sitemap.xml");
+    expect(allowed(school, "/sitemap.xml")).toBe(true);
+    expect(allowed(school, "/parents/login")).toBe(false);
+  });
 });
