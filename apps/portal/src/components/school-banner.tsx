@@ -6,6 +6,8 @@ import Image from "next/image";
 
 import type { SchoolContactResponse } from "@school-kit/types";
 
+import { ConsentGate } from "./consent-gate";
+
 // The school's own name and logo at the top of every signed-in portal page
 // (docs/modules/school-identity.md, slice 1). Sign-in pages keep SchoolKit's
 // BrandHeading: before a parent signs in, the portal does not know the school.
@@ -49,6 +51,7 @@ export function SchoolBanner() {
 
   return (
     <div className="sk-school-banner flex min-h-10 items-center gap-3">
+      <ConsentGate />
       {school.logoUrl ? (
         // Signed, per-school URL on R2: next/image's allowlist does not fit it.
         // eslint-disable-next-line @next/next/no-img-element

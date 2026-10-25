@@ -362,6 +362,7 @@ export const queryKeys = {
   // The person's own account deletion request (docs/modules/account-deletion-requests.md),
   // for staff, parents and students alike, keyed by who is signed in.
   accountDeletionRequest: (principal: string, who: string) => ["account-deletion-request", principal, who] as const,
+  guardianConsent: (guardianId: string) => ["guardian-consent", guardianId] as const,
   staffWebsite: (schoolId: string, userId: string) => ["staff", schoolId, userId, "website"] as const,
   staffWebsitePosts: (schoolId: string, userId: string) => ["staff", schoolId, userId, "website", "posts"] as const,
   staffWebsiteGallery: (schoolId: string, userId: string) => ["staff", schoolId, userId, "website", "gallery"] as const,

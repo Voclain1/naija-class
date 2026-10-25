@@ -10,6 +10,7 @@ import { toast } from "sonner";
 
 import { signupOwnerSchema, type SignupOwnerInput } from "@school-kit/types";
 
+import { SchoolConsentText } from "@/components/legal/legal-links";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -162,10 +163,7 @@ export function SignupForm() {
               {...form.register("ndprConsent")}
               aria-invalid={Boolean(form.formState.errors.ndprConsent)}
             />
-            <span>
-              I accept the data handling terms and confirm I&apos;m authorised
-              to create an account for this school under NDPR.
-            </span>
+            <SchoolConsentText />
           </label>
           {form.formState.errors.ndprConsent && (
             <p className="text-sm text-destructive">

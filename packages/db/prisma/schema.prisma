@@ -41,6 +41,11 @@ model School {
   onboardingStep            Int          @default(0) @map("onboarding_step")
   ndprConsent               Boolean      @default(false) @map("ndpr_consent")
   ndprConsentAt             DateTime?    @map("ndpr_consent_at")
+  // Which wording the owner agreed to, and who (2026-10-25,
+  // docs/modules/data-protection.md). Null: agreed before versions were kept,
+  // so Settings → Data protection asks the owner to confirm the current one.
+  ndprConsentVersion        String?      @map("ndpr_consent_version")
+  ndprConsentBy             String?      @map("ndpr_consent_by")
   // Opt-in to subject-period attendance (Phase 2 / Slice 8). Default false:
   // the subject-attendance surface 404s until a school turns it on.
   subjectAttendanceEnabled  Boolean      @default(false) @map("subject_attendance_enabled")
@@ -1060,6 +1065,12 @@ model Guardian {
   // Read by auth_resolve_guardian_session (portal_enabled) and excluded by the
   // login and password-reset lookups — see the migration header.
   portalDisabledAt DateTime? @map("portal_disabled_at")
+  // The parent's agreement to the privacy policy and terms, with the wording
+  // version, when they accept the portal invitation or, for parents who
+  // joined before 2026-10-25, the next time they sign in
+  // (docs/modules/data-protection.md).
+  portalConsentAt      DateTime? @map("portal_consent_at")
+  portalConsentVersion String?   @map("portal_consent_version")
 
   occupation String?
   employer   String?

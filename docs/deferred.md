@@ -428,6 +428,13 @@ The whole list, with where each step is done and its status, is
     (Part 1) and the lawyer's brief and questions (Part 2). It also found that
     the onboarding step-4 consent text lists payment, SMS and email providers
     but not AI providers.
+  - 2026-10-25: the step-4 text now says SchoolKit never lets an AI provider
+    train on school data, and the privacy policy lists AI model providers by
+    category. **Add to the lawyer's brief:** the new Privacy Policy, Data
+    Processing Agreement, Cookie Policy, Refund Policy and account-deletion
+    page on schoolkit.ng (drafts, `docs/modules/data-protection.md`), and
+    whether the policy must name the AI provider (the product deliberately
+    does not).
 - [ ] **Pricing.** Decided 2026-10-11: the published per-term plans, sized by
   students; pioneer schools get one term free on a paid plan. **Built:** the
   plan on each school, student caps, the three places they are checked, and

@@ -48,6 +48,9 @@ export type DashboardAlertType =
   | "low_stock_items"
   // 2026-10-24: people who asked, from the app, for their account to be deleted.
   | "account_deletion_requests"
+  // 2026-10-25: 1 while the owner has not confirmed the current data
+  // protection wording; /settings/data-protection.
+  | "data_protection_unconfirmed"
   // Phase 8 / CP2 (§16 Q33): count of active term-health signals for the
   // current term, linking to /reports. Computed by the same helper the
   // completeness report uses, inside the dashboard's one transaction.

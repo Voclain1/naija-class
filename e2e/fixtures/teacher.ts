@@ -82,7 +82,7 @@ export async function inviteAndAcceptTeacher(
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByLabel("Confirm password").fill(password);
   await page
-    .getByRole("checkbox", { name: /accept the data handling/i })
+    .getByRole("checkbox", { name: /I accept the Terms of Service/i })
     .check();
 
   // On success the form hard-navigates (window.location.href = "/dashboard").

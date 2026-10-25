@@ -344,3 +344,67 @@ the website (the menu row links there).
   limits, album grouping, the post form), `destinations.spec.ts` (owner and
   admin yes; a teacher, even holding the permission, no).
 
+
+## The look (redesign, 2026-10-25)
+
+The owner asked for a page that looks professional, with a clean, smooth course
+site as the reference. This is a change to how the page looks only. No data,
+API, editor or plan limit changed, and every section shows under the same
+conditions as before.
+
+- **Frame** (`apps/portal/src/components/school-site/school-site-shell.tsx`):
+  - A sticky header with the logo, name and motto.
+  - Links to the sections the page actually has (About, News, Gallery,
+    Admissions, Contact).
+  - A **Sign in** menu (Parents, Staff, and Students on the app).
+  - **Apply now** while admissions are open.
+  - On phones, one menu holding the sections and the ways in.
+  - A dark footer with the school's contacts and "Powered by SchoolKit" (or
+    "SchoolKit").
+  - On phones, a bar fixed at the bottom: "Admissions open" + **Apply now**,
+    otherwise **Sign in**.
+- **Hero:**
+  - The school's name, very large (the page's only h1).
+  - The motto under a marker-pen highlight.
+  - The welcome line.
+  - Up to three quick facts as ticks ("Since 1998").
+  - **Apply for admission**, **Check results** and **Sign in**.
+  - The cover photo on a tilted card over a soft shape, with a handwritten
+    "Welcome to our school" (Caveat, loaded only on these pages).
+  - With no cover photo, a drawing of a school building in the accent colour
+    (`illustration.tsx`). It is a building only, never people.
+- **Sections:**
+  - The quick facts as a band in the accent colour.
+  - **Sign in** as three cards.
+  - Announcements and **Coming up** side by side, events with date blocks.
+  - News as photo cards.
+  - **About us**: the head's welcome as a large quote beside the story, then
+    round leadership portraits.
+  - The gallery as a mosaic: one large photo and rows of four, so 5 or 9 are
+    shown, with **Report this photo** under each.
+  - Admissions as a tinted panel with entry-class chips and fees.
+  - Contact as Call / Email / Get directions cards (a Google Maps search for
+    the school's name and address).
+- **News, post and gallery pages** use the same frame, cards and type.
+- **Styles** (`school-site.css`):
+  - Everything is scoped under `.ss` and coloured from the school's accent
+    (`--sa`, with tints mixed by `color-mix`).
+  - No accent borders: colour is always a tinted background.
+  - A `.ss-btn` sets its own `display`, so to hide a button at a breakpoint,
+    wrap it. Tailwind's `hidden` on the button itself loses.
+- **Motion:**
+  - The hero rises in.
+  - Sections below the fold fade up as they scroll into view
+    (`reveal.tsx`). They are only hidden once the script runs, so everything
+    shows without JavaScript.
+  - Photos zoom slightly on hover.
+  - All of it is off under "reduce motion".
+- **Kept for the e2e specs and screen readers:**
+  - The school name is the only h1.
+  - "Sign in" is a heading.
+  - The visible "Parents" link and "school code …" each appear once; the
+    header's sign-in links sit inside closed menus.
+  - The footer has no sign-in links.
+- **Checked:** at 1440 px and 390 px with a mock school (full plan) and a
+  Free-like school (no cover, admissions closed). There is no sideways scroll
+  on any page.

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { SchoolConsentText } from "@/components/legal/legal-links";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -34,7 +35,7 @@ export function Step4NdprForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!consented) {
-      setError("You must confirm NDPR consent to continue.");
+      setError("Tick the box to confirm.");
       return;
     }
     setError(null);
@@ -72,10 +73,15 @@ export function Step4NdprForm() {
           <div className="space-y-2 rounded-md border bg-muted/30 p-3 text-sm">
             <p className="font-medium">SchoolKit will:</p>
             <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-              <li>Store your students&apos;, staff&apos;s, and parents&apos; details to deliver the service.</li>
-              <li>Only share data with payment, SMS, and email providers when you trigger an action that requires it.</li>
-              <li>Never sell your data or use it to train AI models without your explicit opt-in.</li>
-              <li>Comply with the Nigeria Data Protection Regulation (NDPR).</li>
+              <li>Hold your students&apos;, parents&apos; and staff&apos;s details only to run SchoolKit for your school.</li>
+              <li>Share them only with the providers that make SchoolKit work (hosting, payments, SMS, email), never for advertising.</li>
+              <li>Never sell your data, and never let an AI provider train on it.</li>
+              <li>Keep your school&apos;s data separate from every other school&apos;s, and tell you quickly if something goes wrong.</li>
+            </ul>
+            <p className="font-medium">Your school will:</p>
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+              <li>Get each parent&apos;s consent before adding their child, as Nigerian data protection law requires. Settings → Data protection has a letter you can send.</li>
+              <li>Get explicit consent before recording a child&apos;s health information.</li>
             </ul>
           </div>
 
@@ -87,10 +93,7 @@ export function Step4NdprForm() {
               onChange={(e) => setConsented(e.target.checked)}
               aria-invalid={Boolean(error)}
             />
-            <span>
-              I have read and accept the data handling terms above on behalf
-              of my school.
-            </span>
+            <SchoolConsentText />
           </label>
           {error && <p className="text-sm text-destructive">{error}</p>}
 

@@ -116,7 +116,7 @@ Do these steps in order the first time. Each one builds on the one before.
 1. Go to **app.schoolkit.ng/signup**.
 2. Fill in your **School name**, your **First name** and **Last name**, your **Email** and your **Phone** number (for example `08012345678`). Under the school name you will see your school's web address, for example **virgo-fidelis.schoolkit.ng**. You can change it later (see [Your school's web address](#your-schools-web-address)).
 3. Choose a **Password**. It must be at least 8 characters and include a capital letter, a small letter, a number and a symbol such as `!`.
-4. Tick the box to accept the data handling terms.
+4. Tick the box to confirm that you are allowed to set up SchoolKit for your school, that your school will get each parent's consent before adding their child, and that you accept the Terms of Service and the Data Processing Agreement. The underlined names open those documents.
 5. Press **Create school**.
 
 The welcome questions start straight away.
@@ -130,7 +130,7 @@ There are five short screens. A bar at the top shows which one you are on.
 1. **School basics** — your school's name, motto and address, and the school's phone and email. The phone and email are filled in with yours; change them if the school has its own. Press **Continue**.
 2. **Your school logo** — press the box to choose your logo picture. It appears on report cards and invoices. If you do not have it to hand, just press **Continue**; you can add it later in **Settings → School details**.
 3. **Invite admins** — if someone else will help you run the school on SchoolKit, press **Add invite** and type their email. Otherwise press **Skip for now**. (You can invite people any time later.)
-4. **Data protection consent** — read the short summary, tick the box, and press **Confirm and continue**.
+4. **Data protection consent** — read what SchoolKit will do and what your school will do, tick the box, and press **Confirm and continue**.
 5. **Set up your school year** — this one matters. SchoolKit has already filled in a normal Nigerian school year. Check:
    - **Academic year** (for example `2026/2027`) and the dates it **Starts** and **Ends**;
    - **Which term are you in now?** — press the term you are in today (or the one you are about to start, if you are on holiday);
@@ -292,6 +292,8 @@ Parents can see their children's fees, results, timetable and school messages on
 4. Press **Create and link** (or **Link guardian**).
 
 **Adding many parents at once:** go to **Students → Parents & guardians** in the menu and press **Import guardians**. Fill in the template — each parent is matched to their child by **admission number**.
+
+**Getting parents' consent.** Nigerian data protection law asks you to get each parent's consent before you keep their child's details, and separate consent before you record health information. Go to **Settings → Data protection** and use **Letter to parents**: it tells families that your school uses SchoolKit, what you keep and why, and has a slip for them to sign and return. Press **Copy** to paste it into an email or WhatsApp, **Print** to hand it out, or **Download** to keep a copy. Keep the signed slips with each child's file. Families who apply through your online admission form give consent on the form.
 
 **Giving a parent access to the parent portal**
 
@@ -542,6 +544,8 @@ Your school's page can say much more than the basics. Go to **Settings → Schoo
 - Anyone can press **Report this photo** on your page. SchoolKit looks at every report and may take a photo or post down. You will see the reason in **Settings → School website**, and it cannot go back up.
 - SchoolKit resizes each photo on your computer or phone before it is sent, and removes the hidden location information phones add to photos.
 
+**How it looks.** Your page opens with your school's name in large letters, your motto highlighted under it, your welcome line, and your cover photo on a tilted card. If you have no cover photo yet, a drawing of a school in your colour stands in for it. Quick facts show as ticks and as a coloured band. Families find **Sign in**, **Apply now** (while admissions are open) and links to each section at the top. On phones, a bar at the bottom keeps **Apply now** or **Sign in** to hand. Contact details become **Call**, **Email** and **Get directions** buttons. On Professional and Enterprise, your accent colour runs through all of it; other plans use SchoolKit green.
+
 **What your plan includes.**
 
 | | Free | Starter | Growth | Professional |
@@ -570,6 +574,8 @@ Parents sign in at your school's address followed by **/parents** (for example *
 - **Weekly updates**, if you have switched them on (see below).
 
 Parents can reset their own password from **Forgot password?** on the portal sign‑in page.
+
+**The first time a parent signs in** they tick a box to agree to SchoolKit's Privacy Policy and Terms of Service. Parents who joined before 25 October 2026 are asked once, the next time they open the parent portal or the app. SchoolKit keeps a record of when each parent agreed.
 
 **Your school's result checker page** works without signing in — parents only need the admission number and a PIN card.
 
@@ -684,7 +690,9 @@ Refresh the page first. If it still does not work, write down which page you wer
 
 ---
 
-**When someone asks to delete their account.** Staff, parents and students can press **Request account deletion** in the SchoolKit app. Nothing is deleted from their phone: your school holds the records, so you decide. The request shows on your dashboard and under **Settings → Account deletion requests**, with what to do for each kind of account (deactivate a member of staff, switch off a parent's portal access). A student's school record stays with the school. When you have dealt with it, press **Mark handled**.
+**When someone asks to delete their account.** Staff, parents and students can press **Request account deletion** in the SchoolKit app. Nothing is deleted from their phone: your school holds the records, so you decide. The request shows on your dashboard and under **Settings → Account deletion requests**, with what to do for each kind of account (deactivate a member of staff, switch off a parent's portal access). A student's school record stays with the school. When you have dealt with it, press **Mark handled**. Anyone without the app can follow the steps at **schoolkit.ng/delete-account**.
+
+**Settings → Data protection.** This page shows when your school confirmed SchoolKit's data protection terms, and by whom. When the terms are updated, your dashboard shows **Data protection terms to confirm**, and the school owner ticks the box and presses **Confirm** on this page; other staff can read it but only the owner can confirm. The page also has the **Letter to parents** (see [Step 10](#step-10-add-parents)) and links to the Privacy Policy, Terms of Service, Data Processing Agreement and Refund Policy. The same links are at the foot of every sign-in page.
 
 # Getting help
 

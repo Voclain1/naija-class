@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import type { PublicWebsitePostDto } from "@school-kit/types";
 
+import { ArrowLeft } from "@/components/school-site/icons";
 import { ReportButton } from "@/components/school-site/report-button";
 import { SchoolSiteShell } from "@/components/school-site/school-site-shell";
 import { fetchSchoolSite, formatPublished, loadSchool, onSchoolAddress, siteHref } from "@/lib/school-site";
@@ -32,29 +33,42 @@ export default async function SchoolPostPage({ params }: Params) {
   if (!school || !post) notFound();
   const own = await onSchoolAddress();
 
+  const [first, ...rest] = post.photos;
+
   return (
     <SchoolSiteShell school={school} own={own}>
-      <article className="flex flex-col gap-4">
-        <Link href={siteHref(school.code, own, "/news")} className="text-sm text-muted-foreground hover:underline">
-          ← All news
+      <article className="mx-auto w-full max-w-3xl px-4 pb-8 pt-12 sm:px-6 sm:pt-16">
+        <Link href={siteHref(school.code, own, "/news")} className="ss-btn-text mb-8 text-sm" style={{ color: "var(--sa)" }}>
+          <ArrowLeft className="ss-arrow" /> All news
         </Link>
-        <h1 className="text-2xl font-semibold" style={school.website.accent ? { color: school.website.accent } : undefined}>
-          {post.title}
-        </h1>
-        <p className="text-sm text-muted-foreground">{formatPublished(post.publishedAt)}</p>
-        {post.photos.map((p) => (
-          <figure key={p.id} className="flex flex-col gap-1">
-            {/* eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL */}
-            <img src={p.largeUrl} alt={p.caption ?? ""} className="w-full rounded-lg object-cover" />
-            <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>{p.caption}</span>
-              <ReportButton code={school.code} target={{ photoId: p.id }} />
-            </figcaption>
-          </figure>
-        ))}
-        <div className="whitespace-pre-line text-base leading-relaxed">{post.body}</div>
-        <ReportButton code={school.code} target={{ postId: post.id }} label="Report this post" />
+        <p className="mb-4 text-sm font-semibold text-[var(--sa)]">{formatPublished(post.publishedAt)}</p>
+        <h1 className="ss-display ss-display-sm mb-10">{post.title}</h1>
+        {first && <Photo code={school.code} photo={first} />}
+        <div className="ss-lead my-10 whitespace-pre-line !text-[var(--sa-ink)]">{post.body}</div>
+        {rest.length > 0 && (
+          <div className="grid gap-6 sm:grid-cols-2">
+            {rest.map((p) => (
+              <Photo key={p.id} code={school.code} photo={p} />
+            ))}
+          </div>
+        )}
+        <div className="mt-10">
+          <ReportButton code={school.code} target={{ postId: post.id }} label="Report this post" />
+        </div>
       </article>
     </SchoolSiteShell>
+  );
+}
+
+function Photo({ code, photo }: { code: string; photo: PublicWebsitePostDto["photos"][number] }) {
+  return (
+    <figure className="flex flex-col gap-2">
+      {/* eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL */}
+      <img src={photo.largeUrl} alt={photo.caption ?? ""} className="w-full rounded-[1.4rem] object-cover" />
+      <figcaption className="flex flex-wrap items-center justify-between gap-2 text-sm ss-muted">
+        <span>{photo.caption}</span>
+        <ReportButton code={code} target={{ photoId: photo.id }} />
+      </figcaption>
+    </figure>
   );
 }

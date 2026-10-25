@@ -18,6 +18,7 @@ import {
   acceptGuardianInvitationSchema,
   type AcceptGuardianInvitationInput,
   type PublicGuardianInvitationDto,
+  LEGAL_URLS,
 } from "@school-kit/types";
 
 type LoadState =
@@ -172,8 +173,15 @@ export default function AcceptGuardianInvitationPage() {
             {...form.register("ndprConsent")}
           />
           <label htmlFor="ndprConsent" className="text-sm text-muted-foreground">
-            I consent to SchoolKit processing my data to provide the parent portal, in line with
-            NDPR.
+            I have read the{" "}
+            <a href={LEGAL_URLS.privacy} target="_blank" rel="noreferrer" className="font-medium text-primary underline">
+              Privacy Policy
+            </a>{" "}
+            and I accept the{" "}
+            <a href={LEGAL_URLS.terms} target="_blank" rel="noreferrer" className="font-medium text-primary underline">
+              Terms of Service
+            </a>
+            . SchoolKit will use my details to give me the parents&apos; site for my school.
           </label>
         </div>
         {form.formState.errors.ndprConsent && (

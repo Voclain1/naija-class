@@ -11,8 +11,10 @@ import {
   acceptInvitationSchema,
   type AcceptInvitationInput,
   type PublicInvitationDto,
+  LEGAL_URLS,
 } from "@school-kit/types";
 
+import { LegalLink } from "@/components/legal/legal-links";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -241,13 +243,14 @@ export function AcceptInvitationForm({ token, invitation }: Props) {
               aria-invalid={Boolean(form.formState.errors.ndprConsent)}
             />
             <span>
-              I accept the data handling terms and understand my information
-              will be used to operate this school&apos;s account.
+              I have read the <LegalLink href={LEGAL_URLS.privacy}>Privacy Policy</LegalLink> and I accept the{" "}
+              <LegalLink href={LEGAL_URLS.terms}>Terms of Service</LegalLink>. My information will be used to run
+              this school&apos;s SchoolKit account.
             </span>
           </label>
           {form.formState.errors.ndprConsent && (
             <p className="text-sm text-destructive">
-              You must accept the data handling terms to continue.
+              Tick the box to continue.
             </p>
           )}
 

@@ -75,7 +75,7 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
   await ownerPage.getByLabel("Phone").fill(owner.phone);
   await ownerPage.getByLabel("Password").fill(owner.password);
   await ownerPage
-    .getByRole("checkbox", { name: /accept the data handling/i })
+    .getByRole("checkbox", { name: /authorised to set up SchoolKit/i })
     .check();
   await ownerPage.getByRole("button", { name: "Create school" }).click();
 
@@ -122,7 +122,7 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
     ownerPage.getByText("Data protection consent"),
   ).toBeVisible();
   await ownerPage
-    .getByRole("checkbox", { name: /I have read and accept/i })
+    .getByRole("checkbox", { name: /authorised to set up SchoolKit/i })
     .check();
   await ownerPage
     .getByRole("button", { name: "Confirm and continue" })
@@ -204,7 +204,7 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
   await adminPage.getByLabel("Password", { exact: true }).fill(admin.password);
   await adminPage.getByLabel("Confirm password").fill(admin.password);
   await adminPage
-    .getByRole("checkbox", { name: /accept the data handling/i })
+    .getByRole("checkbox", { name: /I accept the Terms of Service/i })
     .check();
   await adminPage
     .getByRole("button", { name: "Accept invitation" })

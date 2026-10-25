@@ -102,6 +102,11 @@ const ALERT_COPY: Record<DashboardAlertType, (count: number) => { label: string;
     label: `${n} account deletion request${n === 1 ? "" : "s"}`,
     icon: "person-remove-outline",
   }),
+  // 2026-10-25 — the owner has not confirmed the current data protection terms.
+  data_protection_unconfirmed: () => ({
+    label: "Confirm the updated data protection terms",
+    icon: "shield-checkmark-outline",
+  }),
 };
 
 export default function StaffDashboardScreen() {

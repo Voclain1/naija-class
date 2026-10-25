@@ -12,6 +12,7 @@ import {
   type PublicAdmissionFormDto,
   type SubmitAdmissionInput,
   type SubmitAdmissionResultDto,
+  LEGAL_URLS,
 } from "@school-kit/types";
 
 import { PageHeader, PageSkeleton } from "@school-kit/ui";
@@ -367,6 +368,13 @@ function ApplicationForm({ slug, form, onDone }: { slug: string; form: PublicAdm
         <input type="checkbox" className="mt-1" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
         <span>{form.consentText}</span>
       </label>
+      <p className="-mt-3 px-1 text-xs text-muted-foreground">
+        The school keeps these details in SchoolKit. How they are protected:{" "}
+        <a href={LEGAL_URLS.privacy} target="_blank" rel="noreferrer" className="underline">
+          Privacy Policy
+        </a>
+        .
+      </p>
 
       {error && (
         <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-900 dark:bg-red-950/40 dark:text-red-100">

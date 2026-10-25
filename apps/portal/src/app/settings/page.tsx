@@ -15,6 +15,7 @@ import { PageHeader, PageSkeleton } from "@school-kit/ui";
 import { SchoolBanner } from "@/components/school-banner";
 import { portalJson } from "@/lib/portal-api";
 import { usePortalRouter } from "@/lib/portal-router";
+import { LegalLinks } from "@/components/legal-links";
 
 export default function SettingsPage() {
   const router = usePortalRouter();
@@ -78,6 +79,7 @@ export default function SettingsPage() {
           {error}
         </p>
       )}
+      <LegalLinks className="mt-2" />
     </main>
   );
 }

@@ -34,6 +34,7 @@ import {
 import { BrandHeading } from "@/components/brand-mark";
 import { portalPath, schoolCodeHere } from "@/lib/portal-path";
 import { SchoolSignInHeading } from "@/components/school-sign-in-heading";
+import { LegalLinks } from "@/components/legal-links";
 
 type SubmitState =
   | { kind: "idle" }
@@ -213,6 +214,7 @@ function LoginForm() {
           </Link>
         </p>
       </form>
+      <LegalLinks className="mt-2" />
     </main>
   );
 }
