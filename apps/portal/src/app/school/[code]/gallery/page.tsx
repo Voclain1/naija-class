@@ -4,8 +4,8 @@ import { notFound } from "next/navigation";
 import type { PublicWebsiteGalleryDto } from "@school-kit/types";
 
 import { ReportButton } from "@/components/school-site/report-button";
-import { SchoolSiteShell } from "@/components/school-site/school-site-shell";
-import { fetchSchoolSite, loadSchool, onSchoolAddress } from "@/lib/school-site";
+import { SchoolSiteShell, SubPageHead } from "@/components/school-site/school-site-shell";
+import { fetchSchoolSite, loadSchool, onSchoolAddress, siteHref } from "@/lib/school-site";
 
 // The school's photo gallery (docs/modules/school-website.md), by album. No
 // pupils (W4); a "Report" link under every photo.
@@ -24,31 +24,34 @@ export default async function SchoolGalleryPage({ params }: Params) {
   const [school, gallery] = await Promise.all([loadSchool(code), fetchSchoolSite<PublicWebsiteGalleryDto>(`${encodeURIComponent(code)}/gallery`)]);
   if (!school || !gallery) notFound();
   const own = await onSchoolAddress();
-  const heading = school.website.accent ? { color: school.website.accent } : undefined;
 
   return (
     <SchoolSiteShell school={school} own={own}>
-      <h1 className="text-2xl font-semibold" style={heading}>
-        Gallery
-      </h1>
-      {gallery.albums.length === 0 && <p className="text-sm text-muted-foreground">No photos yet.</p>}
-      {gallery.albums.map((album) => (
-        <section key={album.id ?? "loose"} className="flex flex-col gap-3" aria-label={album.title}>
-          <h2 className="text-lg font-semibold">{album.title}</h2>
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {album.photos.map((p) => (
-              <li key={p.id} className="flex flex-col gap-1">
-                <a href={p.largeUrl} target="_blank" rel="noreferrer">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL */}
-                  <img src={p.thumbUrl} alt={p.caption ?? ""} className="aspect-[4/3] w-full rounded object-cover" />
-                </a>
-                {p.caption && <span className="text-xs text-muted-foreground">{p.caption}</span>}
-                <ReportButton code={school.code} target={{ photoId: p.id }} />
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+      <div className="mx-auto w-full max-w-6xl px-4 pb-8 pt-12 sm:px-6 sm:pt-16">
+        <SubPageHead id="gallery" eyebrow="Life at school" title="Gallery" back={{ href: siteHref(school.code, own, ""), label: school.name }} />
+        {gallery.albums.length === 0 && <p className="ss-lead">No photos yet.</p>}
+        <div className="flex flex-col gap-14">
+          {gallery.albums.map((album) => (
+            <section key={album.id ?? "loose"} className="flex flex-col gap-5" aria-label={album.title} data-ss-reveal>
+              <h2 className="text-2xl font-extrabold tracking-tight">{album.title}</h2>
+              <ul className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+                {album.photos.map((p) => (
+                  <li key={p.id} className="flex flex-col gap-2">
+                    <a href={p.largeUrl} target="_blank" rel="noreferrer" className="ss-img-zoom block rounded-[1.2rem]">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL */}
+                      <img src={p.thumbUrl} alt={p.caption ?? ""} className="aspect-[4/3] w-full rounded-[1.2rem] object-cover" />
+                    </a>
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="text-sm ss-muted">{p.caption}</span>
+                      <ReportButton code={school.code} target={{ photoId: p.id }} />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </div>
     </SchoolSiteShell>
   );
 }

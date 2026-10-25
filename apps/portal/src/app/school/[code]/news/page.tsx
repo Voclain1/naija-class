@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 
 import type { PublicWebsiteNewsDto } from "@school-kit/types";
 
-import { SchoolSiteShell } from "@/components/school-site/school-site-shell";
+import { ArrowRight } from "@/components/school-site/icons";
+import { SchoolSiteShell, SubPageHead } from "@/components/school-site/school-site-shell";
 import { fetchSchoolSite, formatPublished, loadSchool, onSchoolAddress, siteHref } from "@/lib/school-site";
 
 // The school's news (docs/modules/school-website.md): its published posts,
@@ -28,40 +29,50 @@ export default async function SchoolNewsPage({ params, searchParams }: Params) {
   ]);
   if (!school || !news) notFound();
   const own = await onSchoolAddress();
-  const heading = school.website.accent ? { color: school.website.accent } : undefined;
   const pageHref = (n: number) => `${siteHref(school.code, own, "/news")}?page=${n}`;
 
   return (
     <SchoolSiteShell school={school} own={own}>
-      <section className="flex flex-col gap-4" aria-labelledby="news">
-        <h1 id="news" className="text-2xl font-semibold" style={heading}>
-          News
-        </h1>
-        {news.posts.length === 0 && <p className="text-sm text-muted-foreground">No news yet.</p>}
-        <ul className="flex flex-col gap-4">
+      <section className="mx-auto w-full max-w-6xl px-4 pb-8 pt-12 sm:px-6 sm:pt-16" aria-labelledby="news">
+        <SubPageHead id="news" eyebrow="From the school" title="News" back={{ href: siteHref(school.code, own, ""), label: school.name }} />
+        {news.posts.length === 0 && <p className="ss-lead">No news yet.</p>}
+        <ul className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {news.posts.map((p) => (
-            <li key={p.id} className="flex flex-col gap-3 rounded-lg border bg-card p-4 sm:flex-row">
-              {p.photo && (
-                // eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL
-                <img src={p.photo.thumbUrl} alt={p.photo.caption ?? ""} className="aspect-[4/3] w-full rounded object-cover sm:w-48" />
-              )}
-              <div className="flex flex-col gap-1">
-                <Link href={siteHref(school.code, own, `/news/${p.id}`)} className="text-lg font-medium hover:underline">
-                  {p.title}
-                </Link>
-                <span className="text-xs text-muted-foreground">{formatPublished(p.publishedAt)}</span>
-                <p className="text-sm text-muted-foreground">{p.excerpt}</p>
-              </div>
+            <li key={p.id}>
+              <Link href={siteHref(school.code, own, `/news/${p.id}`)} className="ss-card ss-img-zoom flex h-full flex-col">
+                {p.photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL
+                  <img src={p.photo.thumbUrl} alt={p.photo.caption ?? ""} className="aspect-[16/10] w-full rounded-t-[1.4rem] object-cover" />
+                ) : (
+                  <span className="aspect-[16/10] w-full rounded-t-[1.4rem] bg-[var(--sa-soft)]" aria-hidden />
+                )}
+                <span className="flex flex-1 flex-col gap-2 p-6">
+                  <span className="text-sm font-semibold text-[var(--sa)]">{formatPublished(p.publishedAt)}</span>
+                  <span className="text-lg font-bold leading-snug">{p.title}</span>
+                  <span className="ss-muted line-clamp-3">{p.excerpt}</span>
+                  <span className="ss-btn-text mt-auto pt-2 text-sm" style={{ color: "var(--sa)" }}>
+                    Read more <ArrowRight className="ss-arrow" />
+                  </span>
+                </span>
+              </Link>
             </li>
           ))}
         </ul>
         {news.pages > 1 && (
-          <nav aria-label="Pages" className="flex items-center gap-4 text-sm">
-            {news.page > 1 && <Link href={pageHref(news.page - 1)}>Newer</Link>}
-            <span className="text-muted-foreground">
+          <nav aria-label="Pages" className="mt-10 flex items-center justify-center gap-3">
+            {news.page > 1 && (
+              <Link href={pageHref(news.page - 1)} className="ss-btn ss-btn-quiet">
+                Newer
+              </Link>
+            )}
+            <span className="px-3 ss-muted">
               Page {news.page} of {news.pages}
             </span>
-            {news.page < news.pages && <Link href={pageHref(news.page + 1)}>Older</Link>}
+            {news.page < news.pages && (
+              <Link href={pageHref(news.page + 1)} className="ss-btn ss-btn-quiet">
+                Older
+              </Link>
+            )}
           </nav>
         )}
       </section>

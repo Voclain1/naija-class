@@ -542,6 +542,8 @@ Your school's page can say much more than the basics. Go to **Settings → Schoo
 - Anyone can press **Report this photo** on your page. SchoolKit looks at every report and may take a photo or post down. You will see the reason in **Settings → School website**, and it cannot go back up.
 - SchoolKit resizes each photo on your computer or phone before it is sent, and removes the hidden location information phones add to photos.
 
+**How it looks.** Your page opens with your school's name in large letters, your motto highlighted under it, your welcome line, and your cover photo on a tilted card. If you have no cover photo yet, a drawing of a school in your colour stands in for it. Quick facts show as ticks and as a coloured band. Families find **Sign in**, **Apply now** (while admissions are open) and links to each section at the top. On phones, a bar at the bottom keeps **Apply now** or **Sign in** to hand. Contact details become **Call**, **Email** and **Get directions** buttons. On Professional and Enterprise, your accent colour runs through all of it; other plans use SchoolKit green.
+
 **What your plan includes.**
 
 | | Free | Starter | Growth | Professional |
