@@ -44,6 +44,15 @@ import { z } from "zod";
 // TDZ ReferenceError on load rather than a type error tsc would catch.
 export const MAX_ROWS_PER_SCAN = 120;
 
+/** The beta (2026-10-24): the admin's optional answer to "How did the scan do?". */
+export const SCAN_RATINGS = ["GOOD", "SOME_MISTAKES", "MANY_MISTAKES"] as const;
+export type ScanRating = (typeof SCAN_RATINGS)[number];
+export const SCAN_RATING_LABELS: Record<ScanRating, string> = {
+  GOOD: "Good",
+  SOME_MISTAKES: "A few mistakes",
+  MANY_MISTAKES: "Many mistakes",
+};
+
 export const extractedStudentRowSchema = z
   .object({
     admissionNumber: z.string().trim().max(40).nullable(),
@@ -132,6 +141,12 @@ export type ReviewedStudentRow = z.infer<typeof reviewedStudentRowSchema>;
 export const commitScanSchema = z
   .object({
     rows: z.array(reviewedStudentRowSchema).min(1, "at least one row required").max(MAX_ROWS_PER_SCAN),
+    // The beta's required tick (2026-10-24): "I have checked these rows
+    // against the register." Checked by the server too, so no client can
+    // save a scan without it.
+    checked: z.literal(true, { errorMap: () => ({ message: "Tick that you have checked the rows against the register." }) }),
+    // "How did the scan do?" Optional.
+    rating: z.enum(SCAN_RATINGS).optional(),
     // Same option the CSV mapping step offers. Optional: a school mid-
     // admission legitimately creates students without enrolling them.
     targetTermId: z.string().uuid().optional(),
@@ -164,7 +179,125 @@ export type ScanUnavailableReason = (typeof SCAN_UNAVAILABLE_REASONS)[number];
 export interface ScanAvailabilityDto {
   available: boolean;
   reason: ScanUnavailableReason | null;
+  /**
+   * Smart Import beta (2026-10-24): who at the school accepted how register
+   * photos are handled, before its first scan. Null: nobody yet, and a scan
+   * is refused (SMART_IMPORT_CONSENT_REQUIRED) until someone does.
+   */
+  consent: ScanConsentDto | null;
+}
+
+// POST /student-scan/consent. Owner or admin, once per school.
+export interface ScanConsentDto {
+  at: string;
+  /** The staff member's name, or null if they have since left. */
+  byName: string | null;
 }
 
 /** 403 code when a school without Smart Import tries to scan. */
 export const SMART_IMPORT_DISABLED = "SMART_IMPORT_DISABLED";
+
+/** 403 code when the school has not yet accepted how register photos are handled. */
+export const SMART_IMPORT_CONSENT_REQUIRED = "SMART_IMPORT_CONSENT_REQUIRED";
+
+// ---------------------------------------------------------------------------
+// 5. The beta (2026-10-24): how well the reading went, as COUNTS.
+//
+// Worked out by the server at commit, by comparing what it read (the job's
+// previewSnapshot) with the rows the admin saved, matched by rowNumber. Never
+// any text: no names, no numbers, no dates. It is how we learn, from real
+// registers, which fields the reading gets wrong, without keeping a copy of
+// any child's details beyond the ones the school chose to save.
+
+/** The fields both the reading and the review grid carry. */
+export const SCAN_REVIEW_FIELDS = [
+  "admissionNumber",
+  "firstName",
+  "middleName",
+  "lastName",
+  "dateOfBirth",
+  "gender",
+  "classArm",
+] as const;
+export type ScanReviewField = (typeof SCAN_REVIEW_FIELDS)[number];
+
+export const SCAN_REVIEW_FIELD_LABELS: Record<ScanReviewField, string> = {
+  admissionNumber: "Admission number",
+  firstName: "First name",
+  middleName: "Middle name",
+  lastName: "Surname",
+  dateOfBirth: "Date of birth",
+  gender: "Gender",
+  classArm: "Class",
+};
+
+const fieldCountsSchema = z.object({ changed: z.number().int().min(0), flagged: z.number().int().min(0) }).strict();
+
+/** ImportJob.scanReview. Counts only; `review` is null until the admin saves. */
+export const scanReviewStatsSchema = z
+  .object({
+    /** Seconds the reading took, measured by the server. */
+    readSeconds: z.number().min(0),
+    rowsRead: z.number().int().min(0),
+    review: z
+      .object({
+        /** Rows read and still there at save, compared field by field. */
+        rowsKept: z.number().int().min(0),
+        /** Rows read that the admin removed. */
+        rowsRemoved: z.number().int().min(0),
+        /** Per field, over the kept rows: cells the admin changed, and cells the reading flagged as unreadable. */
+        fields: z
+          .object({
+            admissionNumber: fieldCountsSchema,
+            firstName: fieldCountsSchema,
+            middleName: fieldCountsSchema,
+            lastName: fieldCountsSchema,
+            dateOfBirth: fieldCountsSchema,
+            gender: fieldCountsSchema,
+            classArm: fieldCountsSchema,
+          })
+          .strict(),
+        rating: z.enum(SCAN_RATINGS).nullable(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+export type ScanReviewStats = z.infer<typeof scanReviewStatsSchema>;
+
+// GET /platform-admin/smart-import-beta: SchoolKit's view of the beta, per
+// school and in total. Counts only, like the stats above.
+export interface SmartImportBetaFieldDto {
+  field: ScanReviewField;
+  /** Cells compared (kept rows). */
+  compared: number;
+  changed: number;
+  flagged: number;
+}
+
+export interface SmartImportBetaTotalsDto {
+  scans: number;
+  scansSaved: number;
+  rowsRead: number;
+  rowsKept: number;
+  rowsRemoved: number;
+  fields: SmartImportBetaFieldDto[];
+  ratings: Record<ScanRating, number>;
+  /** Null when nothing has been read yet. */
+  averageReadSeconds: number | null;
+  slowestReadSeconds: number | null;
+}
+
+export interface SmartImportBetaSchoolDto extends SmartImportBetaTotalsDto {
+  schoolId: string;
+  name: string;
+  slug: string;
+  smartImportEnabled: boolean;
+  consentAt: string | null;
+  lastScanAt: string | null;
+}
+
+export interface SmartImportBetaDto {
+  schools: SmartImportBetaSchoolDto[];
+  totals: SmartImportBetaTotalsDto;
+}

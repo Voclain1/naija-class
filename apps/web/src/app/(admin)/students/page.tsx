@@ -16,6 +16,7 @@ import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { PrintButton } from "@/components/shared/print-button";
 import { StudentsListControls } from "@/components/students/students-list-controls";
 import { StudentsRosterTable } from "@/components/students/students-roster-table";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Appear, EmptyState, PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
 import {
@@ -237,7 +238,9 @@ export default function StudentsRosterPage() {
                   <Link href="/students/scan">
                     <Camera className="mr-2 h-4 w-4" />
                     <span className="flex flex-col">
-                      <span>Scan a student list</span>
+                      <span className="flex items-center gap-1.5">
+                        Scan a student list <Badge variant="warning">Beta</Badge>
+                      </span>
                       <span className="text-xs text-muted-foreground">
                         Photograph a register page
                       </span>
@@ -321,6 +324,7 @@ export default function StudentsRosterPage() {
                   <Link href="/students/scan">
                     <Camera className="mr-1 h-4 w-4" />
                     Scan a student list
+                    <Badge variant="warning" className="ml-1.5">Beta</Badge>
                   </Link>
                 </Button>
               </div>

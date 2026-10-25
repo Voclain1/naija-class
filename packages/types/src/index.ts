@@ -31,6 +31,7 @@ export * from './question-bank/index.js';
 export * from './exam-papers/index.js';
 export * from './cbt/index.js';
 export * from './school-contact/index.js';
+export * from './account-deletion/index.js';
 export * from './sms-sender/index.js';
 export * from './school-address/index.js';
 export * from './school-website/index.js';

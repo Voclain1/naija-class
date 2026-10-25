@@ -9,6 +9,7 @@ import { useSession } from "../src/lib/auth/session";
 import { useTheme } from "../src/theme/theme-provider";
 import { spacing } from "../src/theme/tokens";
 import { Body, Button, Card, CenteredMessage, Heading, Label, Notice, Screen } from "../src/components/ui";
+import { AccountDeletionCard } from "../src/components/account-deletion-card";
 import { ScreenHeader, Skeleton } from "../src/components/layout";
 
 // Phase 9 / CP11.1 — the parent's Settings, as on the portal
@@ -79,6 +80,7 @@ export default function GuardianSettingsScreen() {
             </Notice>
           ) : null}
         </Card>
+        <AccountDeletionCard />
       </ScrollView>
     </Screen>
   );

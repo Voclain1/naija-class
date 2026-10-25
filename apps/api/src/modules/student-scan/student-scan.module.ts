@@ -1,7 +1,8 @@
 import { Module } from "@nestjs/common";
 
 import { AiModule } from "../../common/ai/ai.module.js";
-import { StudentScanController } from "./student-scan.controller.js";
+import { SmartImportBetaService } from "./smart-import-beta.service.js";
+import { SmartImportBetaController, StudentScanController } from "./student-scan.controller.js";
 import { StudentScanService } from "./student-scan.service.js";
 
 // Smart Student Import — camera-captured student registers.
@@ -18,8 +19,8 @@ import { StudentScanService } from "./student-scan.service.js";
 // future change needs one, that change is re-opening D3 and needs sign-off.
 @Module({
   imports: [AiModule],
-  controllers: [StudentScanController],
-  providers: [StudentScanService],
+  controllers: [StudentScanController, SmartImportBetaController],
+  providers: [StudentScanService, SmartImportBetaService],
   exports: [StudentScanService],
 })
 export class StudentScanModule {}

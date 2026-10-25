@@ -180,12 +180,16 @@ Students added this way are not yet in a class — do [Step 5](#step-5-put-your-
 4. Upload the file. SchoolKit asks you to match your columns to its fields, and which **term** to put the children in.
 5. You will see which rows are ready and which need fixing. Press **Commit** to add them.
 
-**From a photo of your class register**
+**From a photo of your class register (Beta)**
+
+This is in **beta**: SchoolKit reads the page with AI and can make mistakes, so you check every row before anything is saved.
 
 1. Press the small arrow beside **Add student**, then **Scan a student list**.
-2. Take a clear photo of **one page** of your register — handwritten or printed. Lay it flat, fill the frame, avoid shadows.
-3. SchoolKit reads the page and shows you a table. **Nothing is saved yet.** Check every name, date and class against the paper and correct anything that is wrong.
-4. Press **Add students**.
+2. **The first time only:** read how register photos are handled and press **I agree for my school**. The photo is sent to the AI reading service SchoolKit uses, read, and thrown away. Nothing from it is kept except the rows you save. Your agreement covers the whole school and is recorded with your name.
+3. Take a clear photo of **one page** of your register, handwritten or printed. Lay it flat in good light, fill the frame, hold the phone straight above it, and check the photo is sharp.
+4. SchoolKit reads the page and shows you a table. **Nothing is saved yet.** Check every name, date and class against the paper and correct anything that is wrong.
+5. Tick **I have checked these rows against the register**. If you like, say how the scan did (Good, A few mistakes, Many mistakes): it helps us improve it.
+6. Press **Add students**.
 
 **Students' passport photos**
 
@@ -194,7 +198,7 @@ A photo shows on the student's page and class lists, and is printed on their ID 
 - **One at a time:** open the student, and under **Passport photo** press **Upload photo**. Choose a picture, drag it so the face sits in the frame, zoom if needed, and press **Save photo**.
 - **Many at once:** on **Students**, press **Photos**. Name each photo file by the child's admission number (for example `SKA-0042.jpg`), choose them all together and press **Upload**. Any file whose name matches no student is listed for you to rename. Each photo is cropped around its centre; to adjust one, open the student and press **Change photo**.
 
-**Note:** Scanning uses SchoolKit's AI reading feature, which is switched off for a new school. If it tells you AI is off, contact the SchoolKit team (see [Getting help](#getting-help)) to have it switched on — or use one of the other three ways.
+**Note:** Scanning is in beta and uses SchoolKit's AI reading feature, both switched off for a new school. If it tells you AI is off, contact the SchoolKit team (see [Getting help](#getting-help)) to have it switched on — or use one of the other three ways.
 
 ## Step 5. Put your students in their classes
 
@@ -679,6 +683,8 @@ Check your internet connection, then try again in a moment.
 Refresh the page first. If it still does not work, write down which page you were on and which button you pressed, and contact us — see [Getting help](#getting-help) below.
 
 ---
+
+**When someone asks to delete their account.** Staff, parents and students can press **Request account deletion** in the SchoolKit app. Nothing is deleted from their phone: your school holds the records, so you decide. The request shows on your dashboard and under **Settings → Account deletion requests**, with what to do for each kind of account (deactivate a member of staff, switch off a parent's portal access). A student's school record stays with the school. When you have dealt with it, press **Mark handled**.
 
 # Getting help
 

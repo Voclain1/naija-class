@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Ip,
   Param,
   ParseUUIDPipe,
@@ -18,7 +19,9 @@ import {
   commitScanSchema,
   type CommitScanInput,
   type ScanAvailabilityDto,
+  type ScanConsentDto,
   type ScanExtractionResponse,
+  type SmartImportBetaDto,
 } from "@school-kit/types";
 import type { Request } from "express";
 
@@ -27,8 +30,10 @@ import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { Permissions } from "../../common/auth/permissions.decorator";
 import { PermissionsGuard } from "../../common/auth/permissions.guard";
+import { PlatformAdminGuard } from "../../common/auth/platform-admin.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { UploadErrorFilter } from "../../common/upload-error.filter";
+import { SmartImportBetaService } from "./smart-import-beta.service";
 import { StudentScanService } from "./student-scan.service";
 
 // Smart Student Import — camera-captured student registers.
@@ -62,6 +67,15 @@ export class StudentScanController {
   @Permissions("student.scan")
   availability(@CurrentUser() authCtx: AuthContext): Promise<ScanAvailabilityDto> {
     return this.service.availability(authCtx);
+  }
+
+  // POST /student-scan/consent — the beta's first-use agreement (2026-10-24).
+  // `student.scan`, like the scan it opens; the service checks owner/admin.
+  @Post("consent")
+  @HttpCode(200)
+  @Permissions("student.scan")
+  consent(@CurrentUser() authCtx: AuthContext, @Ip() ip: string): Promise<ScanConsentDto> {
+    return this.service.recordConsent(authCtx, { ipAddress: ip ?? null, userAgent: null });
   }
 
   // POST /student-scan — multipart/form-data with an `image` field.
@@ -120,5 +134,18 @@ export class StudentScanController {
       ipAddress: ip ?? null,
       userAgent: req.get("user-agent") ?? null,
     });
+  }
+}
+
+// SchoolKit's view of the Smart Import beta (docs/modules/smart-student-import.md
+// §9): counts per school, never text.
+@Controller("platform-admin")
+@UseGuards(PlatformAdminGuard)
+export class SmartImportBetaController {
+  constructor(private readonly beta: SmartImportBetaService) {}
+
+  @Get("smart-import-beta")
+  results(): Promise<SmartImportBetaDto> {
+    return this.beta.results();
   }
 }

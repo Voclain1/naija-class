@@ -359,6 +359,9 @@ export const queryKeys = {
     ["staff", schoolId, userId, "store-items", low] as const,
   // The school's public website: its state and plan, news posts, and gallery
   // photos (docs/modules/school-website.md, staff app).
+  // The person's own account deletion request (docs/modules/account-deletion-requests.md),
+  // for staff, parents and students alike, keyed by who is signed in.
+  accountDeletionRequest: (principal: string, who: string) => ["account-deletion-request", principal, who] as const,
   staffWebsite: (schoolId: string, userId: string) => ["staff", schoolId, userId, "website"] as const,
   staffWebsitePosts: (schoolId: string, userId: string) => ["staff", schoolId, userId, "website", "posts"] as const,
   staffWebsiteGallery: (schoolId: string, userId: string) => ["staff", schoolId, userId, "website", "gallery"] as const,

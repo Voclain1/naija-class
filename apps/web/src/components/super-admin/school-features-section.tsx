@@ -46,7 +46,7 @@ export function SmartImportSection({
     if (
       next &&
       !window.confirm(
-        `Turn on Smart Import for ${school.name}? Photographed registers, with children's names, will be sent to the AI provider to be read. Only do this once the accuracy check has passed.`,
+        `Turn on Smart Import for ${school.name}? Photographed registers, with children's names, will be sent to the AI provider to be read. It is in beta: the school is told it can make mistakes, and agrees before its first scan.`,
       )
     ) {
       return;
@@ -73,12 +73,14 @@ export function SmartImportSection({
     <section className="flex flex-col gap-3 border-t pt-4" aria-labelledby="manage-smart-import">
       <h3 id="manage-smart-import" className="flex items-center gap-2 font-medium">
         Smart Import
+        <Badge variant="warning">Beta</Badge>
         <Badge variant={school.smartImportEnabled ? "success" : "muted"}>
           {school.smartImportEnabled ? "On" : "Off"}
         </Badge>
       </h3>
       <p className="text-sm text-muted-foreground">
-        Lets the school photograph a class register and have it read into student records.
+        Lets the school photograph a class register and have it read into student records. In beta:
+        results are under Smart Import results on the dashboard.
         {school.smartImportEnabled && !school.aiEnabled
           ? " AI is off for this school, so nothing can be read until AI is on too."
           : ""}

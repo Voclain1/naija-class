@@ -184,6 +184,8 @@ noise.
 
 - Apple Developer Program and Google Play Console accounts (1–3 week external
   latency; being started in parallel with slice 1).
+- In-app account deletion request: done 2026-10-24
+  (`docs/modules/account-deletion-requests.md`). App version is 1.0.0.
 - Store listing metadata, privacy nutrition labels, and NDPR disclosures.
   These are not a formality here: the app handles children's data, which
   triggers additional declarations on both stores.

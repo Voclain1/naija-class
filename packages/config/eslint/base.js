@@ -333,6 +333,11 @@ export const baseConfig = [
       // audit rows carry no school. Everything about a school's content runs
       // under that school's GUC through withTenant.
       "**/modules/school-website/school-website-platform.service.ts",
+      // Smart Import beta results (docs/modules/smart-student-import.md §9,
+      // 2026-10-24), SchoolKit's operator only (PlatformAdminGuard). basePrisma
+      // lists the beta schools from `schools` (no RLS); each school's scan
+      // counts are then read under that school's GUC through withTenant.
+      "**/modules/student-scan/smart-import-beta.service.ts",
     ],
     rules: {
       // Exempts basePrisma ONLY. The Anthropic ban is deliberately re-asserted

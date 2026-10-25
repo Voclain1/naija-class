@@ -4,6 +4,7 @@
 import type {
   CommitScanInput,
   ScanAvailabilityDto,
+  ScanConsentDto,
   ScanExtractionResponse,
 } from "@school-kit/types";
 
@@ -21,6 +22,11 @@ export interface ScanCommitResult {
 // register and only then discovers AI is switched off for their school.
 export async function getScanAvailability(): Promise<ScanAvailabilityDto> {
   return apiFetch<ScanAvailabilityDto>("/student-scan/availability");
+}
+
+// POST /student-scan/consent — the beta's first-use agreement, once per school.
+export async function recordScanConsent(): Promise<ScanConsentDto> {
+  return apiFetch<ScanConsentDto>("/student-scan/consent", { method: "POST" });
 }
 
 // POST /student-scan — multipart.

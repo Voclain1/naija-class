@@ -3,7 +3,7 @@
     "name": "School Kit",
     "slug": "school-kit",
     "owner": "voclains-team",
-    "version": "0.0.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "schoolkit",

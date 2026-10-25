@@ -45,8 +45,9 @@ the module doc or the PR, then link it here.
   - Payment correctness never depends on the redirect: `runCheckout` polls
     `GET /portal/payments/:reference`, and the webhook is the authority.
 
-  **Still needs:** a Paystack test-mode subaccount on a dev school, to pay
-  once from a phone and see checkout close and the invoice update.
+  **Still needs:** one real payment from a phone, to see checkout close and
+  the invoice update. The steps, with a ₦100 invoice on a test school, are in
+  `docs/runbooks/app-payment-test.md` (2026-10-24).
 - [x] **DONE 2026-10-05 — Playwright coverage of the money path**
   (`e2e/tests/finance-money-path.spec.ts`):
   - **A recorded payment** moves the invoice's Paid and Balance. It also moves
@@ -65,7 +66,12 @@ the module doc or the PR, then link it here.
   - A caller's own abort is rethrown untouched.
   - The portal already said this on every page, so it needed nothing.
   - Covered by `apps/web/src/lib/api-client.spec.ts`.
-- [ ] **Smart Student Import has no content evals.** `student-list-extraction`
+- [ ] **Smart Student Import has no content evals.** **2026-10-24: in beta
+  with real schools instead** (owner's decision): schools agree before their
+  first scan and are told it can make mistakes, and the beta counts how many
+  cells admins correct per field, without keeping any text
+  (`docs/modules/smart-student-import.md` §9). The bar below now applies to
+  those real numbers. `student-list-extraction`
   is the only PII-bearing prompt, and it has never read a real register. Its
   checks are all structural. **Needs:** about 10 photographed pages with
   hand-checked ground truth, a per-field accuracy pass, and probably a prompt
