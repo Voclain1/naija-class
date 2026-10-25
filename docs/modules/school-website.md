@@ -408,3 +408,88 @@ conditions as before.
 - **Checked:** at 1440 px and 390 px with a mock school (full plan) and a
   Free-like school (no cover, admissions closed). There is no sideways scroll
   on any page.
+
+## Search (2026-10-25)
+
+Built so parents searching "primary school in Enugu" find the school's own
+page. Google Search Console already has the `schoolkit.ng` domain property
+verified, which covers every school's `<code>.schoolkit.ng`.
+
+- **Titles and descriptions**:
+  - Shared helpers `schoolPageTitle` and `schoolPageDescription`
+    (`packages/types/src/school-address/school-seo.ts`), so the page and the
+    editor's preview agree.
+  - The title is "Name, Town | Levels | Admissions open", within 65
+    characters. The levels give way first, then admissions.
+  - The description is the school's own (160 characters at most), or one is
+    composed from the levels, town, welcome line and admissions.
+  - News, posts, gallery, admissions and the result checker have their own
+    titles and descriptions.
+- **One canonical address per page**:
+  - `SchoolPublicDto.seo.urls` comes from the API (`schoolSeoUrls`,
+    `common/school-site-url.ts`).
+  - It is the school's own address once `SCHOOL_ADDRESSES_LIVE` is on, and
+    the portal's until then, so Google is never sent to an address that does
+    not work yet.
+- **Search fields on the website**:
+  - `searchDescription` and `town` sit in the website details JSON, so no
+    migration was needed. Both are open on every plan.
+  - When no town is typed, `townFromAddress` takes it from the school
+    address.
+  - The editor's **How you appear on Google** card holds the two fields and
+    a result preview (`search-preview.tsx`).
+- **Structured data** (`apps/portal/src/lib/school-seo.ts`):
+  - `School` on the front page, with address, phone, email, logo, slogan and
+    founding year.
+  - An `Event` for each upcoming website event.
+  - `NewsArticle` on posts.
+  - `BreadcrumbList` on news, posts and the gallery.
+  - The JSON is escaped so it cannot close its script tag.
+- **Link previews**:
+  - Open Graph and Twitter cards on every public page.
+  - `/share-image` draws a 1200×630 picture in the school's accent colour,
+    with its logo, name, town and levels, motto, and "Admissions open"
+    (`next/og`). It uses a full accent background, never a coloured stripe.
+  - Posts use their own first photo instead.
+  - `/school-logo` redirects to a freshly signed logo URL, so search engines
+    never keep an expired link.
+- **Sitemaps and robots**:
+  - `GET /school-addresses/:code/sitemap` lists, at their canonical
+    addresses:
+    - the front page;
+    - news and each live post within the plan;
+    - the gallery when it has photos;
+    - the admission form while open;
+    - the result checker while in use.
+  - `GET /school-addresses/sitemap-index` lists each active, unsuspended
+    school's sitemap: codes and dates only. `sitemap-index` and `sitemap`
+    are reserved codes.
+  - The portal answers `/sitemap.xml` and `/robots.txt` according to the
+    host:
+    - On a school's address: that school's pages. `/parents`, `/staff`,
+      tracking pages and previews are kept out.
+    - On `portal.schoolkit.ng`: the index, and only the schools' public
+      pages.
+- **Kept out of search**:
+  - The portal's root layout is `noindex`, so parents' pages, sign-in and
+    invitations stay out.
+  - Public pages opt back in.
+  - Previews and admission tracking links are always `noindex`.
+  - The admission form and result checker are indexed only while they are
+    open.
+- **Smaller fixes**:
+  - `<html lang="en-NG">`.
+  - The school's logo is the tab icon.
+  - Photos have descriptions (the caption, else the post title, the leader's
+    name and role, or "School: photo N").
+  - Photos below the first screen load lazily, with sizes set so the page
+    does not jump.
+- **Search Console**: submit `https://portal.schoolkit.ng/sitemap.xml` once.
+  It lists every school's sitemap, and each school address's robots.txt
+  names its own.
+- **Tests**:
+  - `school-seo.spec.ts` (portal): town, titles, descriptions, metadata,
+    JSON-LD, XML and robots.
+  - The `search` block in `school-website.service.spec.ts`: search details
+    per plan, the published-only rule, sitemap entries.
+  - `school-address.service.spec.ts` pins the `seo` keys.

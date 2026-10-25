@@ -68,3 +68,17 @@ export async function signInSchoolScope(rawCode: string | undefined): Promise<(s
   const found = await resolveSchoolCode(rawCode);
   return (schoolId) => found !== null && found.schoolId === schoolId;
 }
+
+/**
+ * Every school whose public page is up: active and not suspended. For the
+ * search-engine sitemap index (docs/modules/school-website.md, "Search").
+ * `schools` has no RLS; this reads codes and dates only, never contacts.
+ */
+export async function listPublicSchoolCodes(): Promise<{ slug: string; updatedAt: Date }[]> {
+  return basePrisma.school.findMany({
+    where: { status: "ACTIVE", suspendedAt: null },
+    select: { slug: true, updatedAt: true },
+    orderBy: { slug: "asc" },
+    take: 50_000,
+  });
+}

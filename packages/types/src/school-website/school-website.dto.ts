@@ -78,6 +78,9 @@ export function websiteSectionMinPlan(section: WebsiteSection): SchoolPlan {
 
 export const WEBSITE_LIMITS = {
   welcome: 120,
+  /** Search results show about 155 characters (2026-10-25, SEO). */
+  searchDescription: 160,
+  town: 60,
   headWelcome: 1200,
   headName: 80,
   headTitle: 60,
@@ -180,6 +183,10 @@ export const websiteDetailsSchema = z
     entryClassLevelIds: z.array(z.string().uuid()).max(40).default([]),
     visitNote: optionalText(WEBSITE_LIMITS.visitNote),
     accent: z.enum(WEBSITE_ACCENT_KEYS).nullable().default(null),
+    // How the school appears on Google (2026-10-25, docs/modules/school-website.md
+    // "Search"). Open to every plan: being found is not a paid extra.
+    searchDescription: optionalText(WEBSITE_LIMITS.searchDescription),
+    town: optionalText(WEBSITE_LIMITS.town),
   })
   .strict();
 export type WebsiteDetailsInput = z.input<typeof websiteDetailsSchema>;

@@ -202,7 +202,10 @@ describe("the school's public front page data", () => {
 
     const dto = await svc.get(a.slug.toUpperCase());
     expect(dto).toMatchObject({ code: next, name: `Addr public ${runId}`, phone: "+2348012345678", email: "office@example.test", address: "1 School Road, Enugu", resultChecker: false });
-    expect(Object.keys(dto).sort()).toEqual(["address", "admissionsOpen", "code", "email", "logoUrl", "motto", "name", "phone", "resultChecker", "website"]);
+    expect(Object.keys(dto).sort()).toEqual(["address", "admissionsOpen", "code", "email", "logoUrl", "motto", "name", "phone", "resultChecker", "seo", "website"]);
+    // Search details: canonical links, the school's own words, its town and levels. Nothing about people.
+    expect(Object.keys(dto.seo).sort()).toEqual(["description", "founded", "levels", "town", "updatedAt", "urls"]);
+    expect(dto.seo.town).toBe("Enugu");
     // Nothing on the website yet: no sections beyond the basics.
     expect(dto.website).toMatchObject({ cover: null, about: null, events: [], announcements: [], leaders: [], preview: false });
 

@@ -8,10 +8,13 @@ import {
   type PublicWebsiteNewsDto,
   type PublicWebsitePhotoDto,
   type PublicWebsitePostDto,
+  type SchoolSitemapDto,
   type WebsiteReportInput,
 } from "@school-kit/types";
 
+import { schoolSeoUrls } from "../../common/school-site-url.js";
 import { resolveSchoolCode } from "../../common/slug/school-code.js";
+import { loadAdmissionSettings, openClassLevels } from "../admissions/admissions.shared.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import type { TenantDb } from "../attendance/shared/attendance-shared.util.js";
 import { LIVE_PHOTO, LIVE_POST, postSummaries, readWebsiteLimits, signWebsitePhoto } from "./website-content.js";
@@ -84,6 +87,48 @@ export class SchoolWebsitePublicService {
         publishedAt: (post.publishedAt ?? new Date()).toISOString(),
         photos: await Promise.all(photos.map((p) => signWebsitePhoto(this.storage, schoolId, p))),
       };
+    });
+  }
+
+  /**
+   * Every public page of one school, at its canonical address, for its
+   * sitemap.xml (docs/modules/school-website.md, "Search"). Only what the
+   * page itself shows: live posts within the plan, the gallery if it has
+   * photos, the admission form while open, the result checker while in use.
+   */
+  async sitemap(rawCode: string): Promise<SchoolSitemapDto> {
+    return this.school(rawCode, async (db, schoolId) => {
+      const school = await db.school.findUniqueOrThrow({ where: { id: schoolId }, select: { slug: true, updatedAt: true } });
+      const urls = schoolSeoUrls(school.slug);
+      const { limits } = await readWebsiteLimits(db, schoolId);
+      const site = await db.schoolWebsite.findUnique({ where: { schoolId }, select: { publishedAt: true } });
+      const posts =
+        limits.news === 0
+          ? []
+          : await db.schoolWebsitePost.findMany({
+              where: LIVE_POST,
+              orderBy: { publishedAt: "desc" },
+              take: limits.news ?? 1000,
+              select: { id: true, publishedAt: true, updatedAt: true },
+            });
+      const galleryCount = limits.galleryPhotos > 0 ? await db.schoolWebsitePhoto.count({ where: { kind: "GALLERY", ...LIVE_PHOTO } }) : 0;
+      const settings = await loadAdmissionSettings(db, schoolId);
+      const admissionsOpen = settings.enabled && (await openClassLevels(db, schoolId, settings.closedClassLevelIds)).length > 0;
+      const resultChecker = (await db.reportCard.findFirst({ where: { status: "RELEASED", accessMode: "PIN" }, select: { id: true } })) !== null;
+
+      const iso = (d: Date | null | undefined) => d?.toISOString() ?? null;
+      const latest = [site?.publishedAt, posts[0]?.publishedAt, school.updatedAt]
+        .filter((d): d is Date => d instanceof Date)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+      const entries: SchoolSitemapDto["entries"] = [{ url: urls.home, lastModified: iso(latest) }];
+      if (posts.length) {
+        entries.push({ url: urls.news, lastModified: iso(posts[0]!.publishedAt) });
+        for (const p of posts) entries.push({ url: `${urls.news}/${p.id}`, lastModified: iso(p.updatedAt ?? p.publishedAt) });
+      }
+      if (galleryCount > 0) entries.push({ url: urls.gallery, lastModified: null });
+      if (admissionsOpen) entries.push({ url: urls.apply, lastModified: null });
+      if (resultChecker) entries.push({ url: urls.results, lastModified: null });
+      return { entries };
     });
   }
 

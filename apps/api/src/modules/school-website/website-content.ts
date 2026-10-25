@@ -37,6 +37,29 @@ export async function readWebsiteLimits(db: TenantDb, schoolId: string): Promise
   return { plan: school.plan, limits: websiteLimitsFor(school.plan, currentPlanEnforcement()) };
 }
 
+/**
+ * What search engines read (docs/modules/school-website.md, "Search"): the
+ * published details (the draft for a preview) and when they were published.
+ * The search fields are open to every plan; levels and founding year follow
+ * the plan's page details, as on the page itself.
+ */
+export async function readSeoDetails(
+  db: TenantDb,
+  schoolId: string,
+  preview: boolean,
+): Promise<{ description: string | null; town: string | null; levels: string[]; founded: number | null; updatedAt: string | null }> {
+  const { limits } = await readWebsiteLimits(db, schoolId);
+  const site = await db.schoolWebsite.findUnique({ where: { schoolId }, select: { draft: true, published: true, publishedAt: true } });
+  const d = site ? parseDetails(preview ? site.draft : site.published) : EMPTY_WEBSITE_DETAILS;
+  return {
+    description: d.searchDescription,
+    town: d.town,
+    levels: limits.details ? d.levels.map((l) => WEBSITE_LEVEL_LABELS[l]) : [],
+    founded: limits.details ? d.founded : null,
+    updatedAt: site?.publishedAt?.toISOString() ?? null,
+  };
+}
+
 /** Stored details, re-checked on the way out; anything unreadable is empty. */
 export function parseDetails(raw: unknown): WebsiteDetails {
   const parsed = websiteDetailsSchema.safeParse(raw ?? {});

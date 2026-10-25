@@ -33,6 +33,7 @@ import {
   type PlatformWebsiteReportQueueDto,
   type PlatformWebsiteReviewDto,
   type PublicWebsiteGalleryDto,
+  type SchoolSitemapDto,
   type PublicWebsiteNewsDto,
   type PublicWebsitePostDto,
   type SchoolWebsiteDto,
@@ -252,6 +253,12 @@ export class SchoolWebsiteController {
 @Controller("school-addresses")
 export class SchoolWebsitePublicController {
   constructor(private readonly service: SchoolWebsitePublicService) {}
+
+  @Get(":code/sitemap")
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  sitemap(@Param("code") code: string): Promise<SchoolSitemapDto> {
+    return this.service.sitemap(code);
+  }
 
   @Get(":code/news")
   @Throttle({ default: { ttl: 60_000, limit: 60 } })

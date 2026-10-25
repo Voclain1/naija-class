@@ -546,6 +546,8 @@ Your school's page can say much more than the basics. Go to **Settings → Schoo
 
 **How it looks.** Your page opens with your school's name in large letters, your motto highlighted under it, your welcome line, and your cover photo on a tilted card. If you have no cover photo yet, a drawing of a school in your colour stands in for it. Quick facts show as ticks and as a coloured band. Families find **Sign in**, **Apply now** (while admissions are open) and links to each section at the top. On phones, a bar at the bottom keeps **Apply now** or **Sign in** to hand. Contact details become **Call**, **Email** and **Get directions** buttons. On Professional and Enterprise, your accent colour runs through all of it; other plans use SchoolKit green.
 
+**Being found on Google.** Your page is set up for search engines: each page has its own title and description, Google is told your school's address, phone, classes and upcoming events, and a link shared on WhatsApp or Facebook shows a picture in your colours with your logo, name and motto. In **Settings → School website**, under **How you appear on Google**, you can type your **Town or area** (if your school address does not make it clear) and a short **Description for Google**, and see how your school will look in the results. Press **Save draft** and **Publish**. Google updates its results in its own time, usually within a few days. What helps most: your town, your classes, a welcome line, your story, and news posted regularly.
+
 **What your plan includes.**
 
 | | Free | Starter | Growth | Professional |

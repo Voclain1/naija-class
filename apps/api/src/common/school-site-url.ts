@@ -77,3 +77,14 @@ export function publicSiteUrls(code: string): { home: string; apply: string; res
   const { home, apply, results } = schoolSiteUrls(code);
   return { home, apply, results, parents: parentSiteUrl(code, "/login"), staff: staffSiteUrl(code, "/login") };
 }
+
+/**
+ * The school's public pages for search engines (docs/modules/school-website.md,
+ * "Search"): the canonical address of each, on the school's own address once
+ * live, else the portal's. Never a URL that does not work yet.
+ */
+export function schoolSeoUrls(code: string): { home: string; news: string; gallery: string; apply: string; results: string; sitemap: string } {
+  const { home, apply, results } = schoolSiteUrls(code);
+  const base = home.replace(/\/$/, "");
+  return { home, news: `${base}/news`, gallery: `${base}/gallery`, apply, results, sitemap: `${base}/sitemap.xml` };
+}

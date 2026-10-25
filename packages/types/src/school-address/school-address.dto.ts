@@ -109,4 +109,35 @@ export interface SchoolPublicDto {
   resultChecker: boolean;
   /** The school's own sections, by plan (docs/modules/school-website.md). */
   website: PublicWebsiteDto;
+  /** For search engines and link previews (docs/modules/school-website.md, "Search"). */
+  seo: SchoolSeoDto;
+}
+
+/**
+ * What search engines and link previews need. The URLs are the CANONICAL ones:
+ * the school's own address once addresses are live, else the portal's. The
+ * API decides, because only it knows whether addresses are live, so a page
+ * never names an address that does not work yet.
+ */
+export interface SchoolSeoDto {
+  urls: { home: string; news: string; gallery: string; apply: string; results: string };
+  /** The school's own words for Google, or null to compose one. */
+  description: string | null;
+  /** Typed in the editor, else taken from the address; null if neither. */
+  town: string | null;
+  /** "Nursery", "Primary"…, from the published page details. */
+  levels: string[];
+  founded: number | null;
+  /** When the published page last changed, for the sitemap. */
+  updatedAt: string | null;
+}
+
+/** GET /school-addresses/:code/sitemap — every public page, canonical URLs. */
+export interface SchoolSitemapDto {
+  entries: { url: string; lastModified: string | null }[];
+}
+
+/** GET /school-addresses/sitemap-index — each live school's sitemap. */
+export interface SchoolSitemapIndexDto {
+  sitemaps: { url: string; lastModified: string | null }[];
 }
