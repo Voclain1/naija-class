@@ -11,6 +11,8 @@ import { ReportButton } from "@/components/school-site/report-button";
 import { SchoolSiteShell, siteLinks } from "@/components/school-site/school-site-shell";
 import { formatDateRange, formatPublished, loadSchool, onSchoolAddress, siteHref } from "@/lib/school-site";
 import { schoolAddressUrl } from "@/lib/school-host";
+import { eventsJsonLd, frontPageMetadata, schoolJsonLd } from "@/lib/school-seo";
+import { JsonLd } from "@/components/school-site/json-ld";
 
 // A school's front page: "<code>.schoolkit.ng" (docs/modules/school-addresses.md
 // slice 2), also reachable at portal.schoolkit.ng/school/<code>. Every school,
@@ -34,13 +36,11 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ code: string }>; searchParams: Promise<{ preview?: string }> };
 
-export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const school = await loadSchool((await params).code).catch(() => null);
-  if (!school) return { title: "School not found" };
-  return {
-    title: school.name,
-    description: school.website.cover?.welcome ?? school.motto ?? `${school.name}: sign in, apply for admission and check results.`,
-  };
+export async function generateMetadata({ params, searchParams }: Params): Promise<Metadata> {
+  const { preview } = await searchParams;
+  const school = await loadSchool((await params).code, preview).catch(() => null);
+  if (!school) return { title: "School not found", robots: { index: false } };
+  return frontPageMetadata(school, school.website.preview);
 }
 
 const CONTAINER = "mx-auto w-full max-w-6xl px-4 sm:px-6";
@@ -140,7 +140,7 @@ function Hero({ school, own }: { school: SchoolPublicDto; own: boolean }) {
             <div className="ss-cover-card ss-rise ss-rise-2">
               {photo ? (
                 // eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL
-                <img src={photo.largeUrl} alt={photo.caption ?? ""} className="aspect-[4/3] w-full rounded-[1rem] object-cover" />
+                <img src={photo.largeUrl} alt={photo.caption ?? `${school.name}`} width={1200} height={900} fetchPriority="high" className="aspect-[4/3] w-full rounded-[1rem] object-cover" />
               ) : (
                 <SchoolIllustration className="aspect-[4/3] w-full rounded-[1rem]" />
               )}
@@ -216,6 +216,7 @@ export default async function SchoolFrontPage({ params, searchParams }: Params) 
 
   return (
     <SchoolSiteShell school={school} own={own} home>
+      <JsonLd data={[schoolJsonLd(school), ...eventsJsonLd(school)]} />
       <Hero school={school} own={own} />
 
       {w.facts.length > 0 && (
@@ -292,7 +293,7 @@ export default async function SchoolFrontPage({ params, searchParams }: Params) 
                 <Link href={siteHref(school.code, own, `/news/${p.id}`)} className="ss-card ss-img-zoom flex h-full flex-col">
                   {p.photo ? (
                     // eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL
-                    <img src={p.photo.thumbUrl} alt={p.photo.caption ?? ""} className="aspect-[16/10] w-full rounded-t-[1.4rem] object-cover" />
+                    <img src={p.photo.thumbUrl} alt={p.photo.caption ?? p.title} loading="lazy" decoding="async" width={480} height={300} className="aspect-[16/10] w-full rounded-t-[1.4rem] object-cover" />
                   ) : (
                     <span className="aspect-[16/10] w-full rounded-t-[1.4rem] bg-[var(--sa-soft)]" aria-hidden />
                   )}
@@ -345,7 +346,7 @@ export default async function SchoolFrontPage({ params, searchParams }: Params) 
                     <span className="rounded-full bg-[var(--sa-tint)] p-1.5">
                       {l.photo ? (
                         // eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL
-                        <img src={l.photo.thumbUrl} alt="" className="h-32 w-32 rounded-full object-cover" />
+                        <img src={l.photo.thumbUrl} alt={`${l.name}, ${l.role}`} loading="lazy" decoding="async" width={128} height={128} className="h-32 w-32 rounded-full object-cover" />
                       ) : (
                         <span className="flex h-32 w-32 items-center justify-center rounded-full bg-white text-3xl font-extrabold text-[var(--sa)]" aria-hidden>
                           {l.name.slice(0, 1)}
@@ -377,7 +378,7 @@ export default async function SchoolFrontPage({ params, searchParams }: Params) 
               <li key={p.id} className={`flex flex-col gap-2 ${i === 0 ? "col-span-2 row-span-2" : ""}`}>
                 <a href={p.largeUrl} target="_blank" rel="noreferrer" className="ss-img-zoom block flex-1 rounded-[1.2rem]">
                   {/* eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL */}
-                  <img src={p.thumbUrl} alt={p.caption ?? ""} className={`h-full w-full rounded-[1.2rem] object-cover ${i === 0 ? "aspect-square" : "aspect-[4/3]"}`} />
+                  <img src={p.thumbUrl} alt={p.caption ?? `${school.name}: photo ${i + 1}`} loading="lazy" decoding="async" width={480} height={360} className={`h-full w-full rounded-[1.2rem] object-cover ${i === 0 ? "aspect-square" : "aspect-[4/3]"}`} />
                 </a>
                 <span className="flex items-start justify-between gap-2">
                   <span className="text-sm ss-muted">{p.caption}</span>

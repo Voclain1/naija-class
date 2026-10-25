@@ -5,6 +5,8 @@ import type { PublicWebsiteGalleryDto } from "@school-kit/types";
 
 import { ReportButton } from "@/components/school-site/report-button";
 import { SchoolSiteShell, SubPageHead } from "@/components/school-site/school-site-shell";
+import { JsonLd } from "@/components/school-site/json-ld";
+import { breadcrumbJsonLd, galleryMetadata } from "@/lib/school-seo";
 import { fetchSchoolSite, loadSchool, onSchoolAddress, siteHref } from "@/lib/school-site";
 
 // The school's photo gallery (docs/modules/school-website.md), by album. No
@@ -16,7 +18,7 @@ type Params = { params: Promise<{ code: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const school = await loadSchool((await params).code).catch(() => null);
-  return { title: school ? `Gallery · ${school.name}` : "School not found" };
+  return school ? galleryMetadata(school) : { title: "School not found", robots: { index: false } };
 }
 
 export default async function SchoolGalleryPage({ params }: Params) {
@@ -27,6 +29,7 @@ export default async function SchoolGalleryPage({ params }: Params) {
 
   return (
     <SchoolSiteShell school={school} own={own}>
+      <JsonLd data={breadcrumbJsonLd(school, [{ name: "Gallery", url: school.seo.urls.gallery }])} />
       <div className="mx-auto w-full max-w-6xl px-4 pb-8 pt-12 sm:px-6 sm:pt-16">
         <SubPageHead id="gallery" eyebrow="Life at school" title="Gallery" back={{ href: siteHref(school.code, own, ""), label: school.name }} />
         {gallery.albums.length === 0 && <p className="ss-lead">No photos yet.</p>}
@@ -39,7 +42,7 @@ export default async function SchoolGalleryPage({ params }: Params) {
                   <li key={p.id} className="flex flex-col gap-2">
                     <a href={p.largeUrl} target="_blank" rel="noreferrer" className="ss-img-zoom block rounded-[1.2rem]">
                       {/* eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL */}
-                      <img src={p.thumbUrl} alt={p.caption ?? ""} className="aspect-[4/3] w-full rounded-[1.2rem] object-cover" />
+                      <img src={p.thumbUrl} alt={p.caption ?? `${school.name}: ${album.title}`} loading="lazy" decoding="async" width={480} height={360} className="aspect-[4/3] w-full rounded-[1.2rem] object-cover" />
                     </a>
                     <span className="flex items-start justify-between gap-2">
                       <span className="text-sm ss-muted">{p.caption}</span>

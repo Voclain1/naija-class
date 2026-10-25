@@ -1,13 +1,14 @@
 import { Injectable } from "@nestjs/common";
 
 import { withTenant } from "@school-kit/db";
-import { NotFoundError, type SchoolPublicDto } from "@school-kit/types";
+import { NotFoundError, townFromAddress, type SchoolPublicDto } from "@school-kit/types";
 
+import { schoolSeoUrls } from "../../common/school-site-url.js";
 import { resolveSchoolCode } from "../../common/slug/school-code.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import { signSchoolLogoUrl } from "../../common/storage/school-logo.js";
 import { loadAdmissionSettings, openClassLevels } from "../admissions/admissions.shared.js";
-import { buildPublicWebsite, verifyPreviewToken } from "../school-website/website-content.js";
+import { buildPublicWebsite, readSeoDetails, verifyPreviewToken } from "../school-website/website-content.js";
 
 // The school's public front page, "<code>.schoolkit.ng"
 // (docs/modules/school-addresses.md slice 2). PUBLIC, so it returns the
@@ -45,18 +46,22 @@ export class SchoolPublicService {
       const logoUrl = await signSchoolLogoUrl(this.storage, found.schoolId, school.logoUrl).catch(() => null);
       const preview = verifyPreviewToken(found.schoolId, previewToken);
       const website = await buildPublicWebsite(db, this.storage, found.schoolId, { preview, admissionsOpen });
+      const seo = await readSeoDetails(db, found.schoolId, preview);
+      const { sitemap: _sitemap, ...urls } = schoolSeoUrls(school.slug);
+      const address = school.address?.trim() || null;
 
       return {
         code: school.slug,
         name: school.name,
         motto: school.motto,
         logoUrl,
-        address: school.address?.trim() || null,
+        address,
         phone: school.phone?.trim() || null,
         email: school.email?.trim() || null,
         admissionsOpen,
         resultChecker,
         website,
+        seo: { ...seo, urls, town: seo.town ?? townFromAddress(address) },
       };
     });
   }

@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import { listWebsitePhotos, saveWebsiteDraft } from "@/lib/school-website/school-website-api";
 
+import { SearchPreview } from "./search-preview";
 import { SectionLock } from "./section-lock";
 import { WebsitePhotoUpload } from "./website-photo-upload";
 
@@ -282,6 +283,8 @@ export function WebsiteDetailsForm({ site, onSaved }: { site: SchoolWebsiteDto; 
           ))}
         </div>
       </fieldset>
+
+      <SearchPreview d={d} set={set} detailsOpen={section("details").open} />
 
       <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t bg-background py-3">
         <Button type="button" disabled={saving} onClick={() => void save()}>

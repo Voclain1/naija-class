@@ -67,6 +67,9 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   "students",
   "school",
   "schools",
+  // The search-engine sitemap index (GET /school-addresses/sitemap-index).
+  "sitemap-index",
+  "sitemap",
   "pay",
   "payments",
   "webhooks",

@@ -19,6 +19,10 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
   title: "SchoolKit — Parent Portal",
   description: "View your child's fees and payments, and stay in touch with the school.",
+  // Parents' pages are private: kept out of search by default. A school's
+  // public pages, its admission form and result checker say otherwise in
+  // their own metadata (docs/modules/school-website.md, "Search").
+  robots: { index: false, follow: false },
   // The same favicons as apps/web. Until 2026-10-02 the portal had no public/
   // directory at all, so its tab showed Next's default icon.
   icons: {
@@ -35,7 +39,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en-NG">
       <body
         className={`${dmSans.variable} schoolkit-surface min-h-screen bg-background font-sans`}
       >

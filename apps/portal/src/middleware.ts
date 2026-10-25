@@ -53,6 +53,9 @@ export function middleware(req: NextRequest): NextResponse {
 //   /results          the result checker
 //   /news[/<post>]    the school's news (docs/modules/school-website.md)
 //   /gallery          its photo gallery
+//   /share-image, /school-logo  the link-preview picture and a stable logo link;
+//                     /robots.txt and /sitemap.xml are answered by their own
+//                     routes, which read the host (the matcher skips .txt/.xml)
 //   /id/...           ID card checks, as anywhere
 //   /parents[/...]    the parents' pages, signed in at this address only (the
 //                     session cookie is host-only here)
@@ -70,6 +73,8 @@ function schoolAddress(req: NextRequest, code: string): NextResponse {
   if (path === "/apply" || path.startsWith("/apply/")) return rewrite(`/apply/${code}${path.slice("/apply".length)}`);
   if (path === "/results") return rewrite(`/result-checker/${code}`);
   if (path === "/news" || /^\/news\/[0-9a-f-]{36}$/i.test(path) || path === "/gallery") return rewrite(`/school/${code}${path}`);
+  // For search engines and link previews (docs/modules/school-website.md, "Search").
+  if (path === "/share-image" || path === "/school-logo") return rewrite(`/school/${code}${path}`);
   if (path.startsWith("/id/")) return NextResponse.next();
   if (path === STAFF_PREFIX || path.startsWith(`${STAFF_PREFIX}/`)) return staffArea(req, path);
   if (path === PARENTS_PREFIX || path.startsWith(`${PARENTS_PREFIX}/`)) {

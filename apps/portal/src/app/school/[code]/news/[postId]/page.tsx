@@ -7,6 +7,8 @@ import type { PublicWebsitePostDto } from "@school-kit/types";
 import { ArrowLeft } from "@/components/school-site/icons";
 import { ReportButton } from "@/components/school-site/report-button";
 import { SchoolSiteShell } from "@/components/school-site/school-site-shell";
+import { JsonLd } from "@/components/school-site/json-ld";
+import { articleJsonLd, breadcrumbJsonLd, postMetadata } from "@/lib/school-seo";
 import { fetchSchoolSite, formatPublished, loadSchool, onSchoolAddress, siteHref } from "@/lib/school-site";
 
 // One news post (docs/modules/school-website.md), with its photos and a
@@ -24,7 +26,7 @@ async function load(code: string, postId: string) {
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { code, postId } = await params;
   const [school, post] = await Promise.all([loadSchool(code).catch(() => null), load(code, postId).catch(() => null)]);
-  return { title: school && post ? `${post.title} · ${school.name}` : "Not found" };
+  return school && post ? postMetadata(school, post) : { title: "Not found", robots: { index: false } };
 }
 
 export default async function SchoolPostPage({ params }: Params) {
@@ -37,18 +39,27 @@ export default async function SchoolPostPage({ params }: Params) {
 
   return (
     <SchoolSiteShell school={school} own={own}>
+      <JsonLd
+        data={[
+          articleJsonLd(school, post),
+          breadcrumbJsonLd(school, [
+            { name: "News", url: school.seo.urls.news },
+            { name: post.title, url: `${school.seo.urls.news}/${post.id}` },
+          ]),
+        ]}
+      />
       <article className="mx-auto w-full max-w-3xl px-4 pb-8 pt-12 sm:px-6 sm:pt-16">
         <Link href={siteHref(school.code, own, "/news")} className="ss-btn-text mb-8 text-sm" style={{ color: "var(--sa)" }}>
           <ArrowLeft className="ss-arrow" /> All news
         </Link>
         <p className="mb-4 text-sm font-semibold text-[var(--sa)]">{formatPublished(post.publishedAt)}</p>
         <h1 className="ss-display ss-display-sm mb-10">{post.title}</h1>
-        {first && <Photo code={school.code} photo={first} />}
+        {first && <Photo code={school.code} photo={first} alt={post.title} />}
         <div className="ss-lead my-10 whitespace-pre-line !text-[var(--sa-ink)]">{post.body}</div>
         {rest.length > 0 && (
           <div className="grid gap-6 sm:grid-cols-2">
             {rest.map((p) => (
-              <Photo key={p.id} code={school.code} photo={p} />
+              <Photo key={p.id} code={school.code} photo={p} alt={post.title} />
             ))}
           </div>
         )}
@@ -60,11 +71,11 @@ export default async function SchoolPostPage({ params }: Params) {
   );
 }
 
-function Photo({ code, photo }: { code: string; photo: PublicWebsitePostDto["photos"][number] }) {
+function Photo({ code, photo, alt }: { code: string; photo: PublicWebsitePostDto["photos"][number]; alt: string }) {
   return (
     <figure className="flex flex-col gap-2">
       {/* eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL */}
-      <img src={photo.largeUrl} alt={photo.caption ?? ""} className="w-full rounded-[1.4rem] object-cover" />
+      <img src={photo.largeUrl} alt={photo.caption ?? alt} decoding="async" className="w-full rounded-[1.4rem] object-cover" />
       <figcaption className="flex flex-wrap items-center justify-between gap-2 text-sm ss-muted">
         <span>{photo.caption}</span>
         <ReportButton code={code} target={{ photoId: photo.id }} />

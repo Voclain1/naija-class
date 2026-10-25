@@ -339,3 +339,49 @@ describe("news, the gallery, reports and take-downs", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("search: titles, canonical addresses and the sitemap", () => {
+  let A: Awaited<ReturnType<typeof makeSchool>>;
+  beforeAll(async () => {
+    A = await makeSchool("seo", "GROWTH");
+    await basePrisma.school.update({ where: { id: A.schoolId }, data: { address: "14 Ogui Road, Enugu, Enugu State" } });
+  });
+
+  it("gives search details on every plan, with the town from the address unless one is typed", async () => {
+    let page = await frontPage.get(A.slug);
+    expect(page.seo.town).toBe("Enugu");
+    expect(page.seo.description).toBeNull();
+    // Addresses are not live in tests: every URL is on the portal.
+    expect(page.seo.urls.home).toMatch(new RegExp(`/school/${A.slug}$`));
+    expect(page.seo.urls.news).toMatch(new RegExp(`/school/${A.slug}/news$`));
+
+    await website.saveDraft(ctx(A), { levels: ["NURSERY", "PRIMARY"], town: "Independence Layout, Enugu", searchDescription: "A caring nursery and primary school in Enugu." }, reqCtx);
+    expect((await frontPage.get(A.slug)).seo.town).toBe("Enugu"); // the draft is not public
+    await website.publish(ctx(A), reqCtx);
+    page = await frontPage.get(A.slug);
+    expect(page.seo).toMatchObject({
+      town: "Independence Layout, Enugu",
+      description: "A caring nursery and primary school in Enugu.",
+      levels: ["Nursery", "Primary"],
+    });
+    expect(page.seo.updatedAt).not.toBeNull();
+  });
+
+  it("lists only the pages families can see, at their canonical addresses", async () => {
+    const draft = await website.createPost(ctx(A), { title: "Draft", body: "Not yet." }, reqCtx);
+    let map = await publicSite.sitemap(A.slug);
+    // A draft post is not listed; the front page is, and the admission form (open by default).
+    expect(map.entries.map((e) => e.url)).toEqual([
+      expect.stringMatching(new RegExp(`/school/${A.slug}$`)),
+      expect.stringMatching(new RegExp(`/apply/${A.slug}$`)),
+    ]);
+
+    await website.setPostPublished(ctx(A), draft.id, true, reqCtx);
+    await website.uploadPhoto(ctx(A), files, { kind: "GALLERY", noPupils: "true" }, reqCtx);
+    map = await publicSite.sitemap(A.slug);
+    const urls = map.entries.map((e) => e.url);
+    expect(urls).toContain(`${(await frontPage.get(A.slug)).seo.urls.news}/${draft.id}`);
+    expect(urls.some((u) => u.endsWith("/gallery"))).toBe(true);
+    expect(map.entries.find((e) => e.url.endsWith(draft.id))?.lastModified).not.toBeNull();
+  });
+});

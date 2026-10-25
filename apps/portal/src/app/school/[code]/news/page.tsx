@@ -6,6 +6,8 @@ import type { PublicWebsiteNewsDto } from "@school-kit/types";
 
 import { ArrowRight } from "@/components/school-site/icons";
 import { SchoolSiteShell, SubPageHead } from "@/components/school-site/school-site-shell";
+import { JsonLd } from "@/components/school-site/json-ld";
+import { breadcrumbJsonLd, newsMetadata } from "@/lib/school-seo";
 import { fetchSchoolSite, formatPublished, loadSchool, onSchoolAddress, siteHref } from "@/lib/school-site";
 
 // The school's news (docs/modules/school-website.md): its published posts,
@@ -17,7 +19,7 @@ type Params = { params: Promise<{ code: string }>; searchParams: Promise<{ page?
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const school = await loadSchool((await params).code).catch(() => null);
-  return { title: school ? `News · ${school.name}` : "School not found" };
+  return school ? newsMetadata(school) : { title: "School not found", robots: { index: false } };
 }
 
 export default async function SchoolNewsPage({ params, searchParams }: Params) {
@@ -33,6 +35,7 @@ export default async function SchoolNewsPage({ params, searchParams }: Params) {
 
   return (
     <SchoolSiteShell school={school} own={own}>
+      <JsonLd data={breadcrumbJsonLd(school, [{ name: "News", url: school.seo.urls.news }])} />
       <section className="mx-auto w-full max-w-6xl px-4 pb-8 pt-12 sm:px-6 sm:pt-16" aria-labelledby="news">
         <SubPageHead id="news" eyebrow="From the school" title="News" back={{ href: siteHref(school.code, own, ""), label: school.name }} />
         {news.posts.length === 0 && <p className="ss-lead">No news yet.</p>}
@@ -42,7 +45,7 @@ export default async function SchoolNewsPage({ params, searchParams }: Params) {
               <Link href={siteHref(school.code, own, `/news/${p.id}`)} className="ss-card ss-img-zoom flex h-full flex-col">
                 {p.photo ? (
                   // eslint-disable-next-line @next/next/no-img-element -- a signed, hour-long URL
-                  <img src={p.photo.thumbUrl} alt={p.photo.caption ?? ""} className="aspect-[16/10] w-full rounded-t-[1.4rem] object-cover" />
+                  <img src={p.photo.thumbUrl} alt={p.photo.caption ?? p.title} loading="lazy" decoding="async" width={480} height={300} className="aspect-[16/10] w-full rounded-t-[1.4rem] object-cover" />
                 ) : (
                   <span className="aspect-[16/10] w-full rounded-t-[1.4rem] bg-[var(--sa-soft)]" aria-hidden />
                 )}
