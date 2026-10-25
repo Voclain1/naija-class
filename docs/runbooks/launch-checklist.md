@@ -33,7 +33,7 @@ Status key: **Done**, **Open** (needs doing), **Waiting** (on someone outside).
 | SMS sender name: SchoolKit's CAC registration, then `TERMII_SENDER_ID` | **Waiting** (CAC). Schools with their own CAC can request their own name now. |
 | WhatsApp (CP9) | **Waiting** on a Meta-approved business number. |
 | AI: `AI_ENABLED` is on; each school's own AI switch is off until the operator turns it on | **Done.** Turn on per school in the platform admin. |
-| Smart Student Import accuracy test (about 10 photographed registers with checked answers, `pnpm ai:eval:registers`) | **Open.** Before switching it on for any school (`docs/modules/smart-student-import.md` §8). |
+| Smart Student Import accuracy test (about 10 photographed registers with checked answers, `pnpm ai:eval:registers`) | **Open, no longer blocking.** Since 2026-10-25 Smart Import is on for every school as a beta (owner's decision, `docs/modules/smart-student-import.md` §9). The beta's real correction counts now take this test's place as the bar for leaving beta. |
 
 ## 3. Legal and commercial
 

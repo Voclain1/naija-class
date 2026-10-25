@@ -88,6 +88,10 @@ the module doc or the PR, then link it here.
   - "Switched on" is a real switch since 2026-10-11: `School.smartImportEnabled`,
     off for every school, turned on per school from the platform admin's
     Manage dialog. Before that, every AI-enabled school could already scan.
+  - **2026-10-25: on for every school** (owner's decision): `smartImportEnabled`
+    and `aiEnabled` set true for all schools and both default true
+    (migration `20261125120000`). The operator can still switch either off for
+    one school.
 
 ## 2. Open engineering work
 

@@ -121,11 +121,11 @@ describe("AiUsageService", () => {
     const usage = await service.getUsage(ctx(), { months: 3 });
     expect(usage.aiConfigured).toBe(false);
     // This school is created without specifying aiEnabled, so it carries the
-    // schema default — false since 2026-08-14 (was true in slice 1). Asserted
+    // schema default — true since 2026-10-25 (false from 2026-08-14). Asserted
     // here only as pass-through: the DTO reports the school's real flag rather
     // than a constant. The default itself is owned by
     // __tests__/school-ai-defaults.spec.ts, which is where a regression in it
     // should fail first.
-    expect(usage.aiEnabled).toBe(false);
+    expect(usage.aiEnabled).toBe(true);
   });
 });

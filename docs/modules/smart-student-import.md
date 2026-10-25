@@ -654,8 +654,17 @@ row and spends no school's budget.
 
 The owner chose to learn from real schools rather than wait for photographed
 pages (§8): Smart Import goes to real schools **as a beta**, and the schools
-are told it can make mistakes. SchoolKit still switches it on per school
-(`School.smartImportEnabled`), and AI must be on too. **No AI company is named
+are told it can make mistakes.
+
+**On for every school since 2026-10-25** (owner's decision, migration
+`20261125120000_ai_and_smart_import_on_for_all_schools`):
+- `School.smartImportEnabled` and `School.aiEnabled` were set true for every
+  existing school.
+- Both now default true, and signup and platform-admin provisioning set them
+  explicitly.
+- The platform operator can still switch either off for one school.
+- Each school's first-use agreement and the checked-rows tick below are what
+  stand between a school and its first scan. **No AI company is named
 anywhere in the UI** (owner's rule); the school-facing words are "AI" and "the
 AI reading service SchoolKit uses".
 

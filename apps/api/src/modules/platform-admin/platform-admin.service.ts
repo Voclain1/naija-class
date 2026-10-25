@@ -939,8 +939,9 @@ export class PlatformAdminService {
           // an ALREADY-CREATED school and has a third caller,
           // backfill-school-defaults.ts, which repairs live schools. Putting
           // an aiEnabled write there would make a structure-repair script
-          // silently switch off AI on schools it was only asked to fix.
-          aiEnabled: false,
+          // silently switch AI on or off on schools it was only asked to fix.
+          aiEnabled: true,
+          smartImportEnabled: true,
         },
         select: { id: true, name: true, slug: true },
       });

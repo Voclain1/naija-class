@@ -2,25 +2,24 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma } from "@school-kit/db";
 
-// School.aiEnabled must default FALSE — at the database level, not merely in
-// schema.prisma (migration 20260814120000, 2026-08-14).
+// School.aiEnabled and School.smartImportEnabled default TRUE — at the
+// database level, not merely in schema.prisma (migration 20261125120000,
+// 2026-10-25, the owner's decision to open AI and Smart Student Import to every
+// school; they defaulted false from 2026-08-14 to then).
 //
-// WHY THIS SPEC EXISTS. AI rollout is one school at a time: the platform-wide
-// AI_ENABLED env var is the outer gate, and this per-school column is the
-// inner one. A default that silently drifts back to `true` re-opens the inner
-// gate for every school created after the drift, which is exactly the failure
-// this whole rollout is built to prevent — and it would do so invisibly, since
-// nothing else in the suite asserts a column default. The concrete precedent:
-// the local database gained 3 schools in one afternoon while this work was in
-// progress, all of them AI-on, immediately undoing a backfill that had just
-// finished.
+// WHY THIS SPEC EXISTS. What a new school starts with is a product decision,
+// and nothing else in the suite asserts a column default, so a default that
+// drifts would change it invisibly. The school's OWN opt-ins
+// (parentSummaryEnabled, assignmentFeedbackAiEnabled) stay false: those are
+// the school's choice, not the platform's, and are pinned here too so that
+// "fixing" them to match trips a test.
 //
 // The DB-level assertion is the load-bearing one. Prisma's `@default()` and
 // the Postgres column DEFAULT are two separate facts that a hand-written
 // migration can put out of sync, and any writer that bypasses Prisma Client
 // (raw SQL, psql, a future migration's backfill) sees only the Postgres one.
 // So this checks both, plus that they agree.
-describe("School.aiEnabled defaults to false (AI rollout inner gate)", () => {
+describe("School.aiEnabled and smartImportEnabled default to true; the school's own AI opt-ins to false", () => {
   const runId = Math.random().toString(36).slice(2, 8);
   const createdSchoolIds: string[] = [];
 
@@ -30,17 +29,20 @@ describe("School.aiEnabled defaults to false (AI rollout inner gate)", () => {
     }
   });
 
-  it("the Postgres column DEFAULT is false", async () => {
-    const rows = await basePrisma.$queryRaw<{ column_default: string | null }[]>`
-      SELECT column_default
+  it("the Postgres column DEFAULTs are true", async () => {
+    const rows = await basePrisma.$queryRaw<{ column_name: string; column_default: string | null }[]>`
+      SELECT column_name, column_default
       FROM information_schema.columns
-      WHERE table_name = 'schools' AND column_name = 'ai_enabled'
+      WHERE table_name = 'schools' AND column_name IN ('ai_enabled', 'smart_import_enabled')
+      ORDER BY column_name
     `;
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.column_default).toBe("false");
+    expect(rows).toEqual([
+      { column_name: "ai_enabled", column_default: "true" },
+      { column_name: "smart_import_enabled", column_default: "true" },
+    ]);
   });
 
-  it("a row inserted by RAW SQL that omits ai_enabled lands false", async () => {
+  it("a row inserted by RAW SQL that omits both lands true", async () => {
     // Deliberately bypasses Prisma Client: this is what proves the DATABASE
     // default is doing the work, independently of whatever the generated
     // client happens to send. `schools` has no RLS policy, so no GUC needed.
@@ -53,31 +55,33 @@ describe("School.aiEnabled defaults to false (AI rollout inner gate)", () => {
 
     const school = await basePrisma.school.findUniqueOrThrow({
       where: { id },
-      select: { aiEnabled: true },
+      select: { aiEnabled: true, smartImportEnabled: true },
     });
-    expect(school.aiEnabled).toBe(false);
+    expect(school).toEqual({ aiEnabled: true, smartImportEnabled: true });
   });
 
-  it("a school created through Prisma without specifying aiEnabled lands false", async () => {
+  it("a school created through Prisma without specifying them lands true", async () => {
     const school = await basePrisma.school.create({
       data: { name: "AI Default Prisma", slug: `ai-default-prisma-${runId}` },
-      select: { id: true, aiEnabled: true },
+      select: { id: true, aiEnabled: true, smartImportEnabled: true },
     });
     createdSchoolIds.push(school.id);
-    expect(school.aiEnabled).toBe(false);
+    expect(school.aiEnabled).toBe(true);
+    expect(school.smartImportEnabled).toBe(true);
   });
 
-  it("parentSummaryEnabled also defaults false — separate decision, same direction", async () => {
-    // Guards the D16 amendment: both columns default false for DIFFERENT
-    // reasons (who authorises enablement vs. who reads the output). Asserted
-    // together so that "fixing" one to match the other trips a test rather
-    // than passing silently.
+  it("the school's own opt-ins still default false — a different decision", async () => {
+    // parentSummaryEnabled and assignmentFeedbackAiEnabled are the SCHOOL's
+    // choice (who reads the output), not the platform's (who may generate).
+    // Asserted beside the platform switches so that "fixing" them to match
+    // trips a test rather than passing silently.
     const school = await basePrisma.school.create({
       data: { name: "AI Default Both", slug: `ai-default-both-${runId}` },
-      select: { id: true, aiEnabled: true, parentSummaryEnabled: true },
+      select: { id: true, aiEnabled: true, parentSummaryEnabled: true, assignmentFeedbackAiEnabled: true },
     });
     createdSchoolIds.push(school.id);
-    expect(school.aiEnabled).toBe(false);
+    expect(school.aiEnabled).toBe(true);
     expect(school.parentSummaryEnabled).toBe(false);
+    expect(school.assignmentFeedbackAiEnabled).toBe(false);
   });
 });
