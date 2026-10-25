@@ -469,7 +469,11 @@ verified, which covers every school's `<code>.schoolkit.ng`.
     - On a school's address: that school's pages. `/parents`, `/staff`,
       tracking pages and previews are kept out.
     - On `portal.schoolkit.ng`: the index, and only the schools' public
-      pages.
+      pages. Everything else is `Disallow: /`. Under that rule
+      `/sitemap.xml`, `/_next/static/`, `/_next/image` and `/brand/` are
+      allowed again (fixed 2026-10-25). Google obeys robots.txt when it
+      fetches a sitemap: with the sitemap blocked, Search Console showed
+      "Couldn't fetch". Without the scripts it cannot render the pages.
 - **Kept out of search**:
   - The portal's root layout is `noindex`, so parents' pages, sign-in and
     invitations stay out.
@@ -489,7 +493,8 @@ verified, which covers every school's `<code>.schoolkit.ng`.
   names its own.
 - **Tests**:
   - `school-seo.spec.ts` (portal): town, titles, descriptions, metadata,
-    JSON-LD, XML and robots.
+    JSON-LD, XML and robots. Robots rules are checked path by path with
+    Google's longest-match rule.
   - The `search` block in `school-website.service.spec.ts`: search details
     per plan, the published-only rule, sitemap entries.
   - `school-address.service.spec.ts` pins the `seo` keys.
