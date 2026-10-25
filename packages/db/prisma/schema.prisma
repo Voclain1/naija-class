@@ -167,6 +167,17 @@ model School {
   //                          one-at-a-time rollout — see migration
   //                          20260814120000 and docs/modules/phase-5.md D16.
   //
+  //                          Defaults TRUE again as of 2026-10-25 (owner's
+  //                          decision, migration 20261125120000): every
+  //                          school, existing and new, has AI on. What
+  //                          replaces the one-at-a-time rollout is the
+  //                          monthly token budget below, the teacher-approval
+  //                          gate on every output, each school's own opt-ins
+  //                          (parentSummaryEnabled,
+  //                          assignmentFeedbackAiEnabled, both still off by
+  //                          default), and this column, which stays the
+  //                          per-school kill switch in platform-admin.
+  //
   //   aiMonthlyTokenBudget   per-school monthly cap, in TOKENS not cost.
   //                          Nullable = "use the platform default constant"
   //                          (DEFAULT_MONTHLY_TOKEN_BUDGET), so the common case
@@ -182,19 +193,22 @@ model School {
   // concept — none exists anywhere in the product code (see
   // earlyAccessGrantedAt's note directly above), and inventing one to hold an
   // AI budget would be the tail wagging the dog.
-  aiEnabled                   Boolean         @default(false) @map("ai_enabled")
+  aiEnabled                   Boolean         @default(true) @map("ai_enabled")
   aiMonthlyTokenBudget        Int?            @map("ai_monthly_token_budget")
   //   smartImportEnabled     Smart Student Import (photograph a register,
   //                          the model transcribes it) for this school
   //                          (2026-10-11). Off by default, switched on by the
   //                          platform operator only. It is the one prompt that
   //                          sends student PII to the model (CLAUDE.md's
-  //                          allowlist), and it is not to be offered to a
-  //                          school before the real-register accuracy check in
-  //                          docs/modules/smart-student-import.md has passed,
-  //                          so aiEnabled alone is not enough to open it. It
-  //                          only narrows: the AI gates above still apply.
-  smartImportEnabled          Boolean         @default(false) @map("smart_import_enabled")
+  //                          allowlist). It still only narrows: the AI gates
+  //                          above apply. Defaults TRUE since 2026-10-25
+  //                          (owner's decision, migration 20261125120000):
+  //                          the beta is open to every school, behind its
+  //                          own first-use agreement and the checked-rows
+  //                          tick (docs/modules/smart-student-import.md §9).
+  //                          The platform operator can still switch it off
+  //                          per school.
+  smartImportEnabled          Boolean         @default(true) @map("smart_import_enabled")
   //   smartImportConsent*    Smart Student Import beta (2026-10-24): who at
   //                          the school accepted, before its first scan, that
   //                          register photos are sent to the AI reading

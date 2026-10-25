@@ -571,16 +571,16 @@ describe("Platform admin access (2026-08-02)", () => {
         boundaries: await db.gradeBoundary.count(),
       }));
 
-      // A provisioned school starts with AI OFF (2026-08-14). Asserted on the
-      // REAL endpoint rather than trusting the schema default, because
-      // createSchool states `aiEnabled: false` explicitly — this is the test
-      // that would fail if someone removed that line believing the default
-      // covers it, and then later changed the default.
+      // A provisioned school starts with AI and Smart Student Import ON
+      // (2026-10-25). Asserted on the REAL endpoint rather than trusting the
+      // schema defaults, because createSchool states both explicitly — this is
+      // the test that would fail if someone removed those lines believing the
+      // defaults cover them, and then later changed a default.
       const provisioned = await basePrisma.school.findUniqueOrThrow({
         where: { id: res.body.schoolId },
-        select: { aiEnabled: true },
+        select: { aiEnabled: true, smartImportEnabled: true },
       });
-      expect(provisioned.aiEnabled).toBe(false);
+      expect(provisioned).toEqual({ aiEnabled: true, smartImportEnabled: true });
 
       expect(seeded.levels).toBe(DEFAULT_CLASS_LEVELS.length);
       // One default arm per level — the specific thing whose absence blocks
@@ -997,6 +997,9 @@ describe("Platform admin access (2026-08-02)", () => {
     };
 
     it("is refused to school staff, audited for a platform admin, and read back in both directions", async () => {
+      // Schools start with the switch ON since 2026-10-25, so begin from off
+      // to exercise both directions.
+      await basePrisma.school.updateMany({ where: { id: { in: [schoolA, schoolB] } }, data: { smartImportEnabled: false } });
       const rejected = await request(app.getHttpServer())
         .patch(`/api/v1/platform-admin/schools/${schoolA}/smart-import`)
         .set("Authorization", `Bearer ${ownerAToken}`)

@@ -198,7 +198,7 @@ A photo shows on the student's page and class lists, and is printed on their ID 
 - **One at a time:** open the student, and under **Passport photo** press **Upload photo**. Choose a picture, drag it so the face sits in the frame, zoom if needed, and press **Save photo**.
 - **Many at once:** on **Students**, press **Photos**. Name each photo file by the child's admission number (for example `SKA-0042.jpg`), choose them all together and press **Upload**. Any file whose name matches no student is listed for you to rename. Each photo is cropped around its centre; to adjust one, open the student and press **Change photo**.
 
-**Note:** Scanning is in beta and uses SchoolKit's AI reading feature, both switched off for a new school. If it tells you AI is off, contact the SchoolKit team (see [Getting help](#getting-help)) to have it switched on — or use one of the other three ways.
+**Note:** Scanning is in beta and is switched on for every school. If it ever tells you it is off, contact the SchoolKit team (see [Getting help](#getting-help)), or use one of the other three ways.
 
 ## Step 5. Put your students in their classes
 
@@ -640,7 +640,7 @@ You do not need any of these to get started. Use them when you are ready.
 - **Online exams (CBT)** — children sit exams on your computer lab. This is **not yet switched on**. If you would like to use it, contact the SchoolKit team (see [Getting help](#getting-help)) **at least four weeks** before your exams.
 - **Extra security** — in **Settings → Security** you can turn on two‑factor sign‑in, so a code from your phone is needed as well as your password.
 
-**About the AI features** (scanning registers, drafting comments, lesson plans, question drafting, weekly updates): they are switched off for a new school. Ask the SchoolKit team to switch them on (see [Getting help](#getting-help)). Nothing written by AI ever goes on a report card without a teacher accepting it. **Settings → AI usage** shows how much you have used this month.
+**About the AI features** (scanning registers, drafting comments, lesson plans, question drafting, weekly updates): they are switched on for every school. Some also have a switch of your own in **Settings**: weekly updates to parents, and AI-drafted homework feedback, stay off until you turn them on. Nothing written by AI ever goes on a report card without a teacher accepting it. **Settings → AI usage** shows how much you have used this month.
 
 ---
 

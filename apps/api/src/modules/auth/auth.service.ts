@@ -207,15 +207,14 @@ export class AuthService {
             // who ticked it is stamped at setup step 4, once the user exists.
             ndprConsentVersion: SCHOOL_CONSENT_VERSION,
             // status, onboardingStep default per schema.
-            // aiEnabled is stated explicitly even though it is currently
-            // redundant with the schema default (2026-08-14). A new school
-            // starting with AI OFF is a provisioning DECISION — AI is rolled
-            // out one school at a time from platform-admin — not an incidental
-            // consequence of whatever the column default happens to be. Saying
-            // it here means a future default change cannot silently alter what
-            // a newly signed-up school gets without someone deleting this line
-            // on purpose. Enable via PATCH /platform-admin/schools/:id/ai.
-            aiEnabled: false,
+            // aiEnabled and smartImportEnabled are stated explicitly even
+            // though they match the schema defaults. What a new school starts
+            // with is a provisioning DECISION, not an incidental consequence
+            // of a column default: since 2026-10-25 (owner's decision) every
+            // school starts with AI and Smart Student Import ON. The
+            // per-school kill switch is PATCH /platform-admin/schools/:id/ai.
+            aiEnabled: true,
+            smartImportEnabled: true,
           },
           select: SCHOOL_RESPONSE_SELECT,
         });
