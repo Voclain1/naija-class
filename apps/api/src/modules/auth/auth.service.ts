@@ -31,6 +31,7 @@ import {
   type TotpDisableInput,
   type TotpSetupResponseDto,
   type TotpStatusDto,
+  SCHOOL_CONSENT_VERSION,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
@@ -202,6 +203,9 @@ export class AuthService {
             slug: schoolSlug,
             ndprConsent: true,
             ndprConsentAt: new Date(),
+            // The wording the owner ticked (docs/modules/data-protection.md);
+            // who ticked it is stamped at setup step 4, once the user exists.
+            ndprConsentVersion: SCHOOL_CONSENT_VERSION,
             // status, onboardingStep default per schema.
             // aiEnabled is stated explicitly even though it is currently
             // redundant with the schema default (2026-08-14). A new school

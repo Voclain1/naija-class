@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { SchoolKitWordmark } from "@/components/brand/schoolkit-mark";
+import { LegalLinks } from "@/components/legal/legal-links";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
@@ -16,6 +17,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         </p>
       </div>
       {children}
+      <LegalLinks className="mt-8" />
     </div>
   );
 }

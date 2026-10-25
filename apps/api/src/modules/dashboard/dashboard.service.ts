@@ -20,6 +20,7 @@ import { flaggedMessagesFor, unreadMessagesFor } from "../messages/messages.shar
 import { computeTermHealth } from "../reports/term-health.js";
 import { lowStockItemCount } from "../store/store.service.js";
 import { openAccountDeletionRequestCount } from "../account-deletion/account-deletion.service";
+import { dataProtectionUnconfirmed } from "../data-protection/data-protection.service";
 
 const TREND_WEEKS = 8;
 
@@ -253,6 +254,9 @@ export class DashboardService {
       const lowStockCount = await lowStockItemCount(db);
       // 2026-10-24 — people who asked, from the app, for their account to be deleted.
       const deletionRequestCount = await openAccountDeletionRequestCount(db);
+      // 2026-10-25 — the owner has not confirmed the current data protection
+      // wording (docs/modules/data-protection.md). 1 or 0.
+      const dataProtectionPending = await dataProtectionUnconfirmed(db, authCtx.schoolId);
 
       const needsYouToday = [
         { type: "overdue_fees" as const, count: overdueCount, href: "/finance/debtors" },
@@ -271,6 +275,7 @@ export class DashboardService {
         { type: "flagged_messages" as const, count: flaggedMessageCount, href: "/messages?box=FLAGGED" },
         { type: "low_stock_items" as const, count: lowStockCount, href: "/store?low=true" },
         { type: "account_deletion_requests" as const, count: deletionRequestCount, href: "/settings/account-deletion-requests" },
+        { type: "data_protection_unconfirmed" as const, count: dataProtectionPending, href: "/settings/data-protection" },
         {
           type: "term_health" as const,
           count: termHealthSignals.length,

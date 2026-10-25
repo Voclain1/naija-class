@@ -40,6 +40,8 @@ const ALERT_LABELS: Record<DashboardAlertType, string> = {
   low_stock_items: "Store items running low",
   // 2026-10-24 — people who asked, from the app, for their account to be deleted.
   account_deletion_requests: "Account deletion requests",
+  // 2026-10-25 — the owner has not confirmed the current data protection terms.
+  data_protection_unconfirmed: "Data protection terms to confirm",
   // Phase 8 / CP2 (§16 Q33) — count of active term-health signals; links to /reports.
   term_health: "Term setup issues to fix",
 };

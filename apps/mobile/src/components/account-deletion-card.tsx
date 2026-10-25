@@ -7,6 +7,7 @@ import { useSession } from "../lib/auth/session";
 import { queryKeys } from "../lib/query/keys";
 import { spacing } from "../theme/tokens";
 import { SectionHeader } from "./layout";
+import { LegalLinks } from "./legal-links";
 import { Body, Button, Caption, Card } from "./ui";
 
 // "Request account deletion" (docs/modules/account-deletion-requests.md), for
@@ -55,6 +56,7 @@ export function AccountDeletionCard() {
           <Button title="Request account deletion" variant="secondary" loading={ask.isPending} disabled={mine.isLoading} onPress={confirm} />
         </>
       )}
+      <LegalLinks />
     </Card>
   );
 }

@@ -55,6 +55,12 @@ const LINKS: SettingsLink[] = [
   },
   { label: "Users", href: "/settings/users", description: "Staff accounts, roles, and invitations.", icon: Users },
   {
+    label: "Data protection",
+    href: "/settings/data-protection",
+    description: "Confirm the data protection terms, and the letter that asks parents' consent.",
+    icon: ShieldCheck,
+  },
+  {
     label: "Account deletion requests",
     href: "/settings/account-deletion-requests",
     description: "People who asked, from the app, for their account to be deleted.",

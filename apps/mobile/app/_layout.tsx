@@ -15,6 +15,7 @@ import { ThemeProvider, useTheme } from "../src/theme/theme-provider";
 import { useMotion } from "../src/theme/reduced-motion";
 import { SessionProvider } from "../src/lib/auth/session";
 import { NotificationRouter } from "../src/components/notification-router";
+import { GuardianConsentGate } from "../src/components/guardian-consent-gate";
 import { createQueryClient } from "../src/lib/query/client";
 import { persistOptions } from "../src/lib/query/persist";
 import { installOnlineManager } from "../src/lib/query/online-manager";
@@ -122,6 +123,8 @@ export default function RootLayout() {
             {/* Renders nothing; routes a tapped notification once there is
                 a signed-in surface to route to. */}
             <NotificationRouter />
+            {/* Asks a parent once to agree to the privacy policy and terms. */}
+            <GuardianConsentGate />
             <RootNavigator />
           </ThemeProvider>
         </SafeAreaProvider>

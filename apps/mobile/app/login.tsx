@@ -21,6 +21,7 @@ import { useTheme } from "../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../src/theme/tokens";
 import { Body, Button, Notice, Screen } from "../src/components/ui";
 import { StaffNewPassword } from "../src/components/staff-new-password";
+import { LegalLinks } from "../src/components/legal-links";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- React Native bundles images through require()
 const SCHOOLKIT_ICON = require("../assets/icon.png");
@@ -421,6 +422,9 @@ export default function LoginScreen() {
           ) : null}
         </View>
         )}
+        <View style={{ marginTop: 24 }}>
+          <LegalLinks />
+        </View>
       </KeyboardAvoidingView>
     </Screen>
   );

@@ -51,6 +51,7 @@ import { IdCardsModule } from "./modules/id-cards/id-cards.module";
 import { StoreModule } from "./modules/store/store.module";
 import { SchoolWebsiteModule } from "./modules/school-website/school-website.module";
 import { AccountDeletionModule } from "./modules/account-deletion/account-deletion.module";
+import { DataProtectionModule } from "./modules/data-protection/data-protection.module";
 import { TransportModule } from "./modules/transport/transport.module";
 import { LibraryModule } from "./modules/library/library.module";
 import { HostelModule } from "./modules/hostels/hostel.module";
@@ -158,6 +159,7 @@ const isProd = process.env.NODE_ENV === "production";
     StoreModule,
     SchoolWebsiteModule,
     AccountDeletionModule,
+    DataProtectionModule,
     TransportModule,
     LibraryModule,
     HostelModule,

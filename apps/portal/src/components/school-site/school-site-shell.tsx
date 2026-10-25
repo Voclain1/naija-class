@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import type { SchoolPublicDto } from "@school-kit/types";
+import { LEGAL_URLS, type SchoolPublicDto } from "@school-kit/types";
 
 import { siteHref } from "@/lib/school-site";
 import { PORTAL_URL, STAFF_URL } from "@/lib/school-host";
@@ -222,6 +222,10 @@ export function SchoolSiteShell({
             © {year} {school.name}
             {" · "}
             {school.website.poweredBy ? "Powered by SchoolKit" : "SchoolKit"}
+            {" · "}
+            <a href={LEGAL_URLS.privacy} target="_blank" rel="noreferrer" className="hover:text-white">
+              Privacy
+            </a>
           </p>
         </div>
       </footer>

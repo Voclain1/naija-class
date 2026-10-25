@@ -16,6 +16,7 @@ import {
   type SchoolLogoUrlDto,
   type SchoolMeDto,
   type SchoolPlanDto,
+  SCHOOL_CONSENT_VERSION,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
@@ -447,11 +448,13 @@ export class SchoolsService {
       {
         ndprConsent: true,
         ndprConsentAt,
+        ndprConsentVersion: SCHOOL_CONSENT_VERSION,
+        ndprConsentBy: authCtx.userId,
         onboardingStep: 4,
       },
       "onboarding.step4_complete",
       reqCtx,
-      { ndprConsentAt: ndprConsentAt.toISOString() },
+      { ndprConsentAt: ndprConsentAt.toISOString(), version: SCHOOL_CONSENT_VERSION },
     );
     return { school };
   }

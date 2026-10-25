@@ -104,6 +104,14 @@ infra/      Terraform / Pulumi
 - Never include secrets, BVN, full passwords, or OTP codes in any log, error message, or response body.
 - Never roll your own crypto. Use Better Auth primitives.
 
+### Consent
+
+- Every consent tick is recorded with the version of the wording it showed
+  (`SCHOOL_CONSENT_VERSION`, `PARENT_CONSENT_VERSION` in
+  `packages/types/src/legal`, `docs/modules/data-protection.md`). Never change
+  what someone agrees to without bumping the version, which asks them again.
+- Links to the legal pages come from `LEGAL_URLS`, never a typed URL.
+
 ### AI
 
 - Never auto-finalise AI output for grades, report card comments, or behaviour records. There is always a teacher-approval gate.

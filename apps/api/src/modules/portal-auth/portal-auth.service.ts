@@ -16,6 +16,7 @@ import {
   type GuardianResetPasswordInput,
   type GuardianResetPasswordResponse,
   type PublicGuardianInvitationDto,
+  PARENT_CONSENT_VERSION,
 } from "@school-kit/types";
 
 import * as password from "../../common/auth/password";
@@ -295,6 +296,10 @@ export class PortalAuthService {
         data: {
           passwordHash,
           emailVerified: row.email !== null,
+          // The accept form's consent tick, with the wording version it showed
+          // (docs/modules/data-protection.md).
+          portalConsentAt: new Date(),
+          portalConsentVersion: PARENT_CONSENT_VERSION,
         },
       });
       if (set.count !== 1) {

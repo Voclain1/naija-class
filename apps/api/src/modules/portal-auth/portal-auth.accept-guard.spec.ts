@@ -5,7 +5,7 @@ import Redis from "ioredis";
 import { LoginLockoutService } from "../../common/auth/login-lockout";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { ConflictError } from "@school-kit/types";
+import { ConflictError, PARENT_CONSENT_VERSION } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service";
 import { GuardiansService } from "../guardians/guardians.service";
@@ -161,8 +161,11 @@ describe("guardian invitation accept — never overwrites an existing password",
         (await db.guardian.findUniqueOrThrow({ where: { id: guardianId }, select: { passwordHash: true } }))
           .passwordHash !== null,
       sessions: await db.guardianSession.count({ where: { guardianId } }),
+      consentVersion: (await db.guardian.findUniqueOrThrow({ where: { id: guardianId }, select: { portalConsentVersion: true } }))
+        .portalConsentVersion,
     }));
-    expect(state).toEqual({ hasPassword: true, sessions: 1 });
+    // The consent tick is recorded with the wording version it showed.
+    expect(state).toEqual({ hasPassword: true, sessions: 1, consentVersion: PARENT_CONSENT_VERSION });
   });
 
   it("a second accept of the SAME link, after a first successful one, cannot re-set the password", async () => {
