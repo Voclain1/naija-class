@@ -647,3 +647,66 @@ operator's key, like the other live evals, so it writes no `ai_generations`
 row and spends no school's budget.
 
 ---
+
+---
+
+## 9. The beta (owner's decision, built 2026-10-24)
+
+The owner chose to learn from real schools rather than wait for photographed
+pages (§8): Smart Import goes to real schools **as a beta**, and the schools
+are told it can make mistakes. SchoolKit still switches it on per school
+(`School.smartImportEnabled`), and AI must be on too. **No AI company is named
+anywhere in the UI** (owner's rule); the school-facing words are "AI" and "the
+AI reading service SchoolKit uses".
+
+**What a school sees** (`apps/web/src/app/(admin)/students/scan/page.tsx`):
+- A **Beta** badge on the menu entry, the page and the review step, and a
+  tinted notice on both steps: "SchoolKit reads the page with AI and can make
+  mistakes. Check every row against the paper before you save."
+- **Before the school's first scan**, a notice to accept: the photo is sent to
+  the AI reading service to be read, then thrown away, and nothing from it is
+  kept except the rows saved. The owner or an admin presses **I agree for my
+  school**. Stored once per school (`schools.smart_import_consent_at` and
+  `_by`), audited (`student.scan.consent`), and shown afterwards ("X agreed on
+  …"). The API refuses a scan without it (403 `SMART_IMPORT_CONSENT_REQUIRED`),
+  checked before the image is read. It covers the NDPR review still open in
+  `docs/deferred.md`: each beta school consents explicitly until that is done.
+- Photo tips (one page, flat, good light, straight above, sharp).
+- At save, a required tick, "I have checked these rows against the register"
+  (`checked: true` in `commitScanSchema`, so the API refuses a save without
+  it), and an optional "How did the scan do?" (Good, A few mistakes, Many
+  mistakes).
+
+**What SchoolKit learns, without keeping children's data.**
+`import_jobs.scan_review` holds counts only (`scanReviewStatsSchema`):
+- at the scan, how long the reading took (measured by the server) and how many
+  rows it read;
+- at save, worked out by the server by comparing what it read
+  (`previewSnapshot`) with the rows saved, matched on `rowNumber`
+  (`scan-review-stats.ts`): rows kept and removed, and per field (admission
+  number, names, date of birth, gender, class) how many cells the admin changed
+  and how many the reading flagged unreadable; plus the rating.
+
+No text is stored there: a test fails if a name or number appears in it.
+**Super-admin → Smart Import beta results**
+(`GET /platform-admin/smart-import-beta`) shows, per school and in total,
+pages read and saved, rows, the share of cells corrected per field, ratings,
+and the average and slowest reading time. Each school's jobs are read under
+its own GUC; no SECURITY DEFINER function (count stays 23).
+
+**When the beta can end.** The switch-on bar in §8 applies to these real
+numbers: corrections per field (names at most 1%, admission numbers and
+phones none), no reading over 60 seconds. If a field fails, that is the
+prompt v2 §8 expected.
+
+**The 60-second path.** The browser calls the API directly
+(`api.schoolkit.ng`), so no web host's function limit applies. Node's request
+timeout is 5 minutes, Caddy on the VPS sets none, and the AI client's own
+timeout is minutes long. The beta results show the slowest real reading, which
+is the check that matters.
+
+**Tests.** `scan-review-stats.spec.ts`, `smart-import-beta.service.spec.ts`,
+and in `student-scan.service.spec.ts`: refused before agreement (the model is
+never called), consent recorded once and audited, the tick required, and the
+counts stored without text. The e2e checks the beta notice and the tips.
+
