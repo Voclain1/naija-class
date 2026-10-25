@@ -97,6 +97,11 @@ const ALERT_COPY: Record<DashboardAlertType, (count: number) => { label: string;
     label: `${n} store item${n === 1 ? " is" : "s are"} running low`,
     icon: "cube-outline",
   }),
+  // 2026-10-24 — people who asked, from the app, for their account to be deleted.
+  account_deletion_requests: (n) => ({
+    label: `${n} account deletion request${n === 1 ? "" : "s"}`,
+    icon: "person-remove-outline",
+  }),
 };
 
 export default function StaffDashboardScreen() {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Globe, MessagesSquare, Award, BarChart3, Inbox, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Globe, MessagesSquare, Award, BarChart3, Inbox, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, UserX, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/page-primitives";
@@ -54,6 +54,13 @@ const LINKS: SettingsLink[] = [
     icon: MessagesSquare,
   },
   { label: "Users", href: "/settings/users", description: "Staff accounts, roles, and invitations.", icon: Users },
+  {
+    label: "Account deletion requests",
+    href: "/settings/account-deletion-requests",
+    description: "People who asked, from the app, for their account to be deleted.",
+    icon: UserX,
+    requiredPermission: "user.deactivate",
+  },
   { label: "Academics", href: "/settings/academic", description: "Years, terms, levels, arms, and subjects.", icon: BarChart3 },
   { label: "Grading", href: "/settings/grading", description: "Component weights and grade boundaries.", icon: SlidersHorizontal },
   // These two live under Finance now (2026-08-14) — the cards stay here

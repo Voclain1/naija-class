@@ -19,6 +19,7 @@ import {
 import { flaggedMessagesFor, unreadMessagesFor } from "../messages/messages.shared.js";
 import { computeTermHealth } from "../reports/term-health.js";
 import { lowStockItemCount } from "../store/store.service.js";
+import { openAccountDeletionRequestCount } from "../account-deletion/account-deletion.service";
 
 const TREND_WEEKS = 8;
 
@@ -250,6 +251,8 @@ export class DashboardService {
       const flaggedMessageCount = await flaggedMessagesFor(db, authCtx.schoolId, authCtx.userId);
       // 2026-10-19 — store items at or below their reorder level.
       const lowStockCount = await lowStockItemCount(db);
+      // 2026-10-24 — people who asked, from the app, for their account to be deleted.
+      const deletionRequestCount = await openAccountDeletionRequestCount(db);
 
       const needsYouToday = [
         { type: "overdue_fees" as const, count: overdueCount, href: "/finance/debtors" },
@@ -267,6 +270,7 @@ export class DashboardService {
         { type: "unread_messages" as const, count: unreadMessageCount, href: "/messages" },
         { type: "flagged_messages" as const, count: flaggedMessageCount, href: "/messages?box=FLAGGED" },
         { type: "low_stock_items" as const, count: lowStockCount, href: "/store?low=true" },
+        { type: "account_deletion_requests" as const, count: deletionRequestCount, href: "/settings/account-deletion-requests" },
         {
           type: "term_health" as const,
           count: termHealthSignals.length,

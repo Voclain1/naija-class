@@ -11,6 +11,7 @@ import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import { ScreenHeader, SectionHeader, Skeleton } from "../../../src/components/layout";
 import { OwnIdCard } from "../../../src/components/own-id-card";
+import { AccountDeletionCard } from "../../../src/components/account-deletion-card";
 import { OwnPhotoCard } from "../../../src/components/own-photo-card";
 import {
   Body,
@@ -204,6 +205,7 @@ export default function ProfileScreen() {
               Your school keeps these. Ask your administrator if anything here is wrong.
             </Caption>
           </Card>
+          <AccountDeletionCard />
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>

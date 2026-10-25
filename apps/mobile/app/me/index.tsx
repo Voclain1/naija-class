@@ -32,6 +32,7 @@ import { ListRow, ScreenHeader, SectionHeader, Skeleton, StatRow } from "../../s
 import { SchoolBadge } from "../../src/components/school-badge";
 import { FreshnessLabel } from "../../src/components/freshness-label";
 import { PushStatusNotice } from "../../src/components/push-status-notice";
+import { AccountDeletionCard } from "../../src/components/account-deletion-card";
 
 // A student's home, redesigned (D6): "what do I have today" first — the next
 // lesson, how their attendance stands, their newest result and anything owed
@@ -223,6 +224,7 @@ export default function MyHomeScreen() {
             itself, never a member of staff directly (D11). */}
         {school?.phone ? <CallSchool phone={school.phone} /> : null}
         <PushStatusNotice />
+        <AccountDeletionCard />
       </ScrollView>
 
       <AppMenu
