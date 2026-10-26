@@ -1110,10 +1110,14 @@ is docs-only — the `STAGING_*` secret names and the `deploy-staging.yml`
 filename are intentionally NOT being renamed/restructured as part of this
 fix; that's a separate, larger change if ever done.)
 
-**Moving to a VPS (planned 2026-10-21).** `docs/runbooks/vps-migration.md`
-moves the API, render worker, web, portal and database off Fly, Vercel and
-Neon onto one server (`infra/vps/`, deployed by `deploy-vps.yml`). Until its
-cutover, everything above about Fly, Vercel and Neon remains true.
+**On a VPS since 26 October 2026.** `docs/runbooks/vps-migration.md` moved
+the API, render worker, web, portal and database off Fly, Vercel and Neon onto
+one server (`infra/vps/`). Every merge that passes `ci` deploys there through
+`deploy-vps.yml`, and Vercel is disconnected (owner, 2026-10-26). Settings
+the notes above put "on `school-kit-api` (Fly)" or "on Vercel" now live in the
+GitHub secrets `API_ENV_FILE`, `WEB_ENV_FILE` and `PORTAL_ENV_FILE`
+(`docs/runbooks/vps-migration.md`); read the Fly, Vercel and Neon notes above
+as history.
 
 **Recreating a Vercel project does NOT carry over its environment
 variables (confirmed 2026-07-17).** `school-kit-portal` was deleted and
