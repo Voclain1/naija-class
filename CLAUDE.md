@@ -1073,6 +1073,15 @@ as the web app's `NEXT_PUBLIC_POSTHOG_KEY`, set as a Fly secret on
 like Sentry's DSN. Events carry opaque ids and field shapes only (today:
 `validation_rejected`), never a body, a message or a name.
 
+`WHATSAPP_CLOUD_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` / `WHATSAPP_ALERT_TO` /
+`WHATSAPP_BOOKING_TEMPLATE` — SchoolKit's own WhatsApp alerts to the team
+through Meta's WhatsApp Cloud API (2026-10-26, `common/whatsapp/whatsapp-cloud.ts`),
+today one per setup-call booking (`docs/modules/onboarding-call.md`). All unset
+means nothing is sent and nothing fails. Never to a school or a family. Steps in
+`docs/runbooks/whatsapp-alerts.md`; on the VPS they live in `API_ENV_FILE`.
+`ONBOARDING_CALL_ALERT_EMAIL` is where booking emails go (default
+hello@schoolkit.ng).
+
 `TERMII_BASE_URL` — unlike Paystack's fixed `api.paystack.co`, Termii's API
 base URL is **per-account** (dashboard-assigned), not a global constant.
 `.env.example` defaults to `https://api.ng.termii.com` (the commonly-
@@ -1101,10 +1110,14 @@ is docs-only — the `STAGING_*` secret names and the `deploy-staging.yml`
 filename are intentionally NOT being renamed/restructured as part of this
 fix; that's a separate, larger change if ever done.)
 
-**Moving to a VPS (planned 2026-10-21).** `docs/runbooks/vps-migration.md`
-moves the API, render worker, web, portal and database off Fly, Vercel and
-Neon onto one server (`infra/vps/`, deployed by `deploy-vps.yml`). Until its
-cutover, everything above about Fly, Vercel and Neon remains true.
+**On a VPS since 26 October 2026.** `docs/runbooks/vps-migration.md` moved
+the API, render worker, web, portal and database off Fly, Vercel and Neon onto
+one server (`infra/vps/`). Every merge that passes `ci` deploys there through
+`deploy-vps.yml`, and Vercel is disconnected (owner, 2026-10-26). Settings
+the notes above put "on `school-kit-api` (Fly)" or "on Vercel" now live in the
+GitHub secrets `API_ENV_FILE`, `WEB_ENV_FILE` and `PORTAL_ENV_FILE`
+(`docs/runbooks/vps-migration.md`); read the Fly, Vercel and Neon notes above
+as history.
 
 **Recreating a Vercel project does NOT carry over its environment
 variables (confirmed 2026-07-17).** `school-kit-portal` was deleted and

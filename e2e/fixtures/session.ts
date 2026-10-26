@@ -73,7 +73,7 @@ export interface AdminSession {
 // disposes the whole session via closeSession().
 export async function loginAsAdmin(
   browser: Browser,
-  opts?: { email?: string; password?: string; admissionNumbersUndecided?: boolean },
+  opts?: { email?: string; password?: string; admissionNumbersUndecided?: boolean; setupCallPending?: boolean },
 ): Promise<AdminSession> {
   if (opts?.email && opts.password) {
     const anonApi = await createApiContext();
@@ -118,6 +118,7 @@ export async function loginAsAdmin(
     name: schoolName,
     phone: "+2348012345678",
     email: `e2e-school-${suffix}@school-kit.test`,
+    leaveSetupCall: opts?.setupCallPending,
   });
   // Pre-dismiss the first-login tour — see apiCompleteTour's header comment.
   await apiCompleteTour(api);

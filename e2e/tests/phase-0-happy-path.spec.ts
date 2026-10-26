@@ -136,6 +136,10 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
   //    could complete onboarding with no academic year at all.
   await expect(ownerPage.getByText("Set up your school year")).toBeVisible();
   await ownerPage.getByRole("button", { name: "Finish setup" }).click();
+  // 6a. The one-time setup-call page (docs/modules/onboarding-call.md);
+  //     setup-call.spec.ts books one, this flow skips it.
+  await ownerPage.waitForURL(/\/welcome$/);
+  await ownerPage.getByTestId("setup-call-skip").click();
   await ownerPage.waitForURL(/\/dashboard$/);
   await expect(
     ownerPage.getByRole("heading", { name: "Dashboard", level: 1 }),
