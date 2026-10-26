@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 
 import { CalendarSetupPrompt } from "@/components/academic-calendar/calendar-setup-prompt";
 import { RequireAuth } from "@/components/auth/require-auth";
+import { SetupCallGate } from "@/components/onboarding/setup-call-gate";
 import { AdminSidebar } from "@/components/admin/sidebar";
 import { AdminTopbar } from "@/components/admin/topbar";
 import { TourProvider, useTour } from "@/components/tour/first-login-tour";
@@ -32,11 +33,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     <RequireAuth
       roles={["owner", "admin", "bursar", "health_officer", "librarian", "house_master", "storekeeper", "admission_officer", "principal", "head_teacher", "inbox_officer"]}
     >
-      <TourProvider mobileNavOpen={mobileNavOpen} setMobileNavOpen={setMobileNavOpen}>
-        <AdminShell mobileNavOpen={mobileNavOpen} setMobileNavOpen={setMobileNavOpen}>
-          {children}
-        </AdminShell>
-      </TourProvider>
+      <SetupCallGate>
+        <TourProvider mobileNavOpen={mobileNavOpen} setMobileNavOpen={setMobileNavOpen}>
+          <AdminShell mobileNavOpen={mobileNavOpen} setMobileNavOpen={setMobileNavOpen}>
+            {children}
+          </AdminShell>
+        </TourProvider>
+      </SetupCallGate>
     </RequireAuth>
   );
 }

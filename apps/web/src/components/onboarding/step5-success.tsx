@@ -105,7 +105,9 @@ export function Step5Success() {
       const res = await advanceStep5({ calendar: toCalendarInput(calendar) });
       setSchool(res.school);
       track("onboarding_step_completed", { schoolId: res.school.id, step: 5 });
-      router.replace("/dashboard");
+      // The one-time setup-call page (docs/modules/onboarding-call.md); it
+      // sends anyone it is not for straight on to the dashboard.
+      router.replace("/welcome");
     } catch (err) {
       if (err instanceof ApiError) trackOnboardingServerRejection(school?.id, 5, err);
       // Server-side validation (overlapping terms, terms outside the year) is

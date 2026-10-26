@@ -17,6 +17,7 @@ Status key: **Done**, **Open** (needs doing), **Waiting** (on someone outside).
 | `RESULT_PIN_HMAC_KEY` on `school-kit-api` | Fly → Secrets | **Check.** The API refuses to start in production without it, so a running API means it is set. |
 | `PORTAL_PROXY_SECRET`, same value on `school-kit-portal` (Vercel) and `school-kit-api` (Fly) | Vercel → Environment Variables; Fly → Secrets | **Check** with `vercel env ls`. On one side only, it silently does nothing. |
 | `SESSION_COOKIE_DOMAIN=schoolkit.ng` on `school-kit-web` | Vercel | **Done** 2026-10-07 (`docs/runbooks/web-session-cookie.md`). |
+| WhatsApp alerts for setup-call bookings (`WHATSAPP_*` in `API_ENV_FILE`) | Meta, then the VPS | **Open** (optional). Steps in `docs/runbooks/whatsapp-alerts.md`. Until then bookings come by email, in the platform admin under Setup calls, and from the school's own WhatsApp. |
 | `POSTHOG_API_KEY` on `school-kit-api` | Fly → Secrets | **Open** (optional). Unset sends nothing. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` on `school-kit-web` | Vercel | **Open** (optional). Uploads source maps, so browser errors show real file names. |
 | Public addresses (`PORTAL_BASE_URL`, `WEB_BASE_URL`, `CORS_ORIGIN`, `CORS_ORIGIN_PORTAL`) moved from secrets to `fly.toml [env]` | `apps/api/fly.toml` | **Open.** Tidy-up, not urgent. Do it while watching a deploy. |

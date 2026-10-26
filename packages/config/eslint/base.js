@@ -338,6 +338,11 @@ export const baseConfig = [
       // lists the beta schools from `schools` (no RLS); each school's scan
       // counts are then read under that school's GUC through withTenant.
       "**/modules/student-scan/smart-import-beta.service.ts",
+      // Setup calls, SchoolKit's side (docs/modules/onboarding-call.md,
+      // 2026-10-26), PlatformAdminGuard only. Lists the schools holding a
+      // booking from `schools` (no RLS) and writes the platform-admin audit
+      // row; each booking is read and changed under its school's GUC.
+      "**/modules/onboarding-call/onboarding-call-platform.service.ts",
     ],
     rules: {
       // Exempts basePrisma ONLY. The Anthropic ban is deliberately re-asserted

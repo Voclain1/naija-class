@@ -159,7 +159,7 @@ export async function apiTypeAdmissionNumbers(api: APIRequestContext): Promise<v
 // be sent and before the (teacher) RequireAuth gate will render the portal.
 export async function apiActivateSchool(
   api: APIRequestContext,
-  opts: { name: string; phone: string; email: string },
+  opts: { name: string; phone: string; email: string; leaveSetupCall?: boolean },
 ): Promise<void> {
   await unwrap(
     await api.post("schools/me/onboarding/1", {
@@ -191,6 +191,13 @@ export async function apiActivateSchool(
     await api.post("schools/me/onboarding/5", { data: { calendar: e2eCalendarPayload() } }),
     "onboarding/5",
   );
+  // A new school's owner is offered a setup call once, before the dashboard
+  // (docs/modules/onboarding-call.md). Skipped here for the same reason as
+  // apiCompleteTour: these specs test something else. The page's own
+  // coverage, setup-call.spec.ts, signs up through the real wizard.
+  if (opts.leaveSetupCall) return;
+  const skip = await api.post("schools/me/onboarding-call/skip", { data: {} });
+  if (!skip.ok()) throw new Error(`onboarding-call/skip failed: ${skip.status()} — ${await skip.text()}`);
 }
 
 // Serialised to ISO strings, as a browser would send them; the API's

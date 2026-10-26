@@ -39,6 +39,7 @@ import { ApiError, proxyFetch } from "@/lib/api-client";
 import { PlatformActivity } from "./platform-activity";
 import { compactTokens, ownerStatusOf } from "./school-manage";
 import { SchoolManageDialog } from "./school-manage-dialog";
+import { SetupCallsCard } from "./setup-calls";
 import { SmartImportBetaCard } from "./smart-import-beta";
 import { WebsiteReportsCard } from "./website-review";
 
@@ -293,6 +294,7 @@ export function PlatformAdminDashboard() {
     <div className="flex w-full max-w-5xl flex-col gap-6">
       {/* School website reports (docs/modules/school-website.md): also work
           waiting on the operator, and empty most days. */}
+      <SetupCallsCard />
       <WebsiteReportsCard />
       <SmartImportBetaCard />
       {/* Placed first deliberately: this is the only section that represents

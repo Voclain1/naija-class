@@ -41,7 +41,9 @@ export function RequireOnboarding({
     }
     if (status === "authed") {
       if (school?.status === "ACTIVE") {
-        router.replace("/dashboard");
+        // Via the setup-call page, which shows once and otherwise goes on to
+        // the dashboard (docs/modules/onboarding-call.md).
+        router.replace("/welcome");
         return;
       }
       if (school?.status === "ONBOARDING") {

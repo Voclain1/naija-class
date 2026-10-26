@@ -1073,6 +1073,15 @@ as the web app's `NEXT_PUBLIC_POSTHOG_KEY`, set as a Fly secret on
 like Sentry's DSN. Events carry opaque ids and field shapes only (today:
 `validation_rejected`), never a body, a message or a name.
 
+`WHATSAPP_CLOUD_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` / `WHATSAPP_ALERT_TO` /
+`WHATSAPP_BOOKING_TEMPLATE` — SchoolKit's own WhatsApp alerts to the team
+through Meta's WhatsApp Cloud API (2026-10-26, `common/whatsapp/whatsapp-cloud.ts`),
+today one per setup-call booking (`docs/modules/onboarding-call.md`). All unset
+means nothing is sent and nothing fails. Never to a school or a family. Steps in
+`docs/runbooks/whatsapp-alerts.md`; on the VPS they live in `API_ENV_FILE`.
+`ONBOARDING_CALL_ALERT_EMAIL` is where booking emails go (default
+hello@schoolkit.ng).
+
 `TERMII_BASE_URL` — unlike Paystack's fixed `api.paystack.co`, Termii's API
 base URL is **per-account** (dashboard-assigned), not a global constant.
 `.env.example` defaults to `https://api.ng.termii.com` (the commonly-

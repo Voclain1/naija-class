@@ -136,7 +136,9 @@ There are five short screens. A bar at the top shows which one you are on.
    - **Which term are you in now?** — press the term you are in today (or the one you are about to start, if you are on holiday);
    - press **Check or edit term dates** to see each term's start and end dates, and correct any that are wrong.
 
-   Press **Finish setup**. You will land on your Dashboard.
+   Press **Finish setup**.
+
+**Book a free setup call (optional).** Straight after **Finish setup**, SchoolKit offers you a free 30-minute call with our team to help you finish setting up: classes, staff, students and parents. Choose a day and a time (Lagos time), check your name and phone number, and press **Book**. We will message you on WhatsApp to confirm. You can also press **Send to SchoolKit on WhatsApp** to send us the booking from your own WhatsApp. If you would rather set up on your own, press **Skip for now**. Either way you go on to your Dashboard, and the page does not come back. You can still reach us any time (see [Getting help](#getting-help)).
 
 **Why the dates matter:** registers, fees and results are all recorded against a term. If the dates are wrong, they will be filed under the wrong term. You can correct them later in **School setup → Sessions & classes**.
 

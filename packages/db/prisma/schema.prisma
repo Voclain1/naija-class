@@ -216,6 +216,15 @@ model School {
   //                          scan refuses until it is given.
   smartImportConsentAt        DateTime?       @map("smart_import_consent_at")
   smartImportConsentBy        String?         @map("smart_import_consent_by")
+  //   onboardingCallPrompt*  The "book a setup call" page shown once after
+  //                          the setup wizard (2026-10-26,
+  //                          docs/modules/onboarding-call.md). ClosedAt is
+  //                          stamped when the owner books or skips, and the
+  //                          page never shows again; BookedAt only when they
+  //                          book, so the platform admin knows which schools
+  //                          hold bookings without reading every school's.
+  onboardingCallPromptClosedAt DateTime?      @map("onboarding_call_prompt_closed_at")
+  onboardingCallBookedAt      DateTime?       @map("onboarding_call_booked_at")
   //   assignmentFeedbackAiEnabled  Phase 9 / CP4b. The school's own opt-in to
   //                          AI drafts of marking feedback. OFF by default,
   //                          set by owner/admin; aiEnabled must be on too, and
@@ -5529,3 +5538,24 @@ model AccountDeletionRequest {
   @@map("account_deletion_requests")
 }
 
+// A school's request for a setup call with the SchoolKit team (2026-10-26,
+// docs/modules/onboarding-call.md). Booked from the page shown after the setup
+// wizard; the team confirms the time on WhatsApp and marks it done in the
+// platform admin.
+model OnboardingCallBooking {
+  id           String    @id @default(uuid())
+  schoolId     String    @map("school_id")
+  bookedBy     String    @map("booked_by")
+  // The day, Lagos time, and the start as minutes since midnight (CLAUDE.md:
+  // time of day is an Int, never @db.Time).
+  callDate     DateTime  @map("call_date") @db.Date
+  startMinute  Int       @map("start_minute")
+  contactName  String    @map("contact_name")
+  contactPhone String    @map("contact_phone")
+  note         String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  doneAt       DateTime? @map("done_at")
+
+  @@index([schoolId, createdAt])
+  @@map("onboarding_call_bookings")
+}
