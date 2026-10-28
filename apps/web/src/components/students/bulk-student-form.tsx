@@ -54,10 +54,10 @@ import { PlacementPicker, type PlacementValue } from "./placement-picker";
 // roster usable on day one — an admission number to key on, a name to
 // search, a DOB for age-banding, a gender for reporting.
 //
-// Still deliberately excludes class arm + guardian info: neither the single-
-// add form nor the CSV import bundles those into student creation —
-// enrollment is a separate step via /enrollments/bulk, guardians via each
-// student's own Guardians tab.
+// One explicit class/term choice applies to each new batch, using the same
+// atomic placement contract as single-student creation. Guardians are added
+// from each student's own Guardians tab. Never default the class or send the
+// school-wide roster to the disabled carry-over wizard.
 //
 // SPEED AFFORDANCES (2026-08-18) — the grid is meant to be driven from the
 // keyboard, never the mouse:
@@ -211,7 +211,8 @@ export function BulkStudentForm({
 } = {}) {
   const numberHint = admissionNumberHint(admissionNumbering);
   const perClass = Boolean(numberHint) && admissionNumbering?.order === "CLASS";
-  // Per-class numbering needs the batch's class; choosing it also places them.
+  // Every numbering mode can place the batch. Per-class automatic numbers
+  // additionally require a class when a row has no typed admission number.
   const [placement, setPlacement] = useState<PlacementValue | null | undefined>(undefined);
   const form = useForm<FormValues>({
     defaultValues: { rows: Array.from({ length: START_ROWS }, emptyRow) },
@@ -230,6 +231,8 @@ export function BulkStudentForm({
   const createdCount = fields.filter(
     (f) => rowStatus[f.id]?.state === "success",
   ).length;
+  // Keep the placement fixed even if a saved row is removed from the grid.
+  const placementLocked = Object.values(rowStatus).some((status) => status.state === "success");
   // "Done" means every row that still holds data has been created — trailing
   // blank rows (the auto-appended spares) must not hold the state open.
   const allDone =
@@ -370,6 +373,11 @@ export function BulkStudentForm({
       return;
     }
 
+    if (placement === undefined) {
+      setSummary("Choose a class for this batch, or choose to place the students later.");
+      return;
+    }
+
     if (
       perClass &&
       !placement &&
@@ -412,7 +420,7 @@ export function BulkStudentForm({
       try {
         const { created } = await bulkCreateStudents({
           students,
-          ...(perClass && placement ? { enrollment: placement } : {}),
+          ...(placement ? { enrollment: placement } : {}),
         });
         setRowStatus((prev) => ({
           ...prev,
@@ -496,20 +504,25 @@ export function BulkStudentForm({
           Leave the admission number blank and SchoolKit fills it in when you create the students.
         </p>
       )}
-      {perClass && (
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium">Class for these students</p>
+      <div className="flex flex-col gap-1">
+        <p className="text-sm font-medium">Class for these students</p>
+        <p className="text-xs text-muted-foreground">
+          All students in this batch will be placed in the class and term you choose.
+          Use a separate batch for each class, or choose to place them later.
+        </p>
+        <PlacementPicker
+          value={placement}
+          onChange={setPlacement}
+          onUnavailable={() => setPlacement(null)}
+          disabled={submitting || placementLocked}
+        />
+        {placementLocked && (
           <p className="text-xs text-muted-foreground">
-            Your school numbers students per class, so pick the class. They are also placed in it.
+            Keep this placement while retrying any remaining rows. Return to the roster
+            and open a new grid for another class.
           </p>
-          <PlacementPicker
-            value={placement}
-            onChange={setPlacement}
-            onUnavailable={() => setPlacement(null)}
-            disabled={submitting}
-          />
-        </div>
-      )}
+        )}
+      </div>
       {summary && (
         <div
           className={
@@ -519,6 +532,12 @@ export function BulkStudentForm({
           }
         >
           {summary}
+          {allDone && placement && (
+            <p className="mt-1">They were also added to the class and term selected above.</p>
+          )}
+          {allDone && placement === null && (
+            <p className="mt-1">They are not in a class yet. Open each student&apos;s Enrollments tab to place them later.</p>
+          )}
         </div>
       )}
 

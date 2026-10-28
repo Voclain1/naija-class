@@ -167,12 +167,13 @@ Go to **Students** in the menu. There are four ways to add students. Choose whic
 **Several students by typing them in**
 
 1. Press the small arrow beside **Add student**, then **Add several in a grid**.
-2. You get a table like a spreadsheet: admission number, first name, middle name, last name, date of birth, gender and email.
-3. Type straight across. **Tab** moves to the next box; **Enter** moves down. New rows appear as you need them.
-4. You can also **copy rows from Excel or Google Sheets and paste them in**. Dates like `25/03/2014` and genders typed as `M` or `F` are understood.
-5. Press **Create students**.
+2. Under **Class for these students**, choose one class and check the **Term**. Use a separate batch for each class. If you do not know their class yet, choose **Not yet — I'll place them later**. Nothing is selected on your behalf.
+3. You get a table like a spreadsheet: admission number, first name, middle name, last name, date of birth, gender and email.
+4. Type straight across. **Tab** moves to the next box; **Enter** moves down. New rows appear as you need them.
+5. You can also **copy rows from Excel or Google Sheets and paste them in**. Dates like `25/03/2014` and genders typed as `M` or `F` are understood.
+6. Press **Create students**. When you chose a class, the students are added to it in the same save. After any rows have saved, the class stays fixed while you retry remaining rows.
 
-Students added this way are not yet in a class — do [Step 5](#step-5-put-your-students-in-their-classes) next.
+If you chose to place them later, or your classes or school year are not set up yet, do [Step 5](#step-5-put-your-students-in-their-classes) next. The old carry-over link is not needed for new student entry.
 
 **Your whole register from a spreadsheet (fastest for a big school)**
 
