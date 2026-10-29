@@ -301,6 +301,60 @@ describe("ReportCardService (cp1 — build + reads)", () => {
     expect((await getCard(schoolId, student, termId)).overallTotal).toBe(88);
   });
 
+  it("reports missing enrolled students and rebuilds without losing existing comments", async () => {
+    const { schoolId, ownerId } = await makeSchool("roster");
+    const armId = await makeArm(schoolId, "roster");
+    const otherArm = await makeArm(schoolId, "roster-other");
+    const { yearId, termId } = await makeYearTerm(schoolId, "roster");
+    const auth = ctx(schoolId, ownerId);
+    const query = { termId, classArmId: armId };
+    const first = await enrollStudent(schoolId, { armId, termId, yearId, suffix: "roster-first" });
+    await service.build(auth, query, reqCtx);
+    const before = (await service.getBoard(auth, query)).data[0]!.reportCard;
+    await withTenant(schoolId, (db) => db.reportCard.update({
+      where: { id: before.id }, data: { formTeacherComment: "Keep this feedback", principalNote: "Keep this note" },
+    }));
+    const late = await enrollStudent(schoolId, { armId, termId, yearId, suffix: "roster-late" });
+    await enrollStudent(schoolId, { armId, termId, yearId, suffix: "roster-withdrawn", status: "WITHDRAWN" });
+    await enrollStudent(schoolId, { armId: otherArm, termId, yearId, suffix: "roster-other" });
+
+    // A filtered-out card is still present; it must not be reported missing.
+    const filtered = await service.getBoard(auth, { ...query, status: "RELEASED" });
+    expect(filtered.data).toEqual([]);
+    expect(filtered.roster.enrolledCount).toBe(2);
+    expect(filtered.roster.missingStudents.map((s) => s.id)).toEqual([late]);
+    expect((await service.getBoard(auth, query)).data).toHaveLength(1);
+
+    await service.build(auth, query, reqCtx);
+    await service.build(auth, query, reqCtx);
+    const after = await service.getBoard(auth, query);
+    expect(after.data).toHaveLength(2);
+    expect(after.roster).toEqual({ enrolledCount: 2, missingStudents: [] });
+    expect(after.data.find((r) => r.student.id === first)?.reportCard).toMatchObject({
+      id: before.id, formTeacherComment: "Keep this feedback", principalNote: "Keep this note",
+    });
+  });
+
+  it("does not overwrite an advanced card when its student moves to another class", async () => {
+    const { schoolId, ownerId } = await makeSchool("move-frozen");
+    const oldArm = await makeArm(schoolId, "move-old");
+    const newArm = await makeArm(schoolId, "move-new");
+    const { yearId, termId } = await makeYearTerm(schoolId, "move-frozen");
+    const studentId = await enrollStudent(schoolId, { armId: oldArm, termId, yearId, suffix: "move-frozen" });
+    const auth = ctx(schoolId, ownerId);
+    await service.build(auth, { termId, classArmId: oldArm }, reqCtx);
+    await withTenant(schoolId, async (db) => {
+      await db.reportCard.updateMany({ where: { studentId, termId }, data: { status: "RELEASED", formTeacherComment: "Frozen" } });
+      await db.enrollment.updateMany({ where: { studentId, termId }, data: { classArmId: newArm } });
+    });
+    await expect(service.build(auth, { termId, classArmId: newArm }, reqCtx)).rejects.toMatchObject({ code: "ARM_NOT_DRAFT" });
+    const oldBoard = await service.getBoard(auth, { termId, classArmId: oldArm });
+    expect(oldBoard.data[0]?.reportCard).toMatchObject({ classArmId: oldArm, status: "RELEASED", formTeacherComment: "Frozen" });
+    const newBoard = await service.getBoard(auth, { termId, classArmId: newArm });
+    expect(newBoard.roster.missingStudents.map((s) => s.id)).toEqual([studentId]);
+    expect(newBoard.data).toEqual([]);
+  });
+
   it("writes one audit row per build with the card count", async () => {
     const { schoolId, ownerId } = await makeSchool("audit");
     const armId = await makeArm(schoolId, "audit");
@@ -579,5 +633,8 @@ describe("ReportCardService (cp1 — build + reads)", () => {
       db.reportCard.findFirstOrThrow({ where: { studentId: student, termId }, select: { id: true } }),
     );
     await expect(service.getById(ctx(a.schoolId, a.ownerId), card.id)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(service.getBoard(ctx(a.schoolId, a.ownerId), {
+      termId, classArmId: armB,
+    })).rejects.toBeInstanceOf(NotFoundError);
   });
 });
