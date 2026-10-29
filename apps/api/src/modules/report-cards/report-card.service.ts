@@ -80,6 +80,12 @@ export class ReportCardService {
       const arm = await db.classArm.findUnique({ where: { id: input.classArmId }, select: { id: true } });
       if (!arm) throw new NotFoundError("Class arm not found.");
 
+      const enrollments = await db.enrollment.findMany({
+        where: { termId: input.termId, classArmId: input.classArmId, status: "ENROLLED" },
+        select: { studentId: true, academicYearId: true },
+      });
+      const studentIds = enrollments.map((e) => e.studentId);
+
       // 0. Slice 6 guard: rebuild only while the arm is fully DRAFT (or has no
       //    cards yet). A non-DRAFT card means the workflow has started —
       //    rebuilding would re-snapshot the frozen rollup AND mix statuses
@@ -87,25 +93,24 @@ export class ReportCardService {
       //    DRAFT first. (This is stricter than the RELEASED-only edit gate; the
       //    invariant "all cards in an arm share a status" is worth protecting.)
       const nonDraft = await db.reportCard.count({
-        where: { termId: input.termId, classArmId: input.classArmId, status: { not: "DRAFT" } },
+        where: {
+          termId: input.termId,
+          status: { not: "DRAFT" },
+          // The unique key is student+term, not arm. A transferred student's
+          // frozen card in another arm must not be overwritten by this upsert.
+          OR: [{ classArmId: input.classArmId }, { studentId: { in: studentIds } }],
+        },
       });
       if (nonDraft > 0) {
         throw new ConflictError(
           "ARM_NOT_DRAFT",
-          "This arm's report cards are past DRAFT. Reopen the arm before rebuilding.",
+          "A report card for this class or an enrolled student is past DRAFT. Ask the school owner to reopen its class before rebuilding.",
         );
       }
 
       // 1. Fresh positions FIRST, atomically in this tx (Q1b). The full pass sets
       //    subjectPosition + classPosition on every Assessment row in the arm.
       await this.aggregation.aggregateArmInTx(db, input.termId, input.classArmId);
-
-      // 2. The ENROLLED roster is the set of cards to build (one per student).
-      const enrollments = await db.enrollment.findMany({
-        where: { termId: input.termId, classArmId: input.classArmId, status: "ENROLLED" },
-        select: { studentId: true, academicYearId: true },
-      });
-      const studentIds = enrollments.map((e) => e.studentId);
 
       // 3. Each student's Assessment rows → the rollup snapshot.
       const assessments = await db.assessment.findMany({
@@ -319,17 +324,23 @@ export class ReportCardService {
         where: {
           termId: query.termId,
           classArmId: query.classArmId,
-          ...(query.status ? { status: query.status } : {}),
         },
         select: REPORT_CARD_SELECT,
       });
+      // Status filtering must not make an existing card look missing.
+      const enrollments = await db.enrollment.findMany({
+        where: { termId: query.termId, classArmId: query.classArmId, status: "ENROLLED" },
+        select: { studentId: true },
+      });
+      const cardStudentIds = new Set(cards.map((c) => c.studentId));
       const students = await db.student.findMany({
-        where: { id: { in: cards.map((c) => c.studentId) } },
+        where: { id: { in: [...cardStudentIds, ...enrollments.map((e) => e.studentId)] } },
         select: STUDENT_BIO_SELECT,
       });
       const studentById = new Map(students.map((s) => [s.id, s]));
 
       const rows = cards
+        .filter((card) => !query.status || card.status === query.status)
         .map((card) => ({ card, student: studentById.get(card.studentId) }))
         .filter((r): r is { card: (typeof cards)[number]; student: StudentBioRow } => r.student !== undefined)
         .sort((a, b) =>
@@ -338,7 +349,17 @@ export class ReportCardService {
         )
         .map((r) => ({ student: toStudentDto(r.student), reportCard: toReportCardDto(r.card) }));
 
-      return { data: rows, isFinalTerm: await isFinalTerm(db, query.termId) };
+      const missingStudents = enrollments
+        .filter((e) => !cardStudentIds.has(e.studentId))
+        .map((e) => studentById.get(e.studentId))
+        .filter((s): s is StudentBioRow => s !== undefined)
+        .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
+        .map(toStudentDto);
+      return {
+        data: rows,
+        isFinalTerm: await isFinalTerm(db, query.termId),
+        roster: { enrolledCount: enrollments.length, missingStudents },
+      };
     });
   }
 

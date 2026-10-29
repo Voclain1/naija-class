@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import {
   PROMOTION_STATUS_LABELS,
   type PromotionStatusDto,
+  type ReportCardBoardResponse,
   type ReportCardBoardRowDto,
   type ReportCardStatusDto,
   type ResultAccessModeDto,
@@ -18,6 +19,7 @@ import { EmptyState, PageHeader } from "@/components/layout/page-primitives";
 import { FormComments } from "@/components/report-cards/form-comments";
 import { ReleaseReportCardsDialog } from "@/components/report-cards/release-report-cards-dialog";
 import { PdfStatusBadge, WorkflowStatusBadge } from "@/components/report-cards/status-badges";
+import { ReportCardRoster } from "@/components/report-cards/report-card-roster";
 import { ReopenModal } from "@/components/report-cards/reopen-modal";
 import { WorkflowGuidance } from "@/components/report-cards/workflow-guidance";
 import { Button } from "@/components/ui/button";
@@ -68,6 +70,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
 
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [rows, setRows] = useState<ReportCardBoardRowDto[]>([]);
+  const [roster, setRoster] = useState<ReportCardBoardResponse["roster"] | null>(null);
   const [building, setBuilding] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [workflowBusy, setWorkflowBusy] = useState(false);
@@ -121,6 +124,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
 
       const board = await getReportCardBoard(termId, armId);
       setRows(board.data);
+      setRoster(board.roster ?? null);
       setIsFinalTerm(board.isFinalTerm);
       setStatus({ kind: "ready", armName, termId, termName });
     } catch (e) {
@@ -146,6 +150,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
       try {
         const board = await getReportCardBoard(termId, armId);
         setRows(board.data);
+        setRoster(board.roster ?? null);
         setIsFinalTerm(board.isFinalTerm);
       } catch {
         // Transient; the next poll tick (or a manual reload) recovers.
@@ -389,17 +394,12 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
             subtitle={`${status.termName} · ${rows.length} report card${rows.length === 1 ? "" : "s"}${
               lastBuilt ? ` · last built ${formatStamp(new Date(lastBuilt))}` : ""
             }`}
-            /* Build is deliberately NOT in this slot. It only ever rendered
-               when the board was empty, beside a header that said nothing,
-               while the empty state below told the reader to "click Build
-               report cards" — the button and the sentence asking for it in two
-               different places. It now lives in the empty state's action slot. */
             actions={
               <>
                 {/* Form-review — DRAFT / SUBJECT_REVIEWED. owner/admin OR form
                     teacher (anyone who can open this board), gated server-side. */}
                 {(armStatus === "DRAFT" || armStatus === "SUBJECT_REVIEWED") && (
-                  <Button type="button" onClick={onFormReview} disabled={workflowBusy || shouldPoll}>
+                  <Button type="button" onClick={onFormReview} disabled={workflowBusy || building || shouldPoll}>
                     {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                     Form-review arm
                   </Button>
@@ -410,7 +410,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                   <Button
                     type="button"
                     onClick={onApprove}
-                    disabled={workflowBusy || shouldPoll || promotionMissing > 0}
+                    disabled={workflowBusy || building || shouldPoll || promotionMissing > 0}
                     title={promotionMissing > 0 ? "Set a promotion status for every student first." : undefined}
                   >
                     {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -420,7 +420,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
 
                 {/* Release — PRINCIPAL_APPROVED (owner/admin). */}
                 {armStatus === "PRINCIPAL_APPROVED" && canManage && (
-                  <Button type="button" onClick={() => setReleaseOpen(true)} disabled={workflowBusy || shouldPoll}>
+                  <Button type="button" onClick={() => setReleaseOpen(true)} disabled={workflowBusy || building || shouldPoll}>
                     {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                     Release arm
                   </Button>
@@ -436,14 +436,15 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
 
                 {/* Reopen — OWNER only (admin excluded), from any finalised state. */}
                 {isOwner &&
-                  (armStatus === "FORM_REVIEWED" ||
+                  (armStatus === "SUBJECT_REVIEWED" ||
+                    armStatus === "FORM_REVIEWED" ||
                     armStatus === "PRINCIPAL_APPROVED" ||
                     armStatus === "RELEASED") && (
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => setReopenOpen(true)}
-                      disabled={workflowBusy || shouldPoll}
+                      disabled={workflowBusy || building || shouldPoll}
                       className="border-amber-300 text-amber-800 hover:bg-amber-50"
                     >
                       <RotateCcw className="h-4 w-4" />
@@ -452,6 +453,16 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                   )}
               </>
             }
+          />
+
+          <ReportCardRoster
+            roster={roster}
+            cardCount={rows.length}
+            status={armStatus}
+            canManage={canManage}
+            isOwner={isOwner}
+            busy={building || workflowBusy || shouldPoll}
+            onBuild={() => void onBuild()}
           />
 
           {/* MIXED is a warning about the arm, not something to act on, so it
