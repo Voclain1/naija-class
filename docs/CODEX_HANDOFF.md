@@ -188,7 +188,14 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-10-28)
+## Latest state (updated 2026-10-29)
+
+- **PR #486 Playwright follow-up (October 29):** all six new placement cases
+  passed; three old bulk-entry cases failed because they never answered the
+  now-required placement question. Error-context artifacts confirm the gate.
+  They now explicitly defer placement before testing duplicate handling,
+  automatic numbering and expired-session safety. Original assertions stay.
+  See October 29 journal; fresh browser CI must pass before merging.
 
 - **2026-10-28 — owner/teacher UX audit, first fix:**
   `fix/bulk-student-placement` addresses SK-01. Bulk entry offers explicit

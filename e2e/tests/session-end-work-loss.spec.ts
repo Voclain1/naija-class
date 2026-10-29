@@ -261,6 +261,10 @@ test.describe("bulk student add stops when the session is gone", () => {
     await page.getByRole("heading", { name: "Add multiple students" }).waitFor({ timeout: 60_000 });
     await expect.poll(() => page.locator("tbody tr").count(), { timeout: 30_000 }).toBeGreaterThan(0);
 
+    // Reach the bulk request before simulating its expired-session response.
+    // The grid now requires an explicit class/defer decision in every mode.
+    await page.getByRole("combobox", { name: "Class", exact: true }).selectOption("__later__");
+
     const rows = [
       ["A", "Amaka"],
       ["B", "Bode"],

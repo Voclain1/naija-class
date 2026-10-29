@@ -151,6 +151,9 @@ test("a taken admission number is named on its row, nothing is half-added, and a
   await page.getByRole("heading", { name: "Add multiple students" }).waitFor({ timeout: 60_000 });
   await expect.poll(() => page.locator("tbody tr").count(), { timeout: 30_000 }).toBeGreaterThan(2);
 
+  // Placement is now an explicit prerequisite in every numbering mode. These
+  // cases test batch validation/numbering, so deliberately defer enrollment.
+  await page.getByRole("combobox", { name: "Class", exact: true }).selectOption("__later__");
   await fillRow(page, 0, `E2E-${suffix}-A`, "Ayo");
   await fillRow(page, 1, taken, "Bayo");
   await fillRow(page, 2, `E2E-${suffix}-C`, "Chika");
@@ -222,6 +225,8 @@ test("a new school is asked how it gives admission numbers, and SchoolKit number
   await question.getByRole("button", { name: "Use this format" }).click();
   await expect(question).toBeHidden();
   await expect(page.getByText(/Admission numbers: automatic/)).toBeVisible();
+
+  await page.getByRole("combobox", { name: "Class", exact: true }).selectOption("__later__");
 
   // Three rows with no admission number at all.
   for (const [i, first] of ["Ada", "Bisi", "Chinedu"].entries()) {
