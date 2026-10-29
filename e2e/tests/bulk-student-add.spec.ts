@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { loginAsAdmin, uniqueSuffix } from "../fixtures/index.js";
+import { loginAsAdmin, setupAcademicStructure, uniqueSuffix } from "../fixtures/index.js";
 
 // The bulk add grid saves through POST /students/bulk (2026-10-12): one
 // all-or-nothing request per 200 rows, where it used to send one request per
@@ -20,6 +20,113 @@ async function fillRow(page: Page, i: number, admission: string, first: string):
   await row.locator(`[data-cell="${i}:4"]`).fill("2012-05-04");
   await row.locator(`[data-cell="${i}:5"]`).selectOption("MALE");
 }
+
+for (const mode of ["MANUAL", "SCHOOL", "RANDOM", "CLASS"] as const) {
+  test(`bulk entry explicitly places only the new pupils with ${mode} numbering`, async ({ browser }) => {
+    const admin = await loginAsAdmin(browser);
+    try {
+      const structure = await setupAcademicStructure(admin.api, {
+        arms: [{ name: "Intake A", code: "intake-a" }, { name: "Other B", code: "other-b" }],
+      });
+      if (mode !== "MANUAL") {
+        const settings = await admin.api.patch("schools/me/admission-numbers", {
+          data: { mode: "AUTO", format: mode === "CLASS" ? "{CLASS}/{NNNN}" : "QA/{NNNNN}", order: mode },
+        });
+        expect(settings.ok(), await settings.text()).toBe(true);
+      }
+      const existing = await admin.api.post("students", {
+        data: { admissionNumber: `OLD-${uniqueSuffix()}`, firstName: "Existing", lastName: "Pupil", dateOfBirth: "2012-01-01", gender: "MALE" },
+      });
+      expect(existing.ok(), await existing.text()).toBe(true);
+
+      const page = admin.page;
+      const posts: Array<{ enrollment?: { termId: string; classArmId: string } }> = [];
+      page.on("request", (request) => {
+        if (request.method() === "POST" && request.url().endsWith("/students/bulk")) {
+          posts.push(request.postDataJSON() as typeof posts[number]);
+        }
+      });
+      await page.goto(`${WEB}/students/new/bulk`);
+      await expect(page.getByText(mode === "MANUAL" ? "Admission numbers: typed by you" : /Admission numbers: automatic/)).toBeVisible();
+      const choice = page.getByRole("combobox", { name: "Class", exact: true });
+      await expect(choice).toHaveValue("");
+      await fillRow(page, 0, mode === "MANUAL" ? `NEW-${uniqueSuffix()}` : "", "Intake");
+      await page.getByRole("button", { name: /create students/i }).click();
+      await expect(page.getByText("Choose a class for this batch, or choose to place the students later.")).toBeVisible();
+      expect(posts).toHaveLength(0);
+
+      if (mode === "CLASS") {
+        await choice.selectOption("__later__");
+        await page.getByRole("button", { name: /create students/i }).click();
+        await expect(page.getByText("Choose the class for these students, so SchoolKit can number them per class.")).toBeVisible();
+        expect(posts).toHaveLength(0);
+      }
+
+      await choice.selectOption(structure.arms[0]!.id);
+      await expect(page.getByRole("combobox", { name: "Term", exact: true })).toHaveValue(structure.termId);
+      await page.getByRole("button", { name: /create students/i }).click();
+      await expect(page.getByText("All 1 student created.")).toBeVisible();
+      await expect(page.getByText("They were also added to the class and term selected above.")).toBeVisible();
+      expect(posts).toHaveLength(1);
+      expect(posts[0]!.enrollment).toEqual({ termId: structure.termId, classArmId: structure.arms[0]!.id });
+      await expect(choice).toBeDisabled();
+
+      const enrollments = await admin.api.get(`enrollments?termId=${structure.termId}`);
+      expect(enrollments.ok(), await enrollments.text()).toBe(true);
+      const body = await enrollments.json() as { data: Array<{ studentId: string; classArmId: string }> };
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0]!.classArmId).toBe(structure.arms[0]!.id);
+      expect(body.data[0]!.studentId).not.toBe((await existing.json() as { id: string }).id);
+    } finally {
+      await admin.context.close();
+      await admin.api.dispose();
+    }
+  });
+}
+
+test("bulk entry can explicitly leave pupils unplaced", async ({ browser }) => {
+  const admin = await loginAsAdmin(browser);
+  try {
+    const structure = await setupAcademicStructure(admin.api);
+    await admin.page.goto(`${WEB}/students/new/bulk`);
+    await fillRow(admin.page, 0, `LATER-${uniqueSuffix()}`, "Later");
+    await admin.page.getByRole("combobox", { name: "Class", exact: true }).selectOption("__later__");
+    await admin.page.getByRole("button", { name: /create students/i }).click();
+    await expect(admin.page.getByText("All 1 student created.")).toBeVisible();
+    await expect(admin.page.getByText(/They are not in a class yet\./)).toBeVisible();
+    const response = await admin.api.get(`enrollments?termId=${structure.termId}`);
+    expect(response.ok(), await response.text()).toBe(true);
+    expect((await response.json() as { data: unknown[] }).data).toEqual([]);
+  } finally {
+    await admin.context.close();
+    await admin.api.dispose();
+  }
+});
+
+test("old bulk-enrollment links show the carry-over restriction before loading candidates", async ({ browser }) => {
+  const admin = await loginAsAdmin(browser);
+  try {
+    const structure = await setupAcademicStructure(admin.api);
+    const enrollmentRequests: string[] = [];
+    admin.page.on("request", (request) => {
+      if (/\/api\/v1\/enrollments(?:[/?]|$)/.test(request.url())) enrollmentRequests.push(request.url());
+    });
+    for (const query of ["", `?armId=${structure.arms[0]!.id}&termId=${structure.termId}`]) {
+      await admin.page.goto(`${WEB}/enrollments/bulk${query}`);
+      await expect(admin.page.getByRole("heading", { name: "Carry over is temporarily unavailable" })).toBeVisible();
+      await expect(admin.page.getByText(/Missing armId|Carry over button/)).toHaveCount(0);
+      await expect(admin.page.getByRole("link", { name: "Add students to a class" })).toBeVisible();
+      await expect(admin.page.getByRole("link", { name: "Find an existing student" })).toBeVisible();
+    }
+    expect(enrollmentRequests).toEqual([]);
+    await admin.page.getByRole("link", { name: "Add students to a class" }).click();
+    await expect(admin.page.getByRole("combobox", { name: "Class", exact: true })).toBeVisible();
+    await expect(admin.page.getByRole("link", { name: "bulk enrollment", exact: true })).toHaveCount(0);
+  } finally {
+    await admin.context.close();
+    await admin.api.dispose();
+  }
+});
 
 test("a taken admission number is named on its row, nothing is half-added, and a resubmit adds the rest", async ({
   browser,
@@ -44,6 +151,9 @@ test("a taken admission number is named on its row, nothing is half-added, and a
   await page.getByRole("heading", { name: "Add multiple students" }).waitFor({ timeout: 60_000 });
   await expect.poll(() => page.locator("tbody tr").count(), { timeout: 30_000 }).toBeGreaterThan(2);
 
+  // Placement is now an explicit prerequisite in every numbering mode. These
+  // cases test batch validation/numbering, so deliberately defer enrollment.
+  await page.getByRole("combobox", { name: "Class", exact: true }).selectOption("__later__");
   await fillRow(page, 0, `E2E-${suffix}-A`, "Ayo");
   await fillRow(page, 1, taken, "Bayo");
   await fillRow(page, 2, `E2E-${suffix}-C`, "Chika");
@@ -115,6 +225,8 @@ test("a new school is asked how it gives admission numbers, and SchoolKit number
   await question.getByRole("button", { name: "Use this format" }).click();
   await expect(question).toBeHidden();
   await expect(page.getByText(/Admission numbers: automatic/)).toBeVisible();
+
+  await page.getByRole("combobox", { name: "Class", exact: true }).selectOption("__later__");
 
   // Three rows with no admission number at all.
   for (const [i, first] of ["Ada", "Bisi", "Chinedu"].entries()) {

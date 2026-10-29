@@ -79,6 +79,31 @@ interface CandidateRow {
 }
 
 export default function BulkEnrollmentWizardPage() {
+  // Gate before mounting the wizard: even a parameterless or bookmarked link
+  // must show the truthful notice, without loading candidates or mutations.
+  if (!CARRY_OVER_ENABLED) {
+    return (
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+        <PageHeader title={CARRY_OVER_DISABLED_TITLE} subtitle={CARRY_OVER_DISABLED_BODY} />
+        <p className="text-sm text-muted-foreground">
+          For new students, choose their class while adding them in the grid.
+          To place an existing student, open their student page and choose Enrollments.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild>
+            <Link href="/students/new/bulk">Add students to a class</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/students">Find an existing student</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  return <CarryOverWizard />;
+}
+
+function CarryOverWizard() {
   const search = useSearchParams();
   const armId = search.get("armId");
   const targetTermId = search.get("termId");
@@ -103,7 +128,7 @@ export default function BulkEnrollmentWizardPage() {
   useEffect(() => {
     if (!armId || !targetTermId) {
       setError(
-        "Missing armId or termId. Go back to /enrollments and use the Carry over button.",
+        "Choose a class and term from Enrollments before carrying students over.",
       );
       setLoading(false);
       return;
@@ -493,24 +518,6 @@ export default function BulkEnrollmentWizardPage() {
             <Link href="/enrollments">Back to enrollments</Link>
           </Button>
         </div>
-      </div>
-    );
-  }
-
-  // Kill switch, checked BEFORE anything renders. The CTA on /enrollments is
-  // already hidden, so reaching here means a bookmarked or hand-typed URL —
-  // which is exactly the path a switch has to cover to be worth calling a
-  // switch. See lib/enrollments/carry-over-availability.ts.
-  if (!CARRY_OVER_ENABLED) {
-    return (
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-        <PageHeader title={CARRY_OVER_DISABLED_TITLE} subtitle={CARRY_OVER_DISABLED_BODY} />
-        <Button asChild variant="outline" className="w-fit">
-          <Link href="/enrollments">
-            <ArrowLeft className="mr-1 h-4 w-4" />
-            Back to enrollments
-          </Link>
-        </Button>
       </div>
     );
   }

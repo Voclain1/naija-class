@@ -30,11 +30,8 @@ export default function BulkAddStudentsPage() {
         <p className="text-sm text-muted-foreground">
           One row per student — admission number, name, date of birth and
           gender. Contact and bio details come later, from the student&apos;s
-          own portal. Class arm assignment happens in{" "}
-          <Link href="/enrollments/bulk" className="underline underline-offset-2">
-            bulk enrollment
-          </Link>
-          , and guardians on each student&apos;s page.
+          own portal. Choose one class and term for this batch below, or choose
+          to place the students later. Add guardians on each student&apos;s page.
         </p>
       </header>
 

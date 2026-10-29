@@ -188,7 +188,23 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-10-21)
+## Latest state (updated 2026-10-29)
+
+- **PR #486 Playwright follow-up (October 29):** all six new placement cases
+  passed; three old bulk-entry cases failed because they never answered the
+  now-required placement question. Error-context artifacts confirm the gate.
+  They now explicitly defer placement before testing duplicate handling,
+  automatic numbering and expired-session safety. Original assertions stay.
+  See October 29 journal; fresh browser CI must pass before merging.
+
+- **2026-10-28 — owner/teacher UX audit, first fix:**
+  `fix/bulk-student-placement` addresses SK-01. Bulk entry offers explicit
+  class/term placement for every admission-number mode, using the existing
+  atomic `POST /students/bulk` contract. Placement stays fixed after a save.
+  The old carry-over wizard stays disabled, and its gate now runs before
+  the loader. See `docs/modules/bulk-student-placement.md` and the October 28
+  journal for checks and release status. The remaining audit findings are
+  not fixed by this branch; next is roster/report-card reconciliation.
 
 This section used to be a running log; the log below it stopped on
 2026-09-01 and several of its "in progress" entries have since merged.
