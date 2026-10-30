@@ -17,7 +17,8 @@ import { listStaff, listStaffInvitations } from "@/lib/staff/staff-api";
 
 // /staff — Phase 1 / Slice 10 cp3 staff roster.
 //
-// Staff are Users with a teacher/admin/owner role plus any pending
+// Staff are Users with any staff role (owner, admin, teacher, bursar and the
+// rest of STAFF_ROLES) plus any pending
 // invitations not yet accepted. The roster unifies two server reads:
 //   - GET /users               → accepted staff, their roles, active state,
 //                                and their HR profile id (joined server-side)
@@ -34,7 +35,8 @@ import { listStaff, listStaffInvitations } from "@/lib/staff/staff-api";
 // for bulk-onboarding many teachers at once. The two CTAs at the top reflect
 // that split.
 
-type RoleFilter = "" | "teacher" | "admin" | "owner";
+// "" is every role; otherwise a role key.
+type RoleFilter = string;
 type StatusFilter = "all" | "active" | "invited";
 
 interface StaffRow {
@@ -50,16 +52,28 @@ interface StaffRow {
   profileId?: string;
 }
 
-const ROLE_NAMES: Record<string, string> = {
-  owner: "Owner",
-  admin: "Administrator",
-  teacher: "Teacher",
-  bursar: "Bursar",
-  health_officer: "Health officer",
-  librarian: "Librarian",
-  house_master: "House master",
-  storekeeper: "Storekeeper",
-};
+// Every staff role the school can hold, in the order the Role filter lists
+// them. Names match packages/db/src/seeds/system-roles.ts. The filter also
+// offers any other role found on a loaded row, so a role added later still
+// appears before this list catches up.
+const STAFF_ROLES: { key: string; name: string }[] = [
+  { key: "owner", name: "Owner" },
+  { key: "admin", name: "Administrator" },
+  { key: "principal", name: "Principal" },
+  { key: "head_teacher", name: "Head teacher" },
+  { key: "teacher", name: "Teacher" },
+  { key: "bursar", name: "Bursar" },
+  { key: "admission_officer", name: "Admissions officer" },
+  { key: "inbox_officer", name: "Inbox officer" },
+  { key: "health_officer", name: "Health officer" },
+  { key: "librarian", name: "Librarian" },
+  { key: "house_master", name: "House master" },
+  { key: "storekeeper", name: "Storekeeper" },
+];
+
+const ROLE_NAMES: Record<string, string> = Object.fromEntries(
+  STAFF_ROLES.map((r) => [r.key, r.name]),
+);
 
 function fullName(first: string | null, last: string | null): string {
   return [first, last].filter(Boolean).join(" ").trim() || "(no name)";
@@ -149,6 +163,20 @@ export default function StaffRosterPage() {
   }, [rows, search, role, statusFilter]);
 
   const hasFilters = Boolean(search || role || statusFilter !== "all");
+
+  const roleOptions = useMemo(() => {
+    const options = [...STAFF_ROLES];
+    const known = new Set(options.map((r) => r.key));
+    for (const u of users) {
+      for (const r of u.roles) {
+        if (!known.has(r.key)) {
+          known.add(r.key);
+          options.push({ key: r.key, name: r.name });
+        }
+      }
+    }
+    return options;
+  }, [users]);
   const totalStaff = rows.length;
 
   return (
@@ -206,13 +234,15 @@ export default function StaffRosterPage() {
           <select
             id="staff-role"
             value={role}
-            onChange={(e) => setRole(e.target.value as RoleFilter)}
+            onChange={(e) => setRole(e.target.value)}
             className="h-10 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <option value="">All roles</option>
-            <option value="teacher">Teacher</option>
-            <option value="admin">Administrator</option>
-            <option value="owner">Owner</option>
+            {roleOptions.map((r) => (
+              <option key={r.key} value={r.key}>
+                {r.name}
+              </option>
+            ))}
           </select>
         </div>
         <div className="flex flex-col gap-1">

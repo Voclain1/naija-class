@@ -1006,6 +1006,66 @@ describe("InvoiceGenerationService (integration)", () => {
       expect(page2.data).toHaveLength(1);
     });
 
+    // Record payment (2026-10-30): a bursar finds a student's bills by name or
+    // admission number, holding invoice.read but not student.read.
+    it("search finds a student's bills by name or admission number, and unpaid keeps payable ones", async () => {
+      const { schoolId, ownerId } = await makeSchool("list-search");
+      const { academicYearId, termId, classLevelId, classArmId } =
+        await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+
+      const ada = await makeStudent(schoolId, "search-ada", { firstName: "Adaeze", lastName: "Okafor" });
+      const bayo = await makeStudent(schoolId, "search-bayo", { firstName: "Adebayo", lastName: "Okafor" });
+      await enrollStudent(schoolId, ada, classArmId, termId, academicYearId);
+      await enrollStudent(schoolId, bayo, classArmId, termId, academicYearId);
+      await svc.generateForArm(ctx(schoolId, ownerId), { termId, classArmId }, reqCtx);
+
+      const byName = await svc.findAll(ctx(schoolId, ownerId), { search: "adaeze oka", page: 1, limit: 10 });
+      expect(byName.data.map((i) => i.studentId)).toEqual([ada]);
+
+      const byAdmission = await svc.findAll(ctx(schoolId, ownerId), {
+        search: `search-bayo-${runId}`,
+        page: 1,
+        limit: 10,
+      });
+      expect(byAdmission.data.map((i) => i.studentId)).toEqual([bayo]);
+
+      // Siblings share a surname: searching it returns both.
+      const shared = await svc.findAll(ctx(schoolId, ownerId), { search: "okafor", page: 1, limit: 10 });
+      expect(new Set(shared.data.map((i) => i.studentId))).toEqual(new Set([ada, bayo]));
+
+      const none = await svc.findAll(ctx(schoolId, ownerId), { search: "zzqx", page: 1, limit: 10 });
+      expect(none.total).toBe(0);
+
+      // Cancel Ada's bill: unpaid no longer returns it, the plain search still does.
+      const adaInvoiceId = byName.data[0]!.id;
+      await svc.cancel(ctx(schoolId, ownerId), adaInvoiceId, reqCtx);
+      const unpaid = await svc.findAll(ctx(schoolId, ownerId), {
+        search: "adaeze",
+        unpaid: "true",
+        page: 1,
+        limit: 10,
+      });
+      expect(unpaid.total).toBe(0);
+      const all = await svc.findAll(ctx(schoolId, ownerId), { search: "adaeze", page: 1, limit: 10 });
+      expect(all.total).toBe(1);
+    });
+
+    it("search never reaches another school's students", async () => {
+      const a = await makeSchool("list-search-a");
+      const b = await makeSchool("list-search-b");
+      const sa = await makeAcademicStructure(a.schoolId);
+      await makeFeeSetup(a.schoolId, a.ownerId, sa.classLevelId, sa.termId);
+      const other = await makeStudent(a.schoolId, "search-other", { firstName: "Chiamaka", lastName: "Eze" });
+      await enrollStudent(a.schoolId, other, sa.classArmId, sa.termId, sa.academicYearId);
+      await svc.generateForArm(ctx(a.schoolId, a.ownerId), { termId: sa.termId, classArmId: sa.classArmId }, reqCtx);
+
+      const fromB = await svc.findAll(ctx(b.schoolId, b.ownerId), { search: "chiamaka", page: 1, limit: 10 });
+      expect(fromB.total).toBe(0);
+      const fromA = await svc.findAll(ctx(a.schoolId, a.ownerId), { search: "chiamaka", page: 1, limit: 10 });
+      expect(fromA.total).toBe(1);
+    });
+
     it("filters invoices to the selected class arm instead of silently returning the whole term", async () => {
       const { schoolId, ownerId } = await makeSchool("list-arm-filter");
       const { academicYearId, termId, classLevelId, classArmId: armAId } =

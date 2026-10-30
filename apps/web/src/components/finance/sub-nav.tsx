@@ -50,9 +50,9 @@ const TABS: SectionTabItem[] = [
 // rendered, and one of the copies had no permission gate at all.
 //
 // Real destination, real gate, verified rather than assumed:
-//   - /finance/invoices is where a payment is recorded, against a chosen
-//     invoice. There is no standalone /finance/payments page — that route
-//     holds only the Paystack callback.
+//   - /finance/payments/record (2026-10-30): find the student, see their
+//     unpaid bills, record against one. Before it, this went to the bills
+//     list and the bursar had to find the bill first.
 //   - payment.record is the permission the API enforces on the mutation, so
 //     anyone without it is not shown a button that would 403 on arrival.
 //
@@ -72,7 +72,7 @@ function FinanceSectionActions() {
 
   return (
     <Button asChild size="sm">
-      <Link href="/finance/invoices">
+      <Link href="/finance/payments/record">
         <Receipt className="mr-2 h-4 w-4" aria-hidden />
         Record payment
       </Link>

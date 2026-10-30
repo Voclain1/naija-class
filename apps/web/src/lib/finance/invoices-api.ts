@@ -32,6 +32,10 @@ export function listInvoices(options: {
   classArmId?: string;
   studentId?: string;
   status?: InvoiceStatus;
+  /** Student name or admission number (Record payment). */
+  search?: string;
+  /** Only bills that can still take a payment. */
+  unpaid?: boolean;
   page?: number;
   limit?: number;
 } = {}): Promise<PaginatedInvoicesDto> {
@@ -40,6 +44,8 @@ export function listInvoices(options: {
   if (options.classArmId) params.set("classArmId", options.classArmId);
   if (options.studentId) params.set("studentId", options.studentId);
   if (options.status) params.set("status", options.status);
+  if (options.search) params.set("search", options.search);
+  if (options.unpaid) params.set("unpaid", "true");
   if (options.page !== undefined) params.set("page", String(options.page));
   if (options.limit !== undefined) params.set("limit", String(options.limit));
   const qs = params.toString() ? `?${params.toString()}` : "";

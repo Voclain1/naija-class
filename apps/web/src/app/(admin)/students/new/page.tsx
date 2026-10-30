@@ -26,13 +26,7 @@ export default function NewStudentPage() {
       <header className="flex flex-col gap-1">
         <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Add student</h1>
         <p className="text-sm text-muted-foreground">
-          Name, date of birth and gender (and the admission number, unless
-          SchoolKit assigns it) are all that&apos;s needed — everything else is optional and can come later. Adding
-          several at once?{" "}
-          <Link href="/students/new/bulk" className="underline underline-offset-2">
-            Use the grid
-          </Link>
-          .
+          Only name, date of birth and gender are needed. The rest can come later.
         </p>
       </header>
       {settings && <AdmissionNumbersQuestion settings={settings} onDecided={setSettings} />}
