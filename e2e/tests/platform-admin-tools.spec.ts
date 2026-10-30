@@ -38,12 +38,20 @@ test("a platform admin caps a school's AI budget and resends, then cancels, its 
     await page.getByRole("button", { name: /sign in/i }).click();
     await expect(page).toHaveURL(/\/super-admin\/dashboard/, { timeout: 60_000 });
 
-    await page.getByLabel("School name").fill(schoolName);
-    await page.getByLabel("Owner email").fill(`first-owner-${suffix}@school-kit.test`);
-    await page.getByRole("button", { name: "Create & invite" }).click();
-    const firstLink = page.getByRole("link", { name: /\/invitations\// });
+    // Since the 2026-10-30 console redesign, schools live on their own page
+    // and provisioning is a dialog opened from it.
+    await page.getByRole("link", { name: "Schools" }).first().click();
+    await expect(page).toHaveURL(/\/super-admin\/dashboard\/schools/);
+    await page.getByRole("button", { name: "Provision a school" }).click();
+    const provision = page.getByRole("dialog");
+    await provision.getByLabel("School name").fill(schoolName);
+    await provision.getByLabel("Owner email").fill(`first-owner-${suffix}@school-kit.test`);
+    await provision.getByRole("button", { name: "Create & invite" }).click();
+    const firstLink = provision.getByRole("link", { name: /\/invitations\// });
     await expect(firstLink).toBeVisible({ timeout: 30_000 });
     const firstToken = (await firstLink.textContent())!.split("/invitations/")[1]!;
+    await page.keyboard.press("Escape");
+    await expect(provision).toBeHidden();
 
     // ---- 3. The roster row ----------------------------------------------------
     const row = page.getByRole("row").filter({ hasText: schoolName });
@@ -51,7 +59,6 @@ test("a platform admin caps a school's AI budget and resends, then cancels, its 
     const school = await basePrisma.school.findFirstOrThrow({ where: { name: schoolName }, select: { id: true, slug: true } });
     await expect(row.getByText(school.slug, { exact: true })).toBeVisible();
     await expect(row.getByText("Pending owner")).toBeVisible();
-    await expect(row.getByText("2M/mo (default)")).toBeVisible();
 
     // ---- 4. AI budget ---------------------------------------------------------
     // The dialog hides the page behind it from the accessibility tree, so row
@@ -73,10 +80,6 @@ test("a platform admin caps a school's AI budget and resends, then cancels, its 
     await expect(dialog.getByText("Capped at")).toBeVisible();
     expect((await basePrisma.school.findUniqueOrThrow({ where: { id: school.id } })).aiMonthlyTokenBudget).toBe(750_000);
     await page.screenshot({ path: "test-results/platform-admin-tools/1-budget.png" });
-    await closeManage();
-    await expect(row.getByText("750k/mo")).toBeVisible();
-
-    await openManage();
     await dialog.getByRole("button", { name: "Use platform default" }).click();
     await expect(dialog.getByText("On the platform default:")).toBeVisible();
 
@@ -100,7 +103,6 @@ test("a platform admin caps a school's AI budget and resends, then cancels, its 
     expect(await status(secondToken)).toBe(410);
     await closeManage();
     await expect(row.getByText("No owner")).toBeVisible();
-    await expect(row.getByText("2M/mo (default)")).toBeVisible();
     await page.screenshot({ path: "test-results/platform-admin-tools/3-no-owner.png", fullPage: true });
 
     const actions = await basePrisma.auditLog.findMany({
@@ -146,6 +148,7 @@ test("a platform admin suspends a school, reactivates it, then deletes it", asyn
     await page.getByLabel("Password").fill(operator.password);
     await page.getByRole("button", { name: /sign in/i }).click();
     await expect(page).toHaveURL(/\/super-admin\/dashboard/, { timeout: 60_000 });
+    await page.goto("/super-admin/dashboard/schools");
 
     const row = page.getByRole("row").filter({ hasText: school.slug });
     await expect(row).toBeVisible({ timeout: 30_000 });
@@ -197,7 +200,7 @@ test("a platform admin suspends a school, reactivates it, then deletes it", asyn
     expect((await ownerLogin()).status()).toBe(401);
 
     // ---- Slice 3: the platform activity log keeps the whole story ------------
-    await page.reload();
+    await page.getByRole("link", { name: "Activity" }).first().click();
     const activity = page.getByRole("list", { name: "Platform activity" });
     await expect(activity.getByText("Deleted the school and its 0 students").first()).toBeVisible({ timeout: 30_000 });
     await expect(activity.getByText("Reactivated the school").first()).toBeVisible();

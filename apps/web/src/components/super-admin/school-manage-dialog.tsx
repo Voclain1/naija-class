@@ -32,6 +32,7 @@ import { SchoolAddressSection } from "./school-address-section";
 import { WebsiteReviewPanel } from "./website-review";
 import { PlanSection, SmartImportSection, SmsSenderSection } from "./school-features-section";
 import { DeleteSchoolSection, SchoolAccessSection } from "./school-lifecycle-sections";
+import { SchoolSwitchesSection } from "./school-switches-section";
 import { ownerStatusOf, parseTokenCount } from "./school-manage";
 
 // Platform-admin tools, slice 1 (2026-10-06): one school's settings that are
@@ -194,8 +195,10 @@ export function SchoolManageDialog({ school, onClose, onChanged, onDeleted }: Pr
           </DialogDescription>
         </DialogHeader>
 
+        <SchoolSwitchesSection school={school} onChanged={onChanged} />
+
         <section
-          className="flex flex-col gap-3"
+          className="flex flex-col gap-3 border-t pt-4"
           aria-labelledby="manage-ai-budget"
         >
           <h3 id="manage-ai-budget" className="font-medium">

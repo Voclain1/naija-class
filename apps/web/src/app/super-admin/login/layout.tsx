@@ -1,0 +1,21 @@
+import type { ReactNode } from "react";
+
+import { SchoolKitWordmark } from "@/components/brand/schoolkit-mark";
+
+export default function SuperAdminLoginLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <div className="sk-entry flex min-h-screen flex-col items-center justify-center gap-6 p-4">
+      <div className="flex flex-col items-center gap-2 text-center">
+        <SchoolKitWordmark iconSize={40} textClassName="text-2xl" />
+        <p className="text-sm text-muted-foreground">
+          Platform admin — internal only
+        </p>
+      </div>
+      {children}
+    </div>
+  );
+}

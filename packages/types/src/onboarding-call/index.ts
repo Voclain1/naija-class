@@ -79,6 +79,12 @@ export interface OnboardingCallBookingDto {
 /** GET /schools/me/onboarding-call. `show`: the page should appear (only to the owner, until they book or skip). */
 export interface OnboardingCallStateDto {
   show: boolean;
+  /**
+   * The owner or an admin of a set-up school with no booking yet may book from
+   * the checklist or a setup reminder (/welcome?book=1), even after the page
+   * that opens by itself has closed (docs/modules/activation.md).
+   */
+  canBook: boolean;
   booking: OnboardingCallBookingDto | null;
   /** Pre-fills the form: the owner's name and phone. */
   suggestedName: string;

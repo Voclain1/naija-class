@@ -100,3 +100,14 @@ and can be skipped. Each booking reaches our WhatsApp.
   again) and skip.
 - `apiActivateSchool` skips the page for every other spec, like the
   first-login tour; `phase-0-happy-path` skips it through the UI.
+
+## Since 2026-10-30 (`docs/modules/activation.md`)
+
+- The page opened again, once, for schools that finished setup before it
+  existed and have fewer than 5 students and no booking (migration
+  `20261130120000_activation`).
+- `/welcome?book=1` opens the form for the owner or an admin of a set-up school
+  with no booking (`canBook` on the state), even after the page has closed. A
+  school that has booked sees its booking. The dashboard checklist ("Would you
+  like a hand?") and the setup reminder emails link there.
+- In the platform admin, Setup calls is now a tab under **Requests**.

@@ -196,13 +196,16 @@ export const baseConfig = [
       // all schools. It uses basePrisma to fetch the school list, then calls withTenant
       // per school for the actual invoice updates. No tenant data is accessed via basePrisma.
       "**/modules/finance/finance.service.ts",
-      // onboarding-nudge.service.ts — same category as finance.service.ts's
-      // entry directly above: sendPendingNudges is a system cron that
-      // iterates all ACTIVE schools. It uses basePrisma to fetch the
-      // candidate school list, then calls withTenant per school for the
-      // actual audit-log/academic-year/student reads and the nudge-sent
-      // stamp. No tenant data is accessed via basePrisma.
-      "**/modules/onboarding-nudge/onboarding-nudge.service.ts",
+      // activation.service.ts — setup reminders (docs/modules/activation.md).
+      // Same category: a daily system cron that iterates every school.
+      // basePrisma reads ONLY `schools` (the list, and the "stop these
+      // emails" stamp); students, staff, the owner and the reminder rows are
+      // read and written through withTenant per school. It replaced the
+      // one-shot onboarding-nudge.service.ts that held this entry before.
+      "**/modules/activation/activation.service.ts",
+      // activation-platform.service.ts — the platform admin's Getting started
+      // list: basePrisma reads `schools` only, then withTenant per school.
+      "**/modules/activation/activation-platform.service.ts",
       // session-sweeper.service.ts — same category: a daily system cron that
       // iterates every school. basePrisma fetches ONLY the school id list
       // (schools has no RLS); the expired-session deletes run through

@@ -225,6 +225,9 @@ model School {
   //                          hold bookings without reading every school's.
   onboardingCallPromptClosedAt DateTime?      @map("onboarding_call_prompt_closed_at")
   onboardingCallBookedAt      DateTime?       @map("onboarding_call_booked_at")
+  // Getting started (2026-10-30, docs/modules/activation.md): the owner pressed
+  // "Stop these emails" in a setup reminder.
+  setupEmailsStoppedAt        DateTime?       @map("setup_emails_stopped_at")
   //   assignmentFeedbackAiEnabled  Phase 9 / CP4b. The school's own opt-in to
   //                          AI drafts of marking feedback. OFF by default,
   //                          set by owner/admin; aiEnabled must be on too, and
@@ -5558,4 +5561,27 @@ model OnboardingCallBooking {
 
   @@index([schoolId, createdAt])
   @@map("onboarding_call_bookings")
+}
+
+// Getting started (2026-10-30, docs/modules/activation.md): a setup reminder
+// sent to a school's owner, at most one of each kind. status is Resend's
+// (SENT, then DELIVERED, BOUNCED or COMPLAINED; FAILED when the send itself
+// failed). Clicks are counted by the API's own redirect. stageAtSend (1-6) is
+// the school's stage when it went, to show whether it moved on afterwards.
+model ActivationEmail {
+  id             String    @id @default(uuid())
+  schoolId       String    @map("school_id")
+  kind           String
+  toEmail        String    @map("to_email")
+  providerId     String?   @map("provider_id")
+  stageAtSend    Int       @map("stage_at_send")
+  status         String    @default("SENT")
+  sentAt         DateTime  @default(now()) @map("sent_at")
+  deliveredAt    DateTime? @map("delivered_at")
+  firstClickedAt DateTime? @map("first_clicked_at")
+  clickCount     Int       @default(0) @map("click_count")
+
+  @@unique([schoolId, kind])
+  @@index([schoolId, providerId])
+  @@map("activation_emails")
 }
