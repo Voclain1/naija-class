@@ -1,7 +1,8 @@
 # Launch checklist
 
 Everything that stands between the code as built and schools relying on it,
-with who does it and where. Written 2026-10-19 after the pre-launch sweep.
+with who does it and where. Written 2026-10-19 after the pre-launch sweep; updated for the VPS on
+2026-10-30.
 Tick an item here **and** in `docs/deferred.md` when it is done. Engineering
 work that is already built is not listed; this page is what is left.
 
@@ -9,19 +10,26 @@ Status key: **Done**, **Open** (needs doing), **Waiting** (on someone outside).
 
 ## 1. Settings on the live services
 
+Since the move on 2026-10-26 everything runs on the VPS
+(`docs/runbooks/vps-migration.md`). Settings live in three GitHub secrets,
+written to the server by `deploy-vps.yml` on every deploy: `API_ENV_FILE`
+(the API and render worker), `WEB_ENV_FILE` and `PORTAL_ENV_FILE`. They were
+filled from the Fly and Vercel values at the move. Changing one takes effect
+at the next deploy (the next merged PR, or **deploy-vps** run by hand).
+
 | Item | Where | Status |
 |---|---|---|
-| `RESEND_WEBHOOK_SECRET` on `school-kit-api` | Fly → school-kit-api → Secrets | **Staged** 2026-10-19. Takes effect at the next deploy (the next merged PR). Then an announcement's outbox should show "delivered". |
+| `RESEND_WEBHOOK_SECRET` | `API_ENV_FILE` | **Check** that the line is there. Then an announcement's outbox shows "delivered"; without it the webhook answers 503. |
 | Resend webhook to `https://api.schoolkit.ng/api/v1/webhooks/resend` (delivered, bounced, complained) | Resend → Webhooks | **Done** 2026-10-19, enabled. |
-| `STORAGE_DRIVER=r2` and the four `R2_*` values on `school-kit-api` | Fly → Secrets | **Done** 2026-10-20: confirmed `r2` (image addresses are served from R2). Any other value would keep uploads on the machine, which a deploy replaces. |
-| `RESULT_PIN_HMAC_KEY` on `school-kit-api` | Fly → Secrets | **Check.** The API refuses to start in production without it, so a running API means it is set. |
-| `PORTAL_PROXY_SECRET`, same value on `school-kit-portal` (Vercel) and `school-kit-api` (Fly) | Vercel → Environment Variables; Fly → Secrets | **Check** with `vercel env ls`. On one side only, it silently does nothing. |
-| `SESSION_COOKIE_DOMAIN=schoolkit.ng` on `school-kit-web` | Vercel | **Done** 2026-10-07 (`docs/runbooks/web-session-cookie.md`). |
-| WhatsApp alerts for setup-call bookings (`WHATSAPP_*` in `API_ENV_FILE`) | Meta, then the VPS | **Open** (optional). Steps in `docs/runbooks/whatsapp-alerts.md`. Until then bookings come by email, in the platform admin under Setup calls, and from the school's own WhatsApp. |
-| `POSTHOG_API_KEY` on `school-kit-api` | Fly → Secrets | **Open** (optional). Unset sends nothing. |
-| `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` on `school-kit-web` | Vercel | **Open** (optional). Uploads source maps, so browser errors show real file names. |
-| Public addresses (`PORTAL_BASE_URL`, `WEB_BASE_URL`, `CORS_ORIGIN`, `CORS_ORIGIN_PORTAL`) moved from secrets to `fly.toml [env]` | `apps/api/fly.toml` | **Open.** Tidy-up, not urgent. Do it while watching a deploy. |
-| School web addresses (`<code>.schoolkit.ng`): the wildcard domain and the variables | Vercel (DNS is on Vercel today), then the VPS | **Done** on Vercel, with `SCHOOL_ADDRESSES_LIVE=on`, by 2026-10-23 (owner, confirmed 2026-10-25). Links, PIN cards and Google's official addresses use `<code>.schoolkit.ng`. On the VPS since the move on 2026-10-26 (`docs/runbooks/school-addresses.md`, VPS section). |
+| `STORAGE_DRIVER=r2` and the four `R2_*` values | `API_ENV_FILE` | **Done** 2026-10-20, carried to the VPS. Any other value would keep uploads inside the container, which a deploy replaces. |
+| `RESULT_PIN_HMAC_KEY` | `API_ENV_FILE` | **Done.** The API refuses to start in production without it, and it is running on the VPS. |
+| `PORTAL_PROXY_SECRET`, the same value in both | `API_ENV_FILE` and `PORTAL_ENV_FILE` | **Check** the two values match. In one only, it silently does nothing (rate limits key on the portal, not on each family). |
+| `SESSION_COOKIE_DOMAIN=schoolkit.ng` | `WEB_ENV_FILE` | **Done** 2026-10-07 (`docs/runbooks/web-session-cookie.md`). The web build refuses to start without it, so a running web app means it is set. |
+| WhatsApp alerts for setup-call bookings (`WHATSAPP_*`) | Meta, then `API_ENV_FILE` | **Open** (optional). Steps in `docs/runbooks/whatsapp-alerts.md`. Until then bookings come by email, in the platform admin under Setup calls, and from the school's own WhatsApp. |
+| `POSTHOG_API_KEY`, `POSTHOG_HOST` | `API_ENV_FILE` | **Open** (optional). Unset sends nothing. |
+| `SENTRY_AUTH_TOKEN`, `SENTRY_ORG` for the web build | the web image build in `deploy-vps.yml` | **Open** (optional). Uploads source maps, so browser errors show real file names. Needs the token passed to the build as a build secret; today the VPS web build has none, so it uploads nothing. |
+| School web addresses (`<code>.schoolkit.ng`): wildcard domain and certificate | The VPS (Caddy) | **Done.** Live since 2026-10-23, on the VPS since 2026-10-26 (`docs/runbooks/school-addresses.md`, VPS section). |
+| The old Vercel projects (`school-kit-web`, `school-kit-portal`) | Vercel | **Open.** Git is disconnected (owner, 2026-10-26), but the projects still build PR previews. Unlink the repository or delete the projects once nothing points at them. |
 
 ## 2. Payments, messages and AI
 
@@ -29,11 +37,11 @@ Status key: **Done**, **Open** (needs doing), **Waiting** (on someone outside).
 |---|---|
 | Paystack webhook URL in the Paystack dashboard | **Done** 2026-10-11. |
 | One real payment from a phone: checkout closes and the invoice updates | **Done** 2026-10-20. Production runs on the live key, so it was a real ₦100 payment from the portal on a phone, to a test school whose subaccount is the owner's own account. Checkout closed, the invoice showed Paid, and the split reached the subaccount. |
-| Switch off Paystack's own customer receipt emails (Paystack dashboard → Settings → Preferences) | **Open.** Do it **after** the deploy carrying the school-named payment confirmation email (2026-10-21), never before, or parents get no confirmation at all in between. Paystack's email says "payment to SchoolKit"; ours names the school. |
+| Switch off Paystack's own customer receipt emails (Paystack dashboard → Settings → Preferences) | **Open**, and safe to do now: our school-named payment confirmation email (2026-10-21) is live. Paystack's email says "payment to SchoolKit"; ours names the school. |
 | SchoolKit's Paystack trading name | **Open** (optional). Suggested: "SchoolKit School Fees" (21 characters, so statements do not cut it off). It is what parents see on bank statements. Paystack may ask for it to match the registered business. |
 | SMS sender name: SchoolKit's CAC registration, then `TERMII_SENDER_ID` | **Waiting** (CAC). Schools with their own CAC can request their own name now. |
 | WhatsApp (CP9) | **Waiting** on a Meta-approved business number. |
-| AI: `AI_ENABLED` is on; each school's own AI switch is off until the operator turns it on | **Done.** Turn on per school in the platform admin. |
+| AI: `AI_ENABLED` is on, and every school's AI and Smart Import switches are on | **Done** 2026-10-25 (migration `20261125120000`): on for every school, and new schools start with both on. The platform admin can still switch either off for one school. |
 | Smart Student Import accuracy test (about 10 photographed registers with checked answers, `pnpm ai:eval:registers`) | **Open, no longer blocking.** Since 2026-10-25 Smart Import is on for every school as a beta (owner's decision, `docs/modules/smart-student-import.md` §9). The beta's real correction counts now take this test's place as the bar for leaving beta. |
 
 ## 3. Legal and commercial
@@ -57,7 +65,7 @@ Status key: **Done**, **Open** (needs doing), **Waiting** (on someone outside).
 | Item | Status |
 |---|---|
 | Force a password reset for accounts created under the Phase 0 password rules | **Done** 2026-10-19: at sign-in, a right password that fails today's rules gets a 15-minute reset token instead of a session (web and staff app). |
-| Confirm the production database connection limit (assumed 3) in the Neon dashboard | **Open.** |
+| Production database connection limit | **No longer applies.** Neon's limit was the concern; since 2026-10-26 the database is Postgres on the VPS, beside the API. |
 | Online exams: switch on about four weeks before a school's first exam period | **Open** (`docs/runbooks/cbt-go-live.md`). |
 
 ## 6. What the 2026-10-19 sweep fixed
