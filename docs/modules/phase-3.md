@@ -359,6 +359,8 @@ POST   /invoices/arm/generate            — body: { termId, classArmId } — is
 GET    /invoices?termId=&classArmId=&status=
 GET    /invoices/:id
 POST   /invoices/:id/cancel
+# 2026-10-30: GET /invoices also takes search= (student name or admission number) and
+# unpaid=true, for the Record payment page — docs/modules/everyday-shortcuts.md
 
 # Slice 7 — manual payments + receipts
 # Controller declaration order: list → POST /manual (static) → GET /:id → GET /:id/receipt
