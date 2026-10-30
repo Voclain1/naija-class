@@ -42,6 +42,7 @@ at the next deploy (the next merged PR, or **deploy-vps** run by hand).
 | SMS sender name: SchoolKit's CAC registration, then `TERMII_SENDER_ID` | **Waiting** (CAC). Schools with their own CAC can request their own name now. |
 | WhatsApp (CP9) | **Waiting** on a Meta-approved business number. |
 | AI: `AI_ENABLED` is on, and every school's AI and Smart Import switches are on | **Done** 2026-10-25 (migration `20261125120000`): on for every school, and new schools start with both on. The platform admin can still switch either off for one school. |
+| Setup reminders to stuck schools (`docs/modules/activation.md`) | **Live with the deploy.** The daily run (08:41 Lagos) sends existing stuck schools their first reminder 25 a day; follow them on the platform admin's **Getting started** page. Delivered and bounced need the Resend webhook (`RESEND_WEBHOOK_SECRET`, section 1); clicks are counted by the API either way. |
 | Smart Student Import accuracy test (about 10 photographed registers with checked answers, `pnpm ai:eval:registers`) | **Open, no longer blocking.** Since 2026-10-25 Smart Import is on for every school as a beta (owner's decision, `docs/modules/smart-student-import.md` §9). The beta's real correction counts now take this test's place as the bar for leaving beta. |
 
 ## 3. Legal and commercial

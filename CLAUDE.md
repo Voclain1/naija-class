@@ -622,6 +622,11 @@ read under that school's GUC, and SchoolKit's report queue reads a count on
 `schools` (no RLS), `website_open_reports`, rather than every school's
 `school_website_reports` (`docs/modules/school-website.md`).
 
+**Getting started and the console redesign (2026-10-30):** no function added
+or changed; count stays 23. The platform admin's Getting started list reads
+`schools` (no RLS), then each school's counts, owner and setup reminders under
+that school's own GUC, one school at a time (`docs/modules/activation.md`).
+
 **Next review due at 26.**
 
 **Current count: 23.**
@@ -1081,6 +1086,12 @@ means nothing is sent and nothing fails. Never to a school or a family. Steps in
 `docs/runbooks/whatsapp-alerts.md`; on the VPS they live in `API_ENV_FILE`.
 `ONBOARDING_CALL_ALERT_EMAIL` is where booking emails go (default
 hello@schoolkit.ng).
+
+`API_PUBLIC_URL` — the API's own public address, for the click and "stop" links
+in setup reminders (2026-10-30, `docs/modules/activation.md`). Empty means
+`https://api.schoolkit.ng` in production and `http://localhost:4000` in
+development; set it only if the API's address changes. Every link is signed
+under `RESULT_PIN_HMAC_KEY`, so rotating that key also ends old reminder links.
 
 `TERMII_BASE_URL` — unlike Paystack's fixed `api.paystack.co`, Termii's API
 base URL is **per-account** (dashboard-assigned), not a global constant.

@@ -138,7 +138,7 @@ There are five short screens. A bar at the top shows which one you are on.
 
    Press **Finish setup**.
 
-**Book a free setup call (optional).** Straight after **Finish setup**, SchoolKit offers you a free 30-minute call with our team to help you finish setting up: classes, staff, students and parents. Choose a day and a time (Lagos time), check your name and phone number, and press **Book**. We will message you on WhatsApp to confirm. You can also press **Send to SchoolKit on WhatsApp** to send us the booking from your own WhatsApp. If you would rather set up on your own, press **Skip for now**. Either way you go on to your Dashboard, and the page does not come back. You can still reach us any time (see [Getting help](#getting-help)).
+**Book a free setup call (optional).** Straight after **Finish setup**, SchoolKit offers you a free 30-minute call with our team to help you finish setting up: classes, staff, students and parents. Choose a day and a time (Lagos time), check your name and phone number, and press **Book**. We will message you on WhatsApp to confirm. You can also press **Send to SchoolKit on WhatsApp** to send us the booking from your own WhatsApp. If you would rather set up on your own, press **Skip for now**. Either way you go on to your Dashboard, and the page does not come back. You can still reach us any time (see [Getting help](#getting-help)). Changed your mind? While setup is unfinished, your dashboard checklist has **Book a setup call** under **Would you like a hand?**. And if you get stuck in the five welcome steps themselves, the foot of each page has our WhatsApp, phone number and email.
 
 **Why the dates matter:** registers, fees and results are all recorded against a term. If the dates are wrong, they will be filed under the wrong term. You can correct them later in **School setup → Sessions & classes**.
 
@@ -151,6 +151,8 @@ Your Dashboard now shows **Finish setting up your school** — a checklist made 
 - **These can wait** — optional extras, such as adding parents.
 
 Each item has a button that takes you to the right page, and it ticks itself off as soon as the job is done. The rest of Part 1 explains each item in plain words.
+
+**Setup reminders by email.** Until your students are in their classes, SchoolKit sends the school owner up to three short reminders (two days, a week and three weeks after you sign up), each with a link straight to your next step and an offer of a free setup call. To stop them, press **Stop these emails** at the foot of any reminder.
 
 ## Step 4. Add your students
 

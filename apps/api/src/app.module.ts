@@ -53,6 +53,7 @@ import { SchoolWebsiteModule } from "./modules/school-website/school-website.mod
 import { AccountDeletionModule } from "./modules/account-deletion/account-deletion.module";
 import { DataProtectionModule } from "./modules/data-protection/data-protection.module";
 import { OnboardingCallModule } from "./modules/onboarding-call/onboarding-call.module";
+import { ActivationModule } from "./modules/activation/activation.module.js";
 import { TransportModule } from "./modules/transport/transport.module";
 import { LibraryModule } from "./modules/library/library.module";
 import { HostelModule } from "./modules/hostels/hostel.module";
@@ -68,7 +69,6 @@ import { AiUsageModule } from "./modules/ai-usage/ai-usage.module";
 import { ParentSummariesModule } from "./modules/parent-summaries/parent-summaries.module";
 import { ReportCommentsModule } from "./modules/report-comments/report-comments.module";
 import { AiQueueModule } from "./common/ai/ai-queue.module";
-import { OnboardingNudgeModule } from "./modules/onboarding-nudge/onboarding-nudge.module.js";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { PlatformAdminModule } from "./modules/platform-admin/platform-admin.module";
 import { PortalAuthModule } from "./modules/portal-auth/portal-auth.module";
@@ -162,6 +162,7 @@ const isProd = process.env.NODE_ENV === "production";
     AccountDeletionModule,
     DataProtectionModule,
     OnboardingCallModule,
+    ActivationModule,
     TransportModule,
     LibraryModule,
     HostelModule,
@@ -207,7 +208,6 @@ const isProd = process.env.NODE_ENV === "production";
     InvoicesModule,
     PaymentsModule,
     FinanceModule,
-    OnboardingNudgeModule,
     DashboardModule,
     SetupStateModule,
     ExpensesModule,

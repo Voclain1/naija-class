@@ -23,7 +23,8 @@ This doc turns the "Platform super-admin — expansion scope" list in
 | 1 | Slug on the roster, AI budget control, owner-invitation resend/cancel | **Built 2026-10-06** |
 | 2 | School lifecycle: suspend / reactivate, and delete | **Built 2026-10-07** |
 | 3 | Reading the audit trail (platform admins, the platform's own rows) | **Built 2026-10-07** |
-| 4 | Platform analytics (signups, activation, adoption) | Needs an anonymisation design |
+| — | Console redesign and Getting started (activation) | **Built 2026-10-30** (below; `docs/modules/activation.md`) |
+| 4 | Platform analytics (signups, activation, adoption) | Activation built 2026-10-30 (`docs/modules/activation.md`); wider analytics still need an anonymisation design |
 | — | Billing management | Blocked on pricing |
 | — | Impersonation ("act as this school") | A decision, not a feature — not started |
 
@@ -250,3 +251,29 @@ when two entries share a millisecond.
 - E2E: the dialog's History shows the suspension straight away, and the
   dashboard's activity card shows the suspend, reactivate and delete of a
   school that no longer exists.
+
+## Console redesign — built 2026-10-30
+
+Owner's request: the one long page of eight cards was "too full". It became a
+console with a side menu (a top menu that folds down on a phone), one page per
+job. Every page sits under `/super-admin/dashboard/*`, so the middleware's
+platform-session gate covers them all. The sign-in page centres itself
+(`login/layout.tsx`).
+
+| Page | What is on it |
+|---|---|
+| **Overview** (`/super-admin/dashboard`) | Four figures (schools, using SchoolKit, stuck in setup, students on roll) and **Needs you**: setup calls to hold, schools stuck in setup, Paystack subaccounts to create, website reports to answer, SMS names to submit. Each line links to the page that handles it. |
+| **Getting started** | `docs/modules/activation.md`. |
+| **Schools** | Search by name or code; filter by status (including "SMS name to submit") and plan. Five columns: school (code, click to copy the id), status, students against the plan's cap, staff, signed up. **People** and **Manage** on each row. **Provision a school** is a button that opens a dialog. `?manage=<id>` opens a school's dialog (Getting started links there). |
+| **Requests** | Tabs: Setup calls, Paystack setup, Website reports (`?tab=calls\|paystack\|websites`). |
+| **Smart Import beta** | The beta results, unchanged. |
+| **People** | Staff accounts, every school or one (`?school=<id>`). |
+| **Activity** | The platform audit trail (slice 3). |
+
+The AI, early-access and staff-mobile columns moved into a **Switches** section
+at the top of each school's **Manage** dialog (`school-switches-section.tsx`),
+with the same calls and rules: turning AI on asks first and turning it off
+does not; early access is a marker only; staff mobile stays read-only (the
+rollout script). The AI budget is no longer shown in the row; it is in the
+dialog as before. No API changed for the redesign.
+

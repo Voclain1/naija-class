@@ -104,6 +104,7 @@ export class OnboardingCallService {
       if (!school) throw new NotFoundError("School not found.");
       return {
         show: roleKeys.includes("owner") && school.status === "ACTIVE" && school.onboardingCallPromptClosedAt === null,
+        canBook: (roleKeys.includes("owner") || roleKeys.includes("admin")) && school.status === "ACTIVE" && booking === null,
         booking: booking ? toDto(booking) : null,
         suggestedName: user ? `${user.firstName} ${user.lastName}`.trim() : "",
         suggestedPhone: user?.phone ?? "",

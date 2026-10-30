@@ -64,7 +64,16 @@ export function BookSetupCall() {
   useEffect(() => {
     apiFetch<OnboardingCallStateDto>("/schools/me/onboarding-call")
       .then((s) => {
-        if (!s.show) {
+        // ?book=1 (the checklist's link, a setup reminder) opens the page for
+        // an owner or admin who has not booked yet, even after it has closed.
+        const bookMode = new URLSearchParams(window.location.search).get("book") === "1";
+        if (bookMode && s.booking) {
+          // Already booked: show it again rather than a second form.
+          setState(s);
+          setBooked(s.booking);
+          return;
+        }
+        if (!s.show && !(bookMode && s.canBook)) {
           router.replace("/dashboard");
           return;
         }
