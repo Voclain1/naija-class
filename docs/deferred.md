@@ -248,8 +248,9 @@ the module doc or the PR, then link it here.
   dashboard's whole-school 8-week read. `EXPLAIN` as `app_user` under a school
   GUC shows a bitmap index scan with both the RLS `school_id` and the date
   range as index conditions.
-- [ ] **Production `connection_limit` is unverified** (assumed 3). Check
-  `app_user` connections in the Neon dashboard.
+- [x] **NO LONGER APPLIES 2026-10-30 — Production `connection_limit`.** The
+  worry was Neon's limit. Since 2026-10-26 the database is Postgres on the
+  VPS beside the API, and `createPrismaClient` fixes the pool at 3 anyway.
 - [x] **DONE 2026-10-08 — Expired-session sweeper.**
   `SessionSweeperService` (daily, 03:40 UTC) deletes staff, guardian and
   student sessions more than a day past expiry, school by school under
@@ -491,10 +492,9 @@ The whole list, with where each step is done and its status, is
   - calendar;
   - class timetables;
   - the Android and iOS smokes.
-- [ ] **Public-origin config.** `PORTAL_BASE_URL`, `WEB_BASE_URL`,
-  `CORS_ORIGIN` and `CORS_ORIGIN_PORTAL` are public but held as Fly secrets.
-  Move them to `fly.toml [env]` together, after confirming whether a secret
-  or `[env]` wins.
+- [x] **NO LONGER APPLIES 2026-10-30 — Public-origin config in
+  `fly.toml [env]`.** Fly is no longer used; on the VPS these are lines in
+  `API_ENV_FILE` like every other setting.
 
 ## 4. Recurring maintenance
 

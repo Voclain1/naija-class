@@ -241,8 +241,9 @@ jobs:
           ssh vps "/opt/school-kit/deploy.sh ${TAG}"
           ssh vps 'docker logout ghcr.io'
 
-      # Five operations against the public address: health, database role,
-      # sign-up, login, schools/me (scripts/smoke-test.sh, as on Fly).
+      # Six operations against the public addresses: health, database role,
+      # sign-up, login, schools/me, and the portal's health on the VPS (not
+      # the old Vercel project, the script's default).
       - name: Smoke test
         id: smoke
         run: |
@@ -250,6 +251,7 @@ jobs:
           bash scripts/smoke-test.sh
         env:
           SMOKE_API_URL: https://${{ vars.VPS_API_HOST }}
+          SMOKE_PORTAL_URL: https://${{ vars.VPS_PORTAL_HOST || 'portal.schoolkit.ng' }}
 
       - name: Roll back on smoke failure
         if: failure() && steps.smoke.outcome == 'failure'
