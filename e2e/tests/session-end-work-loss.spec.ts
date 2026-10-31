@@ -310,13 +310,16 @@ test.describe("bulk student add stops when the session is gone", () => {
   }) => {
     // Standing guidance, not remembered state: browser-storage drafts were
     // considered and rejected, so what makes recovery safe is the server's
-    // per-school uniqueness on admission number, and the page says so.
+    // per-school uniqueness on admission number, and the page says so. Since
+    // 2026-10-30 the note sits behind the title's "?" with the grid tips.
     const admin = await loginAsAdmin(browser);
     await admin.page.goto(`${WEB}/students/new/bulk`);
-    await expect(admin.page.getByText("Interrupted partway through?")).toBeVisible({
-      timeout: 60_000,
-    });
-    await expect(admin.page.getByText(/already saved/i)).toBeVisible();
+    await admin.page
+      .getByRole("button", { name: "Help: Adding several students" })
+      .click({ timeout: 60_000 });
+    const help = admin.page.getByRole("dialog");
+    await expect(help.getByText("Interrupted?")).toBeVisible();
+    await expect(help.getByText(/added before it are saved/i)).toBeVisible();
 
     await admin.context.close();
     await admin.api.dispose();

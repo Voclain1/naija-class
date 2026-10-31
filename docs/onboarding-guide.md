@@ -156,11 +156,11 @@ Each item has a button that takes you to the right page, and it ticks itself off
 
 ## Step 4. Add your students
 
-Go to **Students** in the menu. There are four ways to add students. Choose whichever suits you.
+Go to **Students** in the menu and press **Add students**. A window shows the four ways to add them; choose whichever suits you.
 
 **One student at a time**
 
-1. Press the green **Add student** button.
+1. Press **Add students**, then **One student**.
 2. Fill in **Admission number**, **First name**, **Last name**, **Date of birth** and **Gender**.
 3. Under **Class**, choose the child's class (for example JSS 1 — JSS 1A). If you do not know yet, choose **Not yet — I'll place them later**.
 4. Everything else (address, blood group, medical notes and so on) is optional and can be filled in later.
@@ -168,7 +168,7 @@ Go to **Students** in the menu. There are four ways to add students. Choose whic
 
 **Several students by typing them in**
 
-1. Press the small arrow beside **Add student**, then **Add several in a grid**.
+1. Press **Add students**, then **Several in a grid**. Tips for pasting and moving around the grid are behind the **?** beside the page title.
 2. Under **Class for these students**, choose one class and check the **Term**. Use a separate batch for each class. If you do not know their class yet, choose **Not yet — I'll place them later**. Nothing is selected on your behalf.
 3. You get a table like a spreadsheet: admission number, first name, middle name, last name, date of birth, gender and email.
 4. Type straight across. **Tab** moves to the next box; **Enter** moves down. New rows appear as you need them.
@@ -179,7 +179,7 @@ If you chose to place them later, or your classes or school year are not set up 
 
 **Your whole register from a spreadsheet (fastest for a big school)**
 
-1. Press the small arrow beside **Add student**, then **Import from CSV**.
+1. Press **Add students**, then **Import a spreadsheet**.
 2. Press **Template CSV** to download an empty template. Fill it in — one row per child — and save it as CSV.
 3. In the **Class Arm** column, type each child's class exactly as SchoolKit spells it, for example `JSS 1A`. (Capital letters do not matter; spaces do — `JSS1A` will not match `JSS 1A`.) Leave it blank if you do not know.
 4. Upload the file. SchoolKit asks you to match your columns to its fields, and which **term** to put the children in.
@@ -189,7 +189,7 @@ If you chose to place them later, or your classes or school year are not set up 
 
 This is in **beta**: SchoolKit reads the page with AI and can make mistakes, so you check every row before anything is saved.
 
-1. Press the small arrow beside **Add student**, then **Scan a student list**.
+1. Press **Add students**, then **Scan a register**.
 2. **The first time only:** read how register photos are handled and press **I agree for my school**. The photo is sent to the AI reading service SchoolKit uses, read, and thrown away. Nothing from it is kept except the rows you save. Your agreement covers the whole school and is recorded with your name.
 3. Take a clear photo of **one page** of your register, handwritten or printed. Lay it flat in good light, fill the frame, hold the phone straight above it, and check the photo is sharp.
 4. SchoolKit reads the page and shows you a table. **Nothing is saved yet.** Check every name, date and class against the paper and correct anything that is wrong.
@@ -258,6 +258,7 @@ You can run SchoolKit on your own, but teachers need their own accounts before t
 - The link works **once** and lasts **7 days**.
 - The link is shown **only once**. If you leave the page without copying it, you will need to send a new invitation later.
 - Until they accept, the person shows on the Staff page as **Invited (pending)**.
+- On the Staff page, the **Role** filter lists every staff role (owner, administrator, principal, head teacher, teacher, bursar, admissions officer, inbox officer, health officer, librarian, house master, storekeeper), so you can see, say, just your bursars.
 
 **Inviting many teachers at once**
 
@@ -355,12 +356,15 @@ To see all invoices, press the **Invoice list** tab. Click any invoice to open i
 
 For cash, POS or bank transfer paid to the school:
 
-1. Go to **Bursary → Invoices** (or press **Record Fee** at the top of the Dashboard).
-2. Find the child's invoice and open it.
-3. Under **Record payment**, type the **Amount (₦)**, choose how they paid (cash, POS or bank transfer), the **Date paid**, and a **Reference** if you have one (for example the teller or POS number).
-4. Press **Record payment**.
+1. Press **Record Fee** at the top of the Dashboard, or **Record payment** on any Bursary page.
+2. Type the child's name or admission number. Children with unpaid bills appear as you type, with what each owes.
+3. Choose the child. Their unpaid bills are listed, oldest first, and the oldest is already chosen. Choose another if they are paying that one.
+4. Type the **Amount (₦)**, or press **Paid in full** to fill in the whole balance. Choose how they paid (cash, POS or bank transfer), the **Date paid**, and a **Reference** if you have one (for example the teller or POS number).
+5. Press **Record payment**. Press **Open receipt** to print it, or **Record another** for the next parent.
 
-The balance updates straight away, and the parent sees it too.
+The balance updates straight away, and the parent sees it too. You can also record a payment from inside the invoice itself, under **Record payment**.
+
+**No bill for the child?** The search only shows children with something left to pay. If the child has no bill yet, raise one under **Bursary → Invoices** first. A payment that covers two bills is recorded on each bill in turn.
 
 **Receipts:** every payment gets a numbered receipt with your school's logo. On the invoice, press **View receipt** or **View / print receipt** to print it or save it.
 

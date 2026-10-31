@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, ChevronDown, FileUp, Images, Loader2, Rows3, UserPlus } from "lucide-react";
+import { Images, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -14,17 +14,11 @@ import { ListExportMenu } from "@/components/shared/list-export-menu";
 import { PlanNotice } from "@/components/plans/plan-notice";
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { PrintButton } from "@/components/shared/print-button";
+import { AddStudentChooser } from "@/components/students/add-student-chooser";
 import { StudentsListControls } from "@/components/students/students-list-controls";
 import { StudentsRosterTable } from "@/components/students/students-roster-table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Appear, EmptyState, PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { ApiError } from "@/lib/api-client";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { listStudents } from "@/lib/students/students-api";
@@ -165,7 +159,7 @@ export default function StudentsRosterPage() {
         title="Students"
         subtitle={
           <span className="print:hidden">
-            Your school&apos;s roster. Add students one at a time, in a grid, or by importing a CSV.
+            Your school&apos;s roster.
           </span>
         }
         actions={
@@ -173,9 +167,8 @@ export default function StudentsRosterPage() {
              onto two ragged rows and gave the page two competing primaries.
              Now: the roster's own utilities (Export, Print) sit together on the
              left as small outline buttons, and every way of ADDING a student
-             collapses into one primary split button — click it for the common
-             case (one student), open the caret for the grid and the CSV import.
-             One primary action, one row, at any width. */
+             collapses into one primary button that opens a chooser of every
+             method (2026-10-30). One primary action, one row, at any width. */
           <div className="flex flex-wrap items-center gap-2 print:hidden">
             <div className="flex items-center gap-2">
               <ListExportMenu
@@ -194,62 +187,7 @@ export default function StudentsRosterPage() {
               </Button>
             </div>
 
-          <div className="flex items-center">
-            <Button asChild size="sm" className="rounded-r-none">
-              <Link href="/students/new">
-                <UserPlus className="h-4 w-4" />
-                Add student
-              </Link>
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  aria-label="More ways to add students"
-                  className="rounded-l-none border-l border-primary-foreground/25 px-2"
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuItem asChild>
-                  <Link href="/students/new/bulk">
-                    <Rows3 className="mr-2 h-4 w-4" />
-                    <span className="flex flex-col">
-                      <span>Add several in a grid</span>
-                      <span className="text-xs text-muted-foreground">
-                        Type or paste a row per student
-                      </span>
-                    </span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/students/import">
-                    <FileUp className="mr-2 h-4 w-4" />
-                    <span className="flex flex-col">
-                      <span>Import from CSV</span>
-                      <span className="text-xs text-muted-foreground">
-                        Upload a whole roster file
-                      </span>
-                    </span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/students/scan">
-                    <Camera className="mr-2 h-4 w-4" />
-                    <span className="flex flex-col">
-                      <span className="flex items-center gap-1.5">
-                        Scan a student list <Badge variant="warning">Beta</Badge>
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        Photograph a register page
-                      </span>
-                    </span>
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          <AddStudentChooser />
         </div>
         }
       />
@@ -296,38 +234,10 @@ export default function StudentsRosterPage() {
               : "Add your first student — or import a roster from CSV."
           }
           action={
-            /* The empty state is the one place all three routes stay visible
-               side by side — a school with no students yet is choosing an
-               intake method, not repeating a habit, so hiding two of them
-               behind a caret here would be the wrong trade. */
+            /* The same chooser as the header: every way to add, one line
+               each, so a school with no students yet picks a method first. */
             !search && !status && !classArmId ? (
-              <div className="flex flex-wrap justify-center gap-2">
-                <Button asChild>
-                  <Link href="/students/new">
-                    <UserPlus className="mr-1 h-4 w-4" />
-                    Add student
-                  </Link>
-                </Button>
-                <Button asChild variant="outline">
-                  <Link href="/students/new/bulk">
-                    <Rows3 className="mr-1 h-4 w-4" />
-                    Add several in a grid
-                  </Link>
-                </Button>
-                <Button asChild variant="outline">
-                  <Link href="/students/import">
-                    <FileUp className="mr-1 h-4 w-4" />
-                    Import from CSV
-                  </Link>
-                </Button>
-                <Button asChild variant="outline">
-                  <Link href="/students/scan">
-                    <Camera className="mr-1 h-4 w-4" />
-                    Scan a student list
-                    <Badge variant="warning" className="ml-1.5">Beta</Badge>
-                  </Link>
-                </Button>
-              </div>
+              <AddStudentChooser size="default" />
             ) : null
           }
         />
