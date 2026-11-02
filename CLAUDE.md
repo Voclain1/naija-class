@@ -22,7 +22,7 @@ If the work touches multi-tenancy, money, or AI, also read the "Hard rules" sect
 - Next.js: 15.x (App Router, React Server Components)
 - React: 19.x
 - NestJS: 10.x
-- Prisma: 7.10.0, pinned exactly (upgraded from 5.22 on 2026-10-12,
+- Prisma: 7.10.1, pinned exactly (upgraded from 5.22 on 2026-10-12, patch to 7.10.1 on 2026-11-02,
   `docs/modules/prisma-7-upgrade.md`). npm's `latest` tag is a Prisma 8
   release candidate, so never `pnpm add prisma@latest`. The client talks to
   Postgres through `@prisma/adapter-pg`; every client is built by
