@@ -39,7 +39,10 @@ import {
 //   7. A bursar has no Gradebook in the sidebar and the score API refuses them.
 
 const SHOTS = "test-results/admin-gradebook";
-const TAUGHT = "Further Mathematics";
+// Not a catalogue name: every school is seeded with the standard subjects
+// (Further Mathematics among them), so the fixture's own subject needs a name
+// the gradebook list shows once.
+const TAUGHT = "Applied Mathematics";
 const UNTAUGHT = "Civic Education"; // seeded at signup; no teacher is assigned to it
 
 async function enterColumn(page: Page, lastNames: string[], scores: [number, number, number][]) {
