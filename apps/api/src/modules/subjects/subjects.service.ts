@@ -77,6 +77,7 @@ export class SubjectsService {
             name: input.name,
             code: input.code,
             category: input.category ?? "CORE",
+            stages: input.stages ? [...new Set(input.stages)] : [],
             isActive: input.isActive ?? true,
           },
           select: SUBJECT_SELECT,
@@ -127,6 +128,7 @@ export class SubjectsService {
       if (input.name !== undefined) data.name = input.name;
       if (input.code !== undefined) data.code = input.code;
       if (input.category !== undefined) data.category = input.category;
+      if (input.stages !== undefined) data.stages = [...new Set(input.stages)];
       if (input.isActive !== undefined) data.isActive = input.isActive;
 
       try {
@@ -197,6 +199,7 @@ export const SUBJECT_SELECT = {
   name: true,
   code: true,
   category: true,
+  stages: true,
   isActive: true,
   createdAt: true,
   updatedAt: true,
@@ -210,6 +213,7 @@ export function toSubjectDto(row: SubjectRow): SubjectDto {
     name: row.name,
     code: row.code,
     category: row.category,
+    stages: row.stages,
     isActive: row.isActive,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

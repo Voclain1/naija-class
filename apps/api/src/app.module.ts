@@ -54,6 +54,7 @@ import { AccountDeletionModule } from "./modules/account-deletion/account-deleti
 import { DataProtectionModule } from "./modules/data-protection/data-protection.module";
 import { OnboardingCallModule } from "./modules/onboarding-call/onboarding-call.module";
 import { ActivationModule } from "./modules/activation/activation.module.js";
+import { SubjectHidesModule } from "./modules/subject-hides/subject-hides.module.js";
 import { TransportModule } from "./modules/transport/transport.module";
 import { LibraryModule } from "./modules/library/library.module";
 import { HostelModule } from "./modules/hostels/hostel.module";
@@ -163,6 +164,7 @@ const isProd = process.env.NODE_ENV === "production";
     DataProtectionModule,
     OnboardingCallModule,
     ActivationModule,
+    SubjectHidesModule,
     TransportModule,
     LibraryModule,
     HostelModule,

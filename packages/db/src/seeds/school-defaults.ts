@@ -55,7 +55,7 @@ import {
   DEFAULT_GRADING_COMPONENTS,
   DEFAULT_GRADING_SCHEME_NAME,
 } from "./grading.js";
-import { DEFAULT_SUBJECTS } from "./subjects.js";
+import { SUBJECT_CATALOGUE } from "./subject-catalogue.js";
 
 export async function applySchoolDefaults(
   tx: Prisma.TransactionClient,
@@ -96,19 +96,18 @@ export async function applySchoolDefaults(
     skipDuplicates: true,
   });
 
-  // A short, track-independent core subject catalogue (English Language,
-  // Mathematics, Civic Education) — the only subjects that are both
-  // WAEC-compulsory for every SSS track and the same subject at every level
-  // from JSS through SSS. See DEFAULT_SUBJECTS for the candidates considered
-  // and rejected. Bare catalogue entries only: no ClassSubject rows, so
-  // linking subjects to levels stays a deliberate step in the class-subject
-  // matrix UI.
+  // The standard subject list by stage (2026-11-02,
+  // docs/modules/subjects-by-class.md): each subject carries the stages it is
+  // taught in, and a class's subjects are those tagged with its stage. No
+  // class_subjects rows: deleting, adding or re-staging a class needs no
+  // remapping.
   await tx.subject.createMany({
-    data: DEFAULT_SUBJECTS.map((subject) => ({
+    data: SUBJECT_CATALOGUE.map((subject) => ({
       schoolId,
       code: subject.code,
       name: subject.name,
       category: subject.category,
+      stages: [...subject.stages],
     })),
     skipDuplicates: true,
   });

@@ -18,6 +18,7 @@ export const createSubjectSchema = z
       .max(20)
       .regex(/^[a-z0-9-]+$/, "Code must be lowercase letters, digits, and hyphens only"),
     category: z.enum(["CORE", "ELECTIVE", "VOCATIONAL"]).optional(),
+    stages: z.array(z.enum(["NURSERY", "KG", "PRIMARY", "JSS", "SSS"])).max(5).optional(),
     isActive: z.boolean().optional(),
   })
   .strict();
