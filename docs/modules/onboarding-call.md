@@ -61,6 +61,10 @@ and can be skipped. Each booking reaches our WhatsApp.
 4. **Platform admin → Setup calls:**
    - Every booking, newest first, open ones first in view.
    - A **WhatsApp** button opens a chat with the school.
+   - Since 2026-11-02 each booking also shows the email on the booker's own
+     SchoolKit account (`contactEmail`, read by `bookedBy` under the school's
+     GUC), with an **Email** button, for a phone that is not on WhatsApp. The
+     booking alert to hello@schoolkit.ng carries the same email.
    - **Mark done** / **Not done**.
    - It reads `schools` for the schools holding a booking, then each school's
      bookings under its own GUC. There is no SECURITY DEFINER function; the
