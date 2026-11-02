@@ -12,7 +12,7 @@ import {
   DEFAULT_CLASS_LEVELS,
   DEFAULT_GRADE_BOUNDARIES,
   DEFAULT_GRADING_COMPONENTS,
-  DEFAULT_SUBJECTS,
+  SUBJECT_CATALOGUE,
   basePrisma,
   withTenant,
 } from "@school-kit/db";
@@ -586,7 +586,7 @@ describe("Platform admin access (2026-08-02)", () => {
       // One default arm per level — the specific thing whose absence blocks
       // every enrollment workflow in the product.
       expect(seeded.arms).toBe(DEFAULT_CLASS_LEVELS.length);
-      expect(seeded.subjects).toBe(DEFAULT_SUBJECTS.length);
+      expect(seeded.subjects).toBe(SUBJECT_CATALOGUE.length);
       expect(seeded.schemes).toBe(1);
       expect(seeded.components).toBe(DEFAULT_GRADING_COMPONENTS.length);
       expect(seeded.boundaries).toBe(DEFAULT_GRADE_BOUNDARIES.length);
