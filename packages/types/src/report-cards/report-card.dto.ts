@@ -107,6 +107,8 @@ export interface ReportCardBoardResponse {
   // True when the term is the last of its academic year — the only term whose
   // cards take a promotion status, and whose approval requires one (§20.3).
   isFinalTerm: boolean;
+  /** Current ENROLLED roster, independent of the card status filter. */
+  roster: { enrolledCount: number; missingStudents: ReportCardStudentDto[] };
 }
 
 // POST /report-cards/arm/build — result summary.

@@ -210,6 +210,15 @@ This section used to be a running log; the log below it stopped on
 2026-09-01 and several of its "in progress" entries have since merged.
 Treat it as history. The current picture:
 
+- **Owner/teacher audit SK-02:** `fix/report-card-roster-sync` adds an enrolled
+  count and named missing students to the report-card board, restores rebuilding
+  an existing fully draft class, and exposes the existing owner-only reasoned
+  reopen action for SUBJECT_REVIEWED. Build now also refuses an enrolled
+  student's advanced card in another arm, protecting frozen results after a
+  transfer. No migration or permission changes. See
+  `docs/modules/report-card-roster-reconciliation.md` and October 29 journal.
+  Separate from bulk intake PR #486; owner handles merging.
+
 - **PR #467 CI follow-up:** the only failing Playwright case rendered the valid empty-school checklist. Its fixture now seeds an enrolled student before checking metrics, uses typed numeric amount overrides and selects the seeded term. CI must rerun before confirming deployment.
 
 - **Mobile dashboard rendering follow-up:** PR #463 merged. Owner's Android recording exposed vertically wrapped short money amounts and overlapping repainting. `fix/mobile-dashboard-metrics` removes metric size containment/cqi sizing and uses a one-line value renderer that measures its real card width and adjusts font size. Dashboard-specific phone/scroll regression added. See `docs/journal/2026-10-21.md` for verification and release state.
