@@ -441,8 +441,12 @@ describe("ReportCardService (cp1 — build + reads)", () => {
     expect(detail.subjects.map((x) => x.subjectId)).toEqual([maths]);
 
     // The list shows it; the other teacher cannot unhide it; the owner can.
-    // (Not `current`: this fixture's term ended in 2025, so a term hide is already over.)
+    // This fixture's term ended in 2025: by date alone a term hide is over,
+    // but while the school keeps that term current the hide still applies,
+    // so the "current" list must keep showing it.
     expect((await hides.list(ctx(schoolId, ownerId), {})).find((h) => h.id === hide.id)?.unhiddenAt).toBeNull();
+    await withTenant(schoolId, (db) => db.term.update({ where: { id: termId }, data: { isCurrent: true } }));
+    expect((await hides.list(ctx(schoolId, ownerId), { current: "true" })).map((h) => h.id)).toContain(hide.id);
     await expect(hides.unhide(ctx(schoolId, otherTeacher), hide.id, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
     await hides.unhide(ctx(schoolId, ownerId), hide.id, reqCtx);
     expect((await hides.list(ctx(schoolId, ownerId), {})).find((h) => h.id === hide.id)?.unhiddenAt).not.toBeNull();

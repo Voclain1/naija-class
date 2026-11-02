@@ -44,7 +44,15 @@ const HIDE_SELECT = {
   createdAt: true,
   unhiddenAt: true,
   subject: { select: { name: true } },
-  term: { select: { name: true, startDate: true, endDate: true, academicYear: { select: { label: true, endDate: true } } } },
+  term: {
+    select: {
+      name: true,
+      startDate: true,
+      endDate: true,
+      isCurrent: true,
+      academicYear: { select: { label: true, endDate: true, isCurrent: true } },
+    },
+  },
 } as const;
 
 @Injectable()
@@ -235,14 +243,20 @@ type HideRow = {
   createdAt: Date;
   unhiddenAt: Date | null;
   subject: { name: string };
-  term: { name: string; startDate: Date; endDate: Date; academicYear: { label: string; endDate: Date } };
+  term: { name: string; startDate: Date; endDate: Date; isCurrent: boolean; academicYear: { label: string; endDate: Date; isCurrent: boolean } };
 };
 
-/** Still in force today: not unhidden, and its term (or its session) has not ended. */
+/**
+ * Still in force: not unhidden, and its term (or session) is the school's
+ * current one or has not ended. "Current" counts as well as the dates because
+ * schools often keep a term current past its end date while results are
+ * finished, and a hide on it still applies to those results.
+ */
 function stillCurrent(r: HideRow, today: Date): boolean {
   if (r.unhiddenAt) return false;
-  if (r.until === "TERM") return r.term.endDate.getTime() >= startOfDay(today).getTime();
-  if (r.until === "YEAR") return r.term.academicYear.endDate.getTime() >= startOfDay(today).getTime();
+  const day = startOfDay(today).getTime();
+  if (r.until === "TERM") return r.term.isCurrent || r.term.endDate.getTime() >= day;
+  if (r.until === "YEAR") return r.term.academicYear.isCurrent || r.term.academicYear.endDate.getTime() >= day;
   return true;
 }
 
