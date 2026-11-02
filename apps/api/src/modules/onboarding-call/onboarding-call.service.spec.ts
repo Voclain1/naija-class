@@ -97,6 +97,8 @@ describe("OnboardingCallService", () => {
     expect(sent[0]!.subject).toContain(`Call a ${runId}`);
     expect(sent[0]!.html).toContain("10:00 am");
     expect(sent[0]!.html).toContain("0803 555 0142");
+    // The booker's account email, for when their phone is not on WhatsApp.
+    expect(sent[0]!.html).toContain(`call-a-owner-${runId}@t.test`);
   });
 
   it("a booking still stands when the email fails", async () => {
@@ -124,6 +126,8 @@ describe("OnboardingCallService", () => {
   it("lists every school's bookings for the platform admin, newest first, and marks one done", async () => {
     const all = (await platform.listAll()).filter((r) => [a.schoolId, b.schoolId].includes(r.schoolId));
     expect(all.map((r) => r.schoolId)).toEqual([b.schoolId, a.schoolId]);
+    // Each booking carries its own booker's account email, never another school's.
+    expect(all.map((r) => r.contactEmail)).toEqual([`call-b-owner-${runId}@t.test`, `call-a-owner-${runId}@t.test`]);
     const target = all[1]!;
     await platform.markDone(a.owner.userId, target.schoolId, target.id, true);
     const after = (await platform.listAll()).find((r) => r.id === target.id);
@@ -143,6 +147,18 @@ describe("booking email", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;b&gt;School&lt;/b&gt;");
     expect(html).toContain("Wed 28 Oct 2026 at 10:30 am");
+    expect(html).not.toContain(">Email<");
+  });
+
+  it("adds the booker's email when there is one, escaped", () => {
+    const html = buildBookingEmailHtml({
+      schoolName: "A School",
+      schoolSlug: "a-school",
+      booking: { id: "x", date: "2026-10-28", startMinute: 630, contactName: "Ada", contactPhone: "0803", note: null, createdAt: "" },
+      bookerEmail: "ada<x>@school.ng",
+    });
+    expect(html).toContain(">Email<");
+    expect(html).toContain("ada&lt;x&gt;@school.ng");
   });
 });
 

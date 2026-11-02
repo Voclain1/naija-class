@@ -39,6 +39,7 @@ export const BOOKING_SELECT = {
   note: true,
   createdAt: true,
   doneAt: true,
+  bookedBy: true,
 } as const;
 
 interface BookingRow {
@@ -50,6 +51,7 @@ interface BookingRow {
   note: string | null;
   createdAt: Date;
   doneAt: Date | null;
+  bookedBy: string;
 }
 
 export function toDto(row: BookingRow): OnboardingCallBookingDto {
@@ -68,7 +70,13 @@ export function alertEmailTo(): string {
   return process.env.ONBOARDING_CALL_ALERT_EMAIL || "hello@schoolkit.ng";
 }
 
-export function buildBookingEmailHtml(opts: { schoolName: string; schoolSlug: string; booking: OnboardingCallBookingDto }): string {
+export function buildBookingEmailHtml(opts: {
+  schoolName: string;
+  schoolSlug: string;
+  booking: OnboardingCallBookingDto;
+  /** The booker's account email, for when their phone is not on WhatsApp. */
+  bookerEmail?: string | null;
+}): string {
   const b = opts.booking;
   const row = (label: string, value: string) =>
     `<tr><td style="padding:6px 16px 6px 0;color:#5B6B70">${label}</td><td style="padding:6px 0;font-weight:600">${escapeHtml(value)}</td></tr>`;
@@ -81,9 +89,10 @@ export function buildBookingEmailHtml(opts: { schoolName: string; schoolSlug: st
     ${row("When", `${formatCallSlot(b.date, b.startMinute)}, Lagos time`)}
     ${row("Name", b.contactName)}
     ${row("Phone", b.contactPhone)}
+    ${opts.bookerEmail ? row("Email", opts.bookerEmail) : ""}
     ${b.note ? row("Note", b.note) : ""}
   </table>
-  <p style="margin-top:20px;color:#5B6B70;font-size:13px">Confirm the time with them on WhatsApp, then mark the call done in the platform admin under Setup calls.</p>
+  <p style="margin-top:20px;color:#5B6B70;font-size:13px">Confirm the time with them on WhatsApp or by email, then mark the call done in the platform admin under Setup calls.</p>
 </body></html>`;
 }
 
@@ -121,7 +130,7 @@ export class OnboardingCallService {
       throw new ValidationError("ONBOARDING_CALL_TIME", "Choose one of the times shown.");
     }
 
-    const { booking, school } = await withTenant(ctx.schoolId, async (db) => {
+    const { booking, school, bookerEmail } = await withTenant(ctx.schoolId, async (db) => {
       const created = await db.onboardingCallBooking.create({
         data: {
           schoolId: ctx.schoolId,
@@ -139,6 +148,7 @@ export class OnboardingCallService {
         data: { onboardingCallPromptClosedAt: now, onboardingCallBookedAt: now },
         select: { name: true, slug: true },
       });
+      const booker = await db.user.findUnique({ where: { id: ctx.userId }, select: { email: true } });
       // The audit row carries the slot, never the phone number.
       await db.auditLog.create({
         data: {
@@ -151,10 +161,10 @@ export class OnboardingCallService {
           metadata: { date: input.date, startMinute: input.startMinute },
         },
       });
-      return { booking: toDto(created), school };
+      return { booking: toDto(created), school, bookerEmail: booker?.email ?? null };
     });
 
-    await this.notify(school, booking);
+    await this.notify(school, booking, bookerEmail);
     return booking;
   }
 
@@ -174,12 +184,16 @@ export class OnboardingCallService {
 
   // Email first, WhatsApp second; neither may fail the booking, which is saved
   // and listed in the platform admin whatever happens here.
-  private async notify(school: { name: string; slug: string }, booking: OnboardingCallBookingDto): Promise<void> {
+  private async notify(
+    school: { name: string; slug: string },
+    booking: OnboardingCallBookingDto,
+    bookerEmail: string | null,
+  ): Promise<void> {
     try {
       await this.email.send({
         to: alertEmailTo(),
         subject: `Setup call: ${school.name}, ${formatCallSlot(booking.date, booking.startMinute)}`,
-        html: buildBookingEmailHtml({ schoolName: school.name, schoolSlug: school.slug, booking }),
+        html: buildBookingEmailHtml({ schoolName: school.name, schoolSlug: school.slug, booking, bookerEmail }),
         purpose: "onboarding-call-booked",
       });
     } catch (err) {

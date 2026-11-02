@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, proxyFetch } from "@/lib/api-client";
 
+import { OwnerContact } from "./owner-contact";
 import { PlatformActivity } from "./platform-activity";
 import { SchoolAddressSection } from "./school-address-section";
 import { WebsiteReviewPanel } from "./website-review";
@@ -280,6 +281,7 @@ export function SchoolManageDialog({ school, onClose, onChanged, onDeleted }: Pr
           <h3 id="manage-owner" className="font-medium">
             Owner
           </h3>
+          <OwnerContact schoolId={school.schoolId} />
           {owner.kind === "HAS_OWNER" ? (
             <p className="text-sm text-muted-foreground">
               <Badge variant="success" className="mr-2">

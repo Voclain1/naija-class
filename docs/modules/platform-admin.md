@@ -277,3 +277,12 @@ does not; early access is a marker only; staff mobile stays read-only (the
 rollout script). The AI budget is no longer shown in the row; it is in the
 dialog as before. No API changed for the redesign.
 
+**Owner contact (2026-11-02).** The Manage dialog's **Owner** section opens with
+the owner's name, email, phone and WhatsApp, each a link
+(`owner-contact.tsx`), so a school whose phone is not on WhatsApp can still be
+reached by email. It reads `GET /platform-admin/schools/:schoolId/owner`
+(PlatformAdminGuard): the first active owner, or the invited owner marked
+**Invitation pending**; `{ owner: null }` when there is neither. The read is
+`ownerContact()` from the activation module under the school's own GUC, the
+same one Getting started uses. No SECURITY DEFINER function; count stays 23.
+

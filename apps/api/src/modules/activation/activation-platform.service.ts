@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import {
+  NotFoundError,
   activationStage,
   isStuck,
   type ActivationEmailKind,
@@ -9,6 +10,7 @@ import {
   type ActivationStage,
   type PlatformActivationDto,
   type PlatformActivationSchoolDto,
+  type PlatformSchoolOwnerDto,
 } from "@school-kit/types";
 
 import { ownerContact, schoolCounts } from "./activation.service.js";
@@ -128,6 +130,21 @@ export class ActivationPlatformService {
         movedSinceEmail: latest ? stage > latest.stageAtSend : null,
       } satisfies PlatformActivationSchoolDto;
     });
+  }
+
+  /**
+   * Who to contact at one school (2026-11-02), for the Manage window: the
+   * first owner, or the invited owner while the invitation is unaccepted.
+   */
+  async owner(schoolId: string): Promise<PlatformSchoolOwnerDto> {
+    const school = await basePrisma.school.findUnique({ where: { id: schoolId }, select: { id: true } });
+    if (!school) throw new NotFoundError("School not found.");
+    const contact = await withTenant(schoolId, (db) => ownerContact(db));
+    return {
+      owner: contact
+        ? { name: contact.name, email: contact.email, phone: contact.phone, invitePending: contact.invitePending }
+        : null,
+    };
   }
 }
 

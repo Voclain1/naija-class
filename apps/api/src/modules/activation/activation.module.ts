@@ -5,6 +5,7 @@ import { AuthModule } from "../auth/auth.module.js";
 import {
   ActivationLinksController,
   PlatformActivationController,
+  PlatformSchoolOwnerController,
 } from "./activation.controller.js";
 import { ActivationPlatformService } from "./activation-platform.service.js";
 import { ActivationService } from "./activation.service.js";
@@ -13,7 +14,7 @@ import { ActivationService } from "./activation.service.js";
 // platform admin's view of where each school is.
 @Module({
   imports: [AuthModule, EmailModule],
-  controllers: [ActivationLinksController, PlatformActivationController],
+  controllers: [ActivationLinksController, PlatformActivationController, PlatformSchoolOwnerController],
   providers: [ActivationService, ActivationPlatformService],
 })
 export class ActivationModule {}
