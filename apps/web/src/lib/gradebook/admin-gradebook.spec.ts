@@ -34,6 +34,7 @@ const subject = (id: string, name: string, isActive = true): SubjectDto => ({
   id,
   name,
   code: id,
+  stages: [],
   category: "CORE",
   isActive,
   createdAt: NOW,

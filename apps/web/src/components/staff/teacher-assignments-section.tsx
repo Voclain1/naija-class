@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { ApiError } from "@/lib/api-client";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
+import { listClassLevels } from "@/lib/class-levels/class-levels-api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   createTeacherAssignment,
@@ -61,6 +62,7 @@ export function TeacherAssignmentsSection({ teacherId }: Props) {
   const [assignments, setAssignments] = useState<TeacherAssignmentDto[]>([]);
   const [arms, setArms] = useState<ClassArmDto[]>([]);
   const [subjects, setSubjects] = useState<SubjectDto[]>([]);
+  const [levelStage, setLevelStage] = useState<Map<string, SubjectDto["stages"][number]>>(new Map());
   const [years, setYears] = useState<AcademicYearDto[]>([]);
   const [terms, setTerms] = useState<TermDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +82,14 @@ export function TeacherAssignmentsSection({ teacherId }: Props) {
     },
     mode: "onSubmit",
   });
+
+  // Subjects of the chosen arm's stage first (2026-11-02, subjects by class);
+  // every active subject when the arm is not chosen yet or its stage has none.
+  const chosenArmId = form.watch("classArmId");
+  const activeSubjects = subjects.filter((s) => s.isActive);
+  const chosenStage = levelStage.get(arms.find((a) => a.id === chosenArmId)?.classLevelId ?? "");
+  const stageSubjects = chosenStage ? activeSubjects.filter((s) => s.stages.includes(chosenStage)) : [];
+  const subjectChoices = stageSubjects.length > 0 ? stageSubjects : activeSubjects;
   const selectedYearId = form.watch("academicYearId");
   const termsForYear = terms.filter((t) => t.academicYearId === selectedYearId);
 
@@ -89,12 +99,14 @@ export function TeacherAssignmentsSection({ teacherId }: Props) {
     try {
       // includeInactive so an assignment that points at a deactivated arm /
       // subject still resolves to a name in the list.
-      const [list, armRows, subjectRows, yearRows] = await Promise.all([
+      const [list, armRows, subjectRows, yearRows, levelRows] = await Promise.all([
         listTeacherAssignments({ teacherId }),
         listClassArms({ includeInactive: true }),
         listSubjects({ includeInactive: true }),
         listAcademicYears(),
+        listClassLevels({ includeInactive: true }),
       ]);
+      setLevelStage(new Map(levelRows.map((l) => [l.id, l.stage])));
       setAssignments(list.data);
       setArms(armRows);
       setSubjects(subjectRows);
@@ -320,9 +332,7 @@ export function TeacherAssignmentsSection({ teacherId }: Props) {
                     aria-invalid={Boolean(form.formState.errors.subjectId)}
                   >
                     <option value="">Select a subject</option>
-                    {subjects
-                      .filter((s) => s.isActive)
-                      .map((s) => (
+                    {subjectChoices.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name}
                         </option>
