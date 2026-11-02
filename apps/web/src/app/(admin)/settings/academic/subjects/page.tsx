@@ -76,8 +76,8 @@ export default function SubjectsPage() {
         <div>
           <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Subjects</h1>
           <p className="text-sm text-muted-foreground">
-            Define every subject your school teaches. Then link them to the
-            appropriate class levels in the Matrix tab.
+            Every subject your school teaches. Which classes take each one is
+            on the Subjects by class tab.
           </p>
         </div>
         <Button

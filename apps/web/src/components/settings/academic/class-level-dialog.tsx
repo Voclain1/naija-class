@@ -39,7 +39,8 @@ interface FormValues {
 }
 
 const STAGES: { value: ClassStageDto; label: string }[] = [
-  { value: "NURSERY", label: "Nursery / Pre-Primary" },
+  { value: "NURSERY", label: "Nursery" },
+  { value: "KG", label: "KG (Kindergarten)" },
   { value: "PRIMARY", label: "Primary" },
   { value: "JSS", label: "Junior Secondary (JSS)" },
   { value: "SSS", label: "Senior Secondary (SSS)" },

@@ -11,6 +11,8 @@ export interface SubjectDto {
   name: string;
   code: string;
   category: SubjectCategoryDto;
+  /** The stages it is taught in (2026-11-02); a class's subjects are those tagged with its stage. */
+  stages: ("NURSERY" | "KG" | "PRIMARY" | "JSS" | "SSS")[];
   isActive: boolean;
   createdAt: string | Date;
   updatedAt: string | Date;

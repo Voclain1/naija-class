@@ -627,6 +627,12 @@ or changed; count stays 23. The platform admin's Getting started list reads
 `schools` (no RLS), then each school's counts, owner and setup reminders under
 that school's own GUC, one school at a time (`docs/modules/activation.md`).
 
+**Subjects by class (2026-11-02):** no function added or changed; count stays
+23. The new `subject_hides` table is under FORCE RLS like every tenant table, and
+the backfill in `20261202130000_subjects_by_class` sets `app.current_school_id`
+for each school in turn rather than reading across tenants
+(`docs/modules/subjects-by-class.md`).
+
 **Next review due at 26.**
 
 **Current count: 23.**

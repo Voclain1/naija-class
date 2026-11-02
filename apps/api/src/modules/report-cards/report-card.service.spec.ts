@@ -8,6 +8,7 @@ import type { Queue } from "bullmq";
 import type { StorageService } from "../../common/storage";
 import { AggregationService } from "../assessment/aggregation.service";
 import { AuthService } from "../auth/auth.service";
+import { SubjectHidesService } from "../subject-hides/subject-hides.service";
 import { ReportCardService } from "./report-card.service";
 
 // cp1 reads/build path does not enqueue or store; stub the cp2 collaborators.
@@ -393,6 +394,71 @@ describe("ReportCardService (cp1 — build + reads)", () => {
     expect(detail.subjects[0]!.totalScore).toBe(80);
     expect(detail.subjects[0]!.components).toHaveLength(3);
     expect(detail.subjects[0]!.components.map((c) => c.score)).toEqual([15, 15, 50]);
+  });
+
+  // =======================================================================
+  // Hidden subjects (2026-11-02, subjects-by-class.md)
+  // =======================================================================
+
+  it("a hidden subject counts in no total or position and does not show; unhiding brings it back", async () => {
+    const { schoolId, ownerId } = await makeSchool("hide");
+    const formTeacher = await grantRole(schoolId, "hide-ft", "teacher");
+    const otherTeacher = await grantRole(schoolId, "hide-ot", "teacher");
+    const armId = await makeArm(schoolId, "hide", formTeacher);
+    const maths = await makeSubject(schoolId, "hide-1");
+    const music = await makeSubject(schoolId, "hide-2");
+    const { yearId, termId } = await makeYearTerm(schoolId, "hide");
+    const a = await enrollStudent(schoolId, { armId, termId, yearId, suffix: "ha" });
+    const b = await enrollStudent(schoolId, { armId, termId, yearId, suffix: "hb" });
+    // With music, B is first (90+90); without it, A is first (80 vs 40).
+    for (const [student, m, mu] of [[a, 80, 10], [b, 40, 90]] as const) {
+      await scoreAssessment(schoolId, { studentId: student, subjectId: maths, termId, yearId, armId, totalScore: m });
+      await scoreAssessment(schoolId, { studentId: student, subjectId: music, termId, yearId, armId, totalScore: mu });
+    }
+
+    const hides = new SubjectHidesService();
+    // Only the arm's form teacher (or an admin) may hide for it, and a teacher never for the school.
+    await expect(
+      hides.create(ctx(schoolId, otherTeacher), { subjectId: music, termId, scope: "ARM", classArmId: armId, until: "TERM" }, reqCtx),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(
+      hides.create(ctx(schoolId, formTeacher), { subjectId: music, termId, scope: "SCHOOL", until: "TERM" }, reqCtx),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    const hide = await hides.create(
+      ctx(schoolId, formTeacher),
+      { subjectId: music, termId, scope: "ARM", classArmId: armId, until: "TERM" },
+      reqCtx,
+    );
+    expect(hide).toMatchObject({ subjectName: "Subj hide-2", scope: "ARM", until: "TERM", canUnhide: true });
+
+    await service.build(ctx(schoolId, ownerId), { termId, classArmId: armId }, reqCtx);
+    expect(await getCard(schoolId, a, termId)).toMatchObject({ overallTotal: 80, subjectsCount: 1, overallPosition: 1 });
+    expect(await getCard(schoolId, b, termId)).toMatchObject({ overallTotal: 40, subjectsCount: 1, overallPosition: 2 });
+    const cardA = await withTenant(schoolId, (db) =>
+      db.reportCard.findFirstOrThrow({ where: { studentId: a, termId }, select: { id: true } }),
+    );
+    const detail = await service.getById(ctx(schoolId, ownerId), cardA.id);
+    expect(detail.subjects.map((x) => x.subjectId)).toEqual([maths]);
+
+    // The list shows it; the other teacher cannot unhide it; the owner can.
+    // This fixture's term ended in 2025: by date alone a term hide is over,
+    // but while the school keeps that term current the hide still applies,
+    // so the "current" list must keep showing it.
+    expect((await hides.list(ctx(schoolId, ownerId), {})).find((h) => h.id === hide.id)?.unhiddenAt).toBeNull();
+    await withTenant(schoolId, (db) => db.term.update({ where: { id: termId }, data: { isCurrent: true } }));
+    expect((await hides.list(ctx(schoolId, ownerId), { current: "true" })).map((h) => h.id)).toContain(hide.id);
+    await expect(hides.unhide(ctx(schoolId, otherTeacher), hide.id, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+    await hides.unhide(ctx(schoolId, ownerId), hide.id, reqCtx);
+    expect((await hides.list(ctx(schoolId, ownerId), {})).find((h) => h.id === hide.id)?.unhiddenAt).not.toBeNull();
+
+    await service.build(ctx(schoolId, ownerId), { termId, classArmId: armId }, reqCtx);
+    expect(await getCard(schoolId, b, termId)).toMatchObject({ overallTotal: 130, subjectsCount: 2, overallPosition: 1 });
+    expect((await service.getById(ctx(schoolId, ownerId), cardA.id)).subjects).toHaveLength(2);
+
+    const audit = await withTenant(schoolId, (db) =>
+      db.auditLog.findMany({ where: { entityId: hide.id }, select: { action: true }, orderBy: { createdAt: "asc" } }),
+    );
+    expect(audit.map((x) => x.action)).toEqual(["subject.hidden", "subject.unhidden"]);
   });
 
   // =======================================================================

@@ -8,7 +8,9 @@
 // years. Some Nigerian private schools prefer "Nursery 1 / Nursery 2" — we
 // picked KG because it matches the more common naming in modern Nigerian
 // private schools and reduces day-one renaming for the majority of pilots.
-// Schools that want Nursery just rename via the settings UI.
+// Schools that want Nursery just rename via the settings UI. Since
+// 2026-11-02 KG is its own stage (KG and Nursery teach different subjects);
+// a level renamed to Nursery should also have its stage set to Nursery.
 //
 // Codes are stable per school and back the unique `(school_id, code)` index.
 // They are the upsert key for idempotency: a hypothetical retry of the seed
@@ -18,13 +20,13 @@
 export interface DefaultClassLevel {
   code: string;
   name: string;
-  stage: "NURSERY" | "PRIMARY" | "JSS" | "SSS";
+  stage: "NURSERY" | "KG" | "PRIMARY" | "JSS" | "SSS";
   orderIndex: number;
 }
 
 export const DEFAULT_CLASS_LEVELS: readonly DefaultClassLevel[] = [
-  { code: "kg1",  name: "KG 1",      stage: "NURSERY", orderIndex: 1 },
-  { code: "kg2",  name: "KG 2",      stage: "NURSERY", orderIndex: 2 },
+  { code: "kg1",  name: "KG 1",      stage: "KG",      orderIndex: 1 },
+  { code: "kg2",  name: "KG 2",      stage: "KG",      orderIndex: 2 },
   { code: "pri1", name: "Primary 1", stage: "PRIMARY", orderIndex: 3 },
   { code: "pri2", name: "Primary 2", stage: "PRIMARY", orderIndex: 4 },
   { code: "pri3", name: "Primary 3", stage: "PRIMARY", orderIndex: 5 },

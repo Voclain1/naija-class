@@ -17,6 +17,13 @@ export {
 export { defaultArmFor, type DefaultArm, type DefaultArmSourceLevel } from "./seeds/class-arms.js";
 export { DEFAULT_SUBJECTS, type DefaultSubject } from "./seeds/subjects.js";
 export {
+  SUBJECT_CATALOGUE,
+  catalogueKeys,
+  subjectMatchKey,
+  type CatalogueStage,
+  type CatalogueSubject,
+} from "./seeds/subject-catalogue.js";
+export {
   DEFAULT_GRADING_SCHEME_NAME,
   DEFAULT_GRADING_COMPONENTS,
   DEFAULT_GRADE_BOUNDARIES,
