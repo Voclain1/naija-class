@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { SCHOOLKIT_SUPPORT } from "@school-kit/types";
+
 import { SchoolKitWordmark } from "@/components/brand/schoolkit-mark";
 
 // Onboarding wizard layout. Centered card layout like (auth), no admin
@@ -16,6 +18,28 @@ export default function OnboardingLayout({ children }: { children: ReactNode }) 
         <p className="text-sm text-muted-foreground">Let&apos;s set up your school.</p>
       </div>
       {children}
+      {/* Getting started (docs/modules/activation.md): a way to reach us while
+          setting up. The setup-call form opens once the wizard is finished. */}
+      <p className="mt-6 max-w-md text-center text-sm text-muted-foreground" data-testid="onboarding-help">
+        Stuck? We&apos;ll help.{" "}
+        <a
+          href={`https://wa.me/${SCHOOLKIT_SUPPORT.phoneDigits}?text=${encodeURIComponent("Hello SchoolKit, I need help setting up my school.")}`}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-primary hover:underline"
+        >
+          WhatsApp us
+        </a>
+        , call{" "}
+        <a href={`tel:+${SCHOOLKIT_SUPPORT.phoneDigits}`} className="font-medium text-primary hover:underline">
+          {SCHOOLKIT_SUPPORT.phoneDisplay}
+        </a>{" "}
+        or email{" "}
+        <a href={`mailto:${SCHOOLKIT_SUPPORT.email}`} className="font-medium text-primary hover:underline">
+          {SCHOOLKIT_SUPPORT.email}
+        </a>
+        .
+      </p>
     </div>
   );
 }

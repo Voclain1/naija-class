@@ -56,6 +56,10 @@ const PAGES: Array<{ path: string; label?: string; ready: (page: Page) => Promis
       ),
   },
   {
+    path: "/finance/payments/record",
+    ready: (page) => page.getByRole("searchbox", { name: "Student" }).waitFor({ timeout: 120_000 }),
+  },
+  {
     // The list needs a term and a class chosen, then its own tab.
     path: "/finance/invoices",
     ready: async (page) => {

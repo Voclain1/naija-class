@@ -18,6 +18,7 @@ import {
   type PreviewLineDto,
   type PreviewWaitingChargesInput,
   type WaitingChargesPreviewDto,
+  PAYABLE_INVOICE_STATUSES,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
@@ -441,12 +442,38 @@ export class InvoiceGenerationService {
 
   async findAll(authCtx: AuthContext, query: ListInvoicesInput): Promise<PaginatedInvoicesDto> {
     return withTenant(authCtx.schoolId, async (db) => {
+      // search: the students whose name or admission number matches, then their
+      // bills (Record payment, 2026-10-30). Capped at 50 students so a two-
+      // letter search cannot fan out over the whole roster.
+      let searchStudentIds: string[] | null = null;
+      if (query.search) {
+        const terms = query.search.split(/\s+/).filter(Boolean).slice(0, 4);
+        const matches = await db.student.findMany({
+          where: {
+            schoolId: authCtx.schoolId,
+            AND: terms.map((t) => ({
+              OR: [
+                { firstName: { contains: t, mode: "insensitive" as const } },
+                { lastName: { contains: t, mode: "insensitive" as const } },
+                { middleName: { contains: t, mode: "insensitive" as const } },
+                { admissionNumber: { contains: t, mode: "insensitive" as const } },
+              ],
+            })),
+          },
+          select: { id: true },
+          take: 50,
+        });
+        searchStudentIds = matches.map((m) => m.id);
+      }
+
       const where: Prisma.InvoiceWhereInput = {
         schoolId: authCtx.schoolId,
         ...(query.classArmId ? { classArmId: query.classArmId } : {}),
         ...(query.termId ? { termId: query.termId } : {}),
         ...(query.studentId ? { studentId: query.studentId } : {}),
+        ...(searchStudentIds ? { studentId: { in: searchStudentIds } } : {}),
         ...(query.status ? { status: query.status } : {}),
+        ...(query.unpaid === "true" ? { status: { in: [...PAYABLE_INVOICE_STATUSES] } } : {}),
       };
 
       const [rows, total] = await Promise.all([

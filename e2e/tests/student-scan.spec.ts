@@ -35,8 +35,10 @@ test("smart student import — the scan page is reachable and degrades safely", 
 
   try {
     // --- The entry point exists on the students page ----------------------
+    // Since 2026-10-30 it is one of the ways listed by the Add students chooser.
     await page.goto("/students");
-    const scanLink = page.getByRole("link", { name: /scan a student list/i }).first();
+    await page.getByRole("button", { name: "Add students" }).first().click({ timeout: 60_000 });
+    const scanLink = page.getByRole("dialog").getByRole("link", { name: /scan a register/i });
     await expect(scanLink).toBeVisible();
 
     // --- The route resolves ------------------------------------------------

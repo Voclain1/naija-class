@@ -25,11 +25,25 @@ export class OnboardingCallPlatformService {
     });
     const rows: PlatformOnboardingCallDto[] = [];
     for (const school of schools) {
-      const bookings = await withTenant(school.id, (db) =>
-        db.onboardingCallBooking.findMany({ orderBy: { createdAt: "desc" }, select: BOOKING_SELECT, take: 20 }),
-      );
+      // The booker's account email rides along (2026-11-02): a phone typed
+      // into the form may not be on WhatsApp.
+      const { bookings, emails } = await withTenant(school.id, async (db) => {
+        const bookings = await db.onboardingCallBooking.findMany({ orderBy: { createdAt: "desc" }, select: BOOKING_SELECT, take: 20 });
+        const users = await db.user.findMany({
+          where: { id: { in: [...new Set(bookings.map((b) => b.bookedBy))] } },
+          select: { id: true, email: true },
+        });
+        return { bookings, emails: new Map(users.map((u) => [u.id, u.email])) };
+      });
       for (const b of bookings) {
-        rows.push({ ...toDto(b), schoolId: school.id, schoolName: school.name, schoolSlug: school.slug, doneAt: b.doneAt?.toISOString() ?? null });
+        rows.push({
+          ...toDto(b),
+          schoolId: school.id,
+          schoolName: school.name,
+          schoolSlug: school.slug,
+          doneAt: b.doneAt?.toISOString() ?? null,
+          contactEmail: emails.get(b.bookedBy) ?? null,
+        });
       }
     }
     return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));

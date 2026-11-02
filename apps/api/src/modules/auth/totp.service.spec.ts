@@ -37,6 +37,15 @@ describe("TotpService", () => {
       expect(svc.verifyCode(secret, code)).toBe(true);
     });
 
+    // A code typed in the last second of its window is checked in the next
+    // one. ±1 step is allowed; two steps is not.
+    it("accepts a code from the previous 30-second window, not from two windows back", () => {
+      const secret = svc.generateSecret();
+      const now = Math.floor(Date.now() / 1000);
+      expect(svc.verifyCode(secret, generateSync({ secret, epoch: now - 30 }))).toBe(true);
+      expect(svc.verifyCode(secret, generateSync({ secret, epoch: now - 90 }))).toBe(false);
+    });
+
     it("returns false for an incorrect code", () => {
       const secret = svc.generateSecret();
       expect(svc.verifyCode(secret, "000000")).toBe(false);

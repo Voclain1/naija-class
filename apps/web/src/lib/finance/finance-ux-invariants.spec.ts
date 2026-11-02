@@ -363,9 +363,13 @@ describe("F-41 — the finance section row claims only what is built", () => {
 
   it("points Record payment at a route that exists", () => {
     // /finance/payments holds only the Paystack callback — it is not a page.
-    // /finance/invoices is where an invoice is picked and recorded against.
-    expect(subNav()).toContain('href="/finance/invoices"');
+    // /finance/payments/record is the Record payment page (2026-10-30): find
+    // the student, record against one of their unpaid bills.
+    expect(subNav()).toContain('href="/finance/payments/record"');
     expect(subNav()).not.toContain('href="/finance/payments"');
+    expect(code("apps/web/src/app/(admin)/finance/payments/record/page.tsx")).toContain(
+      "recordManualPayment",
+    );
   });
 
   it("keeps exactly ONE Record payment control, on the section row", () => {

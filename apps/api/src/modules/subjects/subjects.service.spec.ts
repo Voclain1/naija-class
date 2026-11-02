@@ -133,7 +133,7 @@ describe("SubjectsService", () => {
       const { authCtx } = await createActiveSchool("cat");
       const elective = await service.create(
         authCtx,
-        { name: "Music", code: "music", category: "ELECTIVE" },
+        { name: "Choir", code: "choir", category: "ELECTIVE" },
         reqCtx,
       );
       expect(elective.category).toBe("ELECTIVE");
@@ -157,7 +157,7 @@ describe("SubjectsService", () => {
     it("list defaults to active-only; includeInactive returns soft-deleted rows too", async () => {
       const { authCtx } = await createActiveSchool("inactive");
       const active = await service.create(authCtx, { name: "Geography", code: "geo" }, reqCtx);
-      const soft = await service.create(authCtx, { name: "Music", code: "music" }, reqCtx);
+      const soft = await service.create(authCtx, { name: "Choir", code: "choir" }, reqCtx);
       await service.update(authCtx, soft.id, { isActive: false }, reqCtx);
 
       const defaultList = await service.list(authCtx);
@@ -184,7 +184,7 @@ describe("SubjectsService", () => {
     it("rename to existing code → ConflictError CODE_TAKEN", async () => {
       const { authCtx } = await createActiveSchool("upd-dup");
       await service.create(authCtx, { name: "Geography", code: "geo" }, reqCtx);
-      const other = await service.create(authCtx, { name: "Music", code: "music" }, reqCtx);
+      const other = await service.create(authCtx, { name: "Choir", code: "choir" }, reqCtx);
       await expect(
         service.update(authCtx, other.id, { code: "geo" }, reqCtx),
       ).rejects.toMatchObject({ code: "CODE_TAKEN" });
@@ -198,7 +198,7 @@ describe("SubjectsService", () => {
   describe("delete", () => {
     it("hard-deletes and removes from list", async () => {
       const { authCtx } = await createActiveSchool("del");
-      const s = await service.create(authCtx, { name: "Music", code: "music" }, reqCtx);
+      const s = await service.create(authCtx, { name: "Choir", code: "choir" }, reqCtx);
       await service.delete(authCtx, s.id, reqCtx);
       const list = await service.list(authCtx, { includeInactive: true });
       expect(list.map((x) => x.id)).not.toContain(s.id);

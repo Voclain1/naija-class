@@ -61,6 +61,10 @@ and can be skipped. Each booking reaches our WhatsApp.
 4. **Platform admin → Setup calls:**
    - Every booking, newest first, open ones first in view.
    - A **WhatsApp** button opens a chat with the school.
+   - Since 2026-11-02 each booking also shows the email on the booker's own
+     SchoolKit account (`contactEmail`, read by `bookedBy` under the school's
+     GUC), with an **Email** button, for a phone that is not on WhatsApp. The
+     booking alert to hello@schoolkit.ng carries the same email.
    - **Mark done** / **Not done**.
    - It reads `schools` for the schools holding a booking, then each school's
      bookings under its own GUC. There is no SECURITY DEFINER function; the
@@ -100,3 +104,14 @@ and can be skipped. Each booking reaches our WhatsApp.
   again) and skip.
 - `apiActivateSchool` skips the page for every other spec, like the
   first-login tour; `phase-0-happy-path` skips it through the UI.
+
+## Since 2026-10-30 (`docs/modules/activation.md`)
+
+- The page opened again, once, for schools that finished setup before it
+  existed and have fewer than 5 students and no booking (migration
+  `20261130120000_activation`).
+- `/welcome?book=1` opens the form for the owner or an admin of a set-up school
+  with no booking (`canBook` on the state), even after the page has closed. A
+  school that has booked sees its booking. The dashboard checklist ("Would you
+  like a hand?") and the setup reminder emails link there.
+- In the platform admin, Setup calls is now a tab under **Requests**.

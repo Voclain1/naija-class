@@ -473,9 +473,9 @@ export class SchoolsService {
   // prompt could reach it). Activation and a usable calendar become true at
   // the same instant, or neither does.
   //
-  // The "onboarding.complete" audit row is written unchanged and still last:
-  // OnboardingNudgeService keys its follow-up email off that exact action,
-  // and the calendar write emits its own separate academic-calendar.create
+  // The "onboarding.complete" audit row is written unchanged and still last
+  // (the one-shot onboarding nudge that keyed off it was replaced by the setup
+  // reminders, docs/modules/activation.md), and the calendar write emits its own separate academic-calendar.create
   // row rather than folding into this one.
   private async applyStep5(
     authCtx: AuthContext,

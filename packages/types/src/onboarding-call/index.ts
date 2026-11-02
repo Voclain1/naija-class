@@ -79,6 +79,12 @@ export interface OnboardingCallBookingDto {
 /** GET /schools/me/onboarding-call. `show`: the page should appear (only to the owner, until they book or skip). */
 export interface OnboardingCallStateDto {
   show: boolean;
+  /**
+   * The owner or an admin of a set-up school with no booking yet may book from
+   * the checklist or a setup reminder (/welcome?book=1), even after the page
+   * that opens by itself has closed (docs/modules/activation.md).
+   */
+  canBook: boolean;
   booking: OnboardingCallBookingDto | null;
   /** Pre-fills the form: the owner's name and phone. */
   suggestedName: string;
@@ -91,6 +97,26 @@ export interface PlatformOnboardingCallDto extends OnboardingCallBookingDto {
   schoolName: string;
   schoolSlug: string;
   doneAt: string | null;
+  /**
+   * The email on the booker's own SchoolKit account (2026-11-02), so the team
+   * can write when the phone they typed is not on WhatsApp. Null only when
+   * that account has since gone.
+   */
+  contactEmail: string | null;
+}
+
+/**
+ * GET /platform-admin/schools/:schoolId/owner (2026-11-02): who to contact at
+ * a school, for the Manage window. The first owner, or the invited owner while
+ * the invitation is unaccepted; null when the school has neither.
+ */
+export interface PlatformSchoolOwnerDto {
+  owner: {
+    name: string;
+    email: string;
+    phone: string | null;
+    invitePending: boolean;
+  } | null;
 }
 
 /** The message the school's own WhatsApp sends us after booking ("Send to SchoolKit on WhatsApp"). */

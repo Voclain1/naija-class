@@ -58,7 +58,7 @@ describe("dashboard header quick actions", () => {
     // /insights is the shipped admin insights page, and
     // /students/new is the admin-shell student creation route.
     const byKey = Object.fromEntries(resolveDashboardActions(["*"]).map((a) => [a.key, a.href]));
-    expect(byKey["record-fee"]).toBe("/finance/invoices");
+    expect(byKey["record-fee"]).toBe("/finance/payments/record");
     expect(byKey["insights"]).toBe("/insights");
     expect(byKey["add-student"]).toBe("/students/new");
   });

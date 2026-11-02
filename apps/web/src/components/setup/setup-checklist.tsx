@@ -123,7 +123,25 @@ export function SetupChecklist({
           </div>
         </div>
 
-        {TIER_ORDER.filter((tier) => tier !== "optional" || showRest).map((tier) => {
+        {/* Getting started (docs/modules/activation.md): the setup call, for
+            an owner who skipped the page and would now like a hand. */}
+        {status === "setup" && (
+          <div className="flex flex-col gap-2 rounded-xl bg-primary/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Would you like a hand?</p>
+              <p className="text-sm text-muted-foreground">
+                Book a free 30-minute call and we&apos;ll set it up with you.
+              </p>
+            </div>
+            <Button asChild size="sm" variant="outline" className="shrink-0">
+              <Link href="/welcome?book=1" data-testid="checklist-book-call">
+                Book a setup call
+              </Link>
+            </Button>
+          </div>
+        )}
+
+                {TIER_ORDER.filter((tier) => tier !== "optional" || showRest).map((tier) => {
           const tierSteps = steps.filter((s) => s.tier === tier);
           if (tierSteps.length === 0) return null;
           return (

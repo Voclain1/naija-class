@@ -24,15 +24,10 @@ const ACTIONS: DashboardAction[] = [
   {
     key: "record-fee",
     label: "Record Fee",
-    // ONE-CLICK GAP, stated deliberately: there is no standalone
-    // record-a-payment page in this app. Recording lives INSIDE an invoice
-    // (finance/invoices/[id] renders the "Record payment" form), and the
-    // finance sub-nav has no Payments tab — /settings/finance/payments is
-    // Paystack credentials, not recording. So this lands on the invoice list,
-    // where you pick the invoice and record against it. The label therefore
-    // promises slightly more than one click delivers; that was an explicit
-    // decision (keep the approved mockup's wording) rather than an oversight.
-    href: "/finance/invoices",
+    // The Record payment page (2026-10-30): search the student, record
+    // against one of their unpaid bills. Until then this landed on the bills
+    // list, which read as "the finance dashboard" to the owner.
+    href: "/finance/payments/record",
     // The gate is the action the user will actually perform, not the page
     // they land on. Bursar holds both payment.record and invoice.read, so the
     // landing page is reachable for everyone this admits.

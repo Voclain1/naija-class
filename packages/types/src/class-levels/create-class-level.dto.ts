@@ -21,7 +21,7 @@ export const createClassLevelSchema = z
       .min(1)
       .max(16)
       .regex(/^[a-z0-9-]+$/, "Code must be lowercase letters, digits, and hyphens only"),
-    stage: z.enum(["NURSERY", "PRIMARY", "JSS", "SSS"]),
+    stage: z.enum(["NURSERY", "KG", "PRIMARY", "JSS", "SSS"]),
     orderIndex: z.number().int().min(0).max(999),
     isActive: z.boolean().optional(),
   })

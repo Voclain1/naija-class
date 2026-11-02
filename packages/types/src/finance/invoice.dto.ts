@@ -4,6 +4,10 @@ import { z } from "zod";
 // Enums
 // ---------------------------------------------------------------------------
 
+// Bills that can still take a payment. The record forms and the unpaid
+// filter on GET /invoices share this one list.
+export const PAYABLE_INVOICE_STATUSES = ["ISSUED", "PARTIALLY_PAID", "OVERDUE"] as const;
+
 export const invoiceStatusValues = [
   "DRAFT",
   "ISSUED",
@@ -118,6 +122,12 @@ export const listInvoicesSchema = z.object({
   classArmId: z.string().uuid().optional(),
   studentId: z.string().uuid().optional(),
   status: z.enum(invoiceStatusValues).optional(),
+  // Record payment (2026-10-30): find a student's bills by name or admission
+  // number, without student.read — a bursar holds invoice.read only. Matches
+  // the student, not the bill, and returns that student's bills.
+  search: z.string().trim().min(2).max(100).optional(),
+  // Only bills that can still take a payment (ISSUED, PARTIALLY_PAID, OVERDUE).
+  unpaid: z.enum(["true", "false"]).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(200).default(50),
 });

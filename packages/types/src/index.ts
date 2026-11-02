@@ -33,6 +33,7 @@ export * from './cbt/index.js';
 export * from './school-contact/index.js';
 export * from './account-deletion/index.js';
 export * from './onboarding-call/index.js';
+export * from './activation/index.js';
 export * from './legal/index.js';
 export * from './sms-sender/index.js';
 export * from './school-address/index.js';

@@ -39,7 +39,7 @@ test("a new school's owner books a setup call, then never sees the page again", 
   }
 });
 
-test("Skip for now goes to the dashboard and closes the page for good", async ({ browser }) => {
+test("Skip for now closes the page; the checklist's link still books a call", async ({ browser }) => {
   const admin = await loginAsAdmin(browser, { setupCallPending: true });
   try {
     const page = admin.page;
@@ -48,6 +48,13 @@ test("Skip for now goes to the dashboard and closes the page for good", async ({
     await page.waitForURL(/\/dashboard/);
     await page.goto("/welcome");
     await page.waitForURL(/\/dashboard/);
+
+    // Getting started (docs/modules/activation.md): the checklist still offers
+    // the call to an owner who skipped it, and its link opens the form.
+    await page.getByTestId("checklist-book-call").click();
+    await page.waitForURL(/\/welcome\?book=1$/);
+    await expect(page.getByRole("heading", { name: /Let's finish setting up/ })).toBeVisible();
+    await expect(page.getByTestId("setup-call-book")).toBeVisible();
   } finally {
     await admin.context.close();
     await admin.api.dispose();

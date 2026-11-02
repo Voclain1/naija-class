@@ -35,6 +35,7 @@ import { AggregationService } from "../assessment/aggregation.service";
 import { wakeRenderWorker } from "./render/wake-render-worker";
 import { isFinalTerm } from "./workflow/final-term";
 import { cascadeSubjectReviewedIfComplete } from "./workflow/subject-reviewed-cascade";
+import { hiddenSubjectIds } from "../subject-hides/hidden-subjects";
 
 interface CumulativeSnapshot {
   average: number;
@@ -113,12 +114,15 @@ export class ReportCardService {
       await this.aggregation.aggregateArmInTx(db, input.termId, input.classArmId);
 
       // 3. Each student's Assessment rows → the rollup snapshot.
+      //    A subject hidden from this arm's results counts in no total.
+      const hidden = await hiddenSubjectIds(db, input.termId, input.classArmId);
       const assessments = await db.assessment.findMany({
         where: { termId: input.termId, classArmId: input.classArmId, studentId: { in: studentIds } },
-        select: { studentId: true, totalScore: true, classPosition: true },
+        select: { studentId: true, subjectId: true, totalScore: true, classPosition: true },
       });
       const byStudent = new Map<string, { totals: number[]; classPosition: number | null }>();
       for (const a of assessments) {
+        if (hidden.has(a.subjectId)) continue;
         const entry = byStudent.get(a.studentId) ?? { totals: [], classPosition: null };
         entry.totals.push(a.totalScore);
         // classPosition is denormalized identically across a student's subject
@@ -158,7 +162,7 @@ export class ReportCardService {
       //     other term stores NULL, so a term that stops being final (a school
       //     adds a later one) loses its cumulative block on the next rebuild.
       const cumulativeByStudent = (await isFinalTerm(db, input.termId))
-        ? await this.computeCumulative(db, input.termId, enrollments, byStudent)
+        ? await this.computeCumulative(db, input.termId, enrollments, byStudent, hidden)
         : new Map<string, CumulativeSnapshot>();
 
       let cardCount = 0;
@@ -261,6 +265,7 @@ export class ReportCardService {
     termId: string,
     enrollments: { studentId: string; academicYearId: string }[],
     byStudent: Map<string, { totals: number[]; classPosition: number | null }>,
+    hidden: Set<string> = new Set(),
   ): Promise<Map<string, CumulativeSnapshot>> {
     const out = new Map<string, CumulativeSnapshot>();
     if (enrollments.length === 0) return out;
@@ -287,6 +292,7 @@ export class ReportCardService {
     }
     const subjectTotals = new Map<string, Map<string, number[]>>();
     for (const a of yearAssessments) {
+      if (hidden.has(a.subjectId)) continue;
       const bySubject = subjectTotals.get(a.studentId) ?? new Map<string, number[]>();
       bySubject.set(a.subjectId, [...(bySubject.get(a.subjectId) ?? []), a.totalScore]);
       subjectTotals.set(a.studentId, bySubject);
@@ -383,6 +389,7 @@ export class ReportCardService {
         card.studentId,
         card.termId,
         readCumulativeSubjects(card.cumulativeSubjects),
+        card.classArmId,
       );
       return { reportCard: toReportCardDto(card), student: toStudentDto(student), subjects };
     });
@@ -573,6 +580,7 @@ export class ReportCardService {
       card.studentId,
       card.termId,
       ranked ? readCumulativeSubjects(card.cumulativeSubjects) : [],
+      card.classArmId,
     );
 
     return {
@@ -651,9 +659,11 @@ export class ReportCardService {
     studentId: string,
     termId: string,
     cumulative: CumulativeSubject[] = [],
+    classArmId: string | null = null,
   ): Promise<ReportCardDetailDto["subjects"]> {
     const cumulativeBySubject = new Map(cumulative.map((c) => [c.subjectId, c]));
-    const assessments = await db.assessment.findMany({
+    const hidden = classArmId ? await hiddenSubjectIds(db, termId, classArmId) : new Set<string>();
+    const scored = await db.assessment.findMany({
       where: { studentId, termId },
       select: {
         subjectId: true,
@@ -664,6 +674,8 @@ export class ReportCardService {
         subjectComment: true,
       },
     });
+    // A subject hidden from this arm's results does not show (subjects-by-class.md).
+    const assessments = scored.filter((a) => !hidden.has(a.subjectId));
     if (assessments.length === 0) return [];
 
     const subjectIds = assessments.map((a) => a.subjectId);

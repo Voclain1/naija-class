@@ -13,6 +13,7 @@ import {
 } from "@school-kit/types";
 
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
+import { applyActivationWebhook } from "../activation/activation.service.js";
 import { unsubscribeTokenValid } from "./announcement-email.shared.js";
 
 // Phase 9 / CP8.3 — the family's say over announcement emails, and what the
@@ -105,6 +106,14 @@ export class EmailPreferencesService {
     if (!status || !providerId || !schoolId || !UUID_RE.test(schoolId)) return;
     const school = await basePrisma.school.findUnique({ where: { id: schoolId }, select: { id: true } });
     if (!school) return;
+
+    // Setup reminders to the school's owner (docs/modules/activation.md) are
+    // SchoolKit's own email, not the school's: their status is recorded, and
+    // a bounce suppresses nothing the school sends.
+    if (tag(event.data?.tags, "stream") === "activation") {
+      await withTenant(schoolId, (db) => applyActivationWebhook(db, schoolId, providerId, status));
+      return;
+    }
 
     await withTenant(schoolId, async (db) => {
       const row = await db.announcementEmail.findFirst({ where: { schoolId, providerId }, select: { id: true, email: true, status: true } });

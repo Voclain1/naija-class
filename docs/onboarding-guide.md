@@ -138,7 +138,7 @@ There are five short screens. A bar at the top shows which one you are on.
 
    Press **Finish setup**.
 
-**Book a free setup call (optional).** Straight after **Finish setup**, SchoolKit offers you a free 30-minute call with our team to help you finish setting up: classes, staff, students and parents. Choose a day and a time (Lagos time), check your name and phone number, and press **Book**. We will message you on WhatsApp to confirm. You can also press **Send to SchoolKit on WhatsApp** to send us the booking from your own WhatsApp. If you would rather set up on your own, press **Skip for now**. Either way you go on to your Dashboard, and the page does not come back. You can still reach us any time (see [Getting help](#getting-help)).
+**Book a free setup call (optional).** Straight after **Finish setup**, SchoolKit offers you a free 30-minute call with our team to help you finish setting up: classes, staff, students and parents. Choose a day and a time (Lagos time), check your name and phone number, and press **Book**. We will message you on WhatsApp to confirm. You can also press **Send to SchoolKit on WhatsApp** to send us the booking from your own WhatsApp. If you would rather set up on your own, press **Skip for now**. Either way you go on to your Dashboard, and the page does not come back. You can still reach us any time (see [Getting help](#getting-help)). Changed your mind? While setup is unfinished, your dashboard checklist has **Book a setup call** under **Would you like a hand?**. And if you get stuck in the five welcome steps themselves, the foot of each page has our WhatsApp, phone number and email.
 
 **Why the dates matter:** registers, fees and results are all recorded against a term. If the dates are wrong, they will be filed under the wrong term. You can correct them later in **School setup → Sessions & classes**.
 
@@ -152,13 +152,15 @@ Your Dashboard now shows **Finish setting up your school** — a checklist made 
 
 Each item has a button that takes you to the right page, and it ticks itself off as soon as the job is done. The rest of Part 1 explains each item in plain words.
 
+**Setup reminders by email.** Until your students are in their classes, SchoolKit sends the school owner up to three short reminders (two days, a week and three weeks after you sign up), each with a link straight to your next step and an offer of a free setup call. To stop them, press **Stop these emails** at the foot of any reminder.
+
 ## Step 4. Add your students
 
-Go to **Students** in the menu. There are four ways to add students. Choose whichever suits you.
+Go to **Students** in the menu and press **Add students**. A window shows the four ways to add them; choose whichever suits you.
 
 **One student at a time**
 
-1. Press the green **Add student** button.
+1. Press **Add students**, then **One student**.
 2. Fill in **Admission number**, **First name**, **Last name**, **Date of birth** and **Gender**.
 3. Under **Class**, choose the child's class (for example JSS 1 — JSS 1A). If you do not know yet, choose **Not yet — I'll place them later**.
 4. Everything else (address, blood group, medical notes and so on) is optional and can be filled in later.
@@ -166,7 +168,7 @@ Go to **Students** in the menu. There are four ways to add students. Choose whic
 
 **Several students by typing them in**
 
-1. Press the small arrow beside **Add student**, then **Add several in a grid**.
+1. Press **Add students**, then **Several in a grid**. Tips for pasting and moving around the grid are behind the **?** beside the page title.
 2. Under **Class for these students**, choose one class and check the **Term**. Use a separate batch for each class. If you do not know their class yet, choose **Not yet — I'll place them later**. Nothing is selected on your behalf.
 3. You get a table like a spreadsheet: admission number, first name, middle name, last name, date of birth, gender and email.
 4. Type straight across. **Tab** moves to the next box; **Enter** moves down. New rows appear as you need them.
@@ -177,7 +179,7 @@ If you chose to place them later, or your classes or school year are not set up 
 
 **Your whole register from a spreadsheet (fastest for a big school)**
 
-1. Press the small arrow beside **Add student**, then **Import from CSV**.
+1. Press **Add students**, then **Import a spreadsheet**.
 2. Press **Template CSV** to download an empty template. Fill it in — one row per child — and save it as CSV.
 3. In the **Class Arm** column, type each child's class exactly as SchoolKit spells it, for example `JSS 1A`. (Capital letters do not matter; spaces do — `JSS1A` will not match `JSS 1A`.) Leave it blank if you do not know.
 4. Upload the file. SchoolKit asks you to match your columns to its fields, and which **term** to put the children in.
@@ -187,7 +189,7 @@ If you chose to place them later, or your classes or school year are not set up 
 
 This is in **beta**: SchoolKit reads the page with AI and can make mistakes, so you check every row before anything is saved.
 
-1. Press the small arrow beside **Add student**, then **Scan a student list**.
+1. Press **Add students**, then **Scan a register**.
 2. **The first time only:** read how register photos are handled and press **I agree for my school**. The photo is sent to the AI reading service SchoolKit uses, read, and thrown away. Nothing from it is kept except the rows you save. Your agreement covers the whole school and is recorded with your name.
 3. Take a clear photo of **one page** of your register, handwritten or printed. Lay it flat in good light, fill the frame, hold the phone straight above it, and check the photo is sharp.
 4. SchoolKit reads the page and shows you a table. **Nothing is saved yet.** Check every name, date and class against the paper and correct anything that is wrong.
@@ -256,6 +258,7 @@ You can run SchoolKit on your own, but teachers need their own accounts before t
 - The link works **once** and lasts **7 days**.
 - The link is shown **only once**. If you leave the page without copying it, you will need to send a new invitation later.
 - Until they accept, the person shows on the Staff page as **Invited (pending)**.
+- On the Staff page, the **Role** filter lists every staff role (owner, administrator, principal, head teacher, teacher, bursar, admissions officer, inbox officer, health officer, librarian, house master, storekeeper), so you can see, say, just your bursars.
 
 **Inviting many teachers at once**
 
@@ -313,9 +316,9 @@ When you signed up, SchoolKit set these up with sensible Nigerian defaults. Look
 
 - **Classes** — KG 1 through SSS 3, with one class each (for example JSS 1A). To add a second stream, rename a class, or set a class size, go to **Sessions & classes → Class Arms** and press **Add class arm** or **Edit**. To hide a level you do not run, deactivate its class.
 - **Grading** — First CA 20, Second CA 20 and Exam 60, with WAEC‑style grades A1 to F9. To change it, go to **Grading** in the menu. The **Scheme** tab sets the parts and their weights (they must add up to 100); the **Boundaries** tab sets the score range for each grade. Press **Save scheme** or **Save boundaries**.
-- **Subjects** — English Language, Mathematics and Civic Education. Add the rest of your subjects in **Sessions & classes → Subjects** with **Add subject**.
+- **Subjects** — the standard Nigerian subjects for each stage: Nursery, KG, Primary, Junior Secondary and Senior Secondary. Each class takes the subjects of its stage, so there is nothing to match up class by class, and deleting a class you do not run changes nothing. See them in **Sessions & classes → Subjects by class**.
 
-The **Matrix** tab under **Sessions & classes** (which classes take which subjects) is a reference list only. Nothing stops working if you leave it empty.
+**Subjects you do not teach never appear.** Only subjects with scores show on report cards and results, so a long list costs you nothing. To add a subject that is missing, press **Add a subject** in its stage on **Subjects by class**. To take one off a stage, press the **×** beside it.
 
 ---
 
@@ -353,12 +356,15 @@ To see all invoices, press the **Invoice list** tab. Click any invoice to open i
 
 For cash, POS or bank transfer paid to the school:
 
-1. Go to **Bursary → Invoices** (or press **Record Fee** at the top of the Dashboard).
-2. Find the child's invoice and open it.
-3. Under **Record payment**, type the **Amount (₦)**, choose how they paid (cash, POS or bank transfer), the **Date paid**, and a **Reference** if you have one (for example the teller or POS number).
-4. Press **Record payment**.
+1. Press **Record Fee** at the top of the Dashboard, or **Record payment** on any Bursary page.
+2. Type the child's name or admission number. Children with unpaid bills appear as you type, with what each owes.
+3. Choose the child. Their unpaid bills are listed, oldest first, and the oldest is already chosen. Choose another if they are paying that one.
+4. Type the **Amount (₦)**, or press **Paid in full** to fill in the whole balance. Choose how they paid (cash, POS or bank transfer), the **Date paid**, and a **Reference** if you have one (for example the teller or POS number).
+5. Press **Record payment**. Press **Open receipt** to print it, or **Record another** for the next parent.
 
-The balance updates straight away, and the parent sees it too.
+The balance updates straight away, and the parent sees it too. You can also record a payment from inside the invoice itself, under **Record payment**.
+
+**No bill for the child?** The search only shows children with something left to pay. If the child has no bill yet, raise one under **Bursary → Invoices** first. A payment that covers two bills is recorded on each bill in turn.
 
 **Receipts:** every payment gets a numbered receipt with your school's logo. On the invoice, press **View receipt** or **View / print receipt** to print it or save it.
 
@@ -456,6 +462,13 @@ This adds missing students and refreshes scores and attendance; existing comment
 are kept. If review has already started, the school owner must first use **Reopen
 arm**, give a reason, and then rebuild. Review, approve and release again when
 ready. Cards are not automatically deleted when a child leaves the class.
+
+**Hiding a subject from results.** Sometimes a subject has scores but should not be on the report cards, for example a subject a class started late. Hide it instead of deleting the scores:
+
+- **For one class arm:** the form teacher (or you) presses **Hide a subject** in the **Hidden subjects** box on the class's report card board.
+- **For a whole class or the whole school:** go to **Sessions & classes → Subjects by class** and press **Hide a subject**.
+
+You choose how long: **this term only**, **this session**, or **until I unhide it**. Press **Unhide** to bring it back at any time; nothing is lost. The subject leaves the cards straight away. Totals, averages and positions change when you press **Rebuild draft report cards** on the board (while the class is still a draft; reopen it first if you have already approved it).
 
 **Showing class position:** in **Settings → Report cards** you can choose whether position in class appears on printed report cards, and whether parents see it on screen.
 
