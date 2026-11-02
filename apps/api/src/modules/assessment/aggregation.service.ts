@@ -13,6 +13,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { hiddenSubjectIds } from "../subject-hides/hidden-subjects";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -258,9 +259,13 @@ export class AggregationService {
     }
 
     // Overall class positions: average each enrolled student's subject totals.
+    // A subject hidden from this arm's results (subjects-by-class.md) counts
+    // in no average or position.
+    const hidden = await hiddenSubjectIds(db, termId, classArmId);
     const totalsByStudent = new Map<string, number[]>();
     for (const r of rows) {
       if (!enrolled.has(r.studentId)) continue;
+      if (hidden.has(r.subjectId)) continue;
       const list = totalsByStudent.get(r.studentId) ?? [];
       list.push(r.totalScore);
       totalsByStudent.set(r.studentId, list);

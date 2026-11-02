@@ -643,6 +643,7 @@ model Term {
   @@index([schoolId])
   @@index([schoolId, isCurrent])
   @@map("terms")
+  subjectHides SubjectHide[] // 2026-11-02
 }
 
 // ---------- Phase 1 / Slice 2 — Class levels ----------
@@ -689,6 +690,7 @@ model ClassLevel {
 
 enum ClassStage {
   NURSERY
+  KG // 2026-11-02: KG and Nursery teach different subjects
   PRIMARY
   JSS
   SSS
@@ -743,6 +745,10 @@ model Subject {
   name      String // "Mathematics" — human-facing; renamable
   code      String // "math" — stable per-school identifier (unique)
   category  SubjectCategory @default(CORE)
+  /// The stages this subject is taught in (2026-11-02,
+  /// docs/modules/subjects-by-class.md). A class's subjects are the active
+  /// subjects tagged with its stage; empty means not offered at any stage yet.
+  stages    ClassStage[]    @default([])
   isActive  Boolean         @default(true) @map("is_active")
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")
@@ -756,6 +762,7 @@ model Subject {
 
   libraryBooks     LibraryBook[] // Phase 9 / CP6.1
   libraryResources LibraryResource[] // Phase 9 / CP6.3
+  hides            SubjectHide[] // 2026-11-02
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([schoolId, code])
@@ -5584,4 +5591,34 @@ model ActivationEmail {
   @@unique([schoolId, kind])
   @@index([schoolId, providerId])
   @@map("activation_emails")
+}
+
+// Subjects by class (2026-11-02, docs/modules/subjects-by-class.md): a subject
+// hidden from results. While a hide applies, the subject shows on no report
+// card, broadsheet, portal or result checker and counts in no total, average
+// or position; scores are kept. scope: ARM (class_arm_id), LEVEL
+// (class_level_id) or SCHOOL. until: TERM (term_id only), YEAR (the term's
+// academic year) or INDEFINITE. Unhiding stamps unhidden_at; rows are kept
+// for the record.
+model SubjectHide {
+  id             String    @id @default(uuid())
+  schoolId       String    @map("school_id")
+  subjectId      String    @map("subject_id")
+  scope          String // ARM | LEVEL | SCHOOL
+  classArmId     String?   @map("class_arm_id")
+  classLevelId   String?   @map("class_level_id")
+  until          String // TERM | YEAR | INDEFINITE
+  termId         String    @map("term_id")
+  academicYearId String    @map("academic_year_id")
+  hiddenBy       String    @map("hidden_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  unhiddenAt     DateTime? @map("unhidden_at")
+  unhiddenBy     String?   @map("unhidden_by")
+
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  term    Term    @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, unhiddenAt])
+  @@index([subjectId])
+  @@map("subject_hides")
 }

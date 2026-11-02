@@ -78,7 +78,7 @@ export function doneSummary(step: SetupStepDto): string {
     case "teacher-assignments":
       return `${n} teaching ${is ? "assignment" : "assignments"} recorded.`;
     case "class-subjects":
-      return `${n} class-and-subject ${is ? "pairing" : "pairings"} recorded.`;
+      return `${n} ${is ? "subject is" : "subjects are"} set for your classes.`;
     case "guardians":
       return `${n} ${is ? "parent or guardian" : "parents and guardians"} on file.`;
     default:

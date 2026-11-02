@@ -316,9 +316,9 @@ When you signed up, SchoolKit set these up with sensible Nigerian defaults. Look
 
 - **Classes** — KG 1 through SSS 3, with one class each (for example JSS 1A). To add a second stream, rename a class, or set a class size, go to **Sessions & classes → Class Arms** and press **Add class arm** or **Edit**. To hide a level you do not run, deactivate its class.
 - **Grading** — First CA 20, Second CA 20 and Exam 60, with WAEC‑style grades A1 to F9. To change it, go to **Grading** in the menu. The **Scheme** tab sets the parts and their weights (they must add up to 100); the **Boundaries** tab sets the score range for each grade. Press **Save scheme** or **Save boundaries**.
-- **Subjects** — English Language, Mathematics and Civic Education. Add the rest of your subjects in **Sessions & classes → Subjects** with **Add subject**.
+- **Subjects** — the standard Nigerian subjects for each stage: Nursery, KG, Primary, Junior Secondary and Senior Secondary. Each class takes the subjects of its stage, so there is nothing to match up class by class, and deleting a class you do not run changes nothing. See them in **Sessions & classes → Subjects by class**.
 
-The **Matrix** tab under **Sessions & classes** (which classes take which subjects) is a reference list only. Nothing stops working if you leave it empty.
+**Subjects you do not teach never appear.** Only subjects with scores show on report cards and results, so a long list costs you nothing. To add a subject that is missing, press **Add a subject** in its stage on **Subjects by class**. To take one off a stage, press the **×** beside it.
 
 ---
 
@@ -454,6 +454,13 @@ Go to **Report Cards** in the menu, choose the term and class, and press **Open 
 6. Press **Approve arm**.
 
 **Each of these buttons acts on the whole class at once**, not one child at a time.
+
+**Hiding a subject from results.** Sometimes a subject has scores but should not be on the report cards, for example a subject a class started late. Hide it instead of deleting the scores:
+
+- **For one class arm:** the form teacher (or you) presses **Hide a subject** in the **Hidden subjects** box on the class's report card board.
+- **For a whole class or the whole school:** go to **Sessions & classes → Subjects by class** and press **Hide a subject**.
+
+You choose how long: **this term only**, **this session**, or **until I unhide it**. Press **Unhide** to bring it back at any time; nothing is lost. The subject leaves the cards straight away. Totals, averages and positions change when you press **Build again** on the board (while the class is still a draft; reopen it first if you have already approved it).
 
 **Showing class position:** in **Settings → Report cards** you can choose whether position in class appears on printed report cards, and whether parents see it on screen.
 

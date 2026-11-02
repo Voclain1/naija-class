@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import type { Response } from "express";
-import type { PlatformActivationDto } from "@school-kit/types";
+import type { PlatformActivationDto, PlatformSchoolOwnerDto } from "@school-kit/types";
 
 import { PlatformAdminGuard } from "../../common/auth/platform-admin.guard.js";
 import { ActivationPlatformService } from "./activation-platform.service.js";
@@ -80,5 +80,17 @@ export class PlatformActivationController {
   @Get()
   list(@Query("fresh") fresh?: string): Promise<PlatformActivationDto> {
     return this.platform.list({ fresh: fresh === "1" });
+  }
+}
+
+/** The Manage window's Owner section (2026-11-02). */
+@Controller("platform-admin/schools")
+@UseGuards(PlatformAdminGuard)
+export class PlatformSchoolOwnerController {
+  constructor(private readonly platform: ActivationPlatformService) {}
+
+  @Get(":schoolId/owner")
+  owner(@Param("schoolId", ParseUUIDPipe) schoolId: string): Promise<PlatformSchoolOwnerDto> {
+    return this.platform.owner(schoolId);
   }
 }

@@ -48,6 +48,68 @@ function watchDialogs(page: Page): string[] {
   return seen;
 }
 
+/**
+ * A teacher on the lesson plan editor with one unsaved edit — a guarded
+ * surface (beforeunload + session draft). Since 2026-11-02 it stands in for
+ * the class-subject matrix, which Subjects by class replaced.
+ */
+async function openDirtyLessonPlan(browser: Browser) {
+  const admin = await loginAsAdmin(browser);
+  const teacher = await inviteAndAcceptTeacher(browser, { schoolId: admin.schoolId, invitedByUserId: admin.ownerUserId });
+  const session = await loginAsTeacher(browser, teacher.email, teacher.password);
+  const page = session.page;
+  // A plan needs the AI to exist, which e2e does not call, so the page is
+  // served a plan; everything else (the editor, the sign-out, the restore)
+  // is the real app.
+  const planId = "0f6e9a4c-2b1d-4c7a-9e3f-5d8b7a6c1e20";
+  const url = `/teacher/lesson-plans/${planId}`;
+  await page.route(`**/api/v1/lesson-plans/${planId}`, (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: planId,
+        classLevelId: "lvl",
+        classLevelName: "JSS 1",
+        subjectId: "sub",
+        subjectName: "Mathematics",
+        topic: "Fractions",
+        objectives: null,
+        durationMinutes: 40,
+        status: "COMPLETED",
+        behaviouralObjectives: "Pupils can add simple fractions.",
+        instructionalMaterials: "Fraction cards",
+        previousKnowledge: "Whole numbers",
+        referenceMaterials: null,
+        mainContent: "Step 1",
+        assessment: "Five questions",
+        homework: null,
+        conclusion: null,
+        quiz: null,
+        groundedOn: null,
+        introduction: null,
+        activities: null,
+        createdBy: "teacher",
+        createdAt: "2026-10-12T08:00:00.000Z",
+        updatedAt: "2026-10-12T08:00:00.000Z",
+      }),
+    });
+  });
+
+  await page.goto(`${WEB}${url}`);
+  const first = page.locator("textarea").first();
+  await expect(first).toHaveValue("Pupils can add simple fractions.", { timeout: 60_000 });
+  await first.fill("Pupils can add and compare simple fractions.");
+  const close = async () => {
+    await session.context.close();
+    await teacher.context.close();
+    await admin.context.close();
+    await admin.api.dispose();
+  };
+  return { admin, teacher, session, page, url, first, close };
+}
+
 /** Revoke a session server-side, exactly as signing out on another device does. */
 async function revokeSession(token: string): Promise<void> {
   const api = await createApiContext(token);
@@ -109,7 +171,7 @@ test.describe("forced session end offers no false choice", () => {
 
     // /settings/school carries no beforeunload guard, so this assertion is a
     // floor rather than the regression proof — the guarded surfaces (the
-    // matrix and the gradebook, below) are where a dialog actually fired.
+    // lesson plan editor and the gradebook, below) are where a dialog actually fired.
     expect(dialogs).toEqual([]);
 
     const url = new URL(page.url());
@@ -126,42 +188,27 @@ test.describe("forced session end offers no false choice", () => {
     await admin.api.dispose();
   });
 
-  test("a dirty setup form is evicted without a dialog, and keeps its reason", async ({
+  test("a dirty guarded editor is evicted without a dialog, and keeps its reason", async ({
     browser,
   }) => {
-    // The class-subject matrix DOES carry a beforeunload guard, so this is one
-    // of the two surfaces where the false choice actually appeared. It is also
-    // the configuration-form shape: many toggles, one Save, nothing recoverable.
-    const admin = await loginAsAdmin(browser);
-    const { setupAcademicStructure } = await import("../fixtures/academic.js");
-    await setupAcademicStructure(admin.api);
-    const page = admin.page;
+    // The lesson plan editor carries a beforeunload guard, so this is a
+    // surface where the false choice actually appeared.
+    test.setTimeout(180_000);
+    const { session, page, close } = await openDirtyLessonPlan(browser);
     const dialogs = watchDialogs(page);
 
-    await page.goto(`${WEB}/settings/academic/class-subjects`);
-    await page.getByRole("heading", { name: "Class-subject matrix" }).waitFor({ timeout: 60_000 });
-    const cell = page.getByRole("button", {
-      name: /Link subject to level|Unlink subject from level/,
-    });
-    await expect.poll(() => cell.count(), { timeout: 30_000 }).toBeGreaterThan(0);
-    await cell.first().click();
-
-    await revokeSession(admin.token);
-    const save = page.getByRole("button", { name: /^save/i });
-    await expect(save.first()).toBeEnabled({ timeout: 10_000 });
-    await save.first().click();
+    await revokeSession(session.token);
+    await page.getByRole("button", { name: "Save" }).first().click();
     await page.waitForURL(/\/login/, { timeout: 30_000 });
 
     // THE REGRESSION, on a guarded surface. Before the fix a beforeunload
     // dialog fired; the watcher above dismisses it ("Stay"), which cancelled
-    // the navigation, let RequireAuth unmount the matrix and redirect on its
-    // own, and dropped the reason entirely.
+    // the navigation and dropped the reason entirely.
     expect(dialogs, "a forced sign-out must not ask Leave or Stay").toEqual([]);
     expect(new URL(page.url()).searchParams.get("reason")).toBe("revoked");
     await expect(page.getByText("You were signed out")).toBeVisible();
 
-    await admin.context.close();
-    await admin.api.dispose();
+    await close();
   });
 
   test("an expired session says so, and is never described as a revocation", async ({
@@ -465,26 +512,15 @@ test.describe("gradebook", () => {
 // no longer save. Now the question is asked first, as a confirm, and "Cancel"
 // keeps both the session and the work.
 test.describe("deliberate sign-out with unsaved work", () => {
-  async function dirtyMatrix(page: Page) {
-    await page.goto(`${WEB}/settings/academic/class-subjects`);
-    await page.getByRole("heading", { name: "Class-subject matrix" }).waitFor({ timeout: 60_000 });
-    const cell = page.getByRole("button", { name: /Link subject to level|Unlink subject from level/ });
-    await expect.poll(() => cell.count(), { timeout: 30_000 }).toBeGreaterThan(0);
-    await cell.first().click();
-    await expect(page.getByRole("button", { name: /^save/i }).first()).toBeEnabled({ timeout: 10_000 });
-  }
-
   async function chooseLogOut(page: Page) {
-    await page.getByRole("button", { name: /account menu|Owner/ }).first().click();
+    // The account button is named after the person: the teacher here.
+    await page.getByRole("button", { name: /account menu|Owner|^Tunde Teacher$/ }).first().click();
     await page.getByRole("menuitem", { name: /log out/i }).click();
   }
 
   test("cancelling keeps the session and the unsaved changes", async ({ browser }) => {
-    const admin = await loginAsAdmin(browser);
-    const { setupAcademicStructure } = await import("../fixtures/academic.js");
-    await setupAcademicStructure(admin.api);
-    const page = admin.page;
-    await dirtyMatrix(page);
+    test.setTimeout(180_000);
+    const { session, page, first, close } = await openDirtyLessonPlan(browser);
 
     const seen: string[] = [];
     page.on("dialog", (d) => {
@@ -496,22 +532,18 @@ test.describe("deliberate sign-out with unsaved work", () => {
     await expect.poll(() => seen.length).toBe(1);
     expect(seen[0]).toMatch(/^confirm: You have unsaved changes on this page/);
     // Still here, still dirty, still signed in.
-    await expect(page).toHaveURL(/\/settings\/academic\/class-subjects/);
-    await expect(page.getByRole("button", { name: /^save/i }).first()).toBeEnabled();
-    const api = await createApiContext(admin.token);
+    await expect(page).toHaveURL(/\/teacher\/lesson-plans\//);
+    await expect(first).toHaveValue("Pupils can add and compare simple fractions.");
+    const api = await createApiContext(session.token);
     expect((await api.get("auth/me")).status()).toBe(200);
     await api.dispose();
 
-    await admin.context.close();
-    await admin.api.dispose();
+    await close();
   });
 
   test("confirming signs out once, with no second leave-site prompt", async ({ browser }) => {
-    const admin = await loginAsAdmin(browser);
-    const { setupAcademicStructure } = await import("../fixtures/academic.js");
-    await setupAcademicStructure(admin.api);
-    const page = admin.page;
-    await dirtyMatrix(page);
+    test.setTimeout(180_000);
+    const { session, page, close } = await openDirtyLessonPlan(browser);
 
     const seen: string[] = [];
     page.on("dialog", (d) => {
@@ -522,17 +554,16 @@ test.describe("deliberate sign-out with unsaved work", () => {
     await page.waitForURL(/\/login(\?|$)/, { timeout: 30_000 });
 
     expect(seen, "one confirm, and no beforeunload prompt after it").toEqual(["confirm"]);
-    const api = await createApiContext(admin.token);
+    const api = await createApiContext(session.token);
     expect((await api.get("auth/me")).status()).toBe(401);
     await api.dispose();
 
-    await admin.context.close();
-    await admin.api.dispose();
+    await close();
   });
 });
 
 // Unsaved work offered back after a forced sign-out (2026-10-12): the lesson
-// plan editor and the class-subject matrix keep their unsaved edits in the
+// plan editor keeps its unsaved edits in the
 // tab (apps/web/src/lib/drafts/session-draft.ts), like the gradebook.
 test.describe("unsaved work comes back after signing in again", () => {
   async function signInAgain(page: Page, email: string, password: string, url: string) {
@@ -543,93 +574,9 @@ test.describe("unsaved work comes back after signing in again", () => {
     await page.waitForURL(new RegExp(url.replace(/\//g, "\\/")), { timeout: 60_000 });
   }
 
-  test("the class-subject matrix offers its unsaved toggles back, and they save", async ({ browser }) => {
-    test.setTimeout(180_000);
-    const admin = await loginAsAdmin(browser);
-    const { setupAcademicStructure } = await import("../fixtures/academic.js");
-    await setupAcademicStructure(admin.api);
-    const page = admin.page;
-    const url = "/settings/academic/class-subjects";
-
-    await page.goto(`${WEB}${url}`);
-    await page.getByRole("heading", { name: "Class-subject matrix" }).waitFor({ timeout: 60_000 });
-    const unlinked = page.getByRole("button", { name: /Link subject to level/ });
-    await expect.poll(() => unlinked.count(), { timeout: 30_000 }).toBeGreaterThan(0);
-    const before = await unlinked.count();
-    await unlinked.first().click();
-    await expect.poll(() => unlinked.count()).toBe(before - 1);
-
-    await revokeSession(admin.token);
-    await page.getByRole("button", { name: /^save/i }).first().click();
-    await signInAgain(page, admin.email, admin.password, url);
-
-    await expect(page.getByText("Unsaved changes found")).toBeVisible({ timeout: 60_000 });
-    await page.getByRole("button", { name: "Restore changes" }).click();
-    await expect.poll(() => unlinked.count()).toBe(before - 1);
-    await page.getByRole("button", { name: "Save changes" }).click();
-    // The save bar shows only while something is unsaved.
-    await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0, { timeout: 30_000 });
-
-    // Saved for real, and nothing is offered again.
-    await page.reload();
-    await page.getByRole("heading", { name: "Class-subject matrix" }).waitFor({ timeout: 60_000 });
-    await expect.poll(() => unlinked.count(), { timeout: 30_000 }).toBe(before - 1);
-    await expect(page.getByText("Unsaved changes found")).toHaveCount(0);
-
-    await admin.context.close();
-    await admin.api.dispose();
-  });
-
   test("the lesson plan editor offers its unsaved sections back", async ({ browser }) => {
     test.setTimeout(180_000);
-    const admin = await loginAsAdmin(browser);
-    const teacher = await inviteAndAcceptTeacher(browser, { schoolId: admin.schoolId, invitedByUserId: admin.ownerUserId });
-    const session = await loginAsTeacher(browser, teacher.email, teacher.password);
-    const page = session.page;
-
-    // A plan needs the AI to exist, which e2e does not call, so the page is
-    // served a plan; everything else (the editor, the sign-out, the restore)
-    // is the real app.
-    const planId = "0f6e9a4c-2b1d-4c7a-9e3f-5d8b7a6c1e20";
-    const url = `/teacher/lesson-plans/${planId}`;
-    await page.route(`**/api/v1/lesson-plans/${planId}`, (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          id: planId,
-          classLevelId: "lvl",
-          classLevelName: "JSS 1",
-          subjectId: "sub",
-          subjectName: "Mathematics",
-          topic: "Fractions",
-          objectives: null,
-          durationMinutes: 40,
-          status: "COMPLETED",
-          behaviouralObjectives: "Pupils can add simple fractions.",
-          instructionalMaterials: "Fraction cards",
-          previousKnowledge: "Whole numbers",
-          referenceMaterials: null,
-          mainContent: "Step 1",
-          assessment: "Five questions",
-          homework: null,
-          conclusion: null,
-          quiz: null,
-          groundedOn: null,
-          introduction: null,
-          activities: null,
-          createdBy: "teacher",
-          createdAt: "2026-10-12T08:00:00.000Z",
-          updatedAt: "2026-10-12T08:00:00.000Z",
-        }),
-      });
-    });
-
-    await page.goto(`${WEB}${url}`);
-    const first = page.locator("textarea").first();
-    await expect(first).toHaveValue("Pupils can add simple fractions.", { timeout: 60_000 });
-    await first.fill("Pupils can add and compare simple fractions.");
+    const { teacher, session, page, url, close } = await openDirtyLessonPlan(browser);
 
     await revokeSession(session.token);
     await page.getByRole("button", { name: "Save" }).first().click();
@@ -641,9 +588,6 @@ test.describe("unsaved work comes back after signing in again", () => {
     await expect(page.locator("textarea").first()).toHaveValue("Pupils can add and compare simple fractions.");
     await expect(page.getByText("Unsaved edits found")).toHaveCount(0);
 
-    await session.context.close();
-    await teacher.context.close();
-    await admin.context.close();
-    await admin.api.dispose();
+    await close();
   });
 });

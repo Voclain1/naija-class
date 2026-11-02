@@ -476,4 +476,13 @@ describe("ActivationService (database)", () => {
     expect(summary.emailsClicked).toBe(1);
     expect(summary.byStage[2] + summary.byStage[3]).toBe(mine.length);
   });
+
+  it("gives the Manage window one school's owner contact, with email", async () => {
+    const res = await platform.owner(fresh);
+    expect(res.owner).toMatchObject({ name: "Chika Okafor", invitePending: false });
+    expect(res.owner?.email).toMatch(/@t\.test$/);
+    expect(res.owner?.phone).toMatch(/^080\d{8}$/);
+    await expect(platform.owner(noOwner)).resolves.toEqual({ owner: null });
+    await expect(platform.owner("00000000-0000-4000-8000-000000000000")).rejects.toThrow("School not found");
+  });
 });

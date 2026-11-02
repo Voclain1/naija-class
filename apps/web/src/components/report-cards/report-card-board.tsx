@@ -20,6 +20,7 @@ import { ReleaseReportCardsDialog } from "@/components/report-cards/release-repo
 import { PdfStatusBadge, WorkflowStatusBadge } from "@/components/report-cards/status-badges";
 import { ReopenModal } from "@/components/report-cards/reopen-modal";
 import { WorkflowGuidance } from "@/components/report-cards/workflow-guidance";
+import { ArmHiddenSubjects } from "@/components/subjects/arm-hidden-subjects";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
@@ -46,7 +47,7 @@ type Status =
   | { kind: "error"; message: string }
   | { kind: "out-of-scope" }
   | { kind: "no-term" }
-  | { kind: "ready"; armName: string; termId: string; termName: string };
+  | { kind: "ready"; armName: string; classLevelId: string | null; termId: string; termName: string };
 
 const POLL_MS = 4000;
 
@@ -84,12 +85,15 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
     setStatus({ kind: "loading" });
     try {
       let armName: string | null = null;
+      let classLevelId: string | null = null;
       let termId = queryTermId;
       let termName = "";
 
       if (canManage) {
         const arms = await listClassArms();
-        armName = arms.find((a) => a.id === armId)?.name ?? null;
+        const arm = arms.find((a) => a.id === armId);
+        armName = arm?.name ?? null;
+        classLevelId = arm?.classLevelId ?? null;
         if (!termId || !termName) {
           const years = await listAcademicYears();
           const currentYear = years.find((y) => y.isCurrent) ?? years[0] ?? null;
@@ -105,7 +109,9 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
           setStatus({ kind: "out-of-scope" });
           return;
         }
-        armName = scope.classArms.find((a) => a.id === armId)?.name ?? null;
+        const arm = scope.classArms.find((a) => a.id === armId);
+        armName = arm?.name ?? null;
+        classLevelId = arm?.classLevelId ?? null;
         termId = scope.currentTerm?.id ?? null;
         termName = scope.currentTerm?.name ?? "";
       }
@@ -122,7 +128,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
       const board = await getReportCardBoard(termId, armId);
       setRows(board.data);
       setIsFinalTerm(board.isFinalTerm);
-      setStatus({ kind: "ready", armName, termId, termName });
+      setStatus({ kind: "ready", armName, classLevelId, termId, termName });
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
         setStatus({ kind: "out-of-scope" });
@@ -405,6 +411,16 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                   </Button>
                 )}
 
+                {/* Build again — DRAFT with cards (owner/admin): picks up new
+                    scores and hidden subjects (2026-11-02). The API refuses
+                    once the arm is past DRAFT. */}
+                {armStatus === "DRAFT" && rows.length > 0 && canManage && (
+                  <Button type="button" variant="outline" onClick={onBuild} disabled={building || shouldPoll}>
+                    {building ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    {building ? "Building…" : "Build again"}
+                  </Button>
+                )}
+
                 {/* Approve — FORM_REVIEWED (owner/admin). */}
                 {armStatus === "FORM_REVIEWED" && canManage && (
                   <Button
@@ -514,6 +530,14 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
               affected rows below.
             </div>
           ) : null}
+
+          <ArmHiddenSubjects
+            armId={armId}
+            armName={status.armName}
+            classLevelId={status.classLevelId}
+            termId={status.termId}
+            termName={status.termName}
+          />
 
           {rows.length === 0 ? (
             <EmptyState

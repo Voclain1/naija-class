@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { matrixDraftCells, restorableMatrixCells, toDesiredMap, type MatrixCellIntent } from "./matrix-draft";
 import {
   clearAllSessionDrafts,
   readSessionDraft,
@@ -68,41 +67,5 @@ describe("session drafts: unsaved work survives a forced sign-out", () => {
     delete g.window;
     expect(() => writeSessionDraft(key, { a: "b" })).not.toThrow();
     expect(readSessionDraft(key)).toBeNull();
-  });
-});
-
-describe("class-subject matrix draft", () => {
-  // Saved now: JSS1 takes Maths (core); nothing else.
-  const saved = (levelId: string, subjectId: string) =>
-    levelId === "jss1" && subjectId === "maths" ? { isCore: true } : null;
-  const desired = (entries: [string, string, MatrixCellIntent][]) => toDesiredMap(entries.map(([levelId, subjectId, intent]) => ({ levelId, subjectId, intent })));
-
-  it("keeps only the toggles that change something", () => {
-    const cells = matrixDraftCells(
-      desired([
-        ["jss1", "maths", { linked: true, isCore: true }], // same as saved: not kept
-        ["jss1", "art", { linked: true, isCore: false }], // new link
-        ["jss1", "music", { linked: false }], // unlinked and not linked: not kept
-        ["jss2", "maths", { linked: true, isCore: true }], // new link
-      ]),
-      saved,
-    );
-    expect(cells.map((c) => `${c.levelId}/${c.subjectId}`)).toEqual(["jss1/art", "jss2/maths"]);
-  });
-
-  it("an unlink and a core/elective flip are both changes", () => {
-    expect(matrixDraftCells(desired([["jss1", "maths", { linked: false }]]), saved)).toHaveLength(1);
-    expect(matrixDraftCells(desired([["jss1", "maths", { linked: true, isCore: false }]]), saved)).toHaveLength(1);
-  });
-
-  it("restores only cells whose class level and subject still exist and still change something", () => {
-    const cells = [
-      { levelId: "jss1", subjectId: "art", intent: { linked: true, isCore: false } as MatrixCellIntent },
-      { levelId: "gone", subjectId: "art", intent: { linked: true, isCore: false } as MatrixCellIntent },
-      { levelId: "jss1", subjectId: "gone", intent: { linked: true, isCore: false } as MatrixCellIntent },
-      { levelId: "jss1", subjectId: "maths", intent: { linked: true, isCore: true } as MatrixCellIntent },
-    ];
-    const back = restorableMatrixCells(cells, new Set(["jss1", "jss2"]), new Set(["art", "maths"]), saved);
-    expect(back.map((c) => `${c.levelId}/${c.subjectId}`)).toEqual(["jss1/art"]);
   });
 });

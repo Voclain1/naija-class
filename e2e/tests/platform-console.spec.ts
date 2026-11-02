@@ -77,8 +77,16 @@ test("the platform admin console shows a stuck school with its owner and reminde
       await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     }
     await page.goto("/super-admin/dashboard/schools");
-    await expect(page.getByRole("row").filter({ hasText: school.slug })).toBeVisible({ timeout: 30_000 });
+    const schoolRow = page.getByRole("row").filter({ hasText: school.slug });
+    await expect(schoolRow).toBeVisible({ timeout: 30_000 });
     await page.screenshot({ path: "test-results/platform-console/3-schools.png" });
+
+    // The Manage window shows the owner's email too (2026-11-02), for a phone
+    // that is not on WhatsApp.
+    await schoolRow.getByRole("button", { name: /^Manage / }).click();
+    const contact = page.getByRole("dialog").getByTestId("owner-contact");
+    await expect(contact.getByRole("link", { name: stuck.email })).toHaveAttribute("href", `mailto:${stuck.email}`, { timeout: 30_000 });
+    await page.keyboard.press("Escape");
 
     // ---- 4. On a phone ------------------------------------------------------------
     await page.setViewportSize({ width: 390, height: 844 });

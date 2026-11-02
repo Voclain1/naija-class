@@ -12,6 +12,7 @@ import {
 } from "@school-kit/types";
 
 import { currentPlanEnforcement } from "../../common/plans/plan-limits";
+import { hiddenSubjectIds } from "../subject-hides/hidden-subjects";
 
 // Phase 6 / Slice 4 — THE family-facing read of a report card. D28.
 //
@@ -243,7 +244,10 @@ export class ReleasedResultsService {
       (ranked ? readCumulativeSubjects(card.cumulativeSubjects) : []).map((c) => [c.subjectId, c]),
     );
 
+    // A subject hidden from this arm's results never reaches families (subjects-by-class.md).
+    const hidden = await hiddenSubjectIds(db, card.termId, card.classArmId);
     const subjects: FamilySubjectRowDto[] = assessments
+      .filter((a) => !hidden.has(a.subjectId))
       .map((a) => ({
         subjectId: a.subjectId,
         subjectName: subjectName.get(a.subjectId) ?? "",

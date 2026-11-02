@@ -16,6 +16,7 @@ interface Props {
 
 const STAGE_LABEL: Record<ClassStageDto, string> = {
   NURSERY: "Nursery",
+  KG: "KG",
   PRIMARY: "Primary",
   JSS: "JSS",
   SSS: "SSS",

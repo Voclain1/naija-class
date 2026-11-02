@@ -155,11 +155,10 @@ describe("SetupStateService", () => {
     const state = await service.getSetupState(authCtx);
 
     // applySchoolDefaults seeds levels, arms, subjects and grading — none of
-    // which are steps. What it does NOT seed is ClassSubject links, so that
-    // optional step must be outstanding even though the subjects exist. This
-    // is the assertion that would catch someone "helpfully" widening the
-    // seed and silently changing what an owner is told.
-    expect(step(state, "class-subjects").done).toBe(false);
+    // which are required steps. Since 2026-11-02 the seeded subjects carry
+    // their stages (subjects-by-class.md), so the optional "check your
+    // subjects by class" step is already done for a new school.
+    expect(step(state, "class-subjects").done).toBe(true);
     expect(state.alreadyDone.length).toBeGreaterThan(0);
     // And the seeded things are reported as done-for-you, not as chores.
     expect(state.steps.map((s) => s.key)).not.toContain("grading");

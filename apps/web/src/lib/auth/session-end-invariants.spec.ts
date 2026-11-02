@@ -24,7 +24,6 @@ function read(relative: string): string {
 // whose "Stay" cannot stay.
 const GUARDED_SURFACES: { label: string; path: string }[] = [
   { label: "gradebook grid", path: "../../components/teacher/gradebook/gradebook-grid.tsx" },
-  { label: "class-subject matrix", path: "../../components/settings/academic/class-subject-matrix.tsx" },
   { label: "lesson plan editor", path: "../../app/(teacher)/teacher/lesson-plans/[id]/page.tsx" },
   { label: "teacher attendance", path: "../../app/(teacher)/teacher/attendance/page.tsx" },
   // Phase 8c / CP6b — a freshly generated PIN batch exists only on this page.

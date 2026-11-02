@@ -12,13 +12,18 @@ import { ApiError, proxyFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 // Setup calls booked by new schools (docs/modules/onboarding-call.md): work
-// waiting on the team, newest first. Confirm the time on WhatsApp, hold the
+// waiting on the team, newest first. Confirm the time on WhatsApp or by email
+// (the booker's account email, for a phone that is not on WhatsApp), hold the
 // call, then mark it done.
 
 function waLink(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   const intl = digits.startsWith("0") ? `234${digits.slice(1)}` : digits;
   return `https://wa.me/${intl}`;
+}
+
+function mailLink(email: string): string {
+  return `mailto:${email}?subject=${encodeURIComponent("Your SchoolKit setup call")}`;
 }
 
 export function SetupCallsCard() {
@@ -76,12 +81,20 @@ export function SetupCallsCard() {
                 <span className="text-muted-foreground">
                   {r.contactName} · {r.contactPhone}
                 </span>
+                {r.contactEmail && (
+                  <span className="break-all text-muted-foreground">{r.contactEmail}</span>
+                )}
                 {r.note && <span className="text-muted-foreground">“{r.note}”</span>}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button asChild variant="outline" size="sm">
                   <a href={waLink(r.contactPhone)} target="_blank" rel="noopener noreferrer">WhatsApp</a>
                 </Button>
+                {r.contactEmail && (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={mailLink(r.contactEmail)}>Email</a>
+                  </Button>
+                )}
                 <Button size="sm" variant={r.doneAt ? "ghost" : "default"} onClick={() => mark(r, r.doneAt === null)}>
                   {r.doneAt ? "Not done" : "Mark done"}
                 </Button>

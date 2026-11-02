@@ -122,7 +122,8 @@ export class SetupStateService {
         }),
         db.classArm.count({ where: { isActive: true, classTeacherId: { not: null } } }),
         db.teacherAssignment.count({ where: { isActive: true } }),
-        db.classSubject.count(),
+        // Subjects by class (2026-11-02): subjects tagged with a stage.
+        db.subject.count({ where: { isActive: true, NOT: { stages: { isEmpty: true } } } }),
         db.guardian.count(),
         // -- real-activity probes ------------------------------------------
         // Deliberately three different workflows, not one: a school that
@@ -216,10 +217,10 @@ export class SetupStateService {
           tier: "optional",
           done: classSubjectCount > 0,
           count: classSubjectCount,
-          title: "Record which classes take which subjects",
-          why: "A reference list of your curriculum. Nothing is blocked without it — teachers are assigned to subjects directly.",
+          title: "Check your subjects by class",
+          why: "Every class already has the standard subjects for its stage. Add any your school teaches that are missing, or remove ones it never offers.",
           href: "/settings/academic/class-subjects",
-          actionLabel: "Open the subject matrix",
+          actionLabel: "Open subjects by class",
         },
         {
           key: "guardians",
