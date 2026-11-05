@@ -47,7 +47,7 @@ The owner added that schools delete classes they do not run, so a class's subjec
 - A hidden subject's scores are kept. It simply leaves results.
 - The subject rows leave at once.
 - Totals, averages and positions are stored on the card, so they change when the cards are next built. That is allowed only while the arm is in draft, so to change a released class you reopen it first.
-- The board now has **Build again** for owners and admins on a draft arm that already has cards.
+- Owners and admins rebuild a draft arm with **Rebuild draft report cards** on the board (from `docs/modules/report-card-roster-reconciliation.md`), which also adds pupils enrolled after the first build.
 
 **Who can hide:**
 - **Endpoints:** `GET /subject-hides`, `POST /subject-hides` and `POST /subject-hides/:id/unhide`, under `assessment.aggregate`, which owners, admins and teachers hold.

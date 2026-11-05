@@ -42,8 +42,8 @@
     "census-paystack-splits": "dotenv -e ../../.env -- tsx scripts/census-paystack-splits.ts"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "7.10.0",
-    "@prisma/client": "7.10.0",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
     "@school-kit/types": "workspace:*",
     "pg": "8.23.1"
   },
@@ -53,7 +53,7 @@
     "@types/pg": "^8.23.1",
     "argon2": "^0.45.1",
     "dotenv-cli": "^7.4.4",
-    "prisma": "7.10.0",
+    "prisma": "7.10.1",
     "tsx": "^4.23.15",
     "typescript": "^5.6.3"
   }

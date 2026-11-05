@@ -455,12 +455,20 @@ Go to **Report Cards** in the menu, choose the term and class, and press **Open 
 
 **Each of these buttons acts on the whole class at once**, not one child at a time.
 
+**If a student is missing:** the board compares current enrollment with the cards
+already built and lists children who do not yet have a card. While the class is
+in **DRAFT**, an owner or administrator can press **Rebuild draft report cards**.
+This adds missing students and refreshes scores and attendance; existing comments
+are kept. If review has already started, the school owner must first use **Reopen
+arm**, give a reason, and then rebuild. Review, approve and release again when
+ready. Cards are not automatically deleted when a child leaves the class.
+
 **Hiding a subject from results.** Sometimes a subject has scores but should not be on the report cards, for example a subject a class started late. Hide it instead of deleting the scores:
 
 - **For one class arm:** the form teacher (or you) presses **Hide a subject** in the **Hidden subjects** box on the class's report card board.
 - **For a whole class or the whole school:** go to **Sessions & classes → Subjects by class** and press **Hide a subject**.
 
-You choose how long: **this term only**, **this session**, or **until I unhide it**. Press **Unhide** to bring it back at any time; nothing is lost. The subject leaves the cards straight away. Totals, averages and positions change when you press **Build again** on the board (while the class is still a draft; reopen it first if you have already approved it).
+You choose how long: **this term only**, **this session**, or **until I unhide it**. Press **Unhide** to bring it back at any time; nothing is lost. The subject leaves the cards straight away. Totals, averages and positions change when you press **Rebuild draft report cards** on the board (while the class is still a draft; reopen it first if you have already approved it).
 
 **Showing class position:** in **Settings → Report cards** you can choose whether position in class appears on printed report cards, and whether parents see it on screen.
 

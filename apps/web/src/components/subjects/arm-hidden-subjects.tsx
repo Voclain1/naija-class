@@ -108,7 +108,7 @@ export function ArmHiddenSubjects({ armId, armName, classLevelId, termId, termNa
         </ul>
       )}
       <p className="text-xs text-muted-foreground">
-        The subject leaves the cards at once. Totals and positions change when the cards are built again (an admin can, while they are in draft).
+        The subject leaves the cards at once. Totals and positions change when an admin presses Rebuild draft report cards (while the cards are in draft).
       </p>
 
       <HideSubjectDialog
