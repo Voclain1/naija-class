@@ -16,7 +16,8 @@
 >   - "Mark all present" already exists (T-02).
 >   - Exeat decisions already notify guardians (C-6).
 >   - `admit` already creates the enrolment and links the primary guardian (C-3).
-> - **Corrections to existing-policy labels:** several restrictions labelled here as existing policy were proposals; the plan's §2 separates the two.
+> - **Corrections to existing-policy labels:** several restrictions labelled here as existing policy were proposals; the plan's §1 separates the two and gives each policy its approval status.
+> - **Owner decisions this audit also missed (found in revision 2 of the plan):** "No AI anywhere in messaging" (`phase-9.md` §17.8, Answer 4, 2026-10-18) excludes AI message drafting and triage (C-7, MSG-01). Teachers cannot start parent conversations (Answer 1), which excludes FT-03.
 
 ---
 
