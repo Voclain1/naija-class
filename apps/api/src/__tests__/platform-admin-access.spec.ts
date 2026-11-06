@@ -21,6 +21,7 @@ import * as password from "../common/auth/password";
 import { createSession } from "../common/auth/sessions";
 
 import { HttpExceptionFilter } from "../common/http-exception.filter";
+import { FeatureSwitchesService } from "../common/features/feature-switches.service";
 import { PlatformAdminModule } from "../modules/platform-admin/platform-admin.module";
 import { InvitationsModule } from "../modules/invitations/invitations.module";
 
@@ -354,8 +355,12 @@ describe("Platform admin access (2026-08-02)", () => {
     //   - smsSenderId, smsSenderStatus    2026-10-11 (docs/modules/school-identity.md
     //     slice 2): the read for PATCH .../sms-sender. Operator-decided status;
     //     the name itself is printed on every SMS the school sends.
+    //   - featureSwitches                 2026-11-06 (docs/modules/feature-switches.md):
+    //     the read for PATCH .../features. Operator-set status about the
+    //     tenancy, like aiEnabled and smartImportEnabled.
     expect(Object.keys(row).sort()).toEqual(
       [
+        "featureSwitches",
         "aiEnabled",
         "smsSenderId",
         "smsSenderStatus",
@@ -386,6 +391,8 @@ describe("Platform admin access (2026-08-02)", () => {
     expect(row.staffCount).toBeGreaterThanOrEqual(5);
     expect(row.slug).toBe(`platform-admin-a-${runId}`);
     expect(row.hasOwner).toBe(true);
+    // Every known feature, resolved, and off for a school nobody switched on.
+    expect(row.featureSwitches).toEqual({ "assistant-help": false });
   });
 
   it("GET /platform-admin/users with no filter returns users across BOTH schools; with schoolId filters to one", async () => {
@@ -1041,6 +1048,117 @@ describe("Platform admin access (2026-08-02)", () => {
         .patch("/api/v1/platform-admin/schools/does-not-exist/smart-import")
         .set("Authorization", `Bearer ${platformAdminToken}`)
         .send({ smartImportEnabled: true })).status).toBe(404);
+    });
+  });
+
+  describe("PATCH /platform-admin/schools/:schoolId/features (2026-11-06)", () => {
+    const url = (schoolId: string) => `/api/v1/platform-admin/schools/${schoolId}/features`;
+    const stored = async (schoolId: string) =>
+      (await basePrisma.school.findUnique({ where: { id: schoolId }, select: { featureSwitches: true } }))
+        ?.featureSwitches;
+    const listed = async (schoolId: string) => {
+      const res = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      expect(res.status).toBe(200);
+      return res.body.find((r: { schoolId: string }) => r.schoolId === schoolId).featureSwitches;
+    };
+
+    it.each([
+      ["owner", () => ownerAToken],
+      ["admin", () => adminAToken],
+      ["teacher", () => teacherAToken],
+      ["bursar", () => bursarAToken],
+    ])("is refused to the school's own %s, and changes nothing", async (_role, token) => {
+      const res = await request(app.getHttpServer())
+        .patch(url(schoolA))
+        .set("Authorization", `Bearer ${token()}`)
+        .send({ key: "assistant-help", enabled: true });
+      expect(res.status).toBe(403);
+      expect(await stored(schoolA)).toEqual({});
+    });
+
+    it("needs a session at all (401 without one)", async () => {
+      const res = await request(app.getHttpServer()).patch(url(schoolA)).send({ key: "assistant-help", enabled: true });
+      expect(res.status).toBe(401);
+    });
+
+    it("turns a key on and off for one school only, audits each write, and reads it back", async () => {
+      const on = await request(app.getHttpServer())
+        .patch(url(schoolA))
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ key: "assistant-help", enabled: true });
+      expect(on.status).toBe(200);
+      expect(on.body).toEqual({ schoolId: schoolA, featureSwitches: { "assistant-help": true } });
+      expect(await listed(schoolA)).toEqual({ "assistant-help": true });
+      // The other school is untouched.
+      expect(await stored(schoolB)).toEqual({});
+      expect(await listed(schoolB)).toEqual({ "assistant-help": false });
+
+      const audit = await basePrisma.auditLog.findFirst({
+        where: { action: "platform_admin.schools.set-feature", entityId: schoolA },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(audit).toMatchObject({ schoolId: null, userId: platformAdminUserId, entityType: "school" });
+      expect(audit?.metadata).toEqual({ field: "featureSwitches", key: "assistant-help", from: false, to: true });
+
+      // The resolver in the same process sees the write at once (invalidate).
+      const resolver = app.get(FeatureSwitchesService);
+      expect(await resolver.isOn(schoolA, "assistant-help")).toBe(true);
+
+      const off = await request(app.getHttpServer())
+        .patch(url(schoolA))
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ key: "assistant-help", enabled: false });
+      expect(off.status).toBe(200);
+      expect(await listed(schoolA)).toEqual({ "assistant-help": false });
+      expect(await resolver.isOn(schoolA, "assistant-help")).toBe(false);
+      const offAudit = await basePrisma.auditLog.findFirst({
+        where: { action: "platform_admin.schools.set-feature", entityId: schoolA },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(offAudit?.metadata).toEqual({ field: "featureSwitches", key: "assistant-help", from: true, to: false });
+    });
+
+    it("audits a write of the value already held, with from equal to to", async () => {
+      await request(app.getHttpServer())
+        .patch(url(schoolB))
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ key: "assistant-help", enabled: false })
+        .expect(200);
+      const audit = await basePrisma.auditLog.findFirst({
+        where: { action: "platform_admin.schools.set-feature", entityId: schoolB },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(audit?.metadata).toEqual({ field: "featureSwitches", key: "assistant-help", from: false, to: false });
+    });
+
+    it("keeps keys it does not touch, including ones this build does not know", async () => {
+      // A stray key written by hand must survive a write to another key, and
+      // still never read as a feature.
+      await basePrisma.school.update({ where: { id: schoolB }, data: { featureSwitches: { "legacy-key": true } } });
+      await request(app.getHttpServer())
+        .patch(url(schoolB))
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ key: "assistant-help", enabled: true })
+        .expect(200);
+      expect(await stored(schoolB)).toEqual({ "legacy-key": true, "assistant-help": true });
+      expect(await listed(schoolB)).toEqual({ "assistant-help": true });
+      await basePrisma.school.update({ where: { id: schoolB }, data: { featureSwitches: {} } });
+    });
+
+    it("refuses unknown keys, non-boolean values, extra fields and unknown schools", async () => {
+      const send = (schoolId: string, body: unknown) =>
+        request(app.getHttpServer())
+          .patch(url(schoolId))
+          .set("Authorization", `Bearer ${platformAdminToken}`)
+          .send(body as object);
+      expect((await send(schoolA, { key: "not-a-feature", enabled: true })).status).toBe(400);
+      expect((await send(schoolA, { key: "assistant-help", enabled: "true" })).status).toBe(400);
+      expect((await send(schoolA, { key: "assistant-help", enabled: true, schoolId: schoolB })).status).toBe(400);
+      expect((await send(schoolA, {})).status).toBe(400);
+      expect((await send("does-not-exist", { key: "assistant-help", enabled: true })).status).toBe(404);
+      expect(await stored(schoolA)).toEqual({ "assistant-help": false });
     });
   });
 

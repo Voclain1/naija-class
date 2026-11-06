@@ -39,6 +39,9 @@ import {
   type PlatformAdminSetPlanResponse,
   type PlatformAdminSetSmartImportInput,
   type PlatformAdminSetSmartImportResponse,
+  type PlatformAdminSetFeatureInput,
+  type PlatformAdminSetFeatureResponse,
+  parseFeatureSwitches,
   type PlatformAdminDecideSmsSenderInput,
   type PlatformAdminDecideSmsSenderResponse,
   type SchoolPlan,
@@ -53,6 +56,7 @@ import type { PlatformAdminContext } from "../../common/auth/platform-admin-cont
 import * as password from "../../common/auth/password";
 import { createSession } from "../../common/auth/sessions";
 import { EmailService } from "../../common/email/email.service";
+import { FeatureSwitchesService } from "../../common/features/feature-switches.service";
 import { PaystackService } from "../../common/paystack/paystack.service";
 import { redactEmail } from "../../common/redact";
 import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
@@ -139,6 +143,8 @@ interface ListSchoolsRow {
   students_on_roll: bigint;
   sms_sender_id: string | null;
   sms_sender_status: SmsSenderStatus;
+  // JSONB; read through parseFeatureSwitches, never trusted as typed.
+  feature_switches: unknown;
 }
 
 // Mirrors platform_admin_list_paystack_setup_requests()'s columns.
@@ -277,6 +283,7 @@ const SCHOOLS_SET_EARLY_ACCESS_AUDIT_ACTION = "platform_admin.schools.set-early-
 const SCHOOLS_SET_AI_ENABLED_AUDIT_ACTION = "platform_admin.schools.set-ai-enabled";
 const SCHOOLS_SET_STAFF_MOBILE_AUDIT_ACTION = "platform_admin.schools.set-staff-mobile";
 const SCHOOLS_SET_SMART_IMPORT_AUDIT_ACTION = "platform_admin.schools.set-smart-import";
+const SCHOOLS_SET_FEATURE_AUDIT_ACTION = "platform_admin.schools.set-feature";
 const SCHOOLS_DECIDE_SMS_SENDER_AUDIT_ACTION = "platform_admin.schools.decide-sms-sender";
 const SCHOOLS_SET_PLAN_AUDIT_ACTION = "platform_admin.schools.set-plan";
 const SCHOOLS_SET_ADDRESS_AUDIT_ACTION = "platform_admin.schools.set-address";
@@ -308,6 +315,7 @@ export class PlatformAdminService {
   constructor(
     private readonly email: EmailService,
     private readonly paystack: PaystackService,
+    private readonly featureSwitches: FeatureSwitchesService,
   ) {}
 
   // Reuses the exact same SECURITY DEFINER lookup, argon2 verification, and
@@ -407,6 +415,7 @@ export class PlatformAdminService {
       studentsOnRoll: Number(r.students_on_roll),
       smsSenderId: r.sms_sender_id,
       smsSenderStatus: r.sms_sender_status,
+      featureSwitches: parseFeatureSwitches(r.feature_switches),
     }));
   }
 
@@ -760,6 +769,62 @@ export class PlatformAdminService {
       },
     });
     return { schoolId: updated.id, smartImportEnabled: updated.smartImportEnabled };
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/features (2026-11-06,
+  // docs/modules/feature-switches.md; plan item FD-1b). Sets ONE key on or off.
+  //
+  // The merge is a single `||` in SQL under a row lock, so two operators
+  // toggling different keys at once can never lose one another's change, and
+  // the audit row's `from` is the value this write actually replaced. Like
+  // setAiEnabled, a write to the value already held is still audited ("an
+  // operator asserted this state"), with from === to.
+  //
+  // The key is validated by the DTO (FEATURE_KEYS), so an unknown key never
+  // reaches the column. The API's FEATURES_DISABLED variable is deliberately
+  // neither read nor reported here, as setAiEnabled does not report AI_ENABLED.
+  async setFeatureSwitch(
+    schoolId: string,
+    input: PlatformAdminSetFeatureInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminSetFeatureResponse> {
+    const after = await basePrisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ feature_switches: unknown }[]>`
+        SELECT feature_switches FROM schools WHERE id = ${schoolId} FOR UPDATE
+      `;
+      const row = locked[0];
+      if (!row) throw new NotFoundError("School not found.");
+      const before = parseFeatureSwitches(row.feature_switches);
+
+      const updated = await tx.$queryRaw<{ feature_switches: unknown }[]>`
+        UPDATE schools
+        SET feature_switches = feature_switches || jsonb_build_object(${input.key}::text, ${input.enabled}::boolean)
+        WHERE id = ${schoolId}
+        RETURNING feature_switches
+      `;
+      const next = parseFeatureSwitches(updated[0]?.feature_switches);
+
+      await tx.auditLog.create({
+        data: {
+          // schoolId: null, as for every action on this surface: audit_logs'
+          // RLS only lets null-schoolId rows through a GUC-less read. The
+          // school is identified by entityId.
+          schoolId: null,
+          userId: adminCtx.userId,
+          action: SCHOOLS_SET_FEATURE_AUDIT_ACTION,
+          entityType: "school",
+          entityId: schoolId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { field: "featureSwitches", key: input.key, from: before[input.key], to: next[input.key] },
+        },
+      });
+      return next;
+    });
+
+    // This process sees the change at once; others within the cache TTL.
+    this.featureSwitches.invalidate(schoolId);
+    return { schoolId, featureSwitches: after };
   }
 
   // PATCH /platform-admin/schools/:schoolId/sms-sender (2026-10-11,

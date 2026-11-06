@@ -27,6 +27,21 @@
 | 8 | Dependency and readiness fixes (§7) | Self-review found nine inconsistencies in revision 1 |
 | 9 | The "six stages" stay as the roadmap's structure | Still derived by me; the audit proposed none (revision 1 §0) |
 
+### 0.1 Review requirements (owner, 2026-11-06)
+
+Recorded as given. Where an item approves a recommendation, the approval and
+its scope are stated. Everything else in §1.3 remains a **recommendation**.
+
+| # | Requirement | Effect on this plan |
+|---|---|---|
+| RQ1 | Revision 2 is the working roadmap. Change it in place; no further full rewrites. | This section and targeted edits only |
+| RQ2 | Preserve existing product policies. Distinguish recommendations from owner-approved decisions. Never mark an unapproved recommendation as approved. | §1 unchanged in status. Only F-4 moves to owner-approved (RQ4). |
+| RQ3 | Start with **FD-1a and FD-1b only**: storage, resolver, platform-admin controls, audit records and targeted tests. | §3.3 status column |
+| RQ4 | Use the JSONB approach **if repository checks support it**. | **F-4 owner-approved 2026-11-06, conditionally.** The checks passed and are recorded in `docs/modules/feature-switches.md` ("Why a column on `schools`"). |
+| RQ5 | Keep all new assistant features **off**. Open the PR for review with its validation results. Do not merge, deploy or enable pilots. | Every switch defaults off; no migration or seed turns one on. F-14 (pilot schools) stays open. |
+| RQ6 | **Before implementing conversational input**, present the concrete handling of personal data typed or pasted by users: model input, conversation storage and logs. | New gate **G-PII** (§3.6). FD-4a and FD-5d may not start until you approve it. Added to §4.1. |
+| RQ7 | Apply "the six review corrections" to the relevant sections and acceptance criteria. | **Pending.** The six corrections are not in the session record available to me, so none has been applied or guessed at. They will be recorded here, each against the section it changes, once supplied. |
+
 ---
 
 ## 1. Policies and their approval status
@@ -162,18 +177,18 @@ Each PR is independently reviewable, in this order.
 
 | PR | Title | Depends on | Class | Content |
 |---|---|---|---|---|
-| **FD-1a** | Feature controls: storage and resolver | — | B | `schools.feature_switches` JSONB (`schools` has no RLS; it is the tenant table [D, CLAUDE.md]), validated against a Zod enum of keys. A resolver `isFeatureOn(schoolId, key)` with a platform env kill switch per key, which wins. Short-TTL cache. **Recommendation F-4:** JSONB on `schools` rather than a new FORCE-RLS table, because a cross-tenant platform read of an RLS table would need a SECURITY DEFINER function. |
-| **FD-1b** | Feature controls: platform-admin toggle | FD-1a | B | `PATCH /platform-admin/schools/:id/features`, audited like `setAiEnabled`. The switch states are added to `platform_admin_list_schools()` so the write is not blind: its 11th revision, DROP + CREATE with grants restated. The SECURITY DEFINER count stays 23; the CLAUDE.md inventory row is updated in the same PR. A toggle in the super-admin Manage dialog. |
+| **FD-1a** ✅ built, in review | Feature controls: storage and resolver | — | B | `schools.feature_switches` JSONB (`schools` has no RLS; it is the tenant table [D, CLAUDE.md]), validated against a Zod enum of keys. A resolver `isFeatureOn(schoolId, key)` with a platform env kill switch per key, which wins. Short-TTL cache. **Recommendation F-4:** JSONB on `schools` rather than a new FORCE-RLS table, because a cross-tenant platform read of an RLS table would need a SECURITY DEFINER function. |
+| **FD-1b** ✅ built, in review | Feature controls: platform-admin toggle | FD-1a | B | `PATCH /platform-admin/schools/:id/features`, audited like `setAiEnabled`. The switch states are added to `platform_admin_list_schools()` so the write is not blind: its 11th revision, DROP + CREATE with grants restated. The SECURITY DEFINER count stays 23; the CLAUDE.md inventory row is updated in the same PR. A toggle in the super-admin Manage dialog. |
 | **FD-2a** | AI port: messages and tool use | — | D (no prompt yet) | `packages/ai`: `AnthropicPort` gains an optional `messages[]` and `tools[]` and returns tool-use blocks; the existing `userContent` path is unchanged. Fake port for specs. No streaming. |
 | **FD-2b** | Conversation loop in `AiGenerationService` | FD-2a | D | `runConversationTurn()`: each model step is its own reserve → call → settle with its own `ai_generations` row, linked by `interactionLogId`. Ceilings per turn (steps, tokens) and per conversation. Budget exhaustion mid-turn ends the turn with a user-facing message. Per-user daily cap counts each step. |
 | **FD-3a** | Tool registry core (read-only) | FD-2b | E | Typed tool definitions declaring: required permission(s) **or** an explicit `anyActiveStaff` with a written reason (mirroring `PermissionsGuard`'s refusal of undeclared routes); principal type; `read` class only. At execution: re-fetch `isActive`, call `userHoldsPermission` (`role-check.ts:85`) [V], take the tenant from `authCtx` only, validate arguments with Zod, and shape output to an allowlist of fields. **Registering a write-class tool throws at boot** in this delivery. A deny-list scaffold encodes R1 for later. |
 | **FD-3b** | Registry conformance gate | FD-3a | — (CI) | A spec that enumerates every registered tool, like `security-definer-inventory.spec.ts`. It asserts: a declared permission or reasoned `anyActiveStaff`; read class; and that the output of each tool, run over a fixture school, contains **none** of the fixture's student, guardian or staff names, emails, phones, DOBs or kobo amounts (the PII and money scan). |
-| **FD-4a** | Conversation store and API | FD-2b, FD-1a | E | Conversations on `AIInteractionLog` (`sessionRef` = conversation). Payloads store tool names and shaped outputs, never raw rows. Endpoints: `POST /assistant/conversations`, `POST …/:id/messages`, `GET …/:id`, `DELETE …/:id`. Guarded by `AuthGuard`, a new **`assistant.help` permission** (R10; every staff role; migration and seed kept in sync) and the feature switch. Per-user rate limit. A person can read only their own conversations. |
+| **FD-4a** | Conversation store and API | FD-2b, FD-1a, **G-PII approved** (§3.6) | E | Conversations on `AIInteractionLog` (`sessionRef` = conversation). Payloads store tool names and shaped outputs, never raw rows. Endpoints: `POST /assistant/conversations`, `POST …/:id/messages`, `GET …/:id`, `DELETE …/:id`. Guarded by `AuthGuard`, a new **`assistant.help` permission** (R10; every staff role; migration and seed kept in sync) and the feature switch. Per-user rate limit. A person can read only their own conversations. |
 | **FD-4b** | Conversation retention | FD-4a | C (no notifications) | A nightly purge after the retention period (R10 default 90 days, F-7). "Clear my history". The purge is idempotent and tenant-by-tenant, walking active schools like the existing sweeps. |
 | **FD-5a** | Help corpus index | — | — | A build-time index of `docs/onboarding-guide.md` split by heading, with anchors matching the `/help/guide` slugs (rehype-slug). Lexical retrieval (BM25-style) in code: **no embedding vendor, no tenant data, no network**. A CI check fails if the index is stale relative to the guide. |
 | **FD-5b** | Settings read tools | FD-3a | E | `help.search_guide` (top-k sections with anchors; `anyActiveStaff`). `school.profile_summary` (name, plan name, current year and term; no contact or Paystack fields; `anyActiveStaff`). `school.setup_progress` (checklist keys and done flags; `anyActiveStaff`). `grading.scheme` and `grading.boundaries` (their read permissions). `grading.explain_score(score)`: a pure function over boundaries; the user supplies a number, no student is involved. `notifications.channels` (`notification-preferences.read`). Nothing else. |
 | **FD-5c** | `help-assistant` prompt v1 and evals | FD-5a, FD-5b | D | Registered in the prompt registry, with the model per F-6. Answers only from tool output and cited guide sections. Says "I can't see that" when a tool is refused. Treats school-entered strings (names, grade labels) as data. Eval set: real support questions (F-12), refusals, injection inside school-entered labels, and number faithfulness. |
-| **FD-5d** | Staff web assistant panel | FD-4a, FD-5c | E | A panel opened from the Help icon in the admin and teacher topbars. Shows citations as links to `/help/guide#anchor` and to settings pages. Non-streamed, with a progress state. Hidden when the feature is off or `assistant.help` is missing. Follows the design-system rules (Paper, DM Sans, no accent borders). |
+| **FD-5d** | Staff web assistant panel | FD-4a, FD-5c, **G-PII approved** | E | A panel opened from the Help icon in the admin and teacher topbars. Shows citations as links to `/help/guide#anchor` and to settings pages. Non-streamed, with a progress state. Hidden when the feature is off or `assistant.help` is missing. Follows the design-system rules (Paper, DM Sans, no accent borders). |
 | **FD-5e** | Pilot operations | FD-5d, FD-1b | — | PostHog events with opaque IDs only (turn started/completed, tool refused, budget stop, thumbs up/down with no free text). A runbook for switching on, switching off and purging. The module doc `docs/modules/assistant.md`. An onboarding-guide entry (CLAUDE.md step 14). |
 
 **Out of the first delivery, and next in line:**
@@ -201,7 +216,7 @@ These are recommendations (R10). Each can change without redesign.
 | # | Decision | Recommendation |
 |---|---|---|
 | F-2 | The six-stage shape (revision 1 §0) | Keep |
-| F-4 | Feature-switch storage | JSONB on `schools` |
+| F-4 | Feature-switch storage | **Owner-approved 2026-11-06** (conditional on repository checks, which passed): JSONB on `schools` |
 | F-6 | Model for the assistant | Haiku 4.5 |
 | F-7 | Conversation retention | 90 days |
 | F-8 | Budget pool for the assistant | The school's existing budget |
@@ -210,6 +225,121 @@ These are recommendations (R10). Each can change without redesign.
 | F-14 | Pilot schools (1–2) | Owner's choice |
 | R9, R10 | Approve the first-delivery recommendations | — |
 
+### 3.6 G-PII: personal data typed or pasted by users (proposal, for approval)
+
+**Status:** recommendation, not approved. Required by RQ6 before any
+conversational input is built (FD-4a, FD-5d).
+
+#### The problem
+
+The help assistant (4A) answers questions about how SchoolKit works. It never
+needs to know who a child is. But staff will type what they are looking at:
+"Why can't I add Adaeze Okafor to JSS2B? Her mum's number is 0803…". Some
+will paste a register row or an error message containing names.
+
+Under P2 (owner's standing rule), a student's name, DOB, address or contact
+details must not reach the model for a derived feature, and the help assistant
+is not on the allowlist. P2 also says redaction is "mitigated, not exempted",
+so redact-and-send is not available without a new allowlist row.
+
+#### Proposed handling: detect, then block
+
+The message never goes to the model, and is never stored, if it trips a
+detector.
+
+1. **Where:** server-side, in the conversation API, before anything else
+   happens to the message. A client-side check is added for speed, but the
+   server is the boundary.
+2. **Detectors** (deterministic, no model call):
+   - **The school's own people.** Tokens of the message are matched against
+     the school's student, guardian and staff first and last names, read under
+     `withTenant`. Matching is case-insensitive, whole-word, with edit
+     distance ≤ 1 for names of 5+ letters. A name only blocks when it is not
+     also a common English word or a SchoolKit term; that stop-list is kept in
+     code and tested.
+   - **Contact and identity patterns:** email addresses; Nigerian phone
+     numbers (`+234…`, `0[7-9][01]…`); 10–11 digit runs (BVN, NIN, account
+     numbers); full dates (a possible DOB).
+   - **The school's admission-number format**, from its admission-number
+     settings.
+   - **Size:** a message over 1,000 characters, or one containing tab- or
+     comma-separated rows (a paste), is refused regardless.
+3. **When a detector fires:**
+   - The API answers `422 PERSONAL_DATA_IN_QUESTION` with the categories found
+     (for example "a name from your school", "a phone number"), **never the
+     matched text**.
+   - The panel keeps the user's draft in the browser only and highlights the
+     categories. It asks them to ask about the task, not the person: "How do I
+     move a student to another class?"
+   - Nothing is sent and nothing is stored. A counter is recorded: an
+     opaque-ID PostHog event `assistant_message_blocked` with categories, and
+     a `blocked` tally on the conversation.
+4. **When it passes:** only then is the message added to the model input and
+   stored.
+
+#### What goes to the model
+
+- The system prompt.
+- The passed user messages of this conversation.
+- Tool outputs, which are school settings and guide sections. The FD-3b scan
+  proves they carry no personal data.
+
+Nothing else: no roster, and no user name or email. The user is referred to by
+role only, for example "a teacher".
+
+#### What is stored
+
+| Where | What | What never |
+|---|---|---|
+| `ai_interaction_logs.payload` (P2 says PII-free) | Passed user messages, assistant replies, tool names and shaped outputs, timestamps, the blocked tally | Blocked messages; detector matches; the user's name or email (`AuthContext` IDs are on the row) |
+| `ai_generations` | Unchanged columns: tokens, latency, cost, success. `errorMessage` is restricted to an error **code** for assistant turns, never provider text that could echo input. | Message or reply text |
+| Retention | 90 days (F-7, recommendation), then purged (FD-4b). "Clear my history" deletes at once. | — |
+
+#### What is logged
+
+- **Application logs:** conversation ID, turn ID, step count, token counts,
+  latency, outcome, detector **categories**. Never message text, reply text,
+  matches or tool output. Enforced by a spec that drives a turn with a planted
+  name and phone number and asserts neither appears in captured log output.
+- **Sentry:** for `/assistant/*` routes, `beforeSend` replaces the request body
+  with `"[assistant body omitted]"`, not just redacted. The existing redactor
+  catches emails and phones but not names (`apps/api/src/observability/sentry.ts`).
+- **PostHog:** opaque IDs and categories only, as today.
+
+#### Residual risk (stated, not hidden)
+
+- **A child's name that is not on the school's roster** passes the
+  detector: a misspelling beyond one edit, a nickname, or a child at another
+  school. It would then reach the model and be stored for up to 90 days.
+- **Mitigations:**
+  - the panel's standing notice ("Ask how to do something. Don't type
+    children's names or contact details.");
+  - the prompt instructs the model never to repeat personal data;
+  - "Clear my history";
+  - the eval set includes off-roster names, to measure the miss rate.
+- **The decision:** accept this residual for the help assistant, or require
+  something stricter (for example, refusing any capitalised word not in a
+  known vocabulary, at the cost of many false blocks). **Owner decision
+  F-16.**
+
+#### Tests for G-PII (to add to §4.5 when approved)
+
+- [ ] For each detector category: a planted value is blocked. The response
+      carries the category, not the value. No `ai_interaction_logs` row,
+      `ai_generations` row or model call results (fake port asserts zero
+      calls).
+- [ ] A school-B student's name is not detected at school A. This is expected
+      (detection is per tenant) and is documented as part of the residual,
+      not treated as a defect.
+- [ ] The stop-list prevents false blocks on common words, for example a
+      student named "Grace" in the question "grace period". Tested both ways,
+      with the decision recorded.
+- [ ] A paste of three CSV rows is refused on shape alone.
+- [ ] Captured logs and the Sentry event for a failing turn contain neither the
+      planted name nor the phone number.
+- [ ] The eval set's off-roster-name cases report a miss rate, recorded in
+      `docs/modules/assistant.md`.
+
 ---
 
 ## 4. First-delivery acceptance checklist
@@ -217,10 +347,17 @@ These are recommendations (R10). Each can change without redesign.
 Each item has to be shown to pass. Where it says "spec", the check is an automated test in CI. The numeric thresholds are recommendations for you to confirm.
 
 ### 4.1 Before work starts
+- [ ] **G-PII (§3.6) approved by the owner** before FD-4a or FD-5d starts (RQ6). Record the approval and any changes to §3.6 in `docs/modules/assistant.md`.
+- [ ] The six review corrections (RQ7) are supplied and applied, or the owner confirms they are superseded.
 - [ ] The §3.5 decisions are recorded in `docs/modules/assistant.md`, each with its date and its status (owner-approved or recommendation).
 - [ ] The eval question set (F-12) is in `packages/ai/evals/cases`, with no school or person names.
 
 ### 4.2 FD-1 · Feature controls
+
+*Status 2026-11-06: built on `ccr-35452a47-n0c74g`, in review. The evidence
+for each item is in the PR description. Boxes are left for the reviewer to
+tick.*
+
 - [ ] The key enum lives in `packages/types`. An unknown key is rejected by Zod at write and ignored at read (spec).
 - [ ] The platform env kill switch overrides a school's `on` (spec: precedence matrix of platform off/on × school off/on/unset).
 - [ ] The default with no entry is **off** (spec).
@@ -561,7 +698,7 @@ The first-delivery decisions are listed in §3.5. The full register:
 |---|---|---|---|
 | F-2 | Six-stage shape | Keep | Now |
 | F-3 | Expense receipts outside P2/P26; rule for a receipt naming a child | Allow; discard and type by hand if a child is named | S3-14 |
-| F-4 | Feature-switch storage | JSONB on `schools` | FD-1a |
+| F-4 | Feature-switch storage | **Owner-approved 2026-11-06**, conditional on repository checks (passed) | FD-1a |
 | F-5 | Can the requester approve their own proposal? | No for money (Class G); yes elsewhere | S2-06 |
 | F-6 | Models | Haiku 4.5 for the help assistant; evaluate Sonnet 5 for multi-tool agents | FD-5c, S4-03 |
 | F-7 | Conversation retention | 90 days | FD-4b |
@@ -573,4 +710,5 @@ The first-delivery decisions are listed in §3.5. The full register:
 | F-13 | Roles holding `assistant.help` | All staff roles | FD-4a |
 | F-14 | Pilot schools | Owner's choice | Pilot entry |
 | F-15 | Staff data to the model (R6) | Pasted text yes, photos no | S5-04 |
+| F-16 | Residual risk of off-roster names in the help assistant (§3.6) | Accept with the stated mitigations | FD-4a |
 | R1–R10 | Approve the recommendations in §1.3 | Approve | As listed in §1.3 |

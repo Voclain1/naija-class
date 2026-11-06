@@ -45,6 +45,7 @@ import { ReportCardService } from "../modules/report-cards/report-card.service";
 import { ReportCardWorkflowService } from "../modules/report-cards/workflow/report-card-workflow.service";
 import { PaystackSetupService } from "../modules/schools/paystack-setup.service";
 import { PlatformAdminService } from "../modules/platform-admin/platform-admin.service";
+import { FeatureSwitchesService } from "../common/features/feature-switches.service";
 import { AcademicCalendarService } from "../modules/academic-calendar/academic-calendar.service.js";
 import { SchoolsService } from "../modules/schools/schools.service";
 import { StudentsService } from "../modules/students/students.service";
@@ -1468,7 +1469,7 @@ describe("Paystack assisted setup audit coverage", () => {
       active: true,
     }),
     ensureSchoolPercentageSplit: async () => ({ split_code: "SPL_audit_test" }),
-  } as never);
+  } as never, new FeatureSwitchesService(configStub));
 
   const ACCOUNT_NUMBER = "0123456789";
 
