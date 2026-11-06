@@ -4,6 +4,20 @@
 **Date:** 2026-11-06. **Branch audited:** `ccr-35452a47-n0c74g` at `3884623`.
 **Purpose:** list every workflow in SchoolKit that agentic capabilities could help with, so we can agree on phases together afterwards.
 
+> **Errata (2026-11-06).** A second verification pass, recorded in `docs/reviews/agentic-implementation-plan.md` §1–§3, corrects this audit:
+>
+> - **Superseded:** the readiness and "best served by" columns of §E are replaced by the plan's corrected table (§3.3), which applies one rubric to every item.
+> - **Existing decisions this audit missed:**
+>   - **C15**, "no AI anywhere near behaviour" (`the-school-day.md`), excludes T-11 and the AI parts of C-4.
+>   - **Q3** (`phase-9.md`) excludes sickbay counts for form teachers (FT-02).
+>   - **Q6** excludes any student writing help (S-03).
+>   - **Q10** keeps family data away from the model for fee risk.
+> - **Facts this audit got wrong:**
+>   - "Mark all present" already exists (T-02).
+>   - Exeat decisions already notify guardians (C-6).
+>   - `admit` already creates the enrolment and links the primary guardian (C-3).
+> - **Corrections to existing-policy labels:** several restrictions labelled here as existing policy were proposals; the plan's §2 separates the two.
+
 ---
 
 ## 0. How to read this document
