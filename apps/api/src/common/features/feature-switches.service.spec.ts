@@ -132,6 +132,42 @@ describe("FeatureSwitchesService against a real database", () => {
     expect(await svc.isOn(schoolOn, "assistant-help")).toBe(true); // expired, re-read
   });
 
+  it("a read in flight when a write invalidates does not put the old value back in the cache", async () => {
+    // The race: read starts and fetches OLD, the write lands and invalidates,
+    // then the read finishes. It must not cache OLD for a TTL.
+    let stored: unknown = { "assistant-help": true };
+    let release: (() => void) | undefined;
+    let calls = 0;
+    const svc = new FeatureSwitchesService(config({}), Date.now, async () => {
+      calls += 1;
+      const snapshot = stored;
+      if (calls === 1) await new Promise<void>((r) => (release = r));
+      return snapshot;
+    });
+
+    const inFlight = svc.isOn("school-x", "assistant-help"); // reads OLD (on), then waits
+    await Promise.resolve();
+    stored = { "assistant-help": false }; // the operator switches it off…
+    svc.invalidate("school-x"); // …and the write invalidates
+    release!();
+    expect(await inFlight).toBe(true); // current when that request began
+
+    // The next read must see the write, not a cached OLD value.
+    expect(await svc.isOn("school-x", "assistant-help")).toBe(false);
+    expect(calls).toBe(2);
+  });
+
+  it("an uninterrupted read is cached as before (the guard does not disable caching)", async () => {
+    let calls = 0;
+    const svc = new FeatureSwitchesService(config({}), Date.now, async () => {
+      calls += 1;
+      return { "assistant-help": true };
+    });
+    expect(await svc.isOn("school-y", "assistant-help")).toBe(true);
+    expect(await svc.isOn("school-y", "assistant-help")).toBe(true);
+    expect(calls).toBe(1);
+  });
+
   it("the database refuses a feature_switches value that is not an object", async () => {
     await expect(
       basePrisma.$executeRaw`UPDATE schools SET feature_switches = '[]'::jsonb WHERE id = ${schoolOff}`,

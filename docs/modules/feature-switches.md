@@ -90,6 +90,12 @@ is on. Import `FeatureSwitchesModule` explicitly; it is not global.
 - **Cache:** 30 s in-process. A platform-admin write invalidates the entry in
   the process that served it. Other API processes see a change within 30 s,
   which is the documented staleness of switching a feature off.
+- **A read that overlaps a write:** each `invalidate()` bumps a per-school
+  generation, and a read caches its result only if the generation is the same
+  when it finishes as when it began. Otherwise a read that fetched the old
+  value before the write could cache it after the write, and a switch turned
+  off would stay on for a full TTL (fixed 2026-11-07; the spec holds a read
+  open across a write and fails without the guard).
 - **Unknown school:** reads as all off.
 - **`FEATURES_DISABLED`:** read once at start. It is the immediate,
   all-process kill.
