@@ -89,9 +89,10 @@ export function ReportProfileEditor({
       </p>
       <fieldset disabled={!editable || saving} className="mt-5 space-y-5">
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="text-sm font-medium">
-            Report level
+          <div className="text-sm font-medium">
+            <label htmlFor="report-profile-level">Report level</label>
             <select
+              id="report-profile-level"
               className={inputClass}
               value={draft.level}
               onChange={(e) =>
@@ -102,7 +103,7 @@ export function ReportProfileEditor({
               <option value="PRIMARY">Primary</option>
               <option value="SECONDARY">Secondary</option>
             </select>
-          </label>
+          </div>
           <label className="text-sm font-medium">
             Next term begins
             <input

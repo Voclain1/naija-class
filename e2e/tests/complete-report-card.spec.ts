@@ -55,9 +55,15 @@ test("Free report details save through the staff editor and survive a draft rebu
     await admin.page
       .getByLabel("Form teacher’s name", { exact: true })
       .fill("Sample Teacher");
-    await admin.page
-      .getByRole("button", { name: "Save report details", exact: true })
-      .click();
+    const [savedResponse] = await Promise.all([
+      admin.page.waitForResponse((response) =>
+        response.request().method() === "PATCH" &&
+        new URL(response.url()).pathname.endsWith(`/report-cards/${id}`),
+      ),
+      admin.page.getByRole("button", { name: "Save report details", exact: true }).click(),
+    ]);
+    expect(savedResponse.ok(), await savedResponse.text()).toBe(true);
+    expect((await savedResponse.json()).reportProfile.affective.Honesty).toBe(5);
     await expect(
       admin.page.getByRole("button", {
         name: "Save report details",

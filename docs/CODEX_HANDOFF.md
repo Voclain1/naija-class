@@ -195,7 +195,9 @@ those; it doesn't replace them.
   type checks and migration; 3236 API tests passed and one failed because an
   old assertion still hid cumulative results on Free. Corrected it to assert
   the exact frozen values and parity with Starter/warn. Fresh CI required;
-  no merge/deployment. See November 7 journal.
+  no merge/deployment. Also fixed the report-level select accessible name
+  (option text polluted the wrapping label) and made the browser save/reload
+  test await the successful PATCH. See November 7 journal.
 
 
 - **November 6 report-card refinement:** larger bold school masthead and
