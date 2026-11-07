@@ -1,4 +1,5 @@
 import type { SchoolPlan } from "../plans/index.js";
+import type { FeatureSwitchMap } from "../feature-switches/index.js";
 import type { SmsSenderStatus } from "../sms-sender/sms-sender.dto.js";
 
 // GET /platform-admin/schools — mirrors platform_admin_list_schools()'s
@@ -76,4 +77,12 @@ export interface PlatformAdminSchoolDto {
    */
   smsSenderId: string | null;
   smsSenderStatus: SmsSenderStatus;
+  /**
+   * The school's own feature switches, every known key resolved to on or off
+   * (2026-11-06, docs/modules/feature-switches.md). The read for
+   * PATCH .../features. Deliberately NOT combined with the API's
+   * FEATURES_DISABLED variable, which this surface neither reads nor reports,
+   * as PATCH .../ai does not report AI_ENABLED.
+   */
+  featureSwitches: FeatureSwitchMap;
 }

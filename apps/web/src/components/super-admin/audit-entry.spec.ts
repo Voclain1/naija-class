@@ -9,6 +9,15 @@ describe("describeAuditEntry", () => {
     expect(d("platform_admin.schools.set-ai-enabled", { from: false, to: true })).toBe("Turned AI on");
     expect(d("platform_admin.schools.set-ai-enabled", { from: true, to: true })).toBe("Confirmed AI is on");
     expect(d("platform_admin.schools.set-smart-import", { from: false, to: true })).toBe("Turned Smart Import on");
+    expect(d("platform_admin.schools.set-feature", { key: "assistant-help", from: false, to: true })).toBe(
+      "Turned Help assistant on",
+    );
+    expect(d("platform_admin.schools.set-feature", { key: "assistant-help", from: false, to: false })).toBe(
+      "Confirmed Help assistant is off",
+    );
+    expect(d("platform_admin.schools.set-feature", { key: "retired-key", from: true, to: false })).toBe(
+      "Turned retired-key off",
+    );
     expect(d("platform_admin.schools.decide-sms-sender", { senderId: "DIVYSIXTH", from: "REQUESTED", to: "APPROVED" })).toBe(
       "Approved the SMS sender name DIVYSIXTH",
     );

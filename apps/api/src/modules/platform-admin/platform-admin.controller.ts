@@ -27,6 +27,7 @@ import {
   platformAdminSetStaffMobileSchema,
   platformAdminSetPlanSchema,
   platformAdminSetSmartImportSchema,
+  platformAdminSetFeatureSchema,
   platformAdminDecideSmsSenderSchema,
   type PlatformAdminAuditLogQuery,
   type PlatformAdminAuditLogResponse,
@@ -56,6 +57,8 @@ import {
   type PlatformAdminSetPlanResponse,
   type PlatformAdminSetSmartImportInput,
   type PlatformAdminSetSmartImportResponse,
+  type PlatformAdminSetFeatureInput,
+  type PlatformAdminSetFeatureResponse,
   type PlatformAdminDecideSmsSenderInput,
   type PlatformAdminDecideSmsSenderResponse,
   type PlatformAdminSetEarlyAccessInput,
@@ -259,6 +262,26 @@ export class PlatformAdminController {
   ): Promise<PlatformAdminSetSmartImportResponse> {
     return this.platformAdminService.setSmartImportEnabled(schoolId, dto, adminCtx, {
       ipAddress: ip, userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/features — one per-school feature
+  // switch on or off (2026-11-06, docs/modules/feature-switches.md). Every new
+  // assistant feature is gated by one of these keys and is off until the
+  // operator turns it on here. Same throttle as the other per-school writes.
+  @Patch("schools/:schoolId/features")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async setFeatureSwitch(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminSetFeatureSchema)) dto: PlatformAdminSetFeatureInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSetFeatureResponse> {
+    return this.platformAdminService.setFeatureSwitch(schoolId, dto, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
     });
   }
 
