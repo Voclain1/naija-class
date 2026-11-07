@@ -25,7 +25,7 @@ test("an admin sees the school's plan, and a notice on Students when close to it
     await expect(page.getByRole("heading", { name: "Paid-plan extras" })).toBeVisible();
     await expect(page.getByText("AI drafts of report card comments")).toBeVisible();
     await expect(page.getByText("AI drafts of marking feedback")).toBeVisible();
-    await expect(page.getByText("Free during early access")).toHaveCount(4);
+    await expect(page.getByText("Free during early access")).toHaveCount(3);
 
     // No notice while there is room.
     await page.goto("/students");

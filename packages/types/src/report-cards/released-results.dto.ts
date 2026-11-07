@@ -22,6 +22,8 @@
 //       to be told their date of birth, and a PII field with no purpose on a
 //       screen is a PII field that ends up in a screenshot or a log.
 
+import type { ReportProfile } from "./report-profile.js";
+
 import type { PromotionStatusDto } from "./report-card.dto.js";
 
 /** One subject line. Mirrors the staff shape minus the component breakdown. */
@@ -73,6 +75,7 @@ export interface ReleasedResultSummaryDto {
 
 /** One released term, in full. */
 export interface ReleasedResultDetailDto {
+  reportProfile?: ReportProfile;
   reportCardId: string;
   termId: string;
   termName: string;

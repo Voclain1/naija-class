@@ -32,12 +32,12 @@ describe("plan rules", () => {
     expect(planUsageStatus(5000, null)).toBe("ok");
   });
 
-  it("includes each report-card feature from Starter up, and grants them all under warn", () => {
+  it("includes complete standard results on Free and reserves custom design for Starter", () => {
     expect(planIncludesFeature("FREE", "reportCardBranding")).toBe(false);
     expect(planIncludesFeature("STARTER", "aiReportComments")).toBe(true);
     expect(planIncludesFeature("ENTERPRISE", "reportCardPositions")).toBe(true);
     expect(planFeatureAvailable("FREE", "reportCardPositions", "warn")).toBe(true);
-    expect(planFeatureAvailable("FREE", "reportCardPositions", "enforce")).toBe(false);
+    expect(planFeatureAvailable("FREE", "reportCardPositions", "enforce")).toBe(true);
   });
 
   it("enforces only when told to, exactly", () => {
@@ -91,21 +91,21 @@ describe("plan limits against the database", () => {
       enforcement: "warn",
       status: "near",
       features: [
-        { feature: "reportCardBranding", label: "Your logo and colours on report cards", included: false, available: true },
+        { feature: "reportCardBranding", label: "Report card templates, colours and custom fields", included: false, available: true },
         { feature: "aiReportComments", label: "AI drafts of report card comments", included: false, available: true },
         {
           feature: "reportCardPositions",
           label: "Class positions and cumulative results on report cards",
-          included: false,
+          included: true,
           available: true,
         },
         { feature: "aiMarkingFeedback", label: "AI drafts of marking feedback", included: false, available: true },
       ],
       announcementEmailsPerDay: 200,
     });
-    // Under enforce, a Free school has none of them.
+    // Under enforce, standard academic results remain included on Free.
     const enforced = await withTenant(schoolId, (db) => readSchoolPlan(db, schoolId, "enforce"));
-    expect(enforced.features.map((f) => f.available)).toEqual([false, false, false, false]);
+    expect(enforced.features.map((f) => f.available)).toEqual([false, false, true, false]);
   });
 
   it("a feature is refused only under enforce, and only below its plan", async () => {

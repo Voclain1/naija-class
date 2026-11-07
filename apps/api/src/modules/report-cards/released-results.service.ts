@@ -5,6 +5,7 @@ import {
   ForbiddenError,
   planFeatureAvailable,
   readCumulativeSubjects,
+  readReportProfile,
   NotFoundError,
   type FamilySubjectRowDto,
   type ReleasedResultDetailDto,
@@ -87,6 +88,7 @@ const SUMMARY_SELECT = {
 } satisfies Prisma.ReportCardSelect;
 
 const DETAIL_SELECT = {
+  reportProfile: true,
   id: true,
   schoolId: true,
   studentId: true,
@@ -206,7 +208,7 @@ export class ReleasedResultsService {
         where: { id: card.schoolId },
         select: { name: true, positionVisibleToFamilies: true, plan: true },
       }),
-      db.term.findUnique({ where: { id: card.termId }, select: { name: true } }),
+      db.term.findUnique({ where: { id: card.termId }, select: { name: true, endDate: true } }),
       db.academicYear.findUnique({ where: { id: card.academicYearId }, select: { label: true } }),
       db.classArm.findUnique({ where: { id: card.classArmId }, select: { name: true } }),
       db.student.findUnique({
@@ -235,9 +237,8 @@ export class ReleasedResultsService {
       select: { id: true, name: true },
     });
     const subjectName = new Map(subjectRows.map((s) => [s.id, s.name]));
-    // Plans (plans.md D5): positions and cumulative results are a paid-plan
-    // feature once PLAN_ENFORCEMENT=enforce. This is the one reader for the
-    // portal, the app and the result checker, so they all follow it.
+    // Standard positions and cumulative results are included on every plan.
+    // The school's family-visibility switch remains authoritative.
     const ranked = planFeatureAvailable(school.plan, "reportCardPositions", currentPlanEnforcement());
     const showPosition = school.positionVisibleToFamilies && ranked;
     const cumulativeBySubject = new Map(
@@ -260,7 +261,13 @@ export class ReleasedResultsService {
       }))
       .sort((x, y) => x.subjectName.localeCompare(y.subjectName));
 
+    const profile = readReportProfile(card.reportProfile);
+    if (!profile.nextTermDate) {
+      const nextTerm = await db.term.findFirst({ where: { startDate: { gt: term.endDate } }, orderBy: { startDate: "asc" }, select: { startDate: true } });
+      profile.nextTermDate = nextTerm?.startDate.toISOString().slice(0, 10) ?? null;
+    }
     return {
+      reportProfile: { ...profile, customFields: planFeatureAvailable(school.plan, "reportCardBranding", currentPlanEnforcement()) ? profile.customFields : [] },
       reportCardId: card.id,
       termId: card.termId,
       termName: term.name,

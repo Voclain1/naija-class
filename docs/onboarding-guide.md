@@ -448,10 +448,11 @@ Go to **Report Cards** in the menu, choose the term and class, and press **Open 
 
 1. Press **Build report cards**. SchoolKit gathers every subject's scores into one report card per child.
 2. **Form teacher's comment** — the form teacher opens each card and writes a comment. They can also press **Draft comments** to have SchoolKit suggest a comment for each child; every suggestion must be read, edited if needed, and **Accept**ed by the teacher before it goes on the card. (This uses AI, which must be switched on for your school.)
-3. The form teacher presses **Form-review arm** to send the class to you.
-4. You open a card and write the **Principal's remark**. One remark is used for the whole class.
-5. In the **last term of the year**, set each child's **promotion status** (promoted, repeat and so on) on the board.
-6. Press **Approve arm**.
+3. Before review, open **Development & report details** on each card. Choose nursery, primary or secondary, record character and practical-skill ratings (1–5), add the teacher/headteacher names and next-term date, then press **Save report details**. Leave unobserved areas unrated; SchoolKit prints “Not recorded”, never a guessed score. In the app, open the same section under the child's form comment. These details lock at form review, and a draft rebuild keeps them.
+4. The form teacher presses **Send for approval** to send the class to you.
+5. You open a card and write the **Principal's remark**. One remark is used for the whole class.
+6. In the **last term of the year**, set each child's **promotion status** (promoted, repeat and so on) on the board.
+7. Press **Approve report cards**.
 
 **Each of these buttons acts on the whole class at once**, not one child at a time.
 
@@ -472,9 +473,11 @@ You choose how long: **this term only**, **this session**, or **until I unhide i
 
 **Showing class position:** in **Settings → Report cards** you can choose whether position in class appears on printed report cards, and whether parents see it on screen.
 
+**Report design:** the Free plan includes a complete standard report, your school logo and student photo when uploaded, assessment maxima, grading key, ratings, signatures, attendance and cumulative results. In **Settings → Report cards**, paid plans can choose Standard, Classic or Compact, a colour, typography and watermark, and up to eight additional text fields. Teachers enter those fields' values for each child before review. Save the design and regenerate a PDF to apply it. Existing PDFs stay as issued. Parents and students see approved development ratings alongside released results in the portal and app; the normal release and result-PIN rules still apply.
+
 ## Releasing results to parents
 
-When a class is approved, press **Release arm**. You will be asked **How families reach these results**:
+When a class is approved, press **Release results**. You will be asked **How families reach these results**:
 
 - **Free** — parents see the results in the parent portal straight away.
 - **Result PIN required** — parents need a result PIN card from the school to open them (see below).
