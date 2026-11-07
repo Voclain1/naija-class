@@ -9,7 +9,7 @@ import { useSession } from "../../../src/lib/auth/session";
 import { spacing } from "../../../src/theme/tokens";
 import { Body, Caption, Card, CenteredMessage, Heading, Label, Screen } from "../../../src/components/ui";
 import { FreshnessLabel } from "../../../src/components/freshness-label";
-import { PrincipalRemark, ResultStanding } from "../../../src/components/result-extras";
+import { PrincipalRemark, ResultStanding, ResultDevelopment } from "../../../src/components/result-extras";
 import { ResultPinUnlock, isResultLocked } from "../../../src/components/result-pin-unlock";
 import { positionLabel, subjectYearLine } from "../../../src/lib/results/result-extras";
 
@@ -149,6 +149,7 @@ export default function MyResultDetailScreen() {
               </Card>
             ) : null}
 
+            <ResultDevelopment result={result} />
             <PrincipalRemark result={result} />
           </>
         )}

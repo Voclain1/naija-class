@@ -1,4 +1,10 @@
-import { PROMOTION_STATUS_LABELS, type ReleasedResultDetailDto } from "@school-kit/types";
+import {
+  AFFECTIVE_TRAITS,
+  PSYCHOMOTOR_SKILLS,
+  REPORT_RATING_KEY,
+  PROMOTION_STATUS_LABELS,
+  type ReleasedResultDetailDto,
+} from "@school-kit/types";
 
 // One released term, as a family reads it (Phase 8 / CP6a §20.4) — shared by
 // the signed-in term page and the public Result Checker (CP6b §21.7), so the
@@ -15,7 +21,15 @@ function ordinal(value: number): string {
   const mod100 = value % 100;
   const mod10 = value % 10;
   const suffix =
-    mod100 >= 11 && mod100 <= 13 ? "th" : mod10 === 1 ? "st" : mod10 === 2 ? "nd" : mod10 === 3 ? "rd" : "th";
+    mod100 >= 11 && mod100 <= 13
+      ? "th"
+      : mod10 === 1
+        ? "st"
+        : mod10 === 2
+          ? "nd"
+          : mod10 === 3
+            ? "rd"
+            : "th";
   return `${value}${suffix}`;
 }
 
@@ -24,34 +38,58 @@ export function ResultCard({ result }: { result: ReleasedResultDetailDto }) {
     <div className="flex flex-col gap-4">
       {result.promotionStatus ? (
         // Tinted, never an accent border (CLAUDE.md); the decision in words.
-        <section className="rounded-lg bg-primary/10 p-4" aria-label="Promotion status">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Promotion status</p>
-          <p className="font-serif text-xl text-foreground">{PROMOTION_STATUS_LABELS[result.promotionStatus]}</p>
+        <section
+          className="rounded-lg bg-primary/10 p-4"
+          aria-label="Promotion status"
+        >
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            Promotion status
+          </p>
+          <p className="font-serif text-xl text-foreground">
+            {PROMOTION_STATUS_LABELS[result.promotionStatus]}
+          </p>
         </section>
       ) : null}
 
       <section className="rounded-lg border bg-card p-4 shadow-sm">
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-          <div><dt className="text-muted-foreground">Average</dt><dd>{formatAverage(result.overallAverage)}</dd></div>
-          <div><dt className="text-muted-foreground">Total</dt><dd>{result.overallTotal ?? "—"}</dd></div>
-          <div><dt className="text-muted-foreground">Subjects</dt><dd>{result.subjectsCount ?? "—"}</dd></div>
+          <div>
+            <dt className="text-muted-foreground">Average</dt>
+            <dd>{formatAverage(result.overallAverage)}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Total</dt>
+            <dd>{result.overallTotal ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Subjects</dt>
+            <dd>{result.subjectsCount ?? "—"}</dd>
+          </div>
           {/* Only when the school shows position to families; never a dash. */}
           {result.overallPosition !== null ? (
-            <div><dt className="text-muted-foreground">Position</dt><dd>{ordinal(result.overallPosition)}</dd></div>
+            <div>
+              <dt className="text-muted-foreground">Position</dt>
+              <dd>{ordinal(result.overallPosition)}</dd>
+            </div>
           ) : null}
         </dl>
         {result.cumulative ? (
           // Phase 8c / CP5a (D61): the year so far, final term only, averaged
           // over the terms the student has — and it says how many.
           <p className="mt-3 text-sm text-muted-foreground">
-            Year average: {formatAverage(result.cumulative.average)} over {result.cumulative.terms} term
+            Year average: {formatAverage(result.cumulative.average)} over{" "}
+            {result.cumulative.terms} term
             {result.cumulative.terms === 1 ? "" : "s"}
-            {result.cumulative.position !== null ? `, ${ordinal(result.cumulative.position)} in class` : ""}.
+            {result.cumulative.position !== null
+              ? `, ${ordinal(result.cumulative.position)} in class`
+              : ""}
+            .
           </p>
         ) : null}
         {result.attendance ? (
           <p className="mt-3 text-sm text-muted-foreground">
-            Attendance: present {result.attendance.present} of {result.attendance.daysOpened} days, absent{" "}
+            Attendance: present {result.attendance.present} of{" "}
+            {result.attendance.daysOpened} days, absent{" "}
             {result.attendance.absent}.
           </p>
         ) : null}
@@ -60,7 +98,9 @@ export function ResultCard({ result }: { result: ReleasedResultDetailDto }) {
       <section className="rounded-lg border bg-card p-4 shadow-sm">
         <h2 className="mb-2 font-semibold">Subjects</h2>
         {result.subjects.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No subject scores were recorded for this term.</p>
+          <p className="text-sm text-muted-foreground">
+            No subject scores were recorded for this term.
+          </p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -71,7 +111,9 @@ export function ResultCard({ result }: { result: ReleasedResultDetailDto }) {
                 {result.subjects.some((s) => s.subjectPosition !== null) ? (
                   <th className="py-1 text-right font-normal">Position</th>
                 ) : null}
-                {result.cumulative ? <th className="py-1 text-right font-normal">Year avg</th> : null}
+                {result.cumulative ? (
+                  <th className="py-1 text-right font-normal">Year avg</th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -79,18 +121,26 @@ export function ResultCard({ result }: { result: ReleasedResultDetailDto }) {
                 <tr key={s.subjectId} className="border-t">
                   <td className="py-1.5">
                     {s.subjectName}
-                    {s.remark ? <span className="block text-xs text-muted-foreground">{s.remark}</span> : null}
+                    {s.remark ? (
+                      <span className="block text-xs text-muted-foreground">
+                        {s.remark}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="py-1.5 text-right">{s.totalScore}</td>
                   <td className="py-1.5 text-right">{s.letterGrade ?? "—"}</td>
                   {result.subjects.some((x) => x.subjectPosition !== null) ? (
                     <td className="py-1.5 text-right">
-                      {s.subjectPosition !== null ? ordinal(s.subjectPosition) : "—"}
+                      {s.subjectPosition !== null
+                        ? ordinal(s.subjectPosition)
+                        : "—"}
                     </td>
                   ) : null}
                   {result.cumulative ? (
                     <td className="py-1.5 text-right">
-                      {typeof s.cumulativeAverage === "number" ? formatAverage(s.cumulativeAverage) : "—"}
+                      {typeof s.cumulativeAverage === "number"
+                        ? formatAverage(s.cumulativeAverage)
+                        : "—"}
                     </td>
                   ) : null}
                 </tr>
@@ -100,10 +150,57 @@ export function ResultCard({ result }: { result: ReleasedResultDetailDto }) {
         )}
       </section>
 
+      {result.reportProfile && (
+        <section className="space-y-4 rounded-lg border bg-card p-4 shadow-sm">
+          <h2 className="font-semibold">Development & skills</h2>
+          <p className="text-xs text-muted-foreground">{REPORT_RATING_KEY}</p>
+          <div className="grid gap-5 sm:grid-cols-2">
+            {(
+              [
+                [
+                  "Character & attitude",
+                  AFFECTIVE_TRAITS,
+                  result.reportProfile.affective,
+                ],
+                [
+                  "Practical skills",
+                  PSYCHOMOTOR_SKILLS,
+                  result.reportProfile.psychomotor,
+                ],
+              ] as const
+            ).map(([title, traits, values]) => (
+              <div key={title}>
+                <h3 className="mb-2 text-sm font-semibold">{title}</h3>
+                <dl className="space-y-2 text-sm">
+                  {traits.map((trait) => (
+                    <div className="flex justify-between gap-3" key={trait}>
+                      <dt>{trait}</dt>
+                      <dd>{values[trait] ?? "Not recorded"}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            ))}
+          </div>
+          {result.reportProfile.nextTermDate && (
+            <p className="text-sm">
+              Next term begins: {result.reportProfile.nextTermDate}
+            </p>
+          )}
+          {result.reportProfile.customFields.map((field) => (
+            <p key={field.key} className="break-words text-sm">
+              <strong>{field.label}:</strong> {field.value || "Not recorded"}
+            </p>
+          ))}
+        </section>
+      )}
+
       {result.formTeacherComment ? (
         <section className="rounded-lg border bg-card p-4 shadow-sm">
           <h2 className="mb-1 font-semibold">Form teacher&apos;s comment</h2>
-          <p className="whitespace-pre-wrap text-sm">{result.formTeacherComment}</p>
+          <p className="whitespace-pre-wrap text-sm">
+            {result.formTeacherComment}
+          </p>
         </section>
       ) : null}
       {result.principalNote ? (

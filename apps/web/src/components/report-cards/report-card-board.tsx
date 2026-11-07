@@ -295,7 +295,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
     const termId = ready.termId;
     void runWorkflow(async () => {
       await formReviewArm(termId, armId);
-      toast.success("Arm submitted for form review.");
+      toast.success("Report cards sent for approval. Parents cannot see them yet.");
     });
   }, [ready, armId, runWorkflow]);
 
@@ -304,7 +304,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
     const termId = ready.termId;
     void runWorkflow(async () => {
       await approveArm(termId, armId);
-      toast.success("Arm approved.");
+      toast.success("Report cards approved. Release them when you’re ready for families to view them.");
     });
   }, [ready, armId, runWorkflow]);
 
@@ -407,7 +407,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                 {(armStatus === "DRAFT" || armStatus === "SUBJECT_REVIEWED") && (
                   <Button type="button" onClick={onFormReview} disabled={workflowBusy || building || shouldPoll}>
                     {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    Form-review arm
+                    Send for approval
                   </Button>
                 )}
 
@@ -420,7 +420,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                     title={promotionMissing > 0 ? "Set a promotion status for every student first." : undefined}
                   >
                     {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                    Approve arm
+                    Approve report cards
                   </Button>
                 )}
 
@@ -428,7 +428,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                 {armStatus === "PRINCIPAL_APPROVED" && canManage && (
                   <Button type="button" onClick={() => setReleaseOpen(true)} disabled={workflowBusy || building || shouldPoll}>
                     {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    Release arm
+                    Release results
                   </Button>
                 )}
 
@@ -656,7 +656,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                               className="h-7 gap-1 px-2 text-xs text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700"
                             >
                               <Download className="h-3.5 w-3.5" />
-                              PDF
+                              Download PDF
                             </Button>
                           )}
                           {canManage && (reportCard.pdfStatus === "GENERATED" || reportCard.pdfStatus === "FAILED") && (

@@ -30,6 +30,7 @@ import {
 } from "../../../src/lib/staff/gradebook-drafts";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
+import { StaffReportProfile } from "../../../src/components/staff-report-profile";
 import { EmptyState, ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { LoadError } from "../../../src/components/load-error";
 import { Appear, Settle } from "../../../src/components/motion";
@@ -442,6 +443,7 @@ export default function FormCommentsScreen() {
                         <Caption>Locked — this card has moved past the form teacher stage.</Caption>
                       </>
                     )}
+                    <StaffReportProfile id={row.reportCardId} />
                   </Card>
                 </Settle>
               );

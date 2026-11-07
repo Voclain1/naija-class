@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reportProfileSchema } from "./report-profile.js";
 
 import type { ReportCardStatusDto } from "./report-card.dto.js";
 
@@ -50,6 +51,7 @@ export type ReportCardArmReopenInput = z.infer<typeof reportCardArmReopenSchema>
 export const reportCardCommentUpdateSchema = z
   .object({
     formTeacherComment: z.string().trim().max(2000).nullable().optional(),
+    reportProfile: reportProfileSchema.optional(),
   })
   .strict();
 export type ReportCardCommentUpdateInput = z.infer<typeof reportCardCommentUpdateSchema>;

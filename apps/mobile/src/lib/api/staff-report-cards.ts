@@ -1,4 +1,6 @@
 import type {
+  ReportCardDetailDto,
+  ReportProfile,
   FormCommentRowDto,
   GenerateFormCommentsInput,
   GenerateFormCommentsResultDto,
@@ -52,4 +54,11 @@ export function staffSaveFormComment(
     method: "PATCH",
     body: { formTeacherComment },
   });
+}
+
+export function staffGetReportCard(id: string): Promise<ReportCardDetailDto> {
+  return apiFetch<ReportCardDetailDto>(`/report-cards/${encodeURIComponent(id)}`);
+}
+export function staffSaveReportProfile(id: string, reportProfile: ReportProfile): Promise<ReportCardDto> {
+  return apiFetch<ReportCardDto>(`/report-cards/${encodeURIComponent(id)}`, { method: "PATCH", body: { reportProfile } });
 }

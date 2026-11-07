@@ -14,6 +14,21 @@ export function WorkflowGuidance({
 }) {
   const current = getWorkflowGuidance(status, canManage, isOwner);
 
+  const steps = [
+    "Prepare scores",
+    "Review each card",
+    "School approval",
+    "Release results",
+    "Download & print",
+  ];
+  const stepByStatus: Record<ReportCardStatusDto, number> = {
+    DRAFT: 0,
+    SUBJECT_REVIEWED: 1,
+    FORM_REVIEWED: 2,
+    PRINCIPAL_APPROVED: 3,
+    RELEASED: 4,
+  };
+  const currentStep = status === "MIXED" ? null : stepByStatus[status];
   return (
     <div
       className={
@@ -22,6 +37,25 @@ export function WorkflowGuidance({
           : "rounded-md border bg-muted/20 p-4 text-sm"
       }
     >
+      {currentStep !== null && (
+        <ol
+          aria-label="Report card steps"
+          className="mb-4 grid gap-2 sm:grid-cols-5"
+        >
+          {steps.map((label, index) => (
+            <li
+              key={label}
+              aria-current={index === currentStep ? "step" : undefined}
+              className={`flex items-center gap-2 rounded-md px-2 py-2 text-xs ${index === currentStep ? "bg-primary/10 font-semibold text-foreground" : "text-muted-foreground"}`}
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background">
+                {index < currentStep ? "✓" : index + 1}
+              </span>
+              {label}
+            </li>
+          ))}
+        </ol>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         {status !== "MIXED" && <WorkflowStatusBadge status={status} />}
         <p className="font-medium text-foreground">{current.heading}</p>

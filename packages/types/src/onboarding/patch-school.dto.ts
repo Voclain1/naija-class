@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reportCardDesignSchema } from "../report-cards/report-profile.js";
 
 import { bankAccountNumberSchema } from "../finance/bank-details.js";
 
@@ -25,6 +26,7 @@ import { onboardingStep2Schema } from "./step2-branding.dto.js";
 // requires a code" rule is a cross-field check the schema can't express, so
 // it lives in SchoolsService.patchMe instead.
 const schoolSettingsSchema = z.object({
+  reportCardDesign: reportCardDesignSchema,
   subjectAttendanceEnabled: z.boolean(),
   // Class position (Phase 8 / CP6a, §20.1, D47/D51). Two switches, deliberately:
   // what families see in the portal and app, and what the printed report card

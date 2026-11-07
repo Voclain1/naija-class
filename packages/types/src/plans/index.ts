@@ -76,8 +76,9 @@ export const PLAN_ERROR_CODES = {
 
 // ---------------------------------------------------------------------------
 // Features by plan (2026-10-11, plans.md D5). The owner's decision for report
-// cards on Free: a real, printable termly card, with three things kept for
-// paid plans. Like the caps, they only take effect under
+// cards on Free (revised 2026-11-06): complete standard reports, including
+// positions/cumulative results. Custom design and AI drafts are paid.
+// Like the caps, paid restrictions only take effect under
 // PLAN_ENFORCEMENT=enforce; under warn every school has them.
 // ---------------------------------------------------------------------------
 // aiMarkingFeedback (2026-10-16, phase-9.md §12 CP4b-D1): AI drafts of
@@ -86,7 +87,7 @@ export const PLAN_FEATURES = ["reportCardBranding", "aiReportComments", "reportC
 export type PlanFeature = (typeof PLAN_FEATURES)[number];
 
 export const PLAN_FEATURE_LABELS: Record<PlanFeature, string> = {
-  reportCardBranding: "Your logo and colours on report cards",
+  reportCardBranding: "Report card templates, colours and custom fields",
   aiReportComments: "AI drafts of report card comments",
   reportCardPositions: "Class positions and cumulative results on report cards",
   aiMarkingFeedback: "AI drafts of marking feedback",
@@ -96,7 +97,7 @@ export const PLAN_FEATURE_LABELS: Record<PlanFeature, string> = {
 export const PLAN_FEATURE_MIN_PLAN: Record<PlanFeature, SchoolPlan> = {
   reportCardBranding: "STARTER",
   aiReportComments: "STARTER",
-  reportCardPositions: "STARTER",
+  reportCardPositions: "FREE",
   aiMarkingFeedback: "STARTER",
 };
 
