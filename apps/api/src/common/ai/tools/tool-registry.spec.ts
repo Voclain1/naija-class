@@ -74,6 +74,7 @@ const SCHOOL_NAME_TOOL: ReadToolDefinition<z.ZodObject<{ verbose: z.ZodOptional<
     additionalProperties: false,
   },
   outputFields: ["schoolName"],
+  conformanceCalls: [{}, { verbose: true }],
   async run(ctx) {
     runs += 1;
     const school = await withTenant(ctx.authCtx.schoolId, (db) =>
@@ -92,6 +93,7 @@ const OPEN_TOOL: ReadToolDefinition<z.ZodObject<Record<string, never>, "strict">
   args: z.object({}).strict(),
   inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
   outputFields: ["filler"],
+  conformanceCalls: [{}],
   async run() {
     return { filler: "x".repeat(TOOL_OUTPUT_MAX_CHARS * 2) };
   },
@@ -123,6 +125,8 @@ describe("ToolRegistry — registration refuses an unsafe tool", () => {
     refused({ name: "Bad Name" }, /name must be/);
     refused({ description: "short" }, /real description/);
     refused({ outputFields: [] }, /no output fields/);
+    refused({ conformanceCalls: [] }, /no conformanceCalls/);
+    refused({ conformanceCalls: [{ verbose: "yes" }] } as never, /does not pass its own args/);
     const r = new ToolRegistry();
     r.register(base);
     expect(() => r.register(base)).toThrow(/already registered/);
