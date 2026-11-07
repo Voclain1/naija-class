@@ -304,14 +304,16 @@ describe("RenderService (cp2 — PDF render)", () => {
 
     const enforced = await withTenant(f.schoolId, (db) => reportCards.getRenderData(db, f.cardId, "enforce"));
     expect(enforced?.school).toMatchObject({ branded: false, primaryColor: null, positionOnReportCardPdf: true });
-    expect(enforced?.rollup.cumulative).toBeNull();
+    expect(enforced?.rollup.cumulative).toEqual({ average: 7800, terms: 1, position: 1 });
 
     const warned = await withTenant(f.schoolId, (db) => reportCards.getRenderData(db, f.cardId, "warn"));
     expect(warned?.school).toMatchObject({ branded: true, primaryColor: "#7a1f5c", positionOnReportCardPdf: true });
+    expect(warned?.rollup.cumulative).toEqual(enforced?.rollup.cumulative);
 
     await basePrisma.school.update({ where: { id: f.schoolId }, data: { plan: "STARTER" } });
     const paid = await withTenant(f.schoolId, (db) => reportCards.getRenderData(db, f.cardId, "enforce"));
     expect(paid?.school).toMatchObject({ branded: true, positionOnReportCardPdf: true });
+    expect(paid?.rollup.cumulative).toEqual(enforced?.rollup.cumulative);
   });
 
   it("puts the school's logo on both paid and Free cards without fetching a remote URL", async () => {

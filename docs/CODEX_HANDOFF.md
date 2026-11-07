@@ -188,7 +188,15 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-06)
+## Latest state (updated 2026-11-07)
+
+- **Report cards PR #499 is open:**
+  https://github.com/Voclain1/naija-class/pull/499. Initial CI passed lint,
+  type checks and migration; 3236 API tests passed and one failed because an
+  old assertion still hid cumulative results on Free. Corrected it to assert
+  the exact frozen values and parity with Starter/warn. Fresh CI required;
+  no merge/deployment. See November 7 journal.
+
 
 - **November 6 report-card refinement:** larger bold school masthead and
   prominent logo with only a bottom divider (no surrounding box), revised
@@ -208,11 +216,10 @@ those; it doesn't replace them.
   released/PIN-gated service. Additive migration adds JSON columns only.
   See `docs/modules/complete-report-cards.md`, November 6 journal and
   `docs/reviews/complete-report-cards/` for review material and verification.
-  **Publication approved:** owner approved pushing the revised implementation
-  and opening its PR on November 6. The earlier automatic-review block is
-  resolved by that approval. Git CLI has no credentials here; publish through
-  the connected GitHub account. Database/full Playwright checks require CI's
-  disposable services. No deployment has run.
+  **Published:** owner-approved implementation is in PR #499 via the connected
+  GitHub account. The earlier publication permission block is resolved. Git
+  CLI has no write credentials; use the connector for updates. Database/full
+  Playwright checks run in CI's disposable services. No deployment has run.
 
 
 - **PR #486 Playwright follow-up (October 29):** all six new placement cases
