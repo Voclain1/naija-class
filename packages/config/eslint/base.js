@@ -396,4 +396,51 @@ export const baseConfig = [
       "no-restricted-syntax": "off",
     },
   },
+
+  // ---------------------------------------------------------------------
+  // The AnthropicPort boundary (FD-2b, docs/reviews/agentic-implementation-plan.md
+  // §3.3). The SDK ban above stops a second Anthropic client being BUILT; it
+  // does not stop code that gets hold of the port from CALLING it, which would
+  // skip the budget check and the ai_generations row just as surely. Only
+  // apps/api/src/common/ai (AiGenerationService) may name the port or build
+  // one; specs may, to inject fakes.
+  //
+  // A SEPARATE rule key (@typescript-eslint/no-restricted-imports), on purpose:
+  // the `no-restricted-imports` key above is replaced wholesale by each
+  // allowlist block, and adding a third ban to it would mean re-asserting it in
+  // every block. This key has exactly one allowlist, below.
+  //
+  // Backed by apps/api/src/__tests__/ai-port-boundary.spec.ts, which also
+  // catches `.converse(` and the AI_PORT token, which an import rule cannot.
+  // ---------------------------------------------------------------------
+  {
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@school-kit/ai",
+              importNames: ["createAnthropicClient", "AnthropicPort", "AnthropicClientOptions"],
+              message:
+                "Only AiGenerationService (apps/api/src/common/ai) may build or hold the AnthropicPort: every model call must pass its budget check and write its ai_generations row. Call generate() or runConversationTurn() instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      "**/common/ai/**",
+      "**/packages/ai/**",
+      "**/ai/src/**",
+      "**/*.spec.ts",
+      "**/*.test.ts",
+      "**/__tests__/**",
+    ],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": "off",
+    },
+  },
 ];

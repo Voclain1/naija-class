@@ -207,6 +207,40 @@ describe("converse() — conversations with tools", () => {
   });
 });
 
+describe("converse() — text history replay (FD-2b)", () => {
+  it("sends an earlier assistant reply as plain text, between user messages", async () => {
+    const { port, calls } = fakeApi([message([{ type: "text", text: "ok" }], "end_turn")]);
+    await port.converse!({
+      model: MODELS.HAIKU_4_5,
+      maxTokens: 50,
+      messages: [
+        { role: "user", text: "How do I add a term?" },
+        { role: "assistant", text: "Open Settings, then Academic." },
+        { role: "user", text: "And a class?" },
+      ],
+    });
+    expect(calls[0]!.body.messages).toEqual([
+      { role: "user", content: "How do I add a term?" },
+      { role: "assistant", content: "Open Settings, then Academic." },
+      { role: "user", content: "And a class?" },
+    ]);
+  });
+
+  it("refuses a text reply while tool calls are open, tool results after a text reply, empty text, and ending on the assistant", async () => {
+    const api = fakeApi([message([{ type: "tool_use", id: "toolu_1", name: "grading_boundaries", input: {} }], "tool_use")]);
+    const first = await api.port.converse!({ model: MODELS.HAIKU_4_5, maxTokens: 50, messages: [{ role: "user", text: "q" }], tools: [LOOKUP_TOOL] });
+    const send = (messages: AiConversationMessage[]) =>
+      api.port.converse!({ model: MODELS.HAIKU_4_5, maxTokens: 50, messages, tools: [LOOKUP_TOOL] });
+    const before = api.calls.length;
+
+    await expect(send([{ role: "user", text: "q" }, { role: "assistant", turn: first.assistantTurn }, { role: "assistant", text: "x" }, { role: "user", text: "q" }])).rejects.toThrow(/needs a result/);
+    await expect(send([{ role: "user", text: "q" }, { role: "assistant", text: "a" }, { role: "user", toolResults: [{ toolUseId: "toolu_1", content: "x" }] }])).rejects.toThrow(/must follow the assistant turn/);
+    await expect(send([{ role: "user", text: "q" }, { role: "assistant", text: "  " }, { role: "user", text: "q" }])).rejects.toThrow(/needs text/);
+    await expect(send([{ role: "user", text: "q" }, { role: "assistant", text: "a" }])).rejects.toThrow(/prefill is not supported/);
+    expect(api.calls.length).toBe(before);
+  });
+});
+
 describe("opaque assistant turns: nothing to log, nothing that survives a copy", () => {
   async function turnWithSecrets() {
     const api = fakeApi([
