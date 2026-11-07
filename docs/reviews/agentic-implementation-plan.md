@@ -195,9 +195,15 @@ Each PR is independently reviewable, in this order.
 
 | PR | Title | Depends on | Class | Content |
 |---|---|---|---|---|
-| **FD-1a** ✅ built, in review | Feature controls: storage and resolver | — | B | `schools.feature_switches` JSONB (`schools` has no RLS; it is the tenant table [D, CLAUDE.md]), validated against a Zod enum of keys. A resolver `isFeatureOn(schoolId, key)` with a platform env kill switch per key, which wins. Short-TTL cache. **Recommendation F-4:** JSONB on `schools` rather than a new FORCE-RLS table, because a cross-tenant platform read of an RLS table would need a SECURITY DEFINER function. |
-| **FD-1b** ✅ built, in review | Feature controls: platform-admin toggle | FD-1a | B | `PATCH /platform-admin/schools/:id/features`, audited like `setAiEnabled`. The switch states are added to `platform_admin_list_schools()` so the write is not blind: its 11th revision, DROP + CREATE with grants restated. The SECURITY DEFINER count stays 23; the CLAUDE.md inventory row is updated in the same PR. A toggle in the super-admin Manage dialog. |
-| **FD-2a** | AI port: messages and tool use | — | D (no prompt yet) | `packages/ai`: `AnthropicPort` gains an optional `messages[]` and `tools[]` and returns tool-use blocks; the existing `userContent` path is unchanged. Fake port for specs. No streaming. |
+| **FD-1a** ✅ merged (#498) | Feature controls: storage and resolver | — | B | `schools.feature_switches` JSONB (`schools` has no RLS; it is the tenant table [D, CLAUDE.md]), validated against a Zod enum of keys. A resolver `isFeatureOn(schoolId, key)` with a platform env kill switch per key, which wins. Short-TTL cache. **Recommendation F-4:** JSONB on `schools` rather than a new FORCE-RLS table, because a cross-tenant platform read of an RLS table would need a SECURITY DEFINER function. |
+| **FD-1b** ✅ merged (#498) | Feature controls: platform-admin toggle | FD-1a | B | `PATCH /platform-admin/schools/:id/features`, audited like `setAiEnabled`. The switch states are added to `platform_admin_list_schools()` so the write is not blind: its 11th revision, DROP + CREATE with grants restated. The SECURITY DEFINER count stays 23; the CLAUDE.md inventory row is updated in the same PR. A toggle in the super-admin Manage dialog. |
+| **FD-2a** ✅ built, in review | AI port: messages and tool use | — | D (no prompt yet) | `packages/ai`: `AnthropicPort` gains an optional `messages[]` and `tools[]` and returns tool-use blocks; the existing `userContent` path is unchanged. Fake port for specs. No streaming. **As built (2026-11-07):**
+- **The entry point** is a separate, optional `converse()`, so every existing fake port still satisfies the interface.
+- **The types** are the port's own (the ESLint SDK ban covers type imports).
+- **Tools** are always `strict: true`, with no `tool_choice`.
+- **Assistant turns** are opaque and passed back unchanged, so thinking blocks survive.
+- **Malformed conversations** are refused before sending: unmatched or missing tool results, forged turns, non-strict schemas.
+- **Nothing calls `converse()` yet.** Routing it through `AiGenerationService` with a budget check and ledger row per step is FD-2b, so the CLAUDE.md ledger rule is not bypassed. |
 | **FD-2b** | Conversation loop in `AiGenerationService` | FD-2a | D | `runConversationTurn()`: each model step is its own reserve → call → settle with its own `ai_generations` row, linked by `interactionLogId`. Ceilings per turn (steps, tokens) and per conversation. Budget exhaustion mid-turn ends the turn with a user-facing message. Per-user daily cap counts each step. |
 | **FD-3a** | Tool registry core (read-only) | FD-2b | E | Typed tool definitions declaring: required permission(s) **or** an explicit `anyActiveStaff` with a written reason (mirroring `PermissionsGuard`'s refusal of undeclared routes); principal type; `read` class only. At execution: re-fetch `isActive`, call `userHoldsPermission` (`role-check.ts:85`) [V], take the tenant from `authCtx` only, validate arguments with Zod, and shape output to an allowlist of fields. **Registering a write-class tool throws at boot** in this delivery. A deny-list scaffold encodes R1 for later. |
 | **FD-3b** | Registry conformance gate | FD-3a | — (CI) | A spec that enumerates every registered tool, like `security-definer-inventory.spec.ts`. It asserts: a declared permission or reasoned `anyActiveStaff`; read class; and that the output of each tool, run over a fixture school, contains **none** of the fixture's student, guardian or staff names, emails, phones, DOBs or kobo amounts (the PII and money scan). It also asserts **no behaviour field or count** (P16) and **no health field** (a health field fails the gate until R2 is decided). The scan covers what tools return; it says nothing about what users type (§3.6). |
@@ -493,6 +499,13 @@ tick.*
 - [ ] The resolver adds no query per request once warm (spec with a query counter, or a log assertion).
 
 ### 4.3 FD-2 · Port and conversation loop
+
+*Status 2026-11-07: FD-2a built and in review.*
+- **Evidenced by FD-2a's own tests:**
+  - the unchanged single-call request body;
+  - the SDK import ban still holding.
+- **Open until FD-2b:** the ledger, budget, ceilings and logging items below.
+
 - [ ] The existing single-call features are byte-for-byte unchanged in their request to the port. The existing AI specs pass untouched (lesson plans, comments, summaries, insights, question bank, scan, feedback).
 - [ ] The ESLint SDK import ban still holds: `@anthropic-ai/sdk` is imported only in `packages/ai/src/client.ts` (lint).
 - [ ] Each model step writes exactly one `ai_generations` row with prompt name and version, model, tokens, latency, cost and success/error. The row count equals the number of model calls (spec with fake port: 1-, 3- and 4-step turns).
