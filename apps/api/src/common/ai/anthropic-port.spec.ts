@@ -1,3 +1,5 @@
+import { inspect } from "node:util";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -202,6 +204,56 @@ describe("converse() — conversations with tools", () => {
     const { port, calls } = fakeApi([message([{ type: "text", text: "ok" }], "end_turn")]);
     await port.converse!({ model: MODELS.HAIKU_4_5, maxTokens: 50, messages: [{ role: "user", text: "x" }] });
     expect(calls[0]!.body).not.toHaveProperty("tools");
+  });
+});
+
+describe("opaque assistant turns: nothing to log, nothing that survives a copy", () => {
+  async function turnWithSecrets() {
+    const api = fakeApi([
+      message(
+        [
+          { type: "thinking", thinking: "THINKING-TEXT", signature: "SIG-SECRET" },
+          { type: "text", text: "REPLY-TEXT" },
+          { type: "tool_use", id: "toolu_1", name: "grading_boundaries", input: {} },
+        ],
+        "tool_use",
+      ),
+    ]);
+    const res = await api.port.converse!({
+      model: MODELS.HAIKU_4_5,
+      maxTokens: 50,
+      messages: [{ role: "user", text: "q" }],
+      tools: [LOOKUP_TOOL],
+    });
+    return { ...api, turn: res.assistantTurn };
+  }
+
+  it("printing, serializing or cloning a turn shows no reply text, thinking or signature", async () => {
+    const { turn } = await turnWithSecrets();
+    for (const shown of [inspect(turn, { depth: 10, showHidden: true }), JSON.stringify(turn), inspect(structuredClone(turn))]) {
+      expect(shown).not.toMatch(/SIG-SECRET|THINKING-TEXT|REPLY-TEXT|toolu_1/);
+    }
+    expect(JSON.parse(JSON.stringify(turn))).toEqual({ kind: "ai-assistant-turn" });
+  });
+
+  it("a serialized, cloned or spread copy is refused — as after a restart — and nothing is sent", async () => {
+    const { port, calls, turn } = await turnWithSecrets();
+    for (const copy of [JSON.parse(JSON.stringify(turn)), structuredClone(turn), { ...turn }]) {
+      const before = calls.length;
+      await expect(
+        port.converse!({
+          model: MODELS.HAIKU_4_5,
+          maxTokens: 50,
+          messages: [
+            { role: "user", text: "q" },
+            { role: "assistant", turn: copy },
+            { role: "user", toolResults: [{ toolUseId: "toolu_1", content: "x" }] },
+          ],
+          tools: [LOOKUP_TOOL],
+        }),
+      ).rejects.toThrow(/copied, serialized or restored turn is refused/);
+      expect(calls.length).toBe(before);
+    }
   });
 });
 

@@ -128,8 +128,26 @@ export interface AiToolResult {
  * back unchanged on the next request: it can hold thinking blocks (with their
  * signatures) that a tool-use loop has to return exactly as received, and any
  * edit to them breaks the loop. Only `converse` creates one, and `converse`
- * refuses one it did not create. Deliberately not serialisable here: whether and
- * how a conversation is stored is decided later (plan §3.6, decision F-17).
+ * refuses one it did not create.
+ *
+ * LIMITS (by design):
+ * - **In-memory, one process, one loop.** It is valid only for the request
+ *   that created it. It does not survive JSON serialization, `structuredClone`,
+ *   a queue payload, a cache, a database round trip or a process restart: any
+ *   of those yields an object `converse` refuses.
+ * - **Never stored or logged.** The object carries no content (see
+ *   `ASSISTANT_TURN_CONTENT`), so printing it shows only `{ kind }`. Callers
+ *   must not try to extract or persist what it wraps. Thinking blocks never
+ *   enter stored conversation history, application logs, error reports or
+ *   analytics.
+ * - **Stored history, if any, is text only.** Whether a conversation is stored
+ *   at all is open decision F-17 (plan §3.6). If it is, a later request rebuilds
+ *   earlier turns from stored text, not from turns, and so drops their
+ *   thinking blocks. That is expected to be acceptable for completed turns on
+ *   the models registered today (Haiku 4.5, Sonnet 5), but it is not yet
+ *   verified here; FD-2b checks it against the live API docs. Newer models that
+ *   enforce "preserved thinking" reject edited history, so registering one
+ *   needs that check first.
  */
 export interface AiAssistantTurn {
   readonly kind: "ai-assistant-turn";
@@ -280,21 +298,27 @@ function buildUserContent(req: AiCallRequest): Anthropic.MessageParam["content"]
 // a ledger row.
 // ---------------------------------------------------------------------------
 
-const ASSISTANT_TURN_CONTENT = Symbol("ai-assistant-turn-content");
-
-interface AssistantTurnInternal extends AiAssistantTurn {
-  readonly [ASSISTANT_TURN_CONTENT]: readonly Anthropic.ContentBlock[];
-}
+// The turn's content lives in this module-private WeakMap, NOT on the turn
+// object. The object a caller holds is only `{ kind }`, so logging it
+// (util.inspect, which console.log and loggers use, prints even symbol-keyed
+// properties), JSON.stringify, structuredClone or a Sentry context capture shows
+// nothing of the reply or its thinking blocks. A copy of the object, or one
+// rebuilt after serialization or a process restart, is not in the map and is
+// refused. Entries are collected with the turn object.
+const ASSISTANT_TURN_CONTENT = new WeakMap<AiAssistantTurn, readonly Anthropic.ContentBlock[]>();
 
 function wrapAssistantTurn(content: readonly Anthropic.ContentBlock[]): AiAssistantTurn {
-  const turn: AssistantTurnInternal = { kind: "ai-assistant-turn", [ASSISTANT_TURN_CONTENT]: content };
-  return Object.freeze(turn);
+  const turn: AiAssistantTurn = Object.freeze({ kind: "ai-assistant-turn" as const });
+  ASSISTANT_TURN_CONTENT.set(turn, content);
+  return turn;
 }
 
 function unwrapAssistantTurn(turn: AiAssistantTurn): readonly Anthropic.ContentBlock[] {
-  const content = (turn as Partial<AssistantTurnInternal>)[ASSISTANT_TURN_CONTENT];
+  const content = ASSISTANT_TURN_CONTENT.get(turn);
   if (!content) {
-    throw new Error("An assistant turn must be the one returned by converse(), passed back unchanged.");
+    throw new Error(
+      "An assistant turn must be the one returned by converse() in this process, passed back unchanged; a copied, serialized or restored turn is refused.",
+    );
   }
   return content;
 }
