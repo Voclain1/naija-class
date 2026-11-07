@@ -49,3 +49,21 @@ export const AI_ERROR_CODES = {
   BUDGET_EXCEEDED: "AI_BUDGET_EXCEEDED",
   USER_RATE_LIMITED: "AI_USER_RATE_LIMITED",
 } as const;
+
+// ---------------------------------------------------------------------------
+// Conversation turns (FD-2b, docs/reviews/agentic-implementation-plan.md §3.4).
+// Recommendations R10, not owner decisions: each can change without redesign.
+// ---------------------------------------------------------------------------
+
+/** Model calls allowed in one user turn (search, a read, a follow-up, the answer). */
+export const DEFAULT_TURN_MAX_STEPS = 4;
+
+/** Estimated input tokens one user turn may reach before it stops. */
+export const DEFAULT_TURN_MAX_INPUT_TOKENS = 12_000;
+
+/**
+ * Added to every step's reservation when tools are offered: the API adds its
+ * own tool-use instructions to the prompt, which the chars/4 estimate cannot
+ * see. Deliberately generous; settle() reconciles to the real count.
+ */
+export const TOOL_USE_OVERHEAD_TOKENS = 500;
