@@ -72,3 +72,4 @@ export * from './reports/index.js';
 export * from './timetable/index.js';
 export * from './promotions/index.js';
 export * from './plans/index.js';
+export * from './feature-switches/index.js';

@@ -1,4 +1,4 @@
-import type { PlatformAdminAuditEntryDto } from "@school-kit/types";
+import { FEATURE_LABELS, isFeatureKey, type PlatformAdminAuditEntryDto } from "@school-kit/types";
 
 // One platform audit entry as a sentence an operator can read (platform-admin
 // tools, slice 3). Pure, so it is unit-tested. An action this file does not
@@ -27,6 +27,10 @@ export function describeAuditEntry(e: Pick<PlatformAdminAuditEntryDto, "action" 
     }
     case "platform_admin.schools.set-smart-import":
       return `Turned Smart Import ${onOff(m.to)}`;
+    case "platform_admin.schools.set-feature": {
+      const label = isFeatureKey(m.key) ? FEATURE_LABELS[m.key] : typeof m.key === "string" ? m.key : "a feature";
+      return m.from === m.to ? `Confirmed ${label} is ${onOff(m.to)}` : `Turned ${label} ${onOff(m.to)}`;
+    }
     case "platform_admin.schools.decide-sms-sender": {
       const name = typeof m.senderId === "string" ? `the SMS sender name ${m.senderId}` : "the SMS sender name";
       return m.to === "APPROVED" ? `Approved ${name}` : `Recorded that ${name} was not approved`;

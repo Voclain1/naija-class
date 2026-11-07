@@ -190,6 +190,11 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-07)
 
+- **PR #499 base sync (November 7):** cleanly merged main `c83f5524`
+  (PR #498 feature switches) into the report-card branch. Both schema changes
+  and migrations retained. Fresh CI required after this normal merge update;
+  no merge to main or deployment.
+
 - **Report cards PR #499 is open:**
   https://github.com/Voclain1/naija-class/pull/499. Initial CI passed lint,
   type checks and migration; 3236 API tests passed and one failed because an

@@ -13,6 +13,11 @@ import {
   type PlatformAdminSchoolDto,
   type PlatformAdminSetPlanInput,
   type PlatformAdminSetPlanResponse,
+  FEATURE_KEYS,
+  FEATURE_LABELS,
+  type FeatureKey,
+  type PlatformAdminSetFeatureInput,
+  type PlatformAdminSetFeatureResponse,
   type PlatformAdminSetSmartImportInput,
   type PlatformAdminSetSmartImportResponse,
   type PlatformAdminDecideSmsSenderInput,
@@ -95,6 +100,81 @@ export function SmartImportSection({
         {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
         {school.smartImportEnabled ? "Turn off" : "Turn on"}
       </Button>
+    </section>
+  );
+}
+
+// Feature switches (2026-11-06, docs/modules/feature-switches.md). One row per
+// key in FEATURE_KEYS, each off until the operator turns it on. Turning one ON
+// asks first: these switches gate features that are being piloted, and the
+// owner approves each pilot. Turning one off does not ask. The API's
+// FEATURES_DISABLED variable can still keep a switched-on feature off; this
+// section does not show it, as the AI section does not show AI_ENABLED.
+export function FeatureSwitchesSection({
+  school,
+  onChanged,
+}: {
+  school: PlatformAdminSchoolDto;
+  onChanged: (patch: Partial<PlatformAdminSchoolDto>) => void;
+}) {
+  const [busyKey, setBusyKey] = useState<FeatureKey | null>(null);
+
+  async function set(key: FeatureKey, next: boolean) {
+    const label = FEATURE_LABELS[key];
+    if (
+      next &&
+      !window.confirm(
+        `Turn on ${label} for ${school.name}? It is a pilot feature: only turn it on for a school the owner has approved for the pilot.`,
+      )
+    ) {
+      return;
+    }
+    setBusyKey(key);
+    try {
+      const payload: PlatformAdminSetFeatureInput = { key, enabled: next };
+      const res = await proxyFetch<PlatformAdminSetFeatureResponse>(
+        `/api/platform-admin/schools/${school.schoolId}/features`,
+        { method: "PATCH", body: JSON.stringify(payload) },
+      );
+      onChanged({ featureSwitches: res.featureSwitches });
+      toast.success(`${label} is ${res.featureSwitches[key] ? "on" : "off"} for ${school.name}.`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : `Could not update ${label}.`);
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-3 border-t pt-4" aria-labelledby="manage-feature-switches">
+      <h3 id="manage-feature-switches" className="font-medium">
+        Pilot features
+      </h3>
+      <p className="text-sm text-muted-foreground">
+        Features being piloted with a few schools. Each is off until you turn it on here.
+      </p>
+      <ul className="flex flex-col gap-2">
+        {FEATURE_KEYS.map((key) => {
+          const on = school.featureSwitches[key];
+          return (
+            <li key={key} className="flex flex-wrap items-center gap-2">
+              <span className="text-sm">{FEATURE_LABELS[key]}</span>
+              <Badge variant={on ? "success" : "muted"}>{on ? "On" : "Off"}</Badge>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busyKey !== null}
+                aria-label={`${on ? "Turn off" : "Turn on"} ${FEATURE_LABELS[key]}`}
+                onClick={() => void set(key, !on)}
+              >
+                {busyKey === key ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                {on ? "Turn off" : "Turn on"}
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

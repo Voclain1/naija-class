@@ -255,6 +255,16 @@ model School {
   smsSenderStatus             SmsSenderStatus @default(NONE) @map("sms_sender_status")
   smsSenderRequestedAt        DateTime?       @map("sms_sender_requested_at")
   smsSenderDecidedAt          DateTime?       @map("sms_sender_decided_at")
+  //   featureSwitches        per-school feature switches (2026-11-06,
+  //                          docs/modules/feature-switches.md). A JSON object
+  //                          of known keys (FEATURE_KEYS in @school-kit/types)
+  //                          to booleans, set only by the platform operator
+  //                          (PATCH /platform-admin/schools/:id/features).
+  //                          Missing or non-true reads as OFF; the API's
+  //                          FEATURES_DISABLED variable overrides any `true`.
+  //                          Always read through parseFeatureSwitches, never
+  //                          trusted as typed.
+  featureSwitches             Json            @default("{}") @map("feature_switches")
 
   //   admissionNumber*       admission numbers assigned by SchoolKit
   //                          (2026-10-12, docs/modules/admission-numbers.md).
