@@ -42,6 +42,14 @@ export {
   type AiCallRequest,
   type AiImageInput,
   type AiCallResult,
+  type AiAssistantTurn,
+  type AiConversationMessage,
+  type AiConversationRequest,
+  type AiConversationResult,
+  type AiToolCall,
+  type AiToolDefinition,
+  type AiToolResult,
+  type AnthropicClientOptions,
   type AnthropicPort,
 } from "./client.js";
 
