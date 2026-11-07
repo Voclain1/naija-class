@@ -10,6 +10,7 @@ import type { ReportCardDetailDto } from "@school-kit/types";
 
 import { Appear, EmptyState, PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
 import { PdfStatusBadge, WorkflowStatusBadge } from "@/components/report-cards/status-badges";
+import { ReportProfileEditor } from "@/components/report-cards/report-profile-editor";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -179,6 +180,7 @@ export function ReportCardDetailPage({ basePath }: { basePath: string }) {
             onRegenerate={onRegenerate}
             onSaveFormComment={onSaveFormComment}
             onSavePrincipalNote={onSavePrincipalNote}
+            onReload={() => void load(true)}
           />
         </Appear>
       )}
@@ -194,7 +196,9 @@ function ReportCardDetail({
   onRegenerate,
   onSaveFormComment,
   onSavePrincipalNote,
+  onReload,
 }: {
+  onReload: () => void;
   data: ReportCardDetailDto;
   componentLabels: string[];
   canManage: boolean;
@@ -305,6 +309,8 @@ function ReportCardDetail({
           </section>
         </>
       )}
+
+      <ReportProfileEditor card={reportCard} definitions={data.customFieldDefinitions ?? []} editable={formEditable} onSaved={onReload} />
 
       {/* Comments — editable in the state windows the workflow allows (slice 6). */}
       <section className="flex flex-col gap-4">

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from "@school-kit/types";
+import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError, DEFAULT_REPORT_CARD_DESIGN } from "@school-kit/types";
 
 import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver";
 import { StorageService } from "../../common/storage/storage.service";
@@ -158,6 +158,22 @@ describe("SchoolsService (Slice 6)", () => {
       return { userId: user.id, authCtx: { sessionId: "sess-placeholder", userId: user.id, schoolId } };
     });
   }
+
+  it("custom report design requires a paid plan, remains tenant scoped and can reset to standard", async () => {
+    const f = await createOwnedSchool("report-design");
+    const old = process.env.PLAN_ENFORCEMENT; process.env.PLAN_ENFORCEMENT = "enforce";
+    const design = { ...DEFAULT_REPORT_CARD_DESIGN, template: "classic" as const, color: "#334466", customFields: [{key:"house",label:"House"}] };
+    try {
+      await expect(schoolsService.patchMe(f.authCtx,{reportCardDesign:design},ctx)).rejects.toMatchObject({code:"PLAN_FEATURE_UNAVAILABLE"});
+      await basePrisma.school.update({where:{id:f.schoolId},data:{plan:"STARTER"}});
+      const result = await schoolsService.patchMe(f.authCtx,{reportCardDesign:design},ctx);
+      expect(result.reportCardDesign).toEqual(design);
+      const teacher = await createTeacherUser(f.schoolId,"report-design-teacher");
+      await expect(schoolsService.patchMe(teacher.authCtx,{reportCardDesign:design},ctx)).rejects.toBeInstanceOf(ForbiddenError);
+      await basePrisma.school.update({where:{id:f.schoolId},data:{plan:"FREE"}});
+      expect((await schoolsService.patchMe(f.authCtx,{reportCardDesign:DEFAULT_REPORT_CARD_DESIGN},ctx)).reportCardDesign).toEqual(DEFAULT_REPORT_CARD_DESIGN);
+    } finally { if(old === undefined) delete process.env.PLAN_ENFORCEMENT; else process.env.PLAN_ENFORCEMENT=old; }
+  });
 
   // Helper: build a typed onboarding payload. Saves a lot of `as` casts in
   // the test bodies and mirrors what the controller's parseStepPayload does.

@@ -4,6 +4,10 @@ import { Injectable } from "@nestjs/common";
 import { Prisma, basePrisma, withTenant } from "@school-kit/db";
 import {
   ConflictError,
+  ForbiddenError,
+  planFeatureAvailable,
+  readReportCardDesign,
+  DEFAULT_REPORT_CARD_DESIGN,
   NotFoundError,
   ValidationError,
   type OnboardingStep1Input,
@@ -22,7 +26,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { PaystackService } from "../../common/paystack/paystack.service";
-import { readSchoolPlan } from "../../common/plans/plan-limits";
+import { currentPlanEnforcement, readSchoolPlan } from "../../common/plans/plan-limits";
 import { redactEmail } from "../../common/redact";
 import { portalBaseUrl } from "../../common/portal-url";
 import { LOGO_URL_TTL_SECONDS, parseLogoExt } from "../../common/storage/school-logo";
@@ -106,6 +110,7 @@ export class SchoolsService {
     // than overwriting with NULL. (.strict() on the schema already rejects
     // unknown keys, so the only fields here are the known seven.)
     const data: Prisma.SchoolUpdateInput = {};
+    if (input.reportCardDesign !== undefined) data.reportCardDesign = input.reportCardDesign as Prisma.InputJsonValue;
     if (input.name !== undefined) data.name = input.name;
     if (input.motto !== undefined) data.motto = input.motto;
     if (input.address !== undefined) data.address = input.address;
@@ -610,6 +615,12 @@ export class SchoolsService {
     metadata: Prisma.InputJsonValue,
   ): Promise<SchoolMeDto> {
     return withTenant(authCtx.schoolId, async (db) => {
+      if (data.reportCardDesign !== undefined && JSON.stringify(data.reportCardDesign) !== JSON.stringify(DEFAULT_REPORT_CARD_DESIGN)) {
+        const school = await db.school.findUniqueOrThrow({ where: { id: authCtx.schoolId }, select: { plan: true } });
+        if (!planFeatureAvailable(school.plan, "reportCardBranding", currentPlanEnforcement())) {
+          throw new ForbiddenError("PLAN_FEATURE_UNAVAILABLE", "Report card design customisation requires a paid plan.");
+        }
+      }
       const updated = await db.school.update({
         where: { id: authCtx.schoolId },
         data,
@@ -647,6 +658,7 @@ const SCHOOL_RESPONSE_SELECT = {
   phone: true,
   email: true,
   primaryColor: true,
+  reportCardDesign: true,
   status: true,
   onboardingStep: true,
   ndprConsent: true,
@@ -679,6 +691,7 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     phone: school.phone,
     email: school.email,
     primaryColor: school.primaryColor,
+    reportCardDesign: readReportCardDesign(school.reportCardDesign),
     status: school.status,
     onboardingStep: school.onboardingStep,
     ndprConsent: school.ndprConsent,

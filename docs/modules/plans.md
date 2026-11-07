@@ -92,35 +92,32 @@ published terms move a school up "from the following billing period" anyway.
 - **Automatic plan changes.** A school over its cap is shown the notice; the
   operator moves it up.
 
-### D5. Report cards on Free: a real card, with three extras on paid plans
+### D5. Complete standard reports on Free; design customisation on paid plans
 
-Owner's decision, 2026-10-11 (options A + B + C). Every plan gets report
-cards: scores, grades, typed comments, attendance, the approval workflow and a
-printable PDF. Three things are for Starter and up:
+Owner's revised decision, 2026-11-06, supersedes the October 11 restrictions.
+Every plan includes the school's identity and logo, student identity/photo,
+configured assessment components and maxima, grades and grading key, totals,
+class size, positions, attendance, cumulative results, promotion, typed
+comments, affective and psychomotor ratings, signatory names, signature/stamp
+spaces and next-term date. Unknown observations remain “Not recorded”. The
+school's position switches continue to control paper and family screens on
+**every** plan. See `complete-report-cards.md` for entry and approval details.
 
-| Feature key | What Free gets instead | Where it is applied |
+| Feature key | Included from | Behaviour |
 |---|---|---|
-| `reportCardBranding` | SchoolKit's template: SchoolKit's colour, no logo, a "Report card by SchoolKit · schoolkit.ng" footer. The school's name and motto stay. | `ReportCardService.getRenderData` and the template |
-| `aiReportComments` | Teachers type comments. Drafting is refused with 403 `PLAN_FEATURE_UNAVAILABLE` before anything is queued. | the subject and form-teacher `enqueueBatch` |
-| `reportCardPositions` | No class or subject position and no cumulative (year) results, on the PDF or anywhere families see results. | `getRenderData` and `ReleasedResultsService.getForStudent`, the one reader for the portal, the app and the result checker |
+| `reportCardPositions` | Free | Class/subject positions and cumulative results; still follows the school's visibility switches |
+| `reportCardBranding` | Starter | Standard/classic/compact templates, report colour, sans/serif type, text watermark and up to eight custom text fields; Free uses the standard template with its own school identity and SchoolKit attribution |
+| `aiReportComments` | Starter | AI drafting only; manually written comments remain free and human approval is always required |
 
-Like the caps, they apply only under `PLAN_ENFORCEMENT=enforce`; under warn
-every school has all three, and Settings → Plan lists them as "Free during
-early access". The school's own position switches keep working on paid plans;
-on Free the report-card settings page says the plan leaves positions off.
+Paid restrictions apply under `PLAN_ENFORCEMENT=enforce`; under `warn`, early
+access continues to make those features available. This change does not alter
+AI budgets, consent, approval gates or student caps.
 
-Staff screens (the report-card board, the gradebook) still show positions on
-every plan: they are computed anyway, and they are the school's own working
-data, not what goes to families.
-
-**PDFs are frozen when rendered**, so a plan change shows on cards rendered
-afterwards. The render worker is a separate app; each render job carries the
-API's `PLAN_ENFORCEMENT`, so the secret is set once, on `school-kit-api`.
-
-**Found while building this:** report-card PDFs had never shown a school's
-logo. The template was given the stored path, which a page loaded with no base
-URL cannot fetch. It now gets the logo as a data URI, as receipts do, and uses
-the school's own colour (`primaryColor`), which it also never read.
+**PDFs are frozen when rendered.** A design or plan change applies to the next
+render, never by rewriting an existing artifact in the background. Each job
+carries the API's enforcement setting. Logos and student photos are embedded
+from canonical tenant storage keys, outside the database transaction; arbitrary
+stored image URLs are never fetched by the document.
 
 ## Surfaces
 

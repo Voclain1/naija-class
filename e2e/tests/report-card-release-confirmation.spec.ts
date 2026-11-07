@@ -74,9 +74,9 @@ test("report-card release requires confirmation and cannot be sent by dismissing
     });
 
     await admin.page.goto(`/report-cards/${classArmId}?termId=${structure.termId}`);
-    await expect(admin.page.getByRole("button", { name: "Release arm" })).toBeVisible();
+    await expect(admin.page.getByRole("button", { name: "Release results" })).toBeVisible();
 
-    await admin.page.getByRole("button", { name: "Release arm" }).click();
+    await admin.page.getByRole("button", { name: "Release results" }).click();
     const dialog = admin.page.getByRole("dialog");
     await expect(dialog.getByRole("heading", { name: "Release report cards" })).toBeVisible();
     await expect(dialog.getByText("JSS 2 Blue")).toBeVisible();
@@ -87,7 +87,7 @@ test("report-card release requires confirmation and cannot be sent by dismissing
     await expect(dialog).toHaveCount(0);
     expect(releaseRequests).toBe(0);
 
-    await admin.page.getByRole("button", { name: "Release arm" }).click();
+    await admin.page.getByRole("button", { name: "Release results" }).click();
     const confirm = admin.page.getByRole("button", { name: "Release 1 report card" });
     await confirm.click();
     await expect(admin.page.getByRole("button", { name: "Releasing\u2026" })).toBeDisabled();

@@ -188,7 +188,32 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-10-29)
+## Latest state (updated 2026-11-06)
+
+- **November 6 report-card refinement:** larger bold school masthead and
+  prominent logo with only a bottom divider (no surrounding box), revised
+  fictional Free PDF/preview, numbered workflow steps
+  and plain-language approval/release/download actions. Same local feature
+  branch. Owner has now approved publication; CI must pass before merging.
+  See November 6 journal.
+
+- **Complete Free report cards — implemented locally on `feat/complete-free-report-cards`:**
+  owner approved the Nigerian standard example and implementation. Free now
+  includes school identity/logo, student photo, configured component maxima,
+  grading key, positions/cumulative results, fixed 1–5 development ratings,
+  signatory names/spaces and next-term date. Paid design controls offer three
+  templates, colour, typography, watermark and eight custom text fields.
+  Web and native staff editors use the existing audited, tenant-scoped comment
+  write gate; observations lock at form review. Family screens use the shared
+  released/PIN-gated service. Additive migration adds JSON columns only.
+  See `docs/modules/complete-report-cards.md`, November 6 journal and
+  `docs/reviews/complete-report-cards/` for review material and verification.
+  **Publication approved:** owner approved pushing the revised implementation
+  and opening its PR on November 6. The earlier automatic-review block is
+  resolved by that approval. Git CLI has no credentials here; publish through
+  the connected GitHub account. Database/full Playwright checks require CI's
+  disposable services. No deployment has run.
+
 
 - **PR #486 Playwright follow-up (October 29):** all six new placement cases
   passed; three old bulk-entry cases failed because they never answered the

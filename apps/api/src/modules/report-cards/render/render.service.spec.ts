@@ -298,12 +298,12 @@ describe("RenderService (cp2 — PDF render)", () => {
 
   // ---- Plans (2026-10-11, docs/modules/plans.md D5) -----------------------
 
-  it("a Free school's card under enforce is SchoolKit's: unbranded, no positions, no cumulative; under warn it keeps them", async () => {
+  it("a Free school's standard card keeps positions and cumulative results under enforce", async () => {
     const f = await seedOneCard("plan-free");
     await basePrisma.school.update({ where: { id: f.schoolId }, data: { primaryColor: "#7a1f5c" } });
 
     const enforced = await withTenant(f.schoolId, (db) => reportCards.getRenderData(db, f.cardId, "enforce"));
-    expect(enforced?.school).toMatchObject({ branded: false, primaryColor: null, positionOnReportCardPdf: false });
+    expect(enforced?.school).toMatchObject({ branded: false, primaryColor: null, positionOnReportCardPdf: true });
     expect(enforced?.rollup.cumulative).toBeNull();
 
     const warned = await withTenant(f.schoolId, (db) => reportCards.getRenderData(db, f.cardId, "warn"));
@@ -314,7 +314,7 @@ describe("RenderService (cp2 — PDF render)", () => {
     expect(paid?.school).toMatchObject({ branded: true, positionOnReportCardPdf: true });
   });
 
-  it("puts the school's logo on a branded card as an image the PDF can load, and leaves it off an unbranded one", async () => {
+  it("puts the school's logo on both paid and Free cards without fetching a remote URL", async () => {
     const f = await seedOneCard("plan-logo");
     const logoUrl = await storage.put(f.schoolId, { kind: "school-logo", ext: "png" }, Buffer.from("not-really-a-png"), "image/png");
     await basePrisma.school.update({ where: { id: f.schoolId }, data: { logoUrl } });
@@ -336,7 +336,7 @@ describe("RenderService (cp2 — PDF render)", () => {
     expect(html).not.toContain(logoUrl);
 
     await capturing.renderCard({ schoolId: f.schoolId, userId: f.ownerId, reportCardId: f.cardId, attempt: 2, planEnforcement: "enforce" });
-    expect(html).not.toContain("<img");
+    expect(html).toContain('<img class="logo"');
     expect(html).toContain("Report card by SchoolKit");
   });
 

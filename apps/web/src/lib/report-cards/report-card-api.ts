@@ -5,6 +5,7 @@
 // endpoints. cp3 (this) wires the admin/form-teacher UI to all of them.
 
 import type {
+  ReportProfile,
   PromotionStatusDto,
   ResultAccessModeDto,
   BuildReportCardsResultDto,
@@ -141,4 +142,8 @@ export function updatePromotionStatus(
     method: "PATCH",
     body: { promotionStatus },
   });
+}
+
+export function updateReportProfile(id: string, reportProfile: ReportProfile): Promise<ReportCardDto> {
+  return apiFetch<ReportCardDto>(`/report-cards/${id}`, { method: "PATCH", body: { reportProfile } });
 }

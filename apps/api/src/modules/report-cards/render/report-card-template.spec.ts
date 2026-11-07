@@ -191,13 +191,13 @@ describe("renderReportCardHtml", () => {
     expect(html).not.toContain("Report card by SchoolKit");
   });
 
-  it("an unbranded card is SchoolKit's: no logo even if one is loaded, SchoolKit colour and footer, the school still named", () => {
+  it("a Free card keeps the school's logo and identity with the standard colour and attribution", () => {
     const html = renderReportCardHtml(
       fixture({
         school: { ...UNBRANDED_OFF, positionOnReportCardPdf: true, primaryColor: "#7a1f5c", logoDataUri: "data:image/png;base64,AAAA" },
       }),
     );
-    expect(html).not.toContain("<img");
+    expect(html).toContain('<img class="logo"');
     expect(html).not.toContain("#7a1f5c");
     expect(html).toContain(SCHOOLKIT_CARD_COLOR);
     expect(html).toContain("Report card by SchoolKit · schoolkit.ng");
@@ -278,4 +278,28 @@ describe("renderReportCardHtml", () => {
     expect(html).toContain("Cumulative Average (3 terms)");
     expect(html).not.toContain("Cumulative Position");
   });
+});
+
+describe("complete standard report", () => {
+  it("prints domains, key, signature spaces and dates on Free, with no invented observations", () => {
+    const html = renderReportCardHtml(fixture({ school: UNBRANDED_OFF, classSize: 24, gradeKey: [{letter:"A",minScore:70,maxScore:100,remark:"Excellent"}], nextTermDate:"2027-01-11", issuedOn:"2026-12-15" }));
+    for (const field of ["Character and attitude", "Practical skills", "Punctuality", "Handwriting", "Rating / 5", "Not recorded", "Signature / stamp", "Students in Class", "Grading key:", "11 Jan 2027", "15 Dec 2026"]) expect(html).toContain(field);
+    expect(html).not.toContain("Additional school information");
+  });
+  it("escapes new text fields and paid design content; never loads arbitrary image URLs", () => {
+    const base = fixture();
+    const html = renderReportCardHtml(fixture({
+      school: { ...base.school, address: PAYLOAD, email: PAYLOAD, logoDataUri: 'https://example.test/track', design: {template:"classic",font:"serif",color:"#123456",watermark:PAYLOAD,customFields:[]} },
+      student: { ...base.student, photoDataUri: 'data:image/svg+xml;base64,PHN2Zz4=' },
+      profile: { level:"PRIMARY",affective:{Honesty:5},psychomotor:{},nextTermDate:null,teacherName:PAYLOAD,headName:PAYLOAD,customFields:[{key:"house",label:PAYLOAD,value:PAYLOAD}] },
+    }));
+    expect(html).not.toContain("<script>"); expect(html).not.toContain("https://example.test/track"); expect(html).not.toContain("data:image/svg");
+    expect(html).toContain("template-classic"); expect(html).toContain("#123456"); expect(html).toContain("Georgia"); expect(html).toContain("Additional school information"); expect(html).toContain("Head teacher");
+  });
+});
+
+it("keeps custom light colours readable instead of printing white text on white", () => {
+  const base = fixture();
+  const html = renderReportCardHtml(fixture({school:{...base.school,design:{template:"standard",color:"#ffffff",font:"sans",watermark:"",customFields:[]}}}));
+  expect(html).toContain("background: #ffffff; color: #13262e;");
 });
