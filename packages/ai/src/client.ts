@@ -80,16 +80,161 @@ export interface AiCallResult {
   readonly stopReason: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Conversations with tools (FD-2a, docs/reviews/agentic-implementation-plan.md
+// §3.3). A SEPARATE entry point, `converse`, rather than new optional fields on
+// AiCallRequest: the single-call `create` path every shipped feature uses stays
+// byte-for-byte what it was, and a conversation can never be half-built from a
+// single-call request by accident.
+//
+// These types are the port's own, not the SDK's, on purpose: the ESLint ban on
+// importing @anthropic-ai/sdk outside this file covers type imports too, so the
+// rest of the app talks in these narrow shapes and only this file maps them.
+//
+// What this layer does NOT do (later PRs, by design): the step loop, budget
+// reservation per step and the ai_generations row per step are FD-2b in
+// AiGenerationService; tool permission checks and execution are FD-3a. The port
+// only turns one request into one model call.
+// ---------------------------------------------------------------------------
+
+/**
+ * A tool the model may call. Sent with `strict: true`, so the API guarantees the
+ * call's input matches `inputSchema`: the schema must be an object schema with
+ * `additionalProperties: false` (checked before sending). Tool choice is always
+ * left to the model (`auto`): forced tool choice is rejected by newer models.
+ */
+export interface AiToolDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: Record<string, unknown>;
+}
+
+/** A tool call the model asked for. `input` is parsed JSON; validate it before use. */
+export interface AiToolCall {
+  readonly id: string;
+  readonly name: string;
+  readonly input: unknown;
+}
+
+/** The outcome of one tool call, sent back on the next user turn. */
+export interface AiToolResult {
+  readonly toolUseId: string;
+  readonly content: string;
+  readonly isError?: boolean;
+}
+
+/**
+ * An assistant turn as the model returned it, OPAQUE to callers. It must be sent
+ * back unchanged on the next request: it can hold thinking blocks (with their
+ * signatures) that a tool-use loop has to return exactly as received, and any
+ * edit to them breaks the loop. Only `converse` creates one, and `converse`
+ * refuses one it did not create.
+ *
+ * LIMITS (by design):
+ * - **In-memory, one process, one loop.** It is valid only for the request
+ *   that created it. It does not survive JSON serialization, `structuredClone`,
+ *   a queue payload, a cache, a database round trip or a process restart: any
+ *   of those yields an object `converse` refuses.
+ * - **Never stored or logged.** The object carries no content (see
+ *   `ASSISTANT_TURN_CONTENT`), so printing it shows only `{ kind }`. Callers
+ *   must not try to extract or persist what it wraps. Thinking blocks never
+ *   enter stored conversation history, application logs, error reports or
+ *   analytics.
+ * - **Stored history, if any, is text only.** Whether a conversation is stored
+ *   at all is open decision F-17 (plan §3.6). If it is, a later request rebuilds
+ *   earlier turns from stored text, not from turns, and so drops their
+ *   thinking blocks. That is expected to be acceptable for completed turns on
+ *   the models registered today (Haiku 4.5, Sonnet 5), but it is not yet
+ *   verified here; FD-2b checks it against the live API docs. Newer models that
+ *   enforce "preserved thinking" reject edited history, so registering one
+ *   needs that check first.
+ */
+export interface AiAssistantTurn {
+  readonly kind: "ai-assistant-turn";
+}
+
+export type AiConversationMessage =
+  | { readonly role: "user"; readonly text: string }
+  | { readonly role: "user"; readonly toolResults: readonly AiToolResult[] }
+  | { readonly role: "assistant"; readonly turn: AiAssistantTurn };
+
+export interface AiConversationRequest {
+  readonly model: ModelId;
+  readonly system?: string;
+  readonly maxTokens: number;
+  readonly messages: readonly AiConversationMessage[];
+  readonly tools?: readonly AiToolDefinition[];
+}
+
+export interface AiConversationResult {
+  /** Text blocks of the reply, joined. Empty on a refusal or a tool-only turn. */
+  readonly text: string;
+  /** Tool calls requested in this turn, in order. Empty unless stopReason is "tool_use". */
+  readonly toolCalls: readonly AiToolCall[];
+  /** Pass back as `{ role: "assistant", turn }` before the tool results. */
+  readonly assistantTurn: AiAssistantTurn;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  // "end_turn" | "tool_use" | "max_tokens" | "refusal" | "pause_turn" | ... —
+  // surfaced, not thrown, exactly as AiCallResult does, so the ledger row is
+  // accurate whatever happened.
+  readonly stopReason: string | null;
+}
+
 // The seam. AiGenerationService depends on this interface only.
 export interface AnthropicPort {
   create(req: AiCallRequest): Promise<AiCallResult>;
+  // Optional so every existing fake port (one per AI feature spec) still
+  // satisfies the interface. A caller that needs it checks for it.
+  converse?(req: AiConversationRequest): Promise<AiConversationResult>;
+}
+
+/** Options for tests only: the real client needs neither. */
+export interface AnthropicClientOptions {
+  readonly fetch?: typeof fetch;
+  readonly maxRetries?: number;
 }
 
 class AnthropicSdkPort implements AnthropicPort {
   private readonly client: Anthropic;
 
-  constructor(apiKey: string) {
-    this.client = new Anthropic({ apiKey });
+  constructor(apiKey: string, options: AnthropicClientOptions = {}) {
+    this.client = new Anthropic({
+      apiKey,
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
+    });
+  }
+
+  async converse(req: AiConversationRequest): Promise<AiConversationResult> {
+    const tools = (req.tools ?? []).map(toSdkTool);
+    assertUniqueToolNames(tools);
+    const messages = toSdkMessages(req.messages);
+
+    const response = await this.client.messages.create({
+      model: req.model,
+      max_tokens: req.maxTokens,
+      ...(req.system ? { system: req.system } : {}),
+      ...(tools.length > 0 ? { tools } : {}),
+      messages,
+    });
+
+    const text = response.content
+      .filter((block): block is Extract<typeof block, { type: "text" }> => block.type === "text")
+      .map((block) => block.text)
+      .join("");
+    const toolCalls = response.content
+      .filter((block): block is Extract<typeof block, { type: "tool_use" }> => block.type === "tool_use")
+      .map((block) => ({ id: block.id, name: block.name, input: block.input }));
+
+    return {
+      text,
+      toolCalls,
+      assistantTurn: wrapAssistantTurn(response.content),
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+      stopReason: response.stop_reason ?? null,
+    };
   }
 
   async create(req: AiCallRequest): Promise<AiCallResult> {
@@ -146,6 +291,119 @@ function buildUserContent(req: AiCallRequest): Anthropic.MessageParam["content"]
   ];
 }
 
+// ---------------------------------------------------------------------------
+// Conversation mapping (FD-2a). Every check here throws BEFORE any request is
+// sent: a malformed conversation is a programming error, and failing locally
+// costs nothing, where a 400 from the API costs a round trip and, under FD-2b,
+// a ledger row.
+// ---------------------------------------------------------------------------
+
+// The turn's content lives in this module-private WeakMap, NOT on the turn
+// object. The object a caller holds is only `{ kind }`, so logging it
+// (util.inspect, which console.log and loggers use, prints even symbol-keyed
+// properties), JSON.stringify, structuredClone or a Sentry context capture shows
+// nothing of the reply or its thinking blocks. A copy of the object, or one
+// rebuilt after serialization or a process restart, is not in the map and is
+// refused. Entries are collected with the turn object.
+const ASSISTANT_TURN_CONTENT = new WeakMap<AiAssistantTurn, readonly Anthropic.ContentBlock[]>();
+
+function wrapAssistantTurn(content: readonly Anthropic.ContentBlock[]): AiAssistantTurn {
+  const turn: AiAssistantTurn = Object.freeze({ kind: "ai-assistant-turn" as const });
+  ASSISTANT_TURN_CONTENT.set(turn, content);
+  return turn;
+}
+
+function unwrapAssistantTurn(turn: AiAssistantTurn): readonly Anthropic.ContentBlock[] {
+  const content = ASSISTANT_TURN_CONTENT.get(turn);
+  if (!content) {
+    throw new Error(
+      "An assistant turn must be the one returned by converse() in this process, passed back unchanged; a copied, serialized or restored turn is refused.",
+    );
+  }
+  return content;
+}
+
+const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
+
+function toSdkTool(tool: AiToolDefinition): Anthropic.Tool {
+  if (!TOOL_NAME.test(tool.name)) {
+    throw new Error(`Tool name "${tool.name}" must be 1-64 letters, digits, "_" or "-".`);
+  }
+  if (tool.description.trim() === "") {
+    throw new Error(`Tool "${tool.name}" needs a description.`);
+  }
+  // strict: true needs an object schema that forbids extra properties.
+  const schema = tool.inputSchema;
+  if (schema.type !== "object" || schema.additionalProperties !== false) {
+    throw new Error(`Tool "${tool.name}" input schema must be { type: "object", additionalProperties: false, ... }.`);
+  }
+  return {
+    name: tool.name,
+    description: tool.description,
+    input_schema: schema as Anthropic.Tool.InputSchema,
+    strict: true,
+  };
+}
+
+function assertUniqueToolNames(tools: readonly Anthropic.Tool[]): void {
+  const seen = new Set<string>();
+  for (const tool of tools) {
+    if (seen.has(tool.name)) throw new Error(`Tool "${tool.name}" is defined twice.`);
+    seen.add(tool.name);
+  }
+}
+
+function toSdkMessages(messages: readonly AiConversationMessage[]): Anthropic.MessageParam[] {
+  if (messages.length === 0) throw new Error("A conversation needs at least one message.");
+  if (messages[0]!.role !== "user") throw new Error("A conversation must start with a user message.");
+
+  const out: Anthropic.MessageParam[] = [];
+  // Tool calls from the most recent assistant turn that still need a result.
+  let openCalls: Set<string> | null = null;
+
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      if (openCalls && openCalls.size > 0) {
+        throw new Error("Every tool call needs a result before the next assistant turn.");
+      }
+      const content = unwrapAssistantTurn(message.turn);
+      out.push({ role: "assistant", content: content as Anthropic.ContentBlockParam[] });
+      const ids = content.filter((b) => b.type === "tool_use").map((b) => (b as Anthropic.ToolUseBlock).id);
+      openCalls = new Set(ids);
+      continue;
+    }
+
+    if ("toolResults" in message) {
+      if (message.toolResults.length === 0) throw new Error("A tool-results message needs at least one result.");
+      if (!openCalls) throw new Error("Tool results must follow the assistant turn that asked for them.");
+      const results: Anthropic.ToolResultBlockParam[] = message.toolResults.map((result) => {
+        if (!openCalls!.has(result.toolUseId)) {
+          throw new Error(`Tool result for "${result.toolUseId}" matches no open call in the previous assistant turn.`);
+        }
+        openCalls!.delete(result.toolUseId);
+        return {
+          type: "tool_result",
+          tool_use_id: result.toolUseId,
+          content: result.content,
+          ...(result.isError ? { is_error: true } : {}),
+        };
+      });
+      if (openCalls.size > 0) {
+        // The API rejects a turn that leaves a call unanswered; say which.
+        throw new Error(`Missing tool results for: ${[...openCalls].join(", ")}.`);
+      }
+      out.push({ role: "user", content: results });
+      continue;
+    }
+
+    if (openCalls && openCalls.size > 0) {
+      throw new Error("Every tool call needs a result before the next user message.");
+    }
+    out.push({ role: "user", content: message.text });
+  }
+  return out;
+}
+
 // Returns null when no API key is configured, rather than throwing at import
 // or boot time. This is the fail-soft behaviour locked as phase-5.md D11:
 // a missing ANTHROPIC_API_KEY must make AI features report themselves
@@ -154,7 +412,10 @@ function buildUserContent(req: AiCallRequest): Anthropic.MessageParam["content"]
 // database — and a boot crash-loop from a missing env var has already
 // happened once in this project.) Global boot-time env validation is
 // deliberately a separate change with its own manual gate.
-export function createAnthropicClient(apiKey: string | undefined | null): AnthropicPort | null {
+export function createAnthropicClient(
+  apiKey: string | undefined | null,
+  options?: AnthropicClientOptions,
+): AnthropicPort | null {
   if (!apiKey || apiKey.trim() === "") return null;
-  return new AnthropicSdkPort(apiKey);
+  return new AnthropicSdkPort(apiKey, options);
 }
