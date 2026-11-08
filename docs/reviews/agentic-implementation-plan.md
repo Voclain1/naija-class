@@ -197,7 +197,7 @@ Each PR is independently reviewable, in this order.
 |---|---|---|---|---|
 | **FD-1a** ✅ merged (#498) | Feature controls: storage and resolver | — | B | `schools.feature_switches` JSONB (`schools` has no RLS; it is the tenant table [D, CLAUDE.md]), validated against a Zod enum of keys. A resolver `isFeatureOn(schoolId, key)` with a platform env kill switch per key, which wins. Short-TTL cache. **Recommendation F-4:** JSONB on `schools` rather than a new FORCE-RLS table, because a cross-tenant platform read of an RLS table would need a SECURITY DEFINER function. |
 | **FD-1b** ✅ merged (#498) | Feature controls: platform-admin toggle | FD-1a | B | `PATCH /platform-admin/schools/:id/features`, audited like `setAiEnabled`. The switch states are added to `platform_admin_list_schools()` so the write is not blind: its 11th revision, DROP + CREATE with grants restated. The SECURITY DEFINER count stays 23; the CLAUDE.md inventory row is updated in the same PR. A toggle in the super-admin Manage dialog. |
-| **FD-2a** ✅ built, in review | AI port: messages and tool use | — | D (no prompt yet) | `packages/ai`: `AnthropicPort` gains an optional `messages[]` and `tools[]` and returns tool-use blocks; the existing `userContent` path is unchanged. Fake port for specs. No streaming. **As built (2026-11-07):**
+| **FD-2a** ✅ merged (#500, 2026-11-07) | AI port: messages and tool use | — | D (no prompt yet) | `packages/ai`: `AnthropicPort` gains an optional `messages[]` and `tools[]` and returns tool-use blocks; the existing `userContent` path is unchanged. Fake port for specs. No streaming. **As built (2026-11-07):**
 - **The entry point** is a separate, optional `converse()`, so every existing fake port still satisfies the interface.
 - **The types** are the port's own (the ESLint SDK ban covers type imports).
 - **Tools** are always `strict: true`, with no `tool_choice`.
@@ -205,7 +205,7 @@ Each PR is independently reviewable, in this order.
 - **Malformed conversations** are refused before sending: unmatched or missing tool results, forged turns, non-strict schemas.
 - **Assistant turns stay in memory.** Their content sits in a module-private `WeakMap`, so logging, serializing or cloning a turn shows only `{ kind }`. A copy, or a turn restored after a restart, is refused. Thinking blocks never enter stored history or logs.
 - **`converse()` has no production callers today.** That is not a guarantee against misuse: code holding the port could still call `converse()` or `create()` directly and skip the budget check and ledger. The intended boundary is that **only `AiGenerationService` calls port methods**. FD-2b enforces it in two ways: `runConversationTurn()` becomes the single caller, and a CI conformance spec fails if `.converse(`, `.create(` on the port, `createAnthropicClient(` or the `AI_PORT` token appear outside `apps/api/src/common/ai/` (specs excepted). |
-| **FD-2b** ✅ built on branch `agentic/fd-2b-conversation-loop` (no PR yet) | Conversation loop in `AiGenerationService` | FD-2a | D | `runConversationTurn()`: each model step is its own reserve → call → settle with its own `ai_generations` row, linked by `interactionLogId`. Ceilings per turn (steps, tokens) and per conversation. Budget exhaustion mid-turn ends the turn with a user-facing message. Per-user daily cap counts each step. **As built (2026-11-07):**
+| **FD-2b** ✅ merged (#501, 2026-11-08) | Conversation loop in `AiGenerationService` | FD-2a | D | `runConversationTurn()`: each model step is its own reserve → call → settle with its own `ai_generations` row, linked by `interactionLogId`. Ceilings per turn (steps, tokens) and per conversation. Budget exhaustion mid-turn ends the turn with a user-facing message. Per-user daily cap counts each step. **As built (2026-11-07):**
 - **Single caller.** `runConversationTurn()` is the only caller of `converse()`.
 - **Per step:** reserve → call → settle, with one `ai_generations` row per model call.
 - **Outcomes, not errors:** answered, refused, truncated, step limit, turn token limit, budget exhausted, user rate-limited, unexpected stop.
@@ -214,7 +214,7 @@ Each PR is independently reviewable, in this order.
 - **Boundary enforced in two places:**
   - the ESLint rule `@typescript-eslint/no-restricted-imports` on the port's names outside `common/ai`;
   - `apps/api/src/__tests__/ai-port-boundary.spec.ts` for `.converse(`, `createAnthropicClient(`, `AI_PORT` and `AnthropicPort`. |
-| **FD-3a** ✅ built on branch `agentic/fd-3a-tool-registry` (no PR yet) | Tool registry core (read-only) | FD-2b | E | Typed tool definitions declaring: required permission(s) **or** an explicit `anyActiveStaff` with a written reason (mirroring `PermissionsGuard`'s refusal of undeclared routes); principal type; `read` class only. At execution: re-fetch `isActive`, call `userHoldsPermission` (`role-check.ts:85`) [V], take the tenant from `authCtx` only, validate arguments with Zod, and shape output to an allowlist of fields. **Registering a write-class tool throws at boot** in this delivery. A deny-list scaffold encodes R1 for later. **As built (2026-11-07):** `apps/api/src/common/ai/tools/tool-registry.ts`.
+| **FD-3a** ✅ built on branch `agentic/fd-3a-tool-registry` (PR #502) | Tool registry core (read-only) | FD-2b | E | Typed tool definitions declaring: required permission(s) **or** an explicit `anyActiveStaff` with a written reason (mirroring `PermissionsGuard`'s refusal of undeclared routes); principal type; `read` class only. At execution: re-fetch `isActive`, call `userHoldsPermission` (`role-check.ts:85`) [V], take the tenant from `authCtx` only, validate arguments with Zod, and shape output to an allowlist of fields. **Registering a write-class tool throws at boot** in this delivery. A deny-list scaffold encodes R1 for later. **As built (2026-11-07):** `apps/api/src/common/ai/tools/tool-registry.ts`.
 - **Checks on every call, at execution time:**
   - re-reads the user's `is_active` and current role grants, as `PermissionsGuard` does;
   - checks the declared permissions (or reasoned `anyActiveStaff`);
@@ -528,7 +528,7 @@ tick.*
 
 ### 4.3 FD-2 · Port and conversation loop
 
-*Status 2026-11-07: FD-2a in review (#500); FD-2b built on `agentic/fd-2b-conversation-loop`.*
+*Status 2026-11-08: FD-2a merged (#500); FD-2b merged (#501).*
 - **Evidenced by FD-2a's tests:**
   - the unchanged single-call request body;
   - the SDK import ban still holding.
@@ -557,7 +557,7 @@ tick.*
 
 ### 4.4 FD-3 · Tool registry
 
-*Status 2026-11-07: FD-3a built on `agentic/fd-3a-tool-registry`.*
+*Status 2026-11-08: FD-3a in review (#502).*
 - **Evidenced by `tool-registry.spec.ts`** (real Postgres; each check also shown to fail when broken):
   - boot refusal of undeclared, write-class and id-argument tools;
   - per-tool permission refusal reaching the model as "not permitted";
