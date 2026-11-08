@@ -581,7 +581,8 @@ Your school's page can say much more than the basics. Go to **Settings → Schoo
 |---|---|---|---|---|
 | Events on the page | next 3 | next 10 | all upcoming | all upcoming |
 | Announcements on the page | latest 3 | latest 10 | latest 20 | latest 20 |
-| Cover, about us, quick facts | | ✓ | ✓ | ✓ |
+| Cover photo, welcome line, about us | ✓ | ✓ | ✓ | ✓ |
+| Quick facts | | ✓ | ✓ | ✓ |
 | News | | 10 latest, 2 photos each | all, 4 photos each | all, 4 photos each |
 | Gallery | | | 60 photos | 300 photos |
 | Leadership | | | 6 people | 12 people |

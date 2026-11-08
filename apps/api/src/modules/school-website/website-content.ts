@@ -54,8 +54,8 @@ export async function readSeoDetails(
   return {
     description: d.searchDescription,
     town: d.town,
-    levels: limits.details ? d.levels.map((l) => WEBSITE_LEVEL_LABELS[l]) : [],
-    founded: limits.details ? d.founded : null,
+    levels: limits.facts ? d.levels.map((l) => WEBSITE_LEVEL_LABELS[l]) : [],
+    founded: limits.facts ? d.founded : null,
     updatedAt: site?.publishedAt?.toISOString() ?? null,
   };
 }
@@ -177,14 +177,14 @@ export async function buildPublicWebsite(
   return {
     accent: limits.accent && details.accent ? WEBSITE_ACCENTS[details.accent].hex : null,
     cover:
-      limits.details && (details.coverPhotoId || details.welcome)
+      limits.intro && (details.coverPhotoId || details.welcome)
         ? { photo: photo(details.coverPhotoId), welcome: details.welcome }
         : null,
     about:
-      limits.details && hasAbout
+      limits.intro && hasAbout
         ? { headWelcome: details.headWelcome, headName: details.headName, headTitle: details.headTitle, story: details.story }
         : null,
-    facts: limits.details ? factsOf(details) : [],
+    facts: limits.facts ? factsOf(details) : [],
     leaders: details.leaders.slice(0, limits.leaders).map((l) => ({ name: l.name, role: l.role, photo: photo(l.photoId) })),
     admissionsBox,
     events: events.map((e) => ({
