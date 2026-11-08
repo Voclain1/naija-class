@@ -2,7 +2,7 @@ import type { Queue } from "bullmq";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { ConflictError, ForbiddenError, NotFoundError } from "@school-kit/types";
+import { ConflictError, ForbiddenError, NotFoundError, readReportProfile } from "@school-kit/types";
 
 import type { StorageService } from "../../../common/storage";
 import { AssessmentService } from "../../assessment/assessment.service";
@@ -246,6 +246,45 @@ describe("ReportCardWorkflowService (cp1 — state machine + gates)", () => {
 
     await reportCards.build(ctx(schoolId, ownerId), { termId, classArmId: armId }, reqCtx);
     expect(await statuses(schoolId, termId, armId)).toEqual(["DRAFT"]);
+  }, 60_000);
+
+  it("standard observations are editable by the form teacher on Free, tenant scoped, audited and frozen at review", async () => {
+    const f = await seedReviewedArm("profile");
+    const board = await reportCards.getBoard(ctx(f.schoolId, f.ownerId), { termId: f.termId, classArmId: f.armId });
+    const id = board.data[0]!.reportCard.id;
+    const profile = { ...readReportProfile(null), level: "PRIMARY" as const, affective: { Honesty: 5 }, psychomotor: { Handwriting: 4 }, nextTermDate: "2027-01-11", teacherName: "Form Teacher", headName: "Head Teacher" };
+    const old = process.env.PLAN_ENFORCEMENT;
+    process.env.PLAN_ENFORCEMENT = "enforce";
+    try {
+      const saved = await workflow.editFormTeacherComment(ctx(f.schoolId, f.teacherId), id, { reportProfile: profile }, reqCtx);
+      expect(saved.reportProfile).toEqual(profile);
+      const stranger = await grantTeacher(f.schoolId, "profile-stranger");
+      await expect(workflow.editFormTeacherComment(ctx(f.schoolId, stranger), id, { reportProfile: profile }, reqCtx)).rejects.toBeInstanceOf(NotFoundError);
+      const other = await makeSchool("profile-other");
+      await expect(workflow.editFormTeacherComment(ctx(other.schoolId, other.ownerId), id, { reportProfile: profile }, reqCtx)).rejects.toBeInstanceOf(NotFoundError);
+      const render = await withTenant(f.schoolId, (db) => reportCards.getRenderData(db, id, "enforce"));
+      expect(render?.profile).toEqual(profile);
+      expect(render?.gradeKey?.length).toBeGreaterThan(0);
+      expect(render?.classSize).toBe(2);
+      await workflow.formReview(ctx(f.schoolId, f.teacherId), { termId: f.termId, classArmId: f.armId }, reqCtx);
+      await expect(workflow.editFormTeacherComment(ctx(f.schoolId, f.teacherId), id, { reportProfile: profile }, reqCtx)).rejects.toMatchObject({ code: "COMMENT_NOT_EDITABLE" });
+      expect((await reportCards.getById(ctx(f.schoolId, f.teacherId), id)).reportCard.reportProfile).toEqual(profile);
+    } finally { if(old === undefined) delete process.env.PLAN_ENFORCEMENT; else process.env.PLAN_ENFORCEMENT = old; }
+  }, 60_000);
+
+  it("custom fields require a paid plan and use school-defined labels", async () => {
+    const f = await seedReviewedArm("custom-profile");
+    const card = await withTenant(f.schoolId, (db) => db.reportCard.findFirstOrThrow({ where: { termId: f.termId, classArmId: f.armId }, select: { id: true } }));
+    await basePrisma.school.update({ where: { id: f.schoolId }, data: { reportCardDesign: { customFields: [{key: "house",label: "School house"}] } } });
+    const old = process.env.PLAN_ENFORCEMENT; process.env.PLAN_ENFORCEMENT = "enforce";
+    const profile = { ...readReportProfile(null), customFields: [{key:"house",label:"Untrusted label",value:"Blue"}] };
+    try {
+      await expect(workflow.editFormTeacherComment(ctx(f.schoolId,f.teacherId),card.id,{reportProfile:profile},reqCtx)).rejects.toMatchObject({code:"PLAN_FEATURE_UNAVAILABLE"});
+      await basePrisma.school.update({where:{id:f.schoolId},data:{plan:"STARTER"}});
+      const saved = await workflow.editFormTeacherComment(ctx(f.schoolId,f.teacherId),card.id,{reportProfile:profile},reqCtx);
+      expect(saved.reportProfile?.customFields).toEqual([{key:"house",label:"School house",value:"Blue"}]);
+      await expect(workflow.editFormTeacherComment(ctx(f.schoolId,f.teacherId),card.id,{reportProfile:{...profile,customFields:[{key:"unknown",label:"Unknown",value:"No"}]}},reqCtx)).rejects.toThrow("Unknown custom report card field.");
+    } finally { if(old === undefined) delete process.env.PLAN_ENFORCEMENT; else process.env.PLAN_ENFORCEMENT=old; }
   }, 60_000);
 
   it("full walk: SUBJECT_REVIEWED → form-review → FORM_REVIEWED → approve → PRINCIPAL_APPROVED (+ audit rows)", async () => {

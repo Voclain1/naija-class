@@ -447,8 +447,9 @@ The whole list, with where each step is done and its status, is
   **Still open:**
   - put every school on its right plan in the platform admin, then switch
     `PLAN_ENFORCEMENT=enforce` when early access ends;
-  - report cards on Free are built (plans.md D5): branding, AI comment drafts
-    and positions/cumulative results are for Starter and up, under enforce;
+  - report cards revised 2026-11-06 (plans.md D5): complete standard reports
+    including logo, ratings, positions and cumulative results are Free; design
+    customisation and AI comment drafts require Starter and up under enforce;
   - other feature limits by plan (parent communication, staff management,
     finance dashboard, API access): needs its own plan once the list is final;
   - billing schools, and tracking the free term;

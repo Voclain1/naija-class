@@ -541,7 +541,7 @@ describe("Released results — negative walk (Phase 6 / Slice 4)", () => {
     }
   });
 
-  it("11. plans (2026-10-11): under enforce a Free school's families get no positions or cumulative results; a paid plan keeps them", async () => {
+  it("11. plans: Free and paid families both get complete standard results under enforce", async () => {
     const both = async () => {
       const child = (await asStudent(adaToken, `/me/results/${releasedTermId}`)).body;
       const parent = (await asGuardian(adaGuardianToken, `/students/${adaId}/results/${releasedTermId}`)).body;
@@ -558,8 +558,8 @@ describe("Released results — negative walk (Phase 6 / Slice 4)", () => {
     try {
       process.env.PLAN_ENFORCEMENT = "enforce";
       expect(await both()).toEqual([
-        { position: null, cumulative: null },
-        { position: null, cumulative: null },
+        { position: 2, cumulative: { average: 7850, terms: 2, position: 3 } },
+        { position: 2, cumulative: { average: 7850, terms: 2, position: 3 } },
       ]);
 
       await basePrisma.school.update({ where: { id: schoolA }, data: { plan: "STARTER" } });

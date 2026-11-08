@@ -90,11 +90,20 @@ export class RenderService {
     // The logo as a data URI, read outside the transaction (the receipts
     // lesson). Puppeteer's setContent has no base URL, so the stored path the
     // template used to be given could never load: before 2026-10-11 no report
-    // card showed its school's logo. Only a branded card gets it.
-    const logoDataUri = prep.data.school.branded
-      ? await loadReceiptLogo(this.storage, schoolId, prep.data.school.logoUrl)
-      : null;
-    const html = renderReportCardHtml({ ...prep.data, school: { ...prep.data.school, logoDataUri } });
+    // card showed its school's logo. School identity is now included on every plan.
+    const logoDataUri = await loadReceiptLogo(this.storage, schoolId, prep.data.school.logoUrl);
+    let photoDataUri: string | null = null;
+    if (prep.data.student.photoUrl) {
+      try {
+        // Canonical tenant/student key only; never fetch a stored URL or an
+        // arbitrary remote address in the PDF browser.
+        const bytes = await this.storage.get(schoolId, { kind: "student-photo", studentId: prep.card.studentId });
+        if (bytes.length <= 300 * 1024) photoDataUri = `data:image/jpeg;base64,${bytes.toString("base64")}`;
+      } catch {
+        this.logger.warn(`render: report card ${reportCardId} photo unavailable`);
+      }
+    }
+    const html = renderReportCardHtml({ ...prep.data, school: { ...prep.data.school, logoDataUri }, student: { ...prep.data.student, photoDataUri } });
 
     // Phase 2 — NO tx: render to PDF in a pooled, recycled, hard-timeout-bounded
     // page, then store. We feed our own HTML via setContent (no remote

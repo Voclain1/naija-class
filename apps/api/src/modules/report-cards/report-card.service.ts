@@ -11,6 +11,8 @@ import {
   rankSparse,
   planFeatureAvailable,
   readCumulativeSubjects,
+  readReportProfile,
+  readReportCardDesign,
   type CumulativeSubject,
   type PlanEnforcement,
   type BuildReportCardsInput,
@@ -391,7 +393,10 @@ export class ReportCardService {
         readCumulativeSubjects(card.cumulativeSubjects),
         card.classArmId,
       );
-      return { reportCard: toReportCardDto(card), student: toStudentDto(student), subjects };
+      const school = await db.school.findUniqueOrThrow({ where: { id: authCtx.schoolId }, select: { plan: true, reportCardDesign: true } });
+      const customFieldDefinitions = planFeatureAvailable(school.plan, "reportCardBranding", currentPlanEnforcement())
+        ? readReportCardDesign(school.reportCardDesign).customFields : [];
+      return { reportCard: toReportCardDto(card), student: toStudentDto(student), subjects, customFieldDefinitions };
     });
   }
 
@@ -535,6 +540,8 @@ export class ReportCardService {
       where: { id: reportCardId },
       select: {
         schoolId: true,
+        releasedAt: true,
+        principalApprovedAt: true,
         studentId: true,
         termId: true,
         classArmId: true,
@@ -543,6 +550,7 @@ export class ReportCardService {
         overallAverage: true,
         overallPosition: true,
         subjectsCount: true,
+        reportProfile: true,
         formTeacherComment: true,
         principalNote: true,
         attendanceDaysOpened: true,
@@ -561,7 +569,7 @@ export class ReportCardService {
       // schools has no RLS → MUST filter by the card's school_id explicitly.
       db.school.findUnique({
         where: { id: card.schoolId },
-        select: { name: true, motto: true, logoUrl: true, primaryColor: true, plan: true, positionOnReportCardPdf: true },
+        select: { name: true, motto: true, logoUrl: true, primaryColor: true, plan: true, positionOnReportCardPdf: true, address: true, phone: true, email: true, reportCardDesign: true },
       }),
       db.term.findUnique({ where: { id: card.termId }, select: { name: true, startDate: true, endDate: true } }),
       db.academicYear.findUnique({ where: { id: card.academicYearId }, select: { label: true } }),
@@ -583,9 +591,24 @@ export class ReportCardService {
       card.classArmId,
     );
 
+    const [gradeKey, classSize, nextTerm] = await Promise.all([
+      db.gradeBoundary.findMany({ orderBy: { orderIndex: "asc" }, select: { letter: true, minScore: true, maxScore: true, remark: true } }),
+      db.reportCard.count({ where: { termId: card.termId, classArmId: card.classArmId } }),
+      db.term.findFirst({ where: { startDate: { gt: term.endDate } }, orderBy: { startDate: "asc" }, select: { startDate: true } }),
+    ]);
+    const profile = readReportProfile(card.reportProfile);
     return {
+      profile: { ...profile, customFields: branded ? profile.customFields : [] },
+      gradeKey,
+      issuedOn: card.releasedAt ?? card.principalApprovedAt,
+      classSize,
+      nextTermDate: profile.nextTermDate ?? nextTerm?.startDate ?? null,
       school: {
         name: school.name,
+        address: school.address,
+        phone: school.phone,
+        email: school.email,
+        design: branded && school.reportCardDesign ? readReportCardDesign(school.reportCardDesign) : undefined,
         motto: school.motto,
         logoUrl: school.logoUrl,
         positionOnReportCardPdf: school.positionOnReportCardPdf && ranked,
@@ -689,9 +712,8 @@ export class ReportCardService {
       where: { studentId, termId, subjectId: { in: subjectIds } },
       select: { subjectId: true, componentId: true, score: true },
     });
-    const components = await db.gradingComponent.findMany({ select: { id: true, label: true, orderIndex: true } });
+    const components = await db.gradingComponent.findMany({ select: { id: true, label: true, orderIndex: true, weight: true } });
     const componentLabel = new Map(components.map((c) => [c.id, c.label]));
-    const componentOrder = new Map(components.map((c) => [c.id, c.orderIndex]));
 
     const scoresBySubject = new Map<string, { componentId: string; label: string; score: number }[]>();
     for (const s of scores) {
@@ -710,9 +732,10 @@ export class ReportCardService {
         remark: a.remark,
         subjectPosition: a.subjectPosition,
         subjectComment: a.subjectComment,
-        components: (scoresBySubject.get(a.subjectId) ?? []).sort(
-          (x, y) => (componentOrder.get(x.componentId) ?? 0) - (componentOrder.get(y.componentId) ?? 0),
-        ),
+        components: [...components].sort((x, y) => x.orderIndex - y.orderIndex).map((c) => ({
+          componentId: c.id, label: c.label, maxScore: c.weight,
+          score: scoresBySubject.get(a.subjectId)?.find((v) => v.componentId === c.id)?.score ?? null,
+        })),
         cumulativeAverage: cumulativeBySubject.get(a.subjectId)?.average ?? null,
         cumulativeTerms: cumulativeBySubject.get(a.subjectId)?.terms ?? null,
       }));
@@ -756,6 +779,7 @@ export const REPORT_CARD_SELECT = {
   overallAverage: true,
   overallPosition: true,
   subjectsCount: true,
+  reportProfile: true,
   formTeacherComment: true,
   principalNote: true,
   attendanceDaysOpened: true,
@@ -801,6 +825,7 @@ export function toReportCardDto(row: ReportCardRow): ReportCardDto {
     overallAverage: row.overallAverage,
     overallPosition: row.overallPosition,
     subjectsCount: row.subjectsCount,
+    reportProfile: readReportProfile(row.reportProfile),
     formTeacherComment: row.formTeacherComment,
     principalNote: row.principalNote,
     attendanceDaysOpened: row.attendanceDaysOpened,

@@ -1,3 +1,4 @@
+import type { ReportProfile } from "./report-profile.js";
 // Report-card DTO shapes (Phase 2 / Slice 5). Dates serialize as strings over
 // JSON; the types accept Date | string (the codebase convention).
 
@@ -25,6 +26,7 @@ export type ReportCardPdfStatusDto = "PENDING" | "GENERATING" | "GENERATED" | "F
 
 // The materialized report-card row (rollup + workflow state + PDF pointer).
 export interface ReportCardDto {
+  reportProfile?: ReportProfile;
   id: string;
   studentId: string;
   termId: string;
@@ -81,7 +83,7 @@ export interface ReportCardSubjectRowDto {
   remark: string | null;
   subjectPosition: number | null;
   subjectComment: string | null;
-  components: { componentId: string; label: string; score: number }[];
+  components: { componentId: string; label: string; score: number | null; maxScore?: number }[];
   /** Phase 8c / CP5a — this subject's year average in hundredths, final term only. */
   cumulativeAverage: number | null;
   cumulativeTerms: number | null;
@@ -90,6 +92,7 @@ export interface ReportCardSubjectRowDto {
 // GET /report-cards/:id — the full single-card view (card + bio + per-subject
 // grid). The cp2 render worker reads the same shape to build the PDF.
 export interface ReportCardDetailDto {
+  customFieldDefinitions?: { key: string; label: string }[];
   reportCard: ReportCardDto;
   student: ReportCardStudentDto;
   subjects: ReportCardSubjectRowDto[];

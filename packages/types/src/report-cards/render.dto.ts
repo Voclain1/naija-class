@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ReportProfile, ReportCardDesign } from "./report-profile.js";
 
 import type { PromotionStatusDto, ReportCardSubjectRowDto } from "./report-card.dto.js";
 
@@ -31,20 +32,25 @@ export interface ReportCardPdfUrlDto {
 // per-subject breakdown + school/term/student metadata. EVERY user-controlled
 // field is escaped via esc() in the template.
 export interface ReportCardRenderData {
+  profile?: ReportProfile;
+  issuedOn?: string | Date | null;
+  classSize?: number;
+  nextTermDate?: string | Date | null;
+  gradeKey?: { letter: string; minScore: number; maxScore: number; remark: string | null }[];
   school: {
     name: string;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    design?: ReportCardDesign;
     motto: string | null;
     logoUrl: string | null;
     // School.positionOnReportCardPdf (Phase 8 / CP6a, D51). When false the PDF
     // drops the "Position in Class" box AND the per-subject position column —
     // removed, not printed as a dash, so the card does not look incomplete.
     positionOnReportCardPdf: boolean;
-    // Plans (2026-10-11, docs/modules/plans.md D5). True: the school's own
-    // logo and colour, and no SchoolKit footer. False (Free, once enforced):
-    // the SchoolKit template. Positions and cumulative results that the plan
-    // leaves out are already removed from this data (positionOnReportCardPdf
-    // false, rollup.cumulative null), so the template needs no plan logic for
-    // them.
+    // Paid design customisation entitlement. Every plan retains school identity,
+    // logo, standard fields, positions and cumulative results (2026-11-06).
     branded: boolean;
     /** School.primaryColor, unvalidated; the template only uses a #rrggbb value. */
     primaryColor: string | null;
@@ -62,6 +68,7 @@ export interface ReportCardRenderData {
     gender: string;
     dateOfBirth: string | Date;
     photoUrl: string | null;
+    photoDataUri?: string | null;
   };
   rollup: {
     overallTotal: number | null;
