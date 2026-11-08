@@ -184,9 +184,10 @@ since several are outside Nigeria too.
 - How many schools have AI switched on (platform admin, the AI column).
 - Which AI features have actually run, from each school's AI Usage page.
 - Anthropic's and Voyage's current data-processing terms. For the help
-  assistant specifically (approval brief, D6): how long API inputs and outputs
-  are kept (public sources seen on 2026-11-08 disagree: 30 days in the
-  provider's Privacy Center summary, 7 days in a third-party report), the
-  exceptions (usage-policy enforcement, legal holds, prompt caching, the Files
-  API), where it is processed, and the no-training term, all from the signed
-  agreement or the provider's own pages rather than secondary sources.
+  assistant (approval brief, D6): the provider's **official public baseline**,
+  verified externally by the owner on 2026-11-08, is that standard API inputs
+  and outputs are deleted within 30 days (with exceptions for agreed
+  arrangements, storage features, policy enforcement and law), are not used
+  for training by default, may be processed in the US, Europe, Asia and
+  Australia, and are stored in the US. Whether SchoolKit's own account, model
+  and features match that default is the D6 checklist, not yet verified.
