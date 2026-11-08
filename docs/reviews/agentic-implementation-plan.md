@@ -408,6 +408,10 @@ for example "a teacher".
 
 #### F-16 and F-17 compared (2026-11-08; recommendations, not approved)
 
+*The decisions, with the exact proposed `CLAUDE.md` row, rule application,
+privacy-policy paragraph and browser rules, are collected in one brief:
+`docs/reviews/agentic-f16-f17-approval-brief.md`. All proposed; none approved.*
+
 Prepared at the owner's request; revised the same day on the owner's review.
 **No option below is approved.** FD-4a and FD-5d stay blocked, conversational
 input stays paused, and every assistant switch stays off until the owner
