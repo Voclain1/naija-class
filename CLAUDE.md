@@ -1074,7 +1074,8 @@ the exam service (`API_MODE=cbt-delivery`, `apps/api/fly-cbt.toml`).
 blocked and schools near their plan's student limit see a notice. Under
 `enforce`, adding students past the limit is refused with 403
 `PLAN_STUDENT_LIMIT`, and Free schools lose the report-card extras (D5:
-branding, AI comment drafts, positions and cumulative results). Any other
+custom templates/colours/fields and AI comment drafts; standard identity,
+positions and cumulative results remain free (revised 2026-11-06)). Any other
 value reads as `warn`. The render worker does not need it: each render job
 carries the API's value.
 

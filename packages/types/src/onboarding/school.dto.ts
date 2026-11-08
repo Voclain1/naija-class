@@ -1,3 +1,4 @@
+import type { ReportCardDesign } from "../report-cards/report-profile.js";
 // Shape of the school returned by GET /schools/me and by every
 // POST /schools/me/onboarding/:step response. Wider than SignupOwnerSchoolDto
 // because the wizard needs to round-trip the basics + branding fields the
@@ -9,6 +10,7 @@
 // but service-level callers (specs, internal handlers) see the raw Date.
 
 export interface SchoolMeDto {
+  reportCardDesign?: ReportCardDesign;
   id: string;
   name: string;
   slug: string;

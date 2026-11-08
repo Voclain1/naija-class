@@ -3,6 +3,10 @@ import { Injectable, Optional } from "@nestjs/common";
 import { Prisma, withTenant } from "@school-kit/db";
 import {
   ConflictError,
+  ForbiddenError,
+  ValidationError,
+  planFeatureAvailable,
+  readReportCardDesign,
   NotFoundError,
   type PrincipalNoteResultDto,
   type PrincipalNoteUpdateInput,
@@ -17,6 +21,7 @@ import {
 
 import type { AuthContext } from "../../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../../common/auth/role-check";
+import { currentPlanEnforcement } from "../../../common/plans/plan-limits";
 import { wakeRenderWorker } from "../render/wake-render-worker";
 import { REPORT_CARD_SELECT, ReportCardService, toReportCardDto } from "../report-card.service";
 import { assertOwnerAdminOrFormTeacher } from "./form-teacher-guard";
@@ -306,7 +311,7 @@ export class ReportCardWorkflowService {
       if (card.status !== "DRAFT" && card.status !== "SUBJECT_REVIEWED") {
         throw new ConflictError(
           "COMMENT_NOT_EDITABLE",
-          "The form teacher's comment can only be edited while the arm is in DRAFT or SUBJECT_REVIEWED.",
+          "Report details and the form teacher's comment can only be edited while the arm is in DRAFT or SUBJECT_REVIEWED.",
         );
       }
       // Defence-in-depth: the state gate already excludes RELEASED, but run the
@@ -314,15 +319,36 @@ export class ReportCardWorkflowService {
       // onto a released card.
       await assertNoReleasedCards(db, card.termId, [card.studentId]);
 
-      const updated = await db.reportCard.update({
-        where: { id: reportCardId },
-        data: { formTeacherComment: input.formTeacherComment },
-        select: REPORT_CARD_SELECT,
+      const profile = input.reportProfile;
+      if (profile && profile.customFields.length > 0) {
+        const school = await db.school.findUniqueOrThrow({ where: { id: authCtx.schoolId }, select: { plan: true, reportCardDesign: true } });
+        if (!planFeatureAvailable(school.plan, "reportCardBranding", currentPlanEnforcement())) {
+          throw new ForbiddenError("PLAN_FEATURE_UNAVAILABLE", "Custom report card fields require a paid plan.");
+        }
+        const definitions = readReportCardDesign(school.reportCardDesign).customFields;
+        profile.customFields = profile.customFields.map((field) => {
+          const definition = definitions.find((d) => d.key === field.key);
+          if (!definition) throw new ValidationError("Unknown custom report card field.");
+          return { ...definition, value: field.value };
+        });
+      }
+      // Recheck state in the UPDATE itself: a concurrent form review must
+      // not allow a write that read the old editable state to land afterwards.
+      const changed = await db.reportCard.updateMany({
+        where: { id: reportCardId, status: { in: ["DRAFT", "SUBJECT_REVIEWED"] } },
+        data: {
+          ...(input.formTeacherComment !== undefined ? { formTeacherComment: input.formTeacherComment } : {}),
+          ...(profile ? { reportProfile: profile as Prisma.InputJsonValue } : {}),
+        },
       });
+      if (changed.count !== 1) {
+        throw new ConflictError("COMMENT_NOT_EDITABLE", "This report card has moved past form review. Reload before making changes.");
+      }
+      const updated = await db.reportCard.findUniqueOrThrow({ where: { id: reportCardId }, select: REPORT_CARD_SELECT });
 
       await this.writeAuditMeta(db, authCtx, reqCtx, AUDIT.comment, reportCardId, {
         reportCardId,
-        field: "formTeacherComment",
+        field: input.reportProfile ? "reportProfile" : "formTeacherComment",
         termId: card.termId,
         classArmId: card.classArmId,
       });
