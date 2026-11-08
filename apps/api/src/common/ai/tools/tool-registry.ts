@@ -38,7 +38,8 @@ import type { AuthContext } from "../../auth/auth-context";
 // FD-3a scope: READ tools only. A write-class tool is refused at registration;
 // writes arrive in Stage 5 with proposals and approvals (S2-06a/b, S2-08).
 // Staff principal only: guardian and student tools are Stage 6.
-// The behaviour/health/PII conformance gate over registered tools is FD-3b.
+// The PII, money, behaviour and health conformance gate over every registered
+// tool is FD-3b (tool-conformance.ts, assistant-tool-conformance.spec.ts).
 // ---------------------------------------------------------------------------
 
 /** Who may call a tool: named permissions (all required), or any active staff member with a written reason. */
@@ -63,6 +64,12 @@ export interface ReadToolDefinition<Args extends z.AnyZodObject> {
   readonly inputSchema: Record<string, unknown>;
   /** The only top-level fields of the output that reach the model. */
   readonly outputFields: readonly string[];
+  /**
+   * Argument sets the conformance gate (FD-3b) runs this tool with over its
+   * fixture school. At least one; each must pass `args`. A tool cannot opt
+   * out of the scan by having required arguments.
+   */
+  readonly conformanceCalls: readonly z.input<Args>[];
   run(ctx: ToolContext, args: z.infer<Args>): Promise<Record<string, unknown>>;
 }
 
@@ -137,6 +144,13 @@ export class ToolRegistry {
       fail(`inputSchema properties [${schemaKeys}] do not match args [${shapeKeys}]`);
     }
 
+    // Checked last: it validates against `args`, so args must be sound first.
+    if (!def.conformanceCalls || def.conformanceCalls.length === 0) {
+      fail("declares no conformanceCalls for the FD-3b gate");
+    } else if (def.conformanceCalls.some((c) => !def.args.safeParse(c).success)) {
+      fail("a conformanceCalls entry does not pass its own args schema");
+    }
+
     this.tools.set(def.name, { def: def as unknown as ReadToolDefinition<z.AnyZodObject> });
   }
 
@@ -148,6 +162,14 @@ export class ToolRegistry {
   /** Access declaration of a registered tool, for conformance checks. */
   accessOf(name: string): ToolAccess | undefined {
     return this.tools.get(name)?.def.access;
+  }
+
+  /** What the FD-3b gate needs about a registered tool. */
+  conformanceOf(name: string):
+    | { readonly effect: string; readonly outputFields: readonly string[]; readonly calls: readonly unknown[] }
+    | undefined {
+    const def = this.tools.get(name)?.def;
+    return def ? { effect: def.effect, outputFields: def.outputFields, calls: def.conformanceCalls } : undefined;
   }
 
   /**
