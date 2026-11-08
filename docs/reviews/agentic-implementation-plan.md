@@ -302,14 +302,16 @@ These are recommendations (R10). Each can change without redesign.
 | F-12 | Real support questions for the eval set (30–50, from the platform admin's inbox and onboarding calls, with any school names removed) | Needed for FD-5c |
 | F-13 | Which roles get `assistant.help` | Every staff role |
 | F-14 | Pilot schools (1–2) | Owner's choice |
-| F-16 | The residual risk of personal data the G-PII detectors miss (§3.6) | **Open.** Not approved; see §3.6 for the options |
-| F-17 | Whether user-typed text and assistant replies are stored server-side, given `AIInteractionLog.payload` is documented as PII-free (§3.6) | **Open.** Recommendation in §3.6; not approved |
+| F-16 | The residual risk of personal data the G-PII detectors miss (§3.6) | **Decided 2026-11-08: option A, limited pilot,** with the `help-assistant` allowlist row in `CLAUDE.md` (D2). Provider terms (D6), privacy wording (D3), legal review (D5) and consent versions (D4) remain open; pilot activation is gated on them (approval brief) |
+| F-17 | Whether user-typed text and assistant replies are stored server-side, given `AIInteractionLog.payload` is documented as PII-free (§3.6) | **Decided 2026-11-08: option (b),** store no text; browser-memory handling (D8) approved |
 | R9, R10 | Approve the first-delivery recommendations | — |
 
 ### 3.6 G-PII: personal data typed or pasted by users (proposal, for approval)
 
-**Status:** recommendation, not approved. Required by RQ6 before any
-conversational input is built (FD-4a, FD-5d).
+**Status:** F-16 (option A, limited pilot) and F-17 (option b) decided by the
+owner on 2026-11-08, with the D8 browser handling; see the approval record.
+FD-4a and FD-5d may be built and tested with every assistant switch off.
+Switching any school on remains gated (approval brief).
 
 #### The problem
 
@@ -414,7 +416,7 @@ only. That number describes those cases; it is not a guarantee.
 | Sink | Handling | Source of the risk it addresses |
 |---|---|---|
 | **The model** | Only messages that passed the detectors. Plus the system prompt and tool outputs (FD-3b scanned). No roster, no user name or email; the user is referred to by role. A passed message may still carry undetected personal data: that is the F-16 residual. | Users typing or pasting |
-| **Conversation storage** | **Decided by F-17 (open).** Options: **(a)** store passed user text and replies in `ai_interaction_logs.payload`, which `CLAUDE.md` documents as "PII-free". Storing possibly-identifying user text there would contradict that note, so (a) needs the owner to amend it explicitly. **(b) Recommended:** store no user text or reply text server-side. Keep only metadata (turn IDs, timestamps, tool names, token counts, outcome, blocked tally). The visible transcript lives in the browser for the session; earlier turns the browser sends back are run through the detectors again every time. **(c)** Store text in a separate short-retention table, which still needs the F-16 decision. Until F-17 is decided, FD-4a may not store user or reply text. | Retention of possibly-identifying text |
+| **Conversation storage** | **Decided by F-17 (open).** Options: **(a)** store passed user text and replies in `ai_interaction_logs.payload`, which `CLAUDE.md` documents as "PII-free". Storing possibly-identifying user text there would contradict that note, so (a) needs the owner to amend it explicitly. **(b) Preferred recommendation, not owner-approved:** store no user text or reply text server-side. Keep only metadata (turn IDs, timestamps, tool names, token counts, outcome, blocked tally). The visible transcript lives in the browser's memory only, under the handling in "F-16 and F-17 compared" below; earlier turns the browser sends back are run through the detectors again every time. **(c)** Store text in a separate short-retention table, which still needs the F-16 decision. Until F-17 is decided, FD-4a may not store user or reply text. | Retention of possibly-identifying text |
 | **Application logs** | Conversation ID, turn ID, step count, token counts, latency, outcome, detector **categories**. Never message text, reply text, matches or tool output. | Log aggregation and access by operators |
 | **Error reporting (API Sentry)** | For `/assistant/*` routes, `beforeSend` replaces the request body with `"[assistant body omitted]"`. The existing redactor catches emails and phones, not names [V] `apps/api/src/observability/sentry.ts`. Exception messages from the assistant path carry codes, never input. | Errors capturing request bodies |
 | **Error reporting (web Sentry)** | Replay is already off [V] `apps/web/sentry.client.config.ts`. Add `beforeBreadcrumb` dropping breadcrumbs from the assistant panel, and never `console.*` message text (console breadcrumbs). | Breadcrumbs and console capture |
@@ -450,6 +452,174 @@ for example "a teacher".
     at all and offering a list of fixed questions instead.
   - This plan does **not** treat any of these as accepted.
 - **F-17 (open).** As in the sinks table.
+
+#### F-16 and F-17 compared (2026-11-08)
+
+**Decided 2026-11-08 by the owner:** D1 option A for a limited pilot, D2 the
+narrow `help-assistant` exception (now in `CLAUDE.md`), D7 option (b), D8 the
+browser handling. Three wording corrections given the same day are applied
+(history sent to the provider; sourced, separate processing and storage
+location with no unconfirmed zero-retention claim; "cannot modify school
+operational records", with metadata still recorded). **Still open:** D3, D4
+(for decision), D5 and D6. For D6 the provider's official public baseline is
+recorded (verified externally on 2026-11-08) and the privacy paragraph is
+completed from it for review; SchoolKit's own account, route, model and
+features remain an unverified checklist. Pilot activation is gated
+separately.
+The record: `docs/reviews/agentic-f16-f17-approval-brief.md`. The comparison
+below is kept as written when it was proposed.
+
+*The decisions, with the exact proposed `CLAUDE.md` row, rule application,
+privacy-policy paragraph and browser rules, are collected in one brief:
+`docs/reviews/agentic-f16-f17-approval-brief.md`. All proposed; none approved.*
+
+Prepared at the owner's request; revised the same day on the owner's review.
+**No option below is approved.** FD-4a and FD-5d stay blocked, conversational
+input stays paused, and every assistant switch stays off until the owner
+decides both.
+
+**F-16: what reaches the model when the detectors miss something**
+
+| Option | What the user gets | What still reaches the model | Main cost |
+|---|---|---|---|
+| **A. Free text, detect and block, with the stated mitigations** | Ask anything in their own words. A message naming someone on the roster, or carrying a phone number, email, long number, full date or pasted rows, is refused with the reason ("a name from your school") and kept as a draft. | Whatever the detectors miss: off-roster names, nicknames, descriptions that identify ("the only boy in JSS1B who uses a wheelchair"), reformatted numbers, addresses, health or behaviour in words. | A residual that can be measured on the tested cases but not ruled out, **and the policy changes listed below**. |
+| **B. Stricter blocking** (any capitalised word not in a known vocabulary, any number) | Frequent refusals of ordinary questions ("How do I set up the Christmas break for JSS 2?", "Why is Paystack failing?"); staff learn to type in lower case, which defeats it. | Less: mostly lower-case names and descriptions. | Usability, and the same policy changes as A, since a residual remains. |
+| **C. No free text to the model** | Pick from fixed questions ("How do I add students?"), or type into a search box answered from the guide by FD-5a's lexical search, which runs in our code. The model, if used at all, only rewrites a fixed question's answer from tool output. | Nothing the user typed. | Loses most of what makes 4A useful: answering the school's own situation in plain words. Close to a better help page. **Needs no policy change.** |
+
+**What option A (or B) requires before any school, pilot or not, uses it.**
+A pilot is an operational switch (FD-1's feature switch). Approving a pilot
+does **not** amend a policy, add an allowlist row or change what a school or
+parent has agreed to; each of the following is its own visible decision:
+
+1. **A change to the AI hard rule in `CLAUDE.md`.** The rule bars student PII
+   from the model for derived features, with exactly two named exceptions, and
+   P2 treats the help assistant as covered by it. Option A knowingly lets
+   undetected student PII reach the model, so one of these is needed, each a
+   visible `CLAUDE.md` edit with the owner's own sign-off:
+   - **(i) a third row in the PII-bearing prompt allowlist** for the prompt
+     name `help-assistant`. The table's stated basis is "the PII *is* the
+     payload"; here it is incidental, so the row must say so in its own words
+     and the owner must accept that departure explicitly. The two binding
+     rules would apply: no retention by the model path beyond the single
+     request (met by F-17 (b) on the server; the browser handling below is
+     the rest), and never writing to a student record (the tools are
+     read-only). The eval suite's pinned list of allowlisted prompts is
+     updated in the same change. **Recommended form**, because it is a named
+     row and not a category; or
+   - **(ii) an amendment to the rule itself**, for example "free text a
+     member of staff types into the help assistant, after the G-PII
+     detectors, may reach the model". Broader than (i), and close to the
+     "category" the `CLAUDE.md` note warns against.
+2. **The privacy policy** (marketing site, `schoolkit-landing`). It describes
+   the AI drafting features and their two PII exceptions. It would need to
+   describe the help assistant: that staff questions go to AI model providers
+   (named by category, per the 2026-10-24 rule), that they may contain
+   personal data the staff member types despite the warning, and that
+   SchoolKit keeps no question or reply text (under F-17 (b)).
+3. **Consent versions.** If that wording changes what schools or parents
+   agree to, the Consent hard rule requires bumping `SCHOOL_CONSENT_VERSION`
+   and/or `PARENT_CONSENT_VERSION`, which asks them again. Whether it does is
+   the owner's call on the final wording, not something a pilot settles.
+4. **Legal review.** `docs/legal/ndpr-ai-review.md` is still unsigned; the
+   help assistant should be added to what the lawyer reviews.
+5. **The provider's API data terms** confirmed against the new policy wording
+   (what is kept, for how long, and where).
+
+None of these is approved. Until they are, option A cannot run at any school.
+
+**F-17: whether user text and replies are stored on the server**
+
+| Option | What the user gets | What is kept | Main cost |
+|---|---|---|---|
+| **(a) Store in `ai_interaction_logs.payload`** | History on any device they sign in from. | Possibly-identifying text for the retention period (R10 default 90 days, FD-4b). | Contradicts `CLAUDE.md`'s note that `payload` is PII-free; needs that note amended. Purge, deletion requests and access control all carry the text. |
+| **(b) Store no user or reply text** | The conversation lasts while the panel is open and active; a reload, sign-out or another device starts fresh. "Was this helpful?" works. | Metadata only: ids, times, tool names, token counts, outcome, blocked tally. | No history across sessions; no stored transcript to review a reported bad answer. Earlier turns are resent by the browser and re-checked each time. |
+| **(c) Separate short-retention table** (for example 7 days) | Pick up a conversation within the week. | Possibly-identifying text, for days not months. | A second retention regime and table to secure and purge; still needs F-16. |
+
+**Stored transcripts do not grant support access.** Under (a) or (c) the
+text would sit under the school's RLS, and FD-4a lets a person read only
+their own conversations. Nobody else, including the school's owner, the
+platform admin or SchoolKit support, gets a way to read it. A support path
+would be a separate feature needing its own approval: who may read, the
+school's consent for each request, and an audit row per read (the pattern of
+`BvnService.revealBvn` and the Paystack-details reveal). Storage makes such a
+feature possible to build; it does not provide it.
+
+**Preferred recommendation (not owner-approved): F-17 (b).** It keeps no
+copy of anything the detectors miss, and it is also the basis on which the
+F-16 (A) allowlist row could meet the "no retention beyond the request" rule.
+
+**F-16: recommendation (not approved).** Option A for the pilot schools, but
+only **after** items 1–5 above are decided, with F-17 (b). Before the pilot
+widens, the owner reviews the measured miss rate on the §3.6 limitation cases
+and the pilot's blocked-message counts. If items 1–5 are not approved, or the
+review is not acceptable, the fallback is C, which needs none of them.
+
+**How the "single request" rule would apply to a conversation.** The
+allowlist's first binding rule reads: the data "is never retained by the model
+path beyond the single request. No storage object, no queue payload, no
+cache." It was written for one-shot prompts (transcribe a register, draft
+feedback on one answer). **The current wording does not address a
+conversation, and nothing here claims it already permits one.** A
+conversation keeps earlier turns somewhere, and under F-17 (b) that somewhere
+is the browser, which resends them with every new question. An allowlist row
+for `help-assistant` would have to say how the rule applies, layer by layer:
+
+| Layer | What holds the text | For how long | Under F-17 (b) |
+|---|---|---|---|
+| **Browser memory** | The panel's in-memory state on the staff member's own device | Until sign-out, account or school change, 15 minutes' inactivity, tab close or Clear (below) | Outside the model path, on the user's device. The proposed row would have to name it explicitly as the one place the conversation lives between requests, with these limits as conditions. |
+| **Temporary server processing** | The API process's memory while it handles one turn: detectors, prompt assembly, tool calls, the model call(s) of that turn | The life of that HTTP request | This **is** "the single request". Each turn re-receives the earlier turns from the browser, re-runs the detectors on all of them, and drops everything when the response is sent. Nothing is written to a database row, queue payload, cache, log line, error event or analytics event (§3.6 sinks table). |
+| **Server persistence** | Database rows | The retention period | **None for text.** Metadata only: ids, timestamps, the conversation's last-activity time, tool names, token counts, outcome, blocked tally. |
+| **Provider retention** | The model provider's systems | Set by the provider's API data terms, not by SchoolKit | **Outside the rule's reach as written**, which covers "the model path", meaning our code. Resending history means the provider receives earlier turns again on every turn, so each is transmitted more than once within a conversation. The row would have to state this, and the provider's terms (item 5 above) decide what they keep. **No prompt caching over user text:** today no call uses `cache_control`; if caching is added later, its breakpoint must sit before the conversation's messages (system prompt and tool definitions only), or the decision must cover provider-side caching of user text explicitly. |
+
+So the proposed row's first rule would need its own wording, for example:
+"the conversation is held only in the user's browser memory under the stated
+limits; each request carries it to the server, which keeps it only for that
+request and stores no text; the provider receives it on each request under its
+API terms, with no prompt caching over it." That wording is a proposal for the
+owner, not the current rule.
+
+**Browser-memory handling under F-17 (b)** (FD-5d acceptance criteria):
+
+- **Memory only.** The transcript, including a blocked draft, lives only in
+  the panel's in-memory state. It is never written to `localStorage`,
+  `sessionStorage`, IndexedDB, cookies, the Cache API or a service worker,
+  the URL, the page title, or any analytics or error-reporting payload.
+- **Cleared on:**
+  - **sign-out**, and any forced end of the session (expiry, revocation,
+    deactivation, a 401 from the API);
+  - **a change of account or school**: before each turn and on focus, the
+    panel compares the session's user and school with the ones the
+    transcript began under, and clears on any difference;
+  - **inactivity: 15 minutes** with no message sent or received. Measured
+    from timestamps, not only timers, so a laptop that slept is cleared on
+    its next interaction. The server enforces the same limit: it records only
+    the conversation's last-activity time (metadata), and refuses resent
+    history for a conversation idle longer than 15 minutes, so the panel must
+    start afresh;
+  - closing or reloading the tab (in-memory state does not survive), and the
+    panel's **Clear** button.
+- **Tests (FD-5d):** a Playwright spec asserting no transcript text in any
+  storage area after a conversation; cleared after sign-out, after a forced
+  session end and after switching account; cleared after 15 minutes of
+  inactivity (mocked clock); and the server refusing resent history after the
+  limit.
+
+**What remains under these recommendations, and is not mitigated away:**
+
+- **Undetected personal data reaches the model provider** with the request,
+  under the provider's API data terms. This is exactly what item 1 asks the
+  owner to accept or refuse; it is not settled by the detectors.
+- **Detection is per school.** A child at another school, a new pupil not yet
+  entered, or a parent's first name alone is not detected.
+- **False blocks happen.** A student called Grace blocks "grace period" unless
+  the stop-list covers it; each such case is a decision, recorded in a test.
+- **The transcript is visible on screen while the panel is open.** On a shared
+  office computer, the next person sees it until sign-out, inactivity or
+  Clear; the 15-minute limit bounds this, it does not remove it.
+- **The sink protections are only as good as their tests.** Logs, both Sentry
+  clients, both PostHog clients and the ledger are protected by design (§3.6
+  sinks table); the listed tests are what show it, and they must be written
+  before FD-4a merges.
 
 #### Tests for G-PII (to add to §4.5 when F-16 and F-17 are decided)
 
@@ -543,9 +713,9 @@ school's status: `ONBOARDING`, `ACTIVE`, `SUSPENDED` or `ARCHIVED`
 Each item has to be shown to pass. Where it says "spec", the check is an automated test in CI. The numeric thresholds are recommendations for you to confirm.
 
 ### 4.1 Before work starts
-- [ ] **G-PII (§3.6) approved by the owner** before FD-4a or FD-5d starts (RQ6). Record the approval and any changes to §3.6 in `docs/modules/assistant.md`.
+- [x] **G-PII (§3.6) approved by the owner** before FD-4a or FD-5d starts (RQ6). Record the approval and any changes to §3.6 in `docs/modules/assistant.md`. *Approved 2026-11-08 (D1, D2, D7, D8), recorded in `docs/reviews/agentic-f16-f17-approval-brief.md`; copied into `docs/modules/assistant.md` when FD-5e writes it.*
 - [ ] The six review corrections (RQ7) are applied in place (record in §0.2). The reviewer confirms each against the sections listed there.
-- [ ] **F-16 and F-17 decided by the owner** before FD-4a or FD-5d starts (§3.6). Until then neither is treated as approved, and FD-4a stores no user or reply text.
+- [x] **F-16 and F-17 decided by the owner** before FD-4a or FD-5d starts (§3.6). Until then neither is treated as approved, and FD-4a stores no user or reply text. *Decided 2026-11-08: F-16 A (limited pilot), F-17 (b).*
 - [ ] F-7 (retention period, and whether deactivation deletes at once) decided before FD-4b (§3.7).
 - [ ] The §3.5 decisions are recorded in `docs/modules/assistant.md`, each with its date and its status (owner-approved or recommendation).
 - [ ] The eval question set (F-12) is in `packages/ai/evals/cases`, with no school or person names.
@@ -1127,7 +1297,8 @@ The first-delivery decisions are listed in §3.5. The full register:
 | F-13 | Roles holding `assistant.help` | All staff roles | FD-4a |
 | F-14 | Pilot schools | Owner's choice | Pilot entry |
 | F-15 | Staff data to the model (R6) | Pasted text yes, photos no | S5-04 |
-| F-16 | Residual risk of personal data the G-PII detectors miss (§3.6) | **Open; no option approved.** Options: accept with the stated mitigations, stricter blocking, or fixed questions instead of free text | FD-4a, FD-5d |
-| F-17 | Whether user-typed text and replies are stored server-side (§3.6 sinks table) | **Open.** Recommendation: option (b), store no user or reply text server-side | FD-4a |
+| F-16 | Residual risk of personal data the G-PII detectors miss (§3.6) | **Decided 2026-11-08 (owner): A, limited pilot; D2 allowlist row added to `CLAUDE.md`.** Still open: D3 privacy wording, D4 consent versions (for decision), D5 legal review, D6 provider terms (not verified). Pilot activation separately gated: those, passing FD-5c evals, and the owner's choice of schools | FD-4a, FD-5d |
+| F-17 | Whether user-typed text and replies are stored server-side (§3.6 sinks table) | **Decided 2026-11-08 (owner): (b),** store no user or reply text server-side; D8 browser handling approved (memory only; cleared on sign-out, account or school change and 15 minutes' inactivity) | FD-4a |
 | R1–R10 | Approve the recommendations in §1.3 | Approve | As listed in §1.3 |
+
 

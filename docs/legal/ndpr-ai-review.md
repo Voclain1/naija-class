@@ -34,6 +34,11 @@ carried out, on these conditions:
    never switched on by SchoolKit.
 5. **The student AI tutor (Phase 8b) is not covered by this decision.** It
    needs its own, after the safeguarding work in `docs/modules/phase-8.md` §6.4.
+5a. **The staff help assistant is not covered by this decision either**
+   (added 2026-11-08). Its design was approved by the owner on 2026-11-08 for
+   a limited pilot (`docs/reviews/agentic-f16-f17-approval-brief.md`), but it
+   is switched on for no school until question 14 below is answered, along
+   with the provider, privacy-policy and consent work that brief lists.
 6. **The review is commissioned by:** _______ (date).
    If it is not done by then, this decision is reconsidered, not renewed
    silently.
@@ -80,6 +85,7 @@ or correct that.
 | School insights ("ask a question about your school") | Owners, admins | Aggregate figures (attendance rates, fee totals) | No |
 | Weekly parent summaries | Sent to parents, if the school opts in | One child's week of scores and attendance, and class level | No identifying details are sent, but the data is about one child, and the summary goes to that child's parent |
 | Smart Student Import | Admins | **A photo of a class register: children's names, dates of birth, guardians' names and phone numbers** | **Yes. Switched off for every school.** |
+| Help assistant (built, not switched on; added 2026-11-08) | Staff | A question a member of staff types about using SchoolKit, earlier questions in the same conversation (resent by their browser), parts of the help guide, and some of the school's settings (grading bands, term dates, plan, notification channels) | **Not intended, but possible.** Staff are asked not to include personal details, and questions naming someone on the school's roster, or containing a phone number, email, ID-like number, full date or pasted list, are blocked before sending. What the checks miss is sent. Each request also carries the earlier messages of the conversation. SchoolKit stores no question or answer text; it records usage, security and execution metadata without them. The assistant cannot modify school operational records. |
 
 Every AI draft is reviewed by a teacher before anyone else sees it, except the
 parent summaries, which go to the parent directly once the school has opted
@@ -146,6 +152,18 @@ Note that the list of providers does **not** name AI providers.
 12. What records of processing, and what breach-notification process, should
     SchoolKit keep?
 
+**The staff help assistant**
+
+14. The help assistant sends questions staff type in free text. Despite the
+    warning and the checks, some will contain a child's or parent's name or
+    other detail the checks do not recognise (a nickname, a description, a
+    name from another school). The owner has accepted that residual for a
+    limited pilot, in `CLAUDE.md`, subject to this review. Is that lawful, and
+    on what basis, given the transfer to a provider outside Nigeria? Is the
+    proposed privacy-policy paragraph (in the approval brief, D3) adequate
+    notice? Does it change what schools agreed to (so they must accept again),
+    and what parents agreed to? What should the record of processing say?
+
 **The student tutor (planned, not built)**
 
 13. A planned AI tutor would let children type to the model freely. Apart from
@@ -165,4 +183,11 @@ since several are outside Nigeria too.
 
 - How many schools have AI switched on (platform admin, the AI column).
 - Which AI features have actually run, from each school's AI Usage page.
-- Anthropic's and Voyage's current data-processing terms.
+- Anthropic's and Voyage's current data-processing terms. For the help
+  assistant (approval brief, D6): the provider's **official public baseline**,
+  verified externally by the owner on 2026-11-08, is that standard API inputs
+  and outputs are deleted within 30 days (with exceptions for agreed
+  arrangements, storage features, policy enforcement and law), are not used
+  for training by default, may be processed in the US, Europe, Asia and
+  Australia, and are stored in the US. Whether SchoolKit's own account, model
+  and features match that default is the D6 checklist, not yet verified.
