@@ -128,9 +128,13 @@ The draft paragraph in D3 is final only when every item is confirmed and
 recorded here, with who checked it and when.
 
 1. **Provider route.** Calls go directly to the provider's own API, not
-   through a cloud reseller whose terms and regions differ. Confirm from
-   `packages/ai/src/client.ts` and the deployed `ANTHROPIC_API_KEY`'s
-   organisation.
+   through a cloud reseller whose terms and regions differ.
+   *Code observation (2026-11-08), not a verification:* `packages/ai/src/client.ts`
+   builds the provider's own SDK client with no base-URL override, which goes
+   to the provider's API by default. The SDK also honours an
+   `ANTHROPIC_BASE_URL` environment variable. Still to confirm: that
+   `API_ENV_FILE` on the VPS sets no such variable, and which organisation the
+   deployed `ANTHROPIC_API_KEY` belongs to.
 2. **Account agreement.** Which Commercial Terms and Data Processing Addendum
    SchoolKit's organisation accepted, and their dates.
 3. **Model.** The model chosen under F-6 has no model-specific retention or
