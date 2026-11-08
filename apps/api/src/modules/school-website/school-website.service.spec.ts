@@ -84,9 +84,11 @@ const future = (days: number) => new Date(Date.now() + days * 86_400_000).toISOS
 describe("plan levels", () => {
   it("gives every school the top tier under warn, and the plan's own under enforce", () => {
     expect(websiteLimitsFor("FREE", "warn").galleryPhotos).toBe(300);
-    expect(websiteLimitsFor("FREE", "enforce")).toMatchObject({ details: false, news: 0, galleryPhotos: 0, events: 3, announcements: 3 });
-    expect(websiteLimitsFor("STARTER", "enforce")).toMatchObject({ details: true, news: 10, photosPerPost: 2, galleryPhotos: 0 });
+    expect(websiteLimitsFor("FREE", "enforce")).toMatchObject({ intro: true, facts: false, news: 0, galleryPhotos: 0, events: 3, announcements: 3 });
+    expect(websiteLimitsFor("STARTER", "enforce")).toMatchObject({ intro: true, facts: true, news: 10, photosPerPost: 2, galleryPhotos: 0 });
     expect(websiteLimitsFor("GROWTH", "enforce")).toMatchObject({ news: null, galleryPhotos: 60, leaders: 6, accent: false });
+    expect(websiteSectionMinPlan("intro")).toBe("FREE");
+    expect(websiteSectionMinPlan("facts")).toBe("STARTER");
     expect(websiteSectionMinPlan("news")).toBe("STARTER");
     expect(websiteSectionMinPlan("gallery")).toBe("GROWTH");
     expect(websiteSectionMinPlan("accent")).toBe("PROFESSIONAL");
@@ -205,15 +207,22 @@ describe("page details: draft, preview and publish", () => {
     await expect(website.uploadPhoto(ctx(A), { large: PNG, thumb: JPEG }, { kind: "COVER", noPupils: "true" }, reqCtx)).rejects.toMatchObject({ code: "INVALID_FILE_TYPE" });
   });
 
-  it("hides the details, not deletes them, when the plan no longer covers them", async () => {
+  it("Free shows the cover and About us; quick facts are hidden, not deleted, until Starter", async () => {
     process.env.PLAN_ENFORCEMENT = "enforce";
     await basePrisma.school.update({ where: { id: A.schoolId }, data: { plan: "FREE" } });
-    expect((await frontPage.get(A.slug)).website.about).toBeNull();
+    const free = (await frontPage.get(A.slug)).website;
+    expect(free.cover?.welcome).toBe("Welcome to our school");
+    expect(free.about?.story).toBe("Founded by the parish.");
+    expect(free.facts).toEqual([]);
     const view = await website.get(ctx(A));
-    expect(view.published?.story).toBe("Founded by the parish.");
-    expect(view.sections.find((s) => s.section === "details")).toMatchObject({ open: false, inPlan: false, minPlan: "STARTER" });
+    expect(view.published?.founded).toBe(1998);
+    expect(view.sections.find((s) => s.section === "intro")).toMatchObject({ open: true, inPlan: true, minPlan: "FREE" });
+    expect(view.sections.find((s) => s.section === "facts")).toMatchObject({ open: false, inPlan: false, minPlan: "STARTER" });
     await basePrisma.school.update({ where: { id: A.schoolId }, data: { plan: "STARTER" } });
-    expect((await frontPage.get(A.slug)).website.about?.story).toBe("Founded by the parish.");
+    expect((await frontPage.get(A.slug)).website.facts).toEqual([
+      { label: "Founded", value: "1998" },
+      { label: "Levels", value: "Nursery, Primary" },
+    ]);
   });
 
   it("an admin may edit the website; a teacher may not", async () => {

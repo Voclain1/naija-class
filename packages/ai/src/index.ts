@@ -184,3 +184,15 @@ export {
   renderAssignmentFeedbackPrompt,
   type AssignmentFeedbackInput,
 } from "./prompts/assignment-feedback.js";
+
+// FD-5a — the help guide as searchable sections, with the anchors /help/guide
+// gives each heading. Generated from docs/onboarding-guide.md; no network.
+export { GUIDE_SECTIONS } from "./help-guide/guide-index.generated.js";
+export { isGuideAnchor, queryTerms, searchGuide, tokenize, type GuideHit, type GuideSearchOptions } from "./help-guide/guide-search.js";
+export {
+  GUIDE_PARAPHRASE_CASES,
+  GUIDE_PARAPHRASE_HOLDOUT,
+  GUIDE_UNANSWERABLE_CASES,
+  type ParaphraseCase,
+} from "./help-guide/guide-paraphrases.js";
+export { plainText, renderGuideIndexModule, splitGuide, type GuideSection } from "./help-guide/guide-sections.js";

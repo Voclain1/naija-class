@@ -214,7 +214,7 @@ Each PR is independently reviewable, in this order.
 - **Boundary enforced in two places:**
   - the ESLint rule `@typescript-eslint/no-restricted-imports` on the port's names outside `common/ai`;
   - `apps/api/src/__tests__/ai-port-boundary.spec.ts` for `.converse(`, `createAnthropicClient(`, `AI_PORT` and `AnthropicPort`. |
-| **FD-3a** ✅ built on branch `agentic/fd-3a-tool-registry` (PR #502) | Tool registry core (read-only) | FD-2b | E | Typed tool definitions declaring: required permission(s) **or** an explicit `anyActiveStaff` with a written reason (mirroring `PermissionsGuard`'s refusal of undeclared routes); principal type; `read` class only. At execution: re-fetch `isActive`, call `userHoldsPermission` (`role-check.ts:85`) [V], take the tenant from `authCtx` only, validate arguments with Zod, and shape output to an allowlist of fields. **Registering a write-class tool throws at boot** in this delivery. A deny-list scaffold encodes R1 for later. **As built (2026-11-07):** `apps/api/src/common/ai/tools/tool-registry.ts`.
+| **FD-3a** ✅ merged (#502, 2026-11-08) | Tool registry core (read-only) | FD-2b | E | Typed tool definitions declaring: required permission(s) **or** an explicit `anyActiveStaff` with a written reason (mirroring `PermissionsGuard`'s refusal of undeclared routes); principal type; `read` class only. At execution: re-fetch `isActive`, call `userHoldsPermission` (`role-check.ts:85`) [V], take the tenant from `authCtx` only, validate arguments with Zod, and shape output to an allowlist of fields. **Registering a write-class tool throws at boot** in this delivery. A deny-list scaffold encodes R1 for later. **As built (2026-11-07):** `apps/api/src/common/ai/tools/tool-registry.ts`.
 - **Checks on every call, at execution time:**
   - re-reads the user's `is_active` and current role grants, as `PermissionsGuard` does;
   - checks the declared permissions (or reasoned `anyActiveStaff`);
@@ -234,12 +234,39 @@ Each PR is independently reviewable, in this order.
   - **The R1 deny list** is in place but **empty**: R1 is not approved, and write tools are refused anyway.
   - **No real tools are registered:** they come with FD-5b.
   - **The PII, money, behaviour and health conformance gate** is FD-3b. |
-| **FD-3b** | Registry conformance gate | FD-3a | — (CI) | A spec that enumerates every registered tool, like `security-definer-inventory.spec.ts`. It asserts: a declared permission or reasoned `anyActiveStaff`; read class; and that the output of each tool, run over a fixture school, contains **none** of the fixture's student, guardian or staff names, emails, phones, DOBs or kobo amounts (the PII and money scan). It also asserts **no behaviour field or count** (P16) and **no health field** (a health field fails the gate until R2 is decided). The scan covers what tools return; it says nothing about what users type (§3.6). |
+| **FD-3b** ✅ built on branch `agentic/fd-3b-conformance-gate` (PR #503) | Registry conformance gate | FD-3a | — (CI) | A spec that enumerates every registered tool, like `security-definer-inventory.spec.ts`. It asserts: a declared permission or reasoned `anyActiveStaff`; read class; and that the output of each tool, run over a fixture school, contains **none** of the fixture's student, guardian or staff names, emails, phones, DOBs or kobo amounts (the PII and money scan). It also asserts **no behaviour field or count** (P16) and **no health field** (a health field fails the gate until R2 is decided). The scan covers what tools return; it says nothing about what users type (§3.6). **As built (2026-11-07):**
+- **One list.** `ASSISTANT_TOOLS` in `apps/api/src/common/ai/tools/assistant-tools.ts` is the only source a conversation's registry is built from. It is **empty**: the first real tools come with FD-5b. The gate spec pins the list, so adding a tool is a visible edit there too.
+- **Every tool brings its own test inputs.** `conformanceCalls` is required on a tool definition; registration refuses an empty list or an entry its own argument schema rejects, so required arguments cannot excuse a tool from the scan.
+- **The gate** (`apps/api/src/__tests__/assistant-tool-conformance.spec.ts`, real Postgres) runs each call as the **owner** of a fixture school (every permission, so nothing is refused for lack of one). A refused, failed or throwing call **fails** the gate: a tool cannot pass by not running.
+- **The fixture** holds a student (names, admission number, DOB, email, phone, address), a guardian, the owner's own name and contacts, an invoice with four distinctive kobo amounts, two behaviour records with a category and points, and a health profile. The spec asserts these rows exist before scanning.
+- **The scan** (`tool-conformance.ts`) looks for the planted values: names and emails case-insensitively, phones by their last ten digits through any separators, DOB in five renderings, amounts as kobo, as naira with and without separators, and as rounded naira, never inside a longer number. Behaviour (P16) and health fields fail **by name**, in the declared `outputFields` and in every JSON key of the output, including truncated output; that is what catches a count, which no value search can.
+- **Controls.** Ten control tools read the fixture's own rows; nine leak one thing each (roster, guardian phone with spaces, a formatted balance, a rounded total, DOB, a behaviour count, behaviour notes, a health note, a declared health field) and each is caught for that reason. The tenth is clean and passes.
+- **Limits.** It finds what was planted, in the forms listed. It does not prove a tool never leaks another school's data or an unlisted rendering (a name split across fields, an amount in words). Field-name patterns are broad on purpose (`condition`, `points`, `emergency`); a legitimate field that matches is renamed, not exempted. |
 | **FD-4a** | Conversation store and API | FD-2b, FD-1a, **G-PII approved** (§3.6) | E | Conversations on `AIInteractionLog` (`sessionRef` = conversation). Payloads store tool names and shaped outputs, never raw rows. **Whether user-typed text and replies are stored server-side at all is owner decision F-17 (§3.6); until it is decided, this PR may not store them.** Endpoints: `POST /assistant/conversations`, `POST …/:id/messages`, `GET …/:id`, `DELETE …/:id`. Guarded by `AuthGuard`, a new **`assistant.help` permission** (R10; every staff role; migration and seed kept in sync) and the feature switch. Per-user rate limit. A person can read only their own conversations. |
 | **FD-4b** | Conversation retention | FD-4a | C (no notifications) | A nightly purge after the retention period (R10 default 90 days, F-7). "Clear my history". **It covers every school whatever its status (ONBOARDING, ACTIVE, SUSPENDED, ARCHIVED) and whether or not the feature is still switched on**, one tenant at a time under that school's GUC; the existing sweeps walk ACTIVE schools only [V], which is not enough here. It deletes conversation content only, never the `ai_generations` ledger, audit logs, execution journals or financial records (§3.7, RQ7 correction 6). |
-| **FD-5a** | Help corpus index | — | — | A build-time index of `docs/onboarding-guide.md` split by heading, with anchors matching the `/help/guide` slugs (rehype-slug). Lexical retrieval (BM25-style) in code: **no embedding vendor, no tenant data, no network**. A CI check fails if the index is stale relative to the guide. |
-| **FD-5b** | Settings read tools | FD-3a | E | `help.search_guide` (top-k sections with anchors; `anyActiveStaff`). `school.profile_summary` (name, plan name, current year and term; no contact or Paystack fields; `anyActiveStaff`). `school.setup_progress` (checklist keys and done flags; `anyActiveStaff`). `grading.scheme` and `grading.boundaries` (their read permissions). `grading.explain_score(score)`: a pure function over boundaries; the user supplies a number, no student is involved. `notifications.channels` (`notification-preferences.read`). Nothing else. |
-| **FD-5c** | `help-assistant` prompt v1 and evals | FD-5a, FD-5b | D | Registered in the prompt registry, with the model per F-6. Answers only from tool output and cited guide sections. Says "I can't see that" when a tool is refused. Treats school-entered strings (names, grade labels) as data. Eval set: real support questions (F-12), refusals, injection inside school-entered labels, and **factual evaluation** (§4.6), including cases where every number is valid but the explanation is wrong. Injection results are reported as results for the tested scenarios, not as general resistance. |
+| **FD-5a** ✅ built on branch `agentic/fd-5a-help-index` | Help corpus index | — | — | A build-time index of `docs/onboarding-guide.md` split by heading, with anchors matching the `/help/guide` slugs (rehype-slug). Lexical retrieval (BM25-style) in code: **no embedding vendor, no tenant data, no network**. A CI check fails if the index is stale relative to the guide. **As built (2026-11-08):**
+- **Index.** `packages/ai/src/help-guide/`: `splitGuide()` cuts the guide at every heading; `guide-index.generated.ts` is the committed result (39 sections), written by `pnpm --filter @school-kit/ai help-index` using `github-slugger` 2.0.0, the slugger `rehype-slug` uses. The runtime loads no slugger.
+- **Not searchable, but kept:** the contents list (mostly links to other sections) and headings with no text of their own. Their anchors stay, so a link to them still checks.
+- **Search.** `searchGuide(query, { limit, maxExcerptChars })`: BM25 (k1 1.2, b 0.75), heading words counted three times, plus a bonus of up to 5 for the share of the question's words in the heading, and the query-side wording map below. Returns anchor, title, heading path, excerpt and score; 1–8 hits, default 3. `isGuideAnchor()` checks a citation.
+- **The CI check** (`apps/web/src/app/help/guide/guide-index.spec.ts`) renders the guide through the page's own `react-markdown` + `rehype-slug` and asserts: the index's anchors equal the rendered heading ids, in order; the committed file is byte-identical to a fresh build; every `#anchor` link inside the guide lands on a heading; repeated headings get the numbered id the page gives. A heading edit and a body-only edit without regenerating were each shown to fail it.
+- **Search tests** (`apps/api/src/common/ai/help-guide-search.spec.ts`): every searchable section comes first for its own title; six ordinary questions find the expected section; the contents list never appears; limits, excerpt cap and empty queries; deterministic, no network call; the paraphrase floors below.
+- **Paraphrases (added 2026-11-08, before FD-5c relies on it).** `guide-paraphrases.ts` holds 44 questions in staff's own words ("log in", "pupils", "scratch cards", "debtors", "roll call", "second term"), each with the sections that would be a correct answer, and a separate **held-out** set of 20 written after tuning and never tuned on.
+  - **Measured before any fix:** right section first 26/44, in the top 3 38/44. "Log in" questions missed the guide's "sign in" sections.
+  - **Fixes:** a short query-side map from staff wording to the guide's (`log in`/`login` → "sign in" and the web address; class teacher → form teacher; salaries → payroll; debtors/owing → unpaid; roll call/attendance → register; scratch cards → result PIN cards; pupils → students; second term → a new term; moving a child's class → enrolment; and a few more), each added for a measured miss and pointing at wording the guide uses; filler words as stopwords; heading weight 3 and a heading-match bonus of up to 5.
+  - **After:** tuned set, first 34/44 and top 3 44/44. **Held-out set, first 15/20 and top 3 19/20.** The held-out miss ("what does SchoolKit set up for me automatically" for "Already done for you") shares no words with its section; it is kept visible in the spec, not tuned away.
+  - **The spec holds these as floors**, requires every "log in"/"sign in" question in the top 3, and fails if the "log in" mapping is removed (shown).
+- **Questions the guide does not answer** (`GUIDE_UNANSWERABLE_CASES`, 10 written cases: QuickBooks export, VAT rate, WAEC registration, fingerprint scanners…): the search still returns sections for every one, and their best scores (2.9–5.6) overlap those of answerable questions (from 4.0). **No score threshold can say "not covered"**, so the search does not try; FD-5c must (below). The spec records the overlap, so a change that makes the two separable is noticed.
+- **Known limit, for FD-5c's evals:** still lexical. A question that shares no words with its section misses, as the held-out case shows. The search returns 3 sections, so the top-3 figure is the one that matters for the assistant; FD-5c measures whether answers built on them are right, and F-12's real questions replace these written ones as the measure.
+- **CLAUDE.md** step 14 now says to regenerate the index after editing the guide. |
+| **FD-5b** ✅ settings tools built on branch `agentic/fd-5b-settings-tools` (on FD-3b) | Settings read tools | FD-3a | E | `help.search_guide` (top-k sections with anchors; `anyActiveStaff`). `school.profile_summary` (name, plan name, current year and term; no contact or Paystack fields; `anyActiveStaff`). `school.setup_progress` (checklist keys and done flags; `anyActiveStaff`). `grading.scheme` and `grading.boundaries` (their read permissions). `grading.explain_score(score)`: a pure function over boundaries; the user supplies a number, no student is involved. `notifications.channels` (`notification-preferences.read`). Nothing else. **As built (2026-11-08):**
+- **Six tools** in `apps/api/src/common/ai/tools/settings-tools.ts`, registered through `ASSISTANT_TOOLS` (tool names use `_`, as the registry requires): `school_profile_summary`, `school_setup_progress`, `grading_scheme`, `grading_boundaries`, `grading_explain_score`, `notification_channels`.
+- **`help_search_guide` is not in this PR.** It needs FD-5a's index on `main` (#505); it follows as its own small PR once #505 and FD-3b are merged, and runs through the same gate.
+- **Each tool calls the existing service** (`GradingService`, `SetupStateService`, `NotificationPreferencesService`), so the service's own role check applies on top of the declared permission. A tool therefore allows exactly what the matching settings page allows. Setup progress and notification channels are owner/admin in their services; the boundaries need `grade-boundary.read`, which only owner and admin hold.
+- **Registry change:** a service's own refusal (`ForbiddenError`, or `UnauthorizedError` for a switched-off account) now reaches the model as the same fixed sentence, never the service's message. Any other error still propagates.
+- **Outputs:** settings only. No ids, user ids or who-changed-it timestamps; no contact, Paystack or bank fields; setup progress gives keys, titles, done flags and the page, not the counts. `grading_explain_score` uses `resolveLetterGrade`, the function the gradebook grades with, and gives the band, the next grade up (with `marksNeeded`) and down.
+- **The gate bit on its first real run:** an `explain_score` field named `pointsNeeded` matched the behaviour pattern; it was renamed `marksNeeded`, as §3.3 FD-3b says (renamed, not exempted).
+- **Tests** (`settings-tools.spec.ts`, real Postgres, defaults from `applySchoolDefaults`): every system role × every tool matches what the settings page allows, with refusals as the fixed sentence; deactivated staff refused by every tool; school A's owner gets A's values and none of B's planted settings; no uuid or id/timestamp key in any output; at the API's maxima (20 boundaries, 20 components, 80-character labels and remarks, a long school name) every output is untruncated and under half the cap; every whole score 0–100 graded as the gradebook grades it; edges 39/40 and 59/60; invalid scores refused without echo; an uncovered score answered as uncovered. Five deliberate breakages each failed a test. |
+| **FD-5c** | `help-assistant` prompt v1 and evals | FD-5a, FD-5b | D | Registered in the prompt registry, with the model per F-6. Answers only from tool output and cited guide sections. Says "I can't see that" when a tool is refused. Treats school-entered strings (names, grade labels) as data. Eval set: real support questions (F-12), refusals, injection inside school-entered labels, **questions whose retrieved sections are irrelevant or insufficient** (FD-5a's `GUIDE_UNANSWERABLE_CASES`, its held-out miss, and questions where the right section is retrieved but does not hold the detail asked), and **factual evaluation** (§4.6), including cases where every number is valid but the explanation is wrong. Injection results are reported as results for the tested scenarios, not as general resistance. |
 | **FD-5d** | Staff web assistant panel | FD-4a, FD-5c, **G-PII approved** | E | A panel opened from the Help icon in the admin and teacher topbars. Shows citations as links to `/help/guide#anchor` and to settings pages. Non-streamed, with a progress state. Hidden when the feature is off or `assistant.help` is missing. Follows the design-system rules (Paper, DM Sans, no accent borders). |
 | **FD-5e** | Pilot operations | FD-5d, FD-1b | — | PostHog events with opaque IDs only (turn started/completed, tool refused, budget stop, thumbs up/down with no free text). A runbook for switching on, switching off and purging. The module doc `docs/modules/assistant.md`. An onboarding-guide entry (CLAUDE.md step 14). |
 
@@ -331,8 +358,9 @@ is never logged.
    - **Contact and identity patterns:** email addresses; Nigerian phone
      numbers (`+234…`, `0[7-9][01]…`); 10–11 digit runs (BVN, NIN, account
      numbers); full dates (a possible DOB).
-   - **The school's admission-number format**, from its admission-number
-     settings.
+   - **The school's admission numbers**, matched against the numbers on its
+     own roster. *(As built: stronger than the format, which only schools on
+     automatic numbering store.)*
    - **Size and shape:** a message over 1,000 characters, or one containing
      tab- or comma-separated rows (a paste), is refused regardless.
 3. **When a detector fires:**
@@ -348,6 +376,23 @@ is never logged.
 4. **When no detector fires:** the message may proceed, **still treated as
    possibly containing personal data** (§3.6 sinks table).
 
+**As built (2026-11-08), branch `agentic/g-pii-detectors`:**
+`apps/api/src/common/ai/pii/question-check.ts`.
+- **What it does:** `checkQuestion()` is pure and returns sorted categories only; `checkConversation()` checks every resent turn again; `loadQuestionRoster()` reads students, guardians, staff and admission numbers under the school's own tenant.
+- **Name matching:** exact, in any case and with accents folded. One-edit matching applies only to a capitalised word mid-sentence, because lowercase it would catch ordinary words ("hello" against a pupil named Bello).
+- **Names that are also ordinary words** (Grace, Faith, Joy, Blessing…) block only when written as a name, capitalised mid-sentence. "Is there a grace period" passes; "why Grace in JSS 2 cannot sign in" is blocked. This is the decision §3.6 asked to be recorded both ways.
+- **Product words** (class, term, grade, fees…) never match.
+- **Tests** (`question-check.spec.ts`, 34, including real Postgres):
+  - each category;
+  - no matched text in the result;
+  - both sides of the common-word rule;
+  - 15 ordinary questions pass (the false-block measurement);
+  - school B's people are not detected at school A (the documented residual);
+  - eight known misses recorded as measurements: an off-roster name, a nickname, a misspelling beyond one edit, a lowercase misspelling, an identifying description, a partial number, an address, and health in words.
+
+  Four deliberate breakages each failed a test.
+- **Not yet wired** to any endpoint: that is FD-4a.
+
 #### Known limitations of the detectors (false negatives)
 
 These pass the detectors today. The list is not exhaustive.
@@ -355,10 +400,10 @@ These pass the detectors today. The list is not exhaustive.
 | Gap | Example |
 |---|---|
 | Names not on this school's roster | A child at another school, a new pupil not yet entered, a sibling, a parent's first name only |
-| Nicknames, short forms and misspellings beyond one edit | "Ade" for Adebayo; "Chiamaka" typed "Chimka" |
+| Nicknames, short forms and misspellings beyond one edit, and any misspelling typed in lower case | "Ade" for Adebayo; "Chiamaka" typed "Chimka"; "chimaka" |
 | Names in other scripts or spellings | Ajami or diacritic spellings |
 | Descriptions that identify without naming | "the only boy in JSS1B who uses a wheelchair" |
-| Partial or reformatted numbers | "0803 … 4421", a phone written in words, a date written as "5th of March 2014" |
+| Partial or reformatted numbers | "0803 … 4421", a phone written in words, a date with no year ("5th of March"). *A full date written in words, such as "5th of March 2014", is caught (as built).* |
 | Addresses and locations | "lives behind the Total filling station on Aba Road" |
 | Health or behaviour described in free text | "the girl with sickle cell in SS2" |
 | Pastes under the size limit that are not row-shaped | A copied paragraph from a report |
@@ -727,25 +772,27 @@ tick.*
 
 ### 4.4 FD-3 · Tool registry
 
-*Status 2026-11-08: FD-3a in review (#502).*
+*Status 2026-11-08: FD-3a merged (#502); FD-3b in review (#503).*
 - **Evidenced by `tool-registry.spec.ts`** (real Postgres; each check also shown to fail when broken):
   - boot refusal of undeclared, write-class and id-argument tools;
   - per-tool permission refusal reaching the model as "not permitted";
   - deactivation mid-conversation;
   - tenant from `AuthContext` only;
   - cross-tenant isolation.
-- **Open:** the PII, money, behaviour and health scan (FD-3b) and `school.profile_summary` (FD-5b).
+- **FD-3b built on `agentic/fd-3b-conformance-gate`** (`assistant-tool-conformance.spec.ts`): the PII, money, behaviour and health gate over every registered tool, with a populated fixture and leaky controls that must be caught. Each part of the scan was also shown to fail its test when broken. The registered list is empty until FD-5b, so the boxes below for real tools stay open until those tools pass it.
+- **FD-5b** (`agentic/fd-5b-settings-tools`): the gate's first run over real tools, all six settings tools, passes; per-tool permission, tenant and size tests in `settings-tools.spec.ts`.
+- **Open:** `help_search_guide` (after #505).
 
-- [ ] A tool with neither a permission nor a reasoned `anyActiveStaff` fails at boot (spec).
-- [ ] A write-class tool fails at boot in this delivery (spec).
-- [ ] Each permission-declared tool is refused for a user without that permission, and the refusal reaches the model as "not permitted" rather than an error leak (spec per tool, modelled on `permissions.guard.spec.ts`).
-- [ ] A deactivated user's in-flight conversation is refused at the next tool call (spec: deactivate between turns).
-- [ ] The tenant comes from `authCtx` only. Tool argument schemas contain no `schoolId` or ID fields in this delivery (conformance spec).
-- [ ] **PII and money scan:** every registered tool, run over a fixture school, returns no fixture student, guardian or staff names, emails, phones or DOBs, and no fixture kobo amounts, in model-bound output (FD-3b, CI).
-- [ ] Cross-tenant: school B's settings never appear in school A's turn, under real Postgres (spec).
-- [ ] `school.profile_summary` omits address, phone, email, Paystack and bank fields (snapshot spec).
-- [ ] **Behaviour (P16):** the conformance gate fails if any registered tool's model-bound output contains a behaviour record, count, category, points, incident or discipline field (spec, CI). Checked with a behaviour fixture present in the school, so an empty table cannot pass it.
-- [ ] **Health (R2 pending):** the gate fails if any tool's model-bound output contains a health field, including the "For teachers" note, unless and until R2 is decided otherwise (spec, CI).
+- [x] A tool with neither a permission nor a reasoned `anyActiveStaff` fails at boot (spec). *`tool-registry.spec.ts`.*
+- [x] A write-class tool fails at boot in this delivery (spec). *`tool-registry.spec.ts`.*
+- [x] Each permission-declared tool is refused for a user without that permission, and the refusal reaches the model as "not permitted" rather than an error leak (spec per tool, modelled on `permissions.guard.spec.ts`). *`settings-tools.spec.ts`: every system role × every tool, against what the settings page allows.*
+- [x] A deactivated user's in-flight conversation is refused at the next tool call (spec: deactivate between turns). *`tool-registry.spec.ts`; every settings tool in `settings-tools.spec.ts`.*
+- [x] The tenant comes from `authCtx` only. Tool argument schemas contain no `schoolId` or ID fields in this delivery (conformance spec). *Registration refuses id-like arguments; `grading_explain_score` takes only `score`.*
+- [x] **PII and money scan:** every registered tool, run over a fixture school, returns no fixture student, guardian or staff names, emails, phones or DOBs, and no fixture kobo amounts, in model-bound output (FD-3b, CI). *All six settings tools pass `assistant-tool-conformance.spec.ts`.*
+- [x] Cross-tenant: school B's settings never appear in school A's turn, under real Postgres (spec). *`settings-tools.spec.ts`.*
+- [x] `school.profile_summary` omits address, phone, email, Paystack and bank fields (snapshot spec). *Exact-object assertion in `settings-tools.spec.ts`.*
+- [x] **Behaviour (P16):** the conformance gate fails if any registered tool's model-bound output contains a behaviour record, count, category, points, incident or discipline field (spec, CI). Checked with a behaviour fixture present in the school, so an empty table cannot pass it. *FD-3b gate, with behaviour and health fixtures and leaky controls.*
+- [x] **Health (R2 pending):** the gate fails if any tool's model-bound output contains a health field, including the "For teachers" note, unless and until R2 is decided otherwise (spec, CI). *FD-3b gate.*
 
 ### 4.5 FD-4 · Conversations
 - [ ] All endpoints refuse when the school's feature is off, when `assistant.help` is missing, and when the platform kill switch is on (spec per endpoint).
@@ -764,9 +811,10 @@ tick.*
 - [ ] The platform-admin "purge this school's conversations" action works for a suspended school, is audited, and affects only that school (spec).
 
 ### 4.6 FD-5 · Help assistant
-- [ ] The corpus index is regenerated from `docs/onboarding-guide.md`, and CI fails when stale (check).
+- [x] The corpus index is regenerated from `docs/onboarding-guide.md`, and CI fails when stale (check). *FD-5a: `guide-index.spec.ts`, which also checks every anchor against the ids the page renders.*
 - [ ] Every answer that uses the guide shows at least one citation linking to an existing `/help/guide#anchor` (eval check + e2e).
-- [ ] `grading.explain_score` matches the grading service's own boundary mapping for every boundary edge, such as 39/40 and 59/60 (property spec).
+- [ ] **Honest fallback when retrieval does not support an answer** (eval, FD-5c). For every question whose retrieved sections are irrelevant or insufficient (FD-5a's unanswerable cases, the held-out miss, and right-section-but-detail-missing cases), the answer says the guide does not cover it and points to Getting help (WhatsApp or email), **invents no steps, buttons, settings or features**, and cites no section that does not support what it says. Proposed bar: 100% of these cases, judged by a person (a model judge only where checked against the person's labels). The search cannot flag these itself: measured, no score threshold separates them from answerable questions.
+- [x] `grading.explain_score` matches the grading service's own boundary mapping for every boundary edge, such as 39/40 and 59/60 (property spec). *Every whole score 0–100 against `resolveLetterGrade`, plus the edges, in `settings-tools.spec.ts`.*
 - [ ] Evals (FD-5c) meet these proposed bars:
   - ≥ 90% of answerable questions judged correct and cited;
   - 100% refusal or "I can't see that" for out-of-permission settings;
@@ -1252,3 +1300,5 @@ The first-delivery decisions are listed in §3.5. The full register:
 | F-16 | Residual risk of personal data the G-PII detectors miss (§3.6) | **Decided 2026-11-08 (owner): A, limited pilot; D2 allowlist row added to `CLAUDE.md`.** Still open: D3 privacy wording, D4 consent versions (for decision), D5 legal review, D6 provider terms (not verified). Pilot activation separately gated: those, passing FD-5c evals, and the owner's choice of schools | FD-4a, FD-5d |
 | F-17 | Whether user-typed text and replies are stored server-side (§3.6 sinks table) | **Decided 2026-11-08 (owner): (b),** store no user or reply text server-side; D8 browser handling approved (memory only; cleared on sign-out, account or school change and 15 minutes' inactivity) | FD-4a |
 | R1–R10 | Approve the recommendations in §1.3 | Approve | As listed in §1.3 |
+
+
