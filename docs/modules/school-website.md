@@ -36,13 +36,19 @@ pages, by level.
 
 ## What each plan adds
 
+**Revised 2026-11-08 (owner):** the cover and About us moved to Free, so a free
+school's page looks like a real school website. Quick facts stay on Starter.
+In code the old single `details` limit is now two, `intro` (cover, welcome
+line, About us) and `facts` (quick facts), with sections of the same names in
+the editor.
+
 | Section | Free | Starter | Growth | Professional / Enterprise |
 |---|---|---|---|---|
 | Basic page (above) | ✓ | ✓ | ✓ | ✓ |
 | **Events** the school marks "Show on website" | next 3 | next 10 | all upcoming | all upcoming |
 | **Announcements** the school marks "Show on website" | latest 3 | latest 10 | latest 20 | latest 20 |
-| **Cover:** a wide photo and a one-line welcome | | ✓ | ✓ | ✓ |
-| **About us:** a welcome from the head, the school's story | | ✓ | ✓ | ✓ |
+| **Cover:** a wide photo and a one-line welcome | ✓ | ✓ | ✓ | ✓ |
+| **About us:** a welcome from the head, the school's story | ✓ | ✓ | ✓ | ✓ |
 | **Quick facts** | | ✓ | ✓ | ✓ |
 | **News:** posts with text and photos | | 10 latest, 2 photos each | all, 4 photos each, archive page | all, 4 photos each, archive page |
 | **Photo gallery** | | | up to 60 photos | up to 300 photos |

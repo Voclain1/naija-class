@@ -14,8 +14,13 @@ export interface WebsiteLimits {
   events: number | null;
   /** Latest announcements shown. */
   announcements: number;
-  /** Cover, about us and quick facts. */
-  details: boolean;
+  /**
+   * Cover photo, welcome line and About us. Free since 2026-11-08 (owner):
+   * a free school's page should look like a real school website.
+   */
+  intro: boolean;
+  /** Quick facts (founded, levels, curriculum, day/boarding, boys/girls). */
+  facts: boolean;
   /** News posts shown. 0: no news. Null: all. */
   news: number | null;
   /** Photos on one news post. */
@@ -33,11 +38,11 @@ export interface WebsiteLimits {
 export const WEBSITE_EVENTS_MAX = 30;
 
 export const WEBSITE_PLAN_LIMITS: Record<SchoolPlan, WebsiteLimits> = {
-  FREE: { events: 3, announcements: 3, details: false, news: 0, photosPerPost: 0, galleryPhotos: 0, leaders: 0, admissionsBox: false, accent: false, poweredBy: false },
-  STARTER: { events: 10, announcements: 10, details: true, news: 10, photosPerPost: 2, galleryPhotos: 0, leaders: 0, admissionsBox: false, accent: false, poweredBy: false },
-  GROWTH: { events: null, announcements: 20, details: true, news: null, photosPerPost: 4, galleryPhotos: 60, leaders: 6, admissionsBox: true, accent: false, poweredBy: false },
-  PROFESSIONAL: { events: null, announcements: 20, details: true, news: null, photosPerPost: 4, galleryPhotos: 300, leaders: 12, admissionsBox: true, accent: true, poweredBy: true },
-  ENTERPRISE: { events: null, announcements: 20, details: true, news: null, photosPerPost: 4, galleryPhotos: 300, leaders: 12, admissionsBox: true, accent: true, poweredBy: true },
+  FREE: { events: 3, announcements: 3, intro: true, facts: false, news: 0, photosPerPost: 0, galleryPhotos: 0, leaders: 0, admissionsBox: false, accent: false, poweredBy: false },
+  STARTER: { events: 10, announcements: 10, intro: true, facts: true, news: 10, photosPerPost: 2, galleryPhotos: 0, leaders: 0, admissionsBox: false, accent: false, poweredBy: false },
+  GROWTH: { events: null, announcements: 20, intro: true, facts: true, news: null, photosPerPost: 4, galleryPhotos: 60, leaders: 6, admissionsBox: true, accent: false, poweredBy: false },
+  PROFESSIONAL: { events: null, announcements: 20, intro: true, facts: true, news: null, photosPerPost: 4, galleryPhotos: 300, leaders: 12, admissionsBox: true, accent: true, poweredBy: true },
+  ENTERPRISE: { events: null, announcements: 20, intro: true, facts: true, news: null, photosPerPost: 4, galleryPhotos: 300, leaders: 12, admissionsBox: true, accent: true, poweredBy: true },
 };
 
 /** What the school has now: the top tier under warn, its plan's under enforce. */
@@ -45,7 +50,7 @@ export function websiteLimitsFor(plan: SchoolPlan, enforcement: PlanEnforcement)
   return enforcement === "warn" ? WEBSITE_PLAN_LIMITS.PROFESSIONAL : WEBSITE_PLAN_LIMITS[plan];
 }
 
-export const WEBSITE_SECTIONS = ["events", "announcements", "details", "news", "gallery", "leaders", "admissionsBox", "accent"] as const;
+export const WEBSITE_SECTIONS = ["events", "announcements", "intro", "facts", "news", "gallery", "leaders", "admissionsBox", "accent"] as const;
 export type WebsiteSection = (typeof WEBSITE_SECTIONS)[number];
 
 export function websiteSectionOpen(limits: WebsiteLimits, section: WebsiteSection): boolean {
@@ -53,8 +58,10 @@ export function websiteSectionOpen(limits: WebsiteLimits, section: WebsiteSectio
     case "events":
     case "announcements":
       return true;
-    case "details":
-      return limits.details;
+    case "intro":
+      return limits.intro;
+    case "facts":
+      return limits.facts;
     case "news":
       return limits.news !== 0;
     case "gallery":
