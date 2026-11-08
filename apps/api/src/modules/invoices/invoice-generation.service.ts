@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Injectable, Optional } from "@nestjs/common";
 
 import { Prisma, withTenant, type PrismaClient } from "@school-kit/db";
@@ -33,6 +34,7 @@ import { PaymentLinkInvalidationService } from "./payment-link-invalidation.serv
 
 interface RequestContext {
   ipAddress: string | null;
+  assistantRunId?: string;
 }
 
 const AUDIT = {
@@ -43,6 +45,10 @@ const AUDIT = {
 // Billing waiting charges onto supplementary invoices (CP5-D6): the roles
 // that hold invoice.issue. Re-checked in the service on every call.
 const BILLING_ROLES = ["owner", "admin", "bursar"] as const;
+
+export interface InvoiceRunPreviewLine extends PreviewLineDto {
+  snapshotHash: string;
+}
 
 interface ArmContext {
   classLevelId: string;
@@ -72,7 +78,14 @@ export class InvoiceGenerationService {
     dto: GenerateInvoicesInput,
     reqCtx: RequestContext,
   ): Promise<GenerateInvoicesResponseDto> {
-    return withTenant(authCtx.schoolId, async (db) => {
+    return withTenant(authCtx.schoolId, (db) => this.generateForArmInTransaction(authCtx, dto, reqCtx, db));
+  }
+
+  // Internal composition point. Caller owns the tenant transaction and must
+  // enforce permissions before using it. Existing routes still use the wrapper.
+  async generateForArmInTransaction(
+    authCtx: AuthContext, dto: GenerateInvoicesInput, reqCtx: RequestContext, db: PrismaClient,
+  ): Promise<GenerateInvoicesResponseDto> {
       const arm = await this.fetchArm(db, authCtx.schoolId, dto.classArmId);
       const term = await this.fetchTerm(db, authCtx.schoolId, dto.termId);
 
@@ -178,12 +191,13 @@ export class InvoiceGenerationService {
               totalDiscount: snapshot.totalDiscount,
               totalDue: snapshot.totalDue,
               chargeCount: openCharges.length,
+              ...(reqCtx.assistantRunId ? { via: "assistant", proposalId: reqCtx.assistantRunId } : {}),
             },
           },
         });
         await this.charges.markBilled(
           db,
-          { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress },
+          { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress, ...(reqCtx.assistantRunId ? { assistantRunId: reqCtx.assistantRunId } : {}) },
           openCharges.map((c) => c.id),
           invoice.id,
         );
@@ -194,7 +208,6 @@ export class InvoiceGenerationService {
       }
 
       return { created: created.length, skipped, invoices: created };
-    });
   }
 
   // ─── Preview (dry-run — no persistence) ────────────────────────────────────
@@ -203,7 +216,13 @@ export class InvoiceGenerationService {
     authCtx: AuthContext,
     dto: PreviewInvoicesInput,
   ): Promise<PreviewLineDto[]> {
-    return withTenant(authCtx.schoolId, async (db) => {
+    const rows = await withTenant(authCtx.schoolId, (db) => this.previewForArmInTransaction(authCtx, dto, db));
+    return rows.map(({ snapshotHash: _snapshotHash, ...row }) => row);
+  }
+
+  async previewForArmInTransaction(
+    authCtx: AuthContext, dto: PreviewInvoicesInput, db: PrismaClient,
+  ): Promise<InvoiceRunPreviewLine[]> {
       const arm = await this.fetchArm(db, authCtx.schoolId, dto.classArmId);
       const term = await this.fetchTerm(db, authCtx.schoolId, dto.termId);
 
@@ -256,7 +275,7 @@ export class InvoiceGenerationService {
       });
       const alreadyInvoicedIds = new Set(existingInvoices.map((i) => i.studentId));
 
-      const previews: PreviewLineDto[] = [];
+      const previews: InvoiceRunPreviewLine[] = [];
       for (const { studentId } of enrollments) {
         const discountRules = await this.fetchDiscountRules(
           db,
@@ -270,6 +289,7 @@ export class InvoiceGenerationService {
         const identity = studentIdentities.get(studentId) ?? null;
         previews.push({
           studentId,
+          snapshotHash: createHash("sha256").update(JSON.stringify(snapshot)).digest("hex"),
           studentName: identity?.studentName ?? null,
           admissionNumber: identity?.admissionNumber ?? null,
           feeItemCount: feeItems.length,
@@ -282,7 +302,6 @@ export class InvoiceGenerationService {
       }
 
       return previews;
-    });
   }
 
   // ─── Supplementary invoices (Phase 9 / CP5.1, §13 CP5-D3) ─────────────────

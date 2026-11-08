@@ -177,6 +177,18 @@ group) will span multiple underlying calls, each logged separately to
 exact schema — including the cost-estimate currency/unit decision — is still
 owned by Phase 5's own plan-first; see `docs/deferred.md` for the draft.
 
+### Invoice assistant task (2026-11-08)
+
+`billing-run-planner@1` (`docs/modules/assistant-billing.md`) is NOT on the
+PII allowlist. Its user message is a fixed task sentence; its two read tools
+return counts only. The original staff request, record IDs, school-entered
+labels, student identities and financial figures never reach the model. The
+server resolves class scope locally and requires clarification for unsupported
+instructions. Explicit human approval is a separate, permission-checked endpoint
+using the existing invoice service. `assistant-billing` is off by default; no
+pilot or legal decision is implied by the implementation. Do not reuse the
+help-assistant exception for this task or broaden it into general write access.
+
 ### Git
 
 - Never commit to `main`. Every change goes through a PR (bundled — see Git conventions).

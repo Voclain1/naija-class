@@ -53,7 +53,9 @@ export function initSentry(): void {
         req.headers = headers;
       }
       if (req?.data !== undefined) {
-        req.data = redactValue(req.data) as typeof req.data;
+        // Billing requests may contain incidental typed personal details.
+        // Drop the whole body, rather than relying on pattern redaction.
+        req.data = req.url?.includes("/assistant/billing") ? undefined : redactValue(req.data) as typeof req.data;
       }
       if (req?.query_string !== undefined && typeof req.query_string === "string") {
         req.query_string = redactString(req.query_string);
