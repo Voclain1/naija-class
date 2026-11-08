@@ -9,6 +9,8 @@ import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-year
 import { NAVIGATION_INTENT_EVENT, intentPathname } from "@/lib/navigation-intent";
 import { stripBasePath } from "@/lib/base-path";
 
+import { type TermResolution, defaultParamToWrite } from "./term-default";
+
 // Lives in the topbar (per the mockup) and means something on the routes in
 // TERM_AWARE_ROUTES below — the selected term is carried in the URL
 // (?termId=) rather than a new global "current term" context, so those pages
@@ -52,7 +54,7 @@ export function DashboardTermSelector() {
   const searchParams = useSearchParams();
 
   const [terms, setTerms] = useState<TermDto[]>([]);
-  const [yearId, setYearId] = useState("");
+  const [resolution, setResolution] = useState<TermResolution | null>(null);
 
   const isTermAware = TERM_AWARE_ROUTES.includes(pathname);
   const termId = searchParams.get("termId") ?? "";
@@ -95,15 +97,27 @@ export function DashboardTermSelector() {
     router.replace(`${startedOn.current}?${params.toString()}`);
   }
 
+  // Resolved once per VISIT to a term-aware page, not once per mount. This
+  // component lives in the topbar, which stays mounted while the person moves
+  // around the app, so "fetch on mount" meant: open /dashboard (term written),
+  // go to /students, come back to /dashboard (no ?termId= on the sidebar's
+  // link) — and nothing ran again. The year lookup did re-run, but it set the
+  // SAME yearId, so the terms effect keyed on it never fired, no default term
+  // was written, and the dashboard waited on its loading spinner forever
+  // (owner report, 2026-11-08). The same happened on /dashboard -> /insights,
+  // and on clicking "Dashboard" while already on /dashboard?termId=….
+  //
+  // `resolution` is cleared at the start of each visit so a stale answer from
+  // an earlier one (no academic year then, one set up since) is never written.
   useEffect(() => {
     if (!isTermAware) return;
     startedOn.current = pathname;
+    setResolution(null);
+    let current = true;
     listAcademicYears()
-      .then((rows) => {
-        const current = rows.find((y) => y.isCurrent) ?? rows[0];
-        if (current) {
-          setYearId(current.id);
-        } else {
+      .then(async (rows) => {
+        const year = rows.find((y) => y.isCurrent) ?? rows[0];
+        if (!year) {
           // A brand-new school (just finished onboarding) has no academic
           // year yet — nothing for this selector to ever resolve into a
           // termId. Without this signal the dashboard page has no way to
@@ -112,26 +126,30 @@ export function DashboardTermSelector() {
           // e2e happy-path run, 2026-07-26 — a fresh signup never has a
           // term, so this is the FIRST thing every new school's dashboard
           // hits, not an edge case).
-          writeDefaultParam("noAcademicYear", "1");
+          if (current) setResolution({ noAcademicYear: true, defaultTermId: null });
+          return;
         }
+        const termRows = await listTerms(year.id).catch(() => [] as TermDto[]);
+        if (!current) return;
+        setTerms(termRows);
+        const term = termRows.find((t) => t.isCurrent) ?? termRows[0];
+        setResolution({ noAcademicYear: false, defaultTermId: term?.id ?? null });
       })
       .catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTermAware]);
+    return () => {
+      current = false;
+    };
+  }, [isTermAware, pathname]);
 
+  // Writes the default whenever the URL is missing one — after the fetch
+  // above settles, and again if the URL loses it later on the same page.
+  const noAcademicYearParam = searchParams.get("noAcademicYear") === "1";
   useEffect(() => {
-    if (!yearId) return;
-    listTerms(yearId)
-      .then((rows) => {
-        setTerms(rows);
-        if (!termId) {
-          const current = rows.find((t) => t.isCurrent) ?? rows[0];
-          if (current) writeDefaultParam("termId", current.id);
-        }
-      })
-      .catch(() => setTerms([]));
+    if (!isTermAware) return;
+    const write = defaultParamToWrite(resolution, termId, noAcademicYearParam);
+    if (write) writeDefaultParam(write.key, write.value);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [yearId]);
+  }, [isTermAware, pathname, resolution, termId, noAcademicYearParam]);
 
   function setTermForUrl(id: string) {
     const params = new URLSearchParams(searchParams.toString());
