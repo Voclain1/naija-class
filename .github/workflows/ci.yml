@@ -387,9 +387,30 @@ jobs:
       # webServer in playwright.config.ts spawns the api + web dev servers
       # (reuseExistingServer: false in CI). CI=true bumps retries to 2
       # for resilience against transient slow-compile flakes.
+      # The e2e suite runs the web, portal and exam apps from production builds
+      # (`next start`), not `next dev`: see E2E_NEXT_START in
+      # e2e/playwright.config.ts for the measurement behind it. NODE_ENV is
+      # unset because .env says "test" and `next build` only prerenders under
+      # its own "production". The NEXT_PUBLIC_* values are baked in at build
+      # time, so the local addresses are given here; unset, a production build
+      # would link to the live portal and exam app.
+      - name: Build web, portal and exam apps for e2e
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          NEXT_PUBLIC_PORTAL_URL: http://localhost:3002
+          NEXT_PUBLIC_CBT_URL: http://localhost:3003
+          NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN: localhost:3002
+        run: |
+          set -a; . ./.env; set +a
+          unset NODE_ENV
+          pnpm --filter @school-kit/web build
+          pnpm --filter @school-kit/portal build
+          pnpm --filter @school-kit/cbt build
+
       - name: Run Playwright tests
         env:
           CI: "true"
+          E2E_NEXT_START: "1"
         run: pnpm --filter @school-kit/e2e test:e2e
 
       - name: Upload Playwright report

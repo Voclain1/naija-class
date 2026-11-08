@@ -21,12 +21,12 @@ const TEXTAREA = "w-full rounded-md border border-input bg-background p-2 text-s
 export function SearchPreview({
   d,
   set,
-  detailsOpen,
+  factsOpen,
 }: {
   d: WebsiteDetails;
   set: <K extends keyof WebsiteDetails>(key: K, value: WebsiteDetails[K]) => void;
   /** The plan shows the page details (and so the levels) on the page. */
-  detailsOpen: boolean;
+  factsOpen: boolean;
 }) {
   const { school } = useAuth();
   if (!school) return null;
@@ -41,7 +41,7 @@ export function SearchPreview({
       urls: { home: school.siteUrls.home, news: "", gallery: "", apply: "", results: "" },
       description: d.searchDescription,
       town,
-      levels: detailsOpen ? d.levels.map((l) => WEBSITE_LEVEL_LABELS[l]) : [],
+      levels: factsOpen ? d.levels.map((l) => WEBSITE_LEVEL_LABELS[l]) : [],
       founded: null,
       updatedAt: null,
     },
