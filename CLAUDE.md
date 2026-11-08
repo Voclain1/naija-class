@@ -120,13 +120,14 @@ infra/      Terraform / Pulumi
 - Per-school monthly token budget enforced before the call, not after.
 
 **The PII-bearing prompt allowlist (approved 2026-08-20; second row approved
-2026-10-16).** Exactly two prompts are permitted to send student PII to the
-model:
+2026-10-16; third row approved 2026-11-08, scoped as stated in it).** Exactly
+three prompts are permitted to send student PII to the model:
 
-| Prompt name | Feature | Why the PII *is* the payload |
+| Prompt name | Feature | Why the PII *is* the payload (or, for the third row, why it is accepted) |
 |---|---|---|
 | `student-list-extraction` | Smart Student Import (`docs/modules/smart-student-import.md`) | The feature transcribes a register the school already holds and already has the data in. Opaque IDs are not merely worse here — there is nothing to make opaque, because the transcription is the product. |
 | `assignment-feedback` | AI-drafted marking feedback (`docs/modules/phase-9.md` §12, CP4b) | The child's typed answer is what is being marked; there is nothing to make opaque. Mitigated, not exempted: the renderer itself removes the student's names and admission number and every classmate's name before the text is built, and nothing else about the child is sent (the class level only). Optional at every level: the platform's switch, the school's own switch (off by default), and the teacher's button. |
+| `help-assistant` | Help and settings assistant for staff (`docs/reviews/agentic-implementation-plan.md` §3.6, FD-5) | **Not the payload — incidental, and accepted as a residual.** The assistant needs no personal data and staff are asked not to give it any. A staff member may still type or paste some. Mitigated, not exempted: before the model, per-school detectors block names on the school's own roster, phone numbers, email addresses, long ID-like numbers, full dates and pasted rows; a standing notice asks for none; the assistant's tools return school settings and guide sections only (the FD-3b gate). What the detectors miss reaches the model: this row accepts that residual for this prompt only. Optional at every level: the platform's switch, the school's own switch (off by default), and the staff member's choice to ask. **Narrowly scoped (owner, 2026-11-08):** for a limited pilot only; no school may have it switched on until the provider, privacy, legal and consent work is complete, the evaluations pass, and the owner has selected the pilot schools (`docs/reviews/agentic-f16-f17-approval-brief.md`). |
 
 Two rules bind every prompt on this list, and they are what make membership
 survivable:
@@ -136,6 +137,18 @@ survivable:
    the module doc.
 2. **The extraction never writes to a student record without explicit human
    confirmation.** Same gate as D15's report comments.
+
+**How rule 1 applies to `help-assistant`, the only conversational prompt on
+this list** (approved 2026-11-08). "The single request" is one request to the
+conversation API. The conversation is held only in the staff member's browser
+memory (never browser storage), cleared on sign-out, on any change of account
+or school, and after 15 minutes without activity, and resent with each
+request. The server keeps it only while handling that request, re-checks all
+of it with the detectors, stores no question or reply text, and puts it in no
+queue, cache, log, error report or analytics event. No prompt caching covers
+it. The model provider receives it on each request, under its API data terms.
+Rule 2 holds as written: the assistant's tools are read-only and it writes to
+no record.
 
 **This is an allowlist of prompt names, deliberately — not a new
 category.** The distinction is load-bearing: a category ("transcription

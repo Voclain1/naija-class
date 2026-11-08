@@ -55,7 +55,13 @@ import { check, type EvalCase } from "../harness.js";
 // channel DOES carry it — but with every known name removed by the renderer
 // itself, which is asserted below. Two rows is the whole list; a third is
 // another deliberate edit here and in CLAUDE.md.
-const PII_BEARING_PROMPT_ALLOWLIST = ["student-list-extraction", "assignment-feedback"] as const;
+const PII_BEARING_PROMPT_ALLOWLIST = ["student-list-extraction", "assignment-feedback", "help-assistant"] as const;
+
+// Allowlisted (CLAUDE.md, third row, approved 2026-11-08) but not registered
+// yet: FD-5c builds the prompt. A pending name must NOT be in the registry, so
+// the change that registers `help-assistant` has to remove it from here, and
+// from then on the "still exists" check below covers it like the others.
+const PII_ALLOWLIST_PENDING_REGISTRATION: readonly string[] = ["help-assistant"];
 
 // Field names that must never appear in a rendered prompt. If a template ever
 // interpolates a labelled PII field, the label itself usually travels with it.
@@ -535,8 +541,8 @@ export const piiSafetyCase: EvalCase = {
     // ---- the PII-bearing prompt allowlist --------------------------------
     results.push(
       check(
-        "allowlist: exactly two prompts are permitted to carry student PII",
-        PII_BEARING_PROMPT_ALLOWLIST.length === 2,
+        "allowlist: exactly three prompts are permitted to carry student PII (third row approved 2026-11-08)",
+        PII_BEARING_PROMPT_ALLOWLIST.length === 3,
         `the allowlist has ${PII_BEARING_PROMPT_ALLOWLIST.length} entries. Adding one is a deliberate act ` +
           "requiring its own sign-off and its own row in CLAUDE.md's PII-bearing prompt allowlist — " +
           "if you meant to do that, update this assertion in the same commit and say why.",
@@ -547,9 +553,20 @@ export const piiSafetyCase: EvalCase = {
     results.push(
       check(
         "allowlist: every allowlisted prompt still exists in the registry under that exact name",
-        PII_BEARING_PROMPT_ALLOWLIST.every((name) => registryNames.includes(name)),
+        PII_BEARING_PROMPT_ALLOWLIST.every(
+          (name) => registryNames.includes(name) || PII_ALLOWLIST_PENDING_REGISTRATION.includes(name),
+        ),
         "an allowlisted prompt name does not match any registered prompt — it was renamed or removed, " +
           "which orphans the carve-out and would let the real prompt fall outside it",
+      ),
+    );
+    results.push(
+      check(
+        "allowlist: a name pending registration is allowlisted and not yet registered",
+        PII_ALLOWLIST_PENDING_REGISTRATION.every(
+          (name) => (PII_BEARING_PROMPT_ALLOWLIST as readonly string[]).includes(name) && !registryNames.includes(name),
+        ),
+        "the prompt is now registered: remove it from PII_ALLOWLIST_PENDING_REGISTRATION in the same change",
       ),
     );
 

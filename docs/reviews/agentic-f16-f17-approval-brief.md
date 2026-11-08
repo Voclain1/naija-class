@@ -1,9 +1,33 @@
 # Approval brief: personal data in help-assistant questions (F-16, F-17)
 
-**Status: proposed. Nothing in this brief is approved.** Each decision below
-is the owner's, separately. Conversational input stays paused and every
-assistant switch stays off until they are made. A pilot approval, by itself,
-decides none of them. Background and the options compared:
+## Approval record
+
+**2026-11-08, the owner approved:**
+
+- **D1:** option **A**, for a **limited pilot**.
+- **D2:** the **narrowly scoped `help-assistant` exception**, as worded below. It is now
+  in `CLAUDE.md` (third allowlist row, and how rule 1 applies), and the eval
+  suite's pin is updated in the same change.
+- **D7:** option **(b)**, store no question or reply text.
+- **D8:** the browser handling below, with the 15-minute inactivity limit.
+
+**Not approved by this record, and still open:**
+
+- **D3: the privacy-policy wording.** A draft is below. It waits on D6.
+- **D4: consent versions.** The recommendation below is for the owner's decision. Approving this brief does not resolve it.
+- **D5: legal review.** The help assistant is added to
+  `docs/legal/ndpr-ai-review.md` (condition 5a, question 14). The review itself is unsigned.
+- **D6: provider terms. Not verified.** See below.
+- **Three wording corrections** the owner referred to on 2026-11-08 have not been received. They will be applied when given, and this record updated.
+
+**Pilot activation is separately gated.** No school's help-assistant switch
+is turned on until all of these are true:
+- the provider (D6), privacy (D3), legal (D5) and consent (D4) work is complete;
+- the FD-5c evaluations pass;
+- the owner has selected the pilot schools.
+
+Until then every assistant switch stays off. Approving D1 and D2 does not
+switch anything on. Background and the options compared:
 `agentic-implementation-plan.md` §3.6.
 
 ## The decisions
@@ -45,7 +69,7 @@ Under the two binding rules, add:
 And pin `help-assistant` in the eval suite's list of allowlisted prompts in
 the same change.
 
-## D3: exact proposed privacy-policy paragraph
+## D3: privacy-policy paragraph (draft; not final until D6 is verified)
 
 > **Help assistant (only if your school switches it on).** Your staff can ask
 > SchoolKit questions about using the product. Each question is sent to an AI
@@ -57,8 +81,44 @@ the same change.
 > every personal detail, so some may reach the provider. We do not keep the
 > questions or the answers on our servers; the conversation stays in the staff
 > member's browser and is cleared when they sign out or stop using it for 15
-> minutes. [Provider terms, to be confirmed under D6: what the provider keeps,
-> for how long, and that it does not use it to train its models.]
+> minutes. [PROVIDER TERMS — to be written only from the signed agreement or
+> the provider's own pages (D6): how long the provider keeps each request, the
+> exceptions (misuse and legal holds), and that it does not use it to train
+> its models.]
+
+## D6: provider terms (status 2026-11-08: not verified)
+
+- **Not reachable from this session.** The provider's own Privacy Center and
+  support pages are outside its network allowlist, so they could not be read.
+- **The public summaries found disagree:**
+  - a search-result summary of the provider's Privacy Center says API inputs and
+    outputs are deleted within **30 days**, with exceptions (usage-policy
+    enforcement, legal requirements, a service the customer controls such as
+    the Files API, and any zero-data-retention agreement);
+  - a third-party report says this became **7 days** in September 2025;
+  - secondary reports also say prompt caching and some newer models can
+    override zero-retention arrangements, and that commercial API content is
+    not used for training.
+- **None of these is relied on.** To verify, read the signed Commercial Terms and Data
+  Processing Addendum, or the provider's own current pages, and record:
+  - the retention period;
+  - each exception;
+  - where data is processed;
+  - the no-training term;
+  - whether prompt caching changes any of these.
+
+  Then complete D3. The help assistant uses no prompt caching over user text (the approved rule).
+
+## D4: consent versions (recommendation, for the owner's decision)
+
+- **`SCHOOL_CONSENT_VERSION`: bump.**
+  - The school's step-4 agreement says data is shared only with payment, SMS and email providers, and does not name AI providers (legal review, "What the school agreed to").
+  - The help assistant sends staff-typed text, which may include personal details, to an AI provider.
+  - That is a new purpose, so schools should accept again before any pilot.
+- **`PARENT_CONSENT_VERSION`: decide with the lawyer (question 14).**
+  - If the final policy wording changes what parents agreed to, bump it. That asks every parent again.
+  - If the lawyer advises that the school-side notice suffices, do not.
+- **Neither bump is made until the owner decides.** Each is a one-line change plus the wording it versions.
 
 ## D8: proposed browser handling (FD-5d acceptance criteria)
 

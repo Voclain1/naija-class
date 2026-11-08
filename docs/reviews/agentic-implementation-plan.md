@@ -275,14 +275,16 @@ These are recommendations (R10). Each can change without redesign.
 | F-12 | Real support questions for the eval set (30–50, from the platform admin's inbox and onboarding calls, with any school names removed) | Needed for FD-5c |
 | F-13 | Which roles get `assistant.help` | Every staff role |
 | F-14 | Pilot schools (1–2) | Owner's choice |
-| F-16 | The residual risk of personal data the G-PII detectors miss (§3.6) | **Open.** Not approved. Options compared in §3.6 (2026-11-08). Option A needs a `CLAUDE.md` allowlist row or rule amendment, privacy-policy wording, a consent-version decision and legal review first (§3.6); a pilot approval is none of these |
-| F-17 | Whether user-typed text and assistant replies are stored server-side, given `AIInteractionLog.payload` is documented as PII-free (§3.6) | **Open.** Preferred recommendation (b), store no text; not owner-approved. Browser-memory handling defined in §3.6 |
+| F-16 | The residual risk of personal data the G-PII detectors miss (§3.6) | **Decided 2026-11-08: option A, limited pilot,** with the `help-assistant` allowlist row in `CLAUDE.md` (D2). Provider terms (D6), privacy wording (D3), legal review (D5) and consent versions (D4) remain open; pilot activation is gated on them (approval brief) |
+| F-17 | Whether user-typed text and assistant replies are stored server-side, given `AIInteractionLog.payload` is documented as PII-free (§3.6) | **Decided 2026-11-08: option (b),** store no text; browser-memory handling (D8) approved |
 | R9, R10 | Approve the first-delivery recommendations | — |
 
 ### 3.6 G-PII: personal data typed or pasted by users (proposal, for approval)
 
-**Status:** recommendation, not approved. Required by RQ6 before any
-conversational input is built (FD-4a, FD-5d).
+**Status:** F-16 (option A, limited pilot) and F-17 (option b) decided by the
+owner on 2026-11-08, with the D8 browser handling; see the approval record.
+FD-4a and FD-5d may be built and tested with every assistant switch off.
+Switching any school on remains gated (approval brief).
 
 #### The problem
 
@@ -406,7 +408,14 @@ for example "a teacher".
   - This plan does **not** treat any of these as accepted.
 - **F-17 (open).** As in the sinks table.
 
-#### F-16 and F-17 compared (2026-11-08; recommendations, not approved)
+#### F-16 and F-17 compared (2026-11-08)
+
+**Decided 2026-11-08 by the owner:** D1 option A for a limited pilot, D2 the
+narrow `help-assistant` exception (now in `CLAUDE.md`), D7 option (b), D8 the
+browser handling. **Still open:** D3, D4 (for decision), D5, D6, and three
+wording corrections not yet received. Pilot activation is gated separately.
+The record: `docs/reviews/agentic-f16-f17-approval-brief.md`. The comparison
+below is kept as written when it was proposed.
 
 *The decisions, with the exact proposed `CLAUDE.md` row, rule application,
 privacy-policy paragraph and browser rules, are collected in one brief:
@@ -652,9 +661,9 @@ school's status: `ONBOARDING`, `ACTIVE`, `SUSPENDED` or `ARCHIVED`
 Each item has to be shown to pass. Where it says "spec", the check is an automated test in CI. The numeric thresholds are recommendations for you to confirm.
 
 ### 4.1 Before work starts
-- [ ] **G-PII (§3.6) approved by the owner** before FD-4a or FD-5d starts (RQ6). Record the approval and any changes to §3.6 in `docs/modules/assistant.md`.
+- [x] **G-PII (§3.6) approved by the owner** before FD-4a or FD-5d starts (RQ6). Record the approval and any changes to §3.6 in `docs/modules/assistant.md`. *Approved 2026-11-08 (D1, D2, D7, D8), recorded in `docs/reviews/agentic-f16-f17-approval-brief.md`; copied into `docs/modules/assistant.md` when FD-5e writes it.*
 - [ ] The six review corrections (RQ7) are applied in place (record in §0.2). The reviewer confirms each against the sections listed there.
-- [ ] **F-16 and F-17 decided by the owner** before FD-4a or FD-5d starts (§3.6). Until then neither is treated as approved, and FD-4a stores no user or reply text.
+- [x] **F-16 and F-17 decided by the owner** before FD-4a or FD-5d starts (§3.6). Until then neither is treated as approved, and FD-4a stores no user or reply text. *Decided 2026-11-08: F-16 A (limited pilot), F-17 (b).*
 - [ ] F-7 (retention period, and whether deactivation deletes at once) decided before FD-4b (§3.7).
 - [ ] The §3.5 decisions are recorded in `docs/modules/assistant.md`, each with its date and its status (owner-approved or recommendation).
 - [ ] The eval question set (F-12) is in `packages/ai/evals/cases`, with no school or person names.
@@ -1233,6 +1242,6 @@ The first-delivery decisions are listed in §3.5. The full register:
 | F-13 | Roles holding `assistant.help` | All staff roles | FD-4a |
 | F-14 | Pilot schools | Owner's choice | Pilot entry |
 | F-15 | Staff data to the model (R6) | Pasted text yes, photos no | S5-04 |
-| F-16 | Residual risk of personal data the G-PII detectors miss (§3.6) | **Open; no option approved.** Options: (A) accept with the stated mitigations, (B) stricter blocking, (C) fixed questions instead of free text. Compared in §3.6 (2026-11-08). A requires, first: a `CLAUDE.md` allowlist row for `help-assistant` (recommended) or a rule amendment, privacy-policy wording, a consent-version decision and legal review. Recommendation: A after those, pilot schools only, with F-17 (b); fallback C | FD-4a, FD-5d |
-| F-17 | Whether user-typed text and replies are stored server-side (§3.6 sinks table) | **Open.** Preferred recommendation, not owner-approved: (b), store no user or reply text server-side; transcript in browser memory only, cleared on sign-out, account or school change and 15 minutes' inactivity (§3.6) | FD-4a |
+| F-16 | Residual risk of personal data the G-PII detectors miss (§3.6) | **Decided 2026-11-08 (owner): A, limited pilot; D2 allowlist row added to `CLAUDE.md`.** Still open: D3 privacy wording, D4 consent versions (for decision), D5 legal review, D6 provider terms (not verified). Pilot activation separately gated: those, passing FD-5c evals, and the owner's choice of schools | FD-4a, FD-5d |
+| F-17 | Whether user-typed text and replies are stored server-side (§3.6 sinks table) | **Decided 2026-11-08 (owner): (b),** store no user or reply text server-side; D8 browser handling approved (memory only; cleared on sign-out, account or school change and 15 minutes' inactivity) | FD-4a |
 | R1–R10 | Approve the recommendations in §1.3 | Approve | As listed in §1.3 |
