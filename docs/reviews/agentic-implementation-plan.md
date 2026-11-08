@@ -197,7 +197,7 @@ Each PR is independently reviewable, in this order.
 |---|---|---|---|---|
 | **FD-1a** ✅ merged (#498) | Feature controls: storage and resolver | — | B | `schools.feature_switches` JSONB (`schools` has no RLS; it is the tenant table [D, CLAUDE.md]), validated against a Zod enum of keys. A resolver `isFeatureOn(schoolId, key)` with a platform env kill switch per key, which wins. Short-TTL cache. **Recommendation F-4:** JSONB on `schools` rather than a new FORCE-RLS table, because a cross-tenant platform read of an RLS table would need a SECURITY DEFINER function. |
 | **FD-1b** ✅ merged (#498) | Feature controls: platform-admin toggle | FD-1a | B | `PATCH /platform-admin/schools/:id/features`, audited like `setAiEnabled`. The switch states are added to `platform_admin_list_schools()` so the write is not blind: its 11th revision, DROP + CREATE with grants restated. The SECURITY DEFINER count stays 23; the CLAUDE.md inventory row is updated in the same PR. A toggle in the super-admin Manage dialog. |
-| **FD-2a** ✅ built, in review | AI port: messages and tool use | — | D (no prompt yet) | `packages/ai`: `AnthropicPort` gains an optional `messages[]` and `tools[]` and returns tool-use blocks; the existing `userContent` path is unchanged. Fake port for specs. No streaming. **As built (2026-11-07):**
+| **FD-2a** ✅ merged (#500, 2026-11-07) | AI port: messages and tool use | — | D (no prompt yet) | `packages/ai`: `AnthropicPort` gains an optional `messages[]` and `tools[]` and returns tool-use blocks; the existing `userContent` path is unchanged. Fake port for specs. No streaming. **As built (2026-11-07):**
 - **The entry point** is a separate, optional `converse()`, so every existing fake port still satisfies the interface.
 - **The types** are the port's own (the ESLint SDK ban covers type imports).
 - **Tools** are always `strict: true`, with no `tool_choice`.
@@ -205,7 +205,7 @@ Each PR is independently reviewable, in this order.
 - **Malformed conversations** are refused before sending: unmatched or missing tool results, forged turns, non-strict schemas.
 - **Assistant turns stay in memory.** Their content sits in a module-private `WeakMap`, so logging, serializing or cloning a turn shows only `{ kind }`. A copy, or a turn restored after a restart, is refused. Thinking blocks never enter stored history or logs.
 - **`converse()` has no production callers today.** That is not a guarantee against misuse: code holding the port could still call `converse()` or `create()` directly and skip the budget check and ledger. The intended boundary is that **only `AiGenerationService` calls port methods**. FD-2b enforces it in two ways: `runConversationTurn()` becomes the single caller, and a CI conformance spec fails if `.converse(`, `.create(` on the port, `createAnthropicClient(` or the `AI_PORT` token appear outside `apps/api/src/common/ai/` (specs excepted). |
-| **FD-2b** ✅ built on branch `agentic/fd-2b-conversation-loop` (no PR yet) | Conversation loop in `AiGenerationService` | FD-2a | D | `runConversationTurn()`: each model step is its own reserve → call → settle with its own `ai_generations` row, linked by `interactionLogId`. Ceilings per turn (steps, tokens) and per conversation. Budget exhaustion mid-turn ends the turn with a user-facing message. Per-user daily cap counts each step. **As built (2026-11-07):**
+| **FD-2b** ✅ merged (#501, 2026-11-08) | Conversation loop in `AiGenerationService` | FD-2a | D | `runConversationTurn()`: each model step is its own reserve → call → settle with its own `ai_generations` row, linked by `interactionLogId`. Ceilings per turn (steps, tokens) and per conversation. Budget exhaustion mid-turn ends the turn with a user-facing message. Per-user daily cap counts each step. **As built (2026-11-07):**
 - **Single caller.** `runConversationTurn()` is the only caller of `converse()`.
 - **Per step:** reserve → call → settle, with one `ai_generations` row per model call.
 - **Outcomes, not errors:** answered, refused, truncated, step limit, turn token limit, budget exhausted, user rate-limited, unexpected stop.
@@ -214,7 +214,26 @@ Each PR is independently reviewable, in this order.
 - **Boundary enforced in two places:**
   - the ESLint rule `@typescript-eslint/no-restricted-imports` on the port's names outside `common/ai`;
   - `apps/api/src/__tests__/ai-port-boundary.spec.ts` for `.converse(`, `createAnthropicClient(`, `AI_PORT` and `AnthropicPort`. |
-| **FD-3a** | Tool registry core (read-only) | FD-2b | E | Typed tool definitions declaring: required permission(s) **or** an explicit `anyActiveStaff` with a written reason (mirroring `PermissionsGuard`'s refusal of undeclared routes); principal type; `read` class only. At execution: re-fetch `isActive`, call `userHoldsPermission` (`role-check.ts:85`) [V], take the tenant from `authCtx` only, validate arguments with Zod, and shape output to an allowlist of fields. **Registering a write-class tool throws at boot** in this delivery. A deny-list scaffold encodes R1 for later. |
+| **FD-3a** ✅ built on branch `agentic/fd-3a-tool-registry` (PR #502) | Tool registry core (read-only) | FD-2b | E | Typed tool definitions declaring: required permission(s) **or** an explicit `anyActiveStaff` with a written reason (mirroring `PermissionsGuard`'s refusal of undeclared routes); principal type; `read` class only. At execution: re-fetch `isActive`, call `userHoldsPermission` (`role-check.ts:85`) [V], take the tenant from `authCtx` only, validate arguments with Zod, and shape output to an allowlist of fields. **Registering a write-class tool throws at boot** in this delivery. A deny-list scaffold encodes R1 for later. **As built (2026-11-07):** `apps/api/src/common/ai/tools/tool-registry.ts`.
+- **Checks on every call, at execution time:**
+  - re-reads the user's `is_active` and current role grants, as `PermissionsGuard` does;
+  - checks the declared permissions (or reasoned `anyActiveStaff`);
+  - validates the strict Zod arguments;
+  - takes the tenant from `AuthContext` only;
+  - cuts the output to an allowlist of fields and an 8,000-character cap.
+- **Refusals** reach the model as fixed text and are logged by tool name and reason only.
+- **Refused at registration:**
+  - write tools;
+  - no access rule;
+  - an empty or `*` permission list;
+  - no reason for `anyActiveStaff`;
+  - non-strict arguments;
+  - id- or tenant-like argument names;
+  - a JSON schema that disagrees with the arguments.
+- **Not yet:**
+  - **The R1 deny list** is in place but **empty**: R1 is not approved, and write tools are refused anyway.
+  - **No real tools are registered:** they come with FD-5b.
+  - **The PII, money, behaviour and health conformance gate** is FD-3b. |
 | **FD-3b** | Registry conformance gate | FD-3a | — (CI) | A spec that enumerates every registered tool, like `security-definer-inventory.spec.ts`. It asserts: a declared permission or reasoned `anyActiveStaff`; read class; and that the output of each tool, run over a fixture school, contains **none** of the fixture's student, guardian or staff names, emails, phones, DOBs or kobo amounts (the PII and money scan). It also asserts **no behaviour field or count** (P16) and **no health field** (a health field fails the gate until R2 is decided). The scan covers what tools return; it says nothing about what users type (§3.6). |
 | **FD-4a** | Conversation store and API | FD-2b, FD-1a, **G-PII approved** (§3.6) | E | Conversations on `AIInteractionLog` (`sessionRef` = conversation). Payloads store tool names and shaped outputs, never raw rows. **Whether user-typed text and replies are stored server-side at all is owner decision F-17 (§3.6); until it is decided, this PR may not store them.** Endpoints: `POST /assistant/conversations`, `POST …/:id/messages`, `GET …/:id`, `DELETE …/:id`. Guarded by `AuthGuard`, a new **`assistant.help` permission** (R10; every staff role; migration and seed kept in sync) and the feature switch. Per-user rate limit. A person can read only their own conversations. |
 | **FD-4b** | Conversation retention | FD-4a | C (no notifications) | A nightly purge after the retention period (R10 default 90 days, F-7). "Clear my history". **It covers every school whatever its status (ONBOARDING, ACTIVE, SUSPENDED, ARCHIVED) and whether or not the feature is still switched on**, one tenant at a time under that school's GUC; the existing sweeps walk ACTIVE schools only [V], which is not enough here. It deletes conversation content only, never the `ai_generations` ledger, audit logs, execution journals or financial records (§3.7, RQ7 correction 6). |
@@ -509,7 +528,7 @@ tick.*
 
 ### 4.3 FD-2 · Port and conversation loop
 
-*Status 2026-11-07: FD-2a in review (#500); FD-2b built on `agentic/fd-2b-conversation-loop`.*
+*Status 2026-11-08: FD-2a merged (#500); FD-2b merged (#501).*
 - **Evidenced by FD-2a's tests:**
   - the unchanged single-call request body;
   - the SDK import ban still holding.
@@ -537,6 +556,16 @@ tick.*
 - [ ] No reasoning or prompt text is written to application logs (log assertion in spec).
 
 ### 4.4 FD-3 · Tool registry
+
+*Status 2026-11-08: FD-3a in review (#502).*
+- **Evidenced by `tool-registry.spec.ts`** (real Postgres; each check also shown to fail when broken):
+  - boot refusal of undeclared, write-class and id-argument tools;
+  - per-tool permission refusal reaching the model as "not permitted";
+  - deactivation mid-conversation;
+  - tenant from `AuthContext` only;
+  - cross-tenant isolation.
+- **Open:** the PII, money, behaviour and health scan (FD-3b) and `school.profile_summary` (FD-5b).
+
 - [ ] A tool with neither a permission nor a reasoned `anyActiveStaff` fails at boot (spec).
 - [ ] A write-class tool fails at boot in this delivery (spec).
 - [ ] Each permission-declared tool is refused for a user without that permission, and the refusal reaches the model as "not permitted" rather than an error leak (spec per tool, modelled on `permissions.guard.spec.ts`).
