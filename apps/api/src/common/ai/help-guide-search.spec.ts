@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { GUIDE_SECTIONS, isGuideAnchor, searchGuide, tokenize } from "@school-kit/ai";
+import {
+  GUIDE_PARAPHRASE_CASES,
+  GUIDE_PARAPHRASE_HOLDOUT,
+  GUIDE_SECTIONS,
+  isGuideAnchor,
+  queryTerms,
+  searchGuide,
+  tokenize,
+  type ParaphraseCase,
+} from "@school-kit/ai";
 
 // FD-5a — search over the help guide (docs/reviews/agentic-implementation-plan.md
 // §3.3). The index's anchors and freshness are checked against the real page in
@@ -65,5 +74,58 @@ describe("help guide search (FD-5a)", () => {
     expect(tokenize("Billing Parents for School Fees")).toEqual(["bill", "parent", "school", "fee"]);
     expect(tokenize("The classes and categories")).toEqual(["class", "category"]);
     expect(isGuideAnchor("not-a-heading")).toBe(false);
+  });
+
+  it("hears 'log in' as the guide's 'sign in', in every form people type it", () => {
+    for (const q of ["log in", "login", "logging in", "log-in", "logon", "logged in", "signin"]) {
+      expect(queryTerms(`teacher cannot ${q}`), q).toContain("sign");
+    }
+    expect(queryTerms("pay staff salaries")).toEqual(expect.arrayContaining(["salary", "payroll"]));
+    expect(queryTerms("who is the class teacher")).toEqual(expect.arrayContaining(["form", "teacher"]));
+    // The person's own words are kept beside the guide's.
+    expect(queryTerms("list of debtors")).toEqual(expect.arrayContaining(["debtor", "unpaid"]));
+  });
+});
+
+// Paraphrase cases (packages/ai/src/help-guide/guide-paraphrases.ts): questions
+// in staff's own words. Floors are today's measurements; a change that lowers
+// them fails here. The held-out set was written after tuning and never tuned
+// on, so its numbers are the honest ones for unseen questions.
+describe("help guide search on paraphrased questions (FD-5a)", () => {
+  function measure(cases: readonly ParaphraseCase[]) {
+    const misses: string[] = [];
+    let top1 = 0;
+    let top3 = 0;
+    for (const c of cases) {
+      const hits = searchGuide(c.question).map((h) => h.anchor);
+      if (c.accept.includes(hits[0]!)) top1++;
+      if (hits.some((a) => c.accept.includes(a))) top3++;
+      else misses.push(`${c.question} -> ${hits.join(", ")}`);
+    }
+    return { top1, top3, misses };
+  }
+
+  it("every 'log in' and 'sign in' question finds a correct section in the top 3", () => {
+    const signIn = [...GUIDE_PARAPHRASE_CASES, ...GUIDE_PARAPHRASE_HOLDOUT].filter((c) =>
+      /log ?in|sign in|login/i.test(c.question),
+    );
+    expect(signIn.length).toBeGreaterThanOrEqual(6);
+    expect(measure(signIn).misses).toEqual([]);
+  });
+
+  it("tuned set: all 44 in the top 3, at least 34 first", () => {
+    const r = measure(GUIDE_PARAPHRASE_CASES);
+    expect(GUIDE_PARAPHRASE_CASES).toHaveLength(44);
+    expect(r.misses).toEqual([]);
+    expect(r.top1).toBeGreaterThanOrEqual(34);
+  });
+
+  it("held-out set (not tuned on): at least 19 of 20 in the top 3, at least 15 first", () => {
+    const r = measure(GUIDE_PARAPHRASE_HOLDOUT);
+    expect(GUIDE_PARAPHRASE_HOLDOUT).toHaveLength(20);
+    expect(r.top3).toBeGreaterThanOrEqual(19);
+    expect(r.top1).toBeGreaterThanOrEqual(15);
+    // The known miss, kept visible rather than tuned away: no shared words.
+    expect(r.misses).toEqual([expect.stringMatching(/^what does SchoolKit set up for me automatically ->/)]);
   });
 });

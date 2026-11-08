@@ -7,7 +7,7 @@ import type { GuideSection } from "./guide-sections.js";
 // school's data. The same question always gets the same sections, which is
 // what makes the help assistant's citations reviewable.
 //
-// A heading's words count twice: "How do I add parents?" should find
+// A heading's words count three times: "How do I add parents?" should find
 // "Step 10. Add parents" before a section that mentions parents in passing.
 // On top of that, a section gains up to TITLE_MATCH_BONUS for the share of
 // the question's words its heading holds, so a short, generic heading ("Who
@@ -33,8 +33,8 @@ export interface GuideSearchOptions {
 
 const K1 = 1.2;
 const B = 0.75;
-const TITLE_WEIGHT = 2;
-const TITLE_MATCH_BONUS = 3;
+const TITLE_WEIGHT = 3;
+const TITLE_MATCH_BONUS = 5;
 const MAX_LIMIT = 8;
 
 // Words that carry no meaning for finding a section. Kept short on purpose:
@@ -42,9 +42,65 @@ const MAX_LIMIT = 8;
 const STOPWORDS = new Set(
   (
     "a an and are as at be but by can do does for from how i if in into is it its me my of on or our so " +
-    "that the their them then there these they this to us was we what when where which will with you your"
+    "that the their them then there these they this to us was we what when where which will with you your " +
+    "about after all also another any every get got has have her his just keep keeps need other so some " +
+    "still too want very"
   ).split(" "),
 );
+
+// The words staff use for what the guide calls something else. Applied to
+// the QUESTION only, as extra terms beside the person's own words (which are
+// kept: the guide uses some of them too). Each entry was added for a measured
+// miss in guide-paraphrases.ts, and points at wording the guide really uses;
+// keep it that way rather than growing it by guesswork.
+const PHRASES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\blog(?:ged|ging)?[ -]?(?:in|on)\b|\blogins?\b|\blogons?\b|\bsignin\b/g, "sign in address"],
+  [/\bclass teachers?\b/g, "form teacher"],
+  [/\broll[ -]?calls?\b/g, "register"],
+  [/\bscratch[ -]?cards?\b/g, "result pin card"],
+  [/\b(?:report|result) sheets?\b/g, "report card"],
+  [/\b(?:second|third|next|new) term\b/g, "new term set current"],
+  [/\b(?:next|new) (?:session|academic year|school year)\b/g, "new session academic year"],
+  [/\b(?:2fa|otp|two[ -]?factor)\b/g, "two-factor sign-in"],
+  [/\b(?:move|transfer|switch|change)\b[^.?]*\b(?:class|classes|arm)\b/g, "enroll class arm enrollments"],
+];
+
+const WORDS: Readonly<Record<string, string>> = {
+  pupil: "student",
+  kid: "child",
+  learner: "student",
+  debtor: "unpaid",
+  owing: "unpaid",
+  owe: "unpaid",
+  arrear: "unpaid",
+  outstanding: "unpaid",
+  salary: "payroll",
+  salari: "payroll",
+  wage: "payroll",
+  tuition: "fee",
+  excel: "csv",
+  spreadsheet: "csv",
+  url: "address",
+  subdomain: "address",
+  atm: "card",
+  attendance: "register",
+  mark: "score",
+};
+
+/** The question's own terms, plus the guide's words for the ones it says differently. */
+export function queryTerms(query: string): string[] {
+  let text = query.toLowerCase();
+  for (const [pattern, guideWords] of PHRASES) {
+    if (pattern.test(text)) text += ` ${guideWords}`;
+    pattern.lastIndex = 0;
+  }
+  const terms = tokenize(text);
+  for (const t of [...terms]) {
+    const guideWord = WORDS[t];
+    if (guideWord) terms.push(...tokenize(guideWord));
+  }
+  return [...new Set(terms)];
+}
 
 /** Lowercase words, a light plural/verb-ending trim, stopwords out. */
 export function tokenize(text: string): string[] {
@@ -99,7 +155,7 @@ export function searchGuide(
   const index = sections === GUIDE_SECTIONS ? (cached ??= buildDocs(sections)) : buildDocs(sections);
   const limit = Math.min(Math.max(Math.trunc(options.limit ?? 3), 1), MAX_LIMIT);
   const maxExcerpt = Math.max(options.maxExcerptChars ?? 1_200, 100);
-  const terms = [...new Set(tokenize(query))];
+  const terms = queryTerms(query);
   if (terms.length === 0) return [];
 
   const n = index.docs.length;
