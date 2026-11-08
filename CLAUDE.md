@@ -876,7 +876,9 @@ frequently-displayed branding/media asset" case:
     guide**) for anything a school would see differently. **Owner's standing
     rule (2026-10-19): after every build, before starting the next, update the
     onboarding guide and the docs**, unless the change touches nothing they
-    describe.
+    describe. After editing the guide, run `pnpm --filter @school-kit/ai
+    help-index` and commit the result: the help assistant's index is built
+    from it, and CI fails when the two differ (FD-5a).
 
 ## Dev commands
 

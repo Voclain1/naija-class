@@ -592,6 +592,9 @@ importers:
       '@types/node':
         specifier: ^22.20.5
         version: 22.20.5
+      github-slugger:
+        specifier: 2.0.0
+        version: 2.0.0
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
