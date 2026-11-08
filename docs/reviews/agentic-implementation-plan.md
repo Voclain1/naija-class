@@ -329,8 +329,9 @@ is never logged.
    - **Contact and identity patterns:** email addresses; Nigerian phone
      numbers (`+234…`, `0[7-9][01]…`); 10–11 digit runs (BVN, NIN, account
      numbers); full dates (a possible DOB).
-   - **The school's admission-number format**, from its admission-number
-     settings.
+   - **The school's admission numbers**, matched against the numbers on its
+     own roster. *(As built: stronger than the format, which only schools on
+     automatic numbering store.)*
    - **Size and shape:** a message over 1,000 characters, or one containing
      tab- or comma-separated rows (a paste), is refused regardless.
 3. **When a detector fires:**
@@ -346,6 +347,23 @@ is never logged.
 4. **When no detector fires:** the message may proceed, **still treated as
    possibly containing personal data** (§3.6 sinks table).
 
+**As built (2026-11-08), branch `agentic/g-pii-detectors`:**
+`apps/api/src/common/ai/pii/question-check.ts`.
+- **What it does:** `checkQuestion()` is pure and returns sorted categories only; `checkConversation()` checks every resent turn again; `loadQuestionRoster()` reads students, guardians, staff and admission numbers under the school's own tenant.
+- **Name matching:** exact, in any case and with accents folded. One-edit matching applies only to a capitalised word mid-sentence, because lowercase it would catch ordinary words ("hello" against a pupil named Bello).
+- **Names that are also ordinary words** (Grace, Faith, Joy, Blessing…) block only when written as a name, capitalised mid-sentence. "Is there a grace period" passes; "why Grace in JSS 2 cannot sign in" is blocked. This is the decision §3.6 asked to be recorded both ways.
+- **Product words** (class, term, grade, fees…) never match.
+- **Tests** (`question-check.spec.ts`, 34, including real Postgres):
+  - each category;
+  - no matched text in the result;
+  - both sides of the common-word rule;
+  - 15 ordinary questions pass (the false-block measurement);
+  - school B's people are not detected at school A (the documented residual);
+  - eight known misses recorded as measurements: an off-roster name, a nickname, a misspelling beyond one edit, a lowercase misspelling, an identifying description, a partial number, an address, and health in words.
+
+  Four deliberate breakages each failed a test.
+- **Not yet wired** to any endpoint: that is FD-4a.
+
 #### Known limitations of the detectors (false negatives)
 
 These pass the detectors today. The list is not exhaustive.
@@ -353,10 +371,10 @@ These pass the detectors today. The list is not exhaustive.
 | Gap | Example |
 |---|---|
 | Names not on this school's roster | A child at another school, a new pupil not yet entered, a sibling, a parent's first name only |
-| Nicknames, short forms and misspellings beyond one edit | "Ade" for Adebayo; "Chiamaka" typed "Chimka" |
+| Nicknames, short forms and misspellings beyond one edit, and any misspelling typed in lower case | "Ade" for Adebayo; "Chiamaka" typed "Chimka"; "chimaka" |
 | Names in other scripts or spellings | Ajami or diacritic spellings |
 | Descriptions that identify without naming | "the only boy in JSS1B who uses a wheelchair" |
-| Partial or reformatted numbers | "0803 … 4421", a phone written in words, a date written as "5th of March 2014" |
+| Partial or reformatted numbers | "0803 … 4421", a phone written in words, a date with no year ("5th of March"). *A full date written in words, such as "5th of March 2014", is caught (as built).* |
 | Addresses and locations | "lives behind the Total filling station on Aba Road" |
 | Health or behaviour described in free text | "the girl with sickle cell in SS2" |
 | Pastes under the size limit that are not row-shaped | A copied paragraph from a report |
