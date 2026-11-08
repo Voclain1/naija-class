@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { AiToolCall, AiToolDefinition, AiToolResult } from "@school-kit/ai";
 import { withTenant } from "@school-kit/db";
-import { PERMISSION_WILDCARD, type Permission } from "@school-kit/types";
+import { ForbiddenError, PERMISSION_WILDCARD, UnauthorizedError, type Permission } from "@school-kit/types";
 
 import type { AuthContext } from "../../auth/auth-context";
 
@@ -212,8 +212,19 @@ export class ToolRegistry {
     const parsed = def.args.safeParse(call.input ?? {});
     if (!parsed.success) return refuse(TOOL_REFUSAL.INVALID_ARGS, "args");
 
-    // 4. Run with the session's tenant only.
-    const output = await def.run({ authCtx }, parsed.data);
+    // 4. Run with the session's tenant only. A tool calls an existing service,
+    // and services keep their own checks (a role, the user's own scope): a
+    // refusal there is the same answer to the model as one here, never the
+    // service's message. Any other error propagates (the loop sends the model
+    // a fixed "tool failed" text).
+    let output: Record<string, unknown>;
+    try {
+      output = await def.run({ authCtx }, parsed.data);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) return refuse(TOOL_REFUSAL.INACTIVE, "service-inactive");
+      if (err instanceof ForbiddenError) return refuse(TOOL_REFUSAL.NOT_PERMITTED, "service-scope");
+      throw err;
+    }
 
     // 5. Allowlist and cap.
     const shaped: Record<string, unknown> = {};

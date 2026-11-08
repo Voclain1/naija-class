@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { basePrisma, withTenant } from "@school-kit/db";
+import { applySchoolDefaults, basePrisma, withTenant } from "@school-kit/db";
 
 import type { AuthContext } from "../common/auth/auth-context";
+import { deleteSchoolRows } from "../modules/platform-admin/school-deletion";
 import { ASSISTANT_TOOLS, buildAssistantToolRegistry } from "../common/ai/tools/assistant-tools";
 import {
   amountForms,
@@ -38,7 +39,15 @@ import type { ReadToolDefinition, ToolRegistry } from "../common/ai/tools/tool-r
  * until its name is added: a visible edit in review, and a reminder that the
  * tool now runs through this gate.
  */
-const REGISTERED_TOOLS: readonly string[] = [];
+const REGISTERED_TOOLS: readonly string[] = [
+  // FD-5b — settings tools (settings-tools.ts).
+  "grading_boundaries",
+  "grading_explain_score",
+  "grading_scheme",
+  "notification_channels",
+  "school_profile_summary",
+  "school_setup_progress",
+];
 
 const runId = Math.random().toString(36).slice(2, 8);
 const digits8 = () => String(Math.floor(10_000_000 + Math.random() * 89_999_999));
@@ -100,6 +109,9 @@ async function buildFixture(): Promise<Fixture> {
   };
 
   const ownerId = await withTenant(schoolId, async (db) => {
+    // What signup gives every school: classes, subjects, the default grading
+    // scheme and boundaries. The settings tools (FD-5b) read these.
+    await applySchoolDefaults(db as never, schoolId);
     const u = await db.user.create({
       data: { schoolId, ...staff, passwordHash: "argon2id$placeholder" },
       select: { id: true },
@@ -203,20 +215,15 @@ async function buildFixture(): Promise<Fixture> {
 }
 
 async function dropFixture(schoolId: string): Promise<void> {
-  await withTenant(schoolId, async (db) => {
-    await db.healthProfile.deleteMany({});
-    await db.behaviourRecord.deleteMany({});
-    await db.behaviourCategory.deleteMany({});
-    await db.invoice.deleteMany({});
-    await db.term.deleteMany({});
-    await db.academicYear.deleteMany({});
-    await db.studentGuardian.deleteMany({});
-    await db.guardian.deleteMany({});
-    await db.student.deleteMany({});
-    await db.userRole.deleteMany({ where: { user: { schoolId } } });
-    await db.user.deleteMany({});
-  }).catch(() => undefined);
-  await basePrisma.school.delete({ where: { id: schoolId } }).catch(() => undefined);
+  // The platform admin's own school deletion: every row the school owns,
+  // child before parent, under the school's GUC.
+  await basePrisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_school_id', ${schoolId}, true)`;
+      await deleteSchoolRows(tx, schoolId);
+    },
+    { timeout: 60_000 },
+  );
 }
 
 /**

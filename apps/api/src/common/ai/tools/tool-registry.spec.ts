@@ -13,6 +13,7 @@ import {
   type AnthropicPort,
 } from "@school-kit/ai";
 import { basePrisma, withTenant } from "@school-kit/db";
+import { ForbiddenError, UnauthorizedError } from "@school-kit/types";
 
 import type { AuthContext } from "../../auth/auth-context";
 import { AiGenerationService } from "../ai-generation.service.js";
@@ -220,6 +221,26 @@ describe("ToolRegistry — every call checked at execution", () => {
       expect(res.content).not.toContain("INPUT-MARK");
     }
     expect(runs).toBe(before);
+  });
+
+  it("a service's own refusal reaches the model as the fixed sentence, not the service's message; other errors propagate", async () => {
+    const thrower = (name: string, err: Error) =>
+      ({
+        ...OPEN_TOOL,
+        name,
+        async run() {
+          throw err;
+        },
+      }) as unknown as ReadToolDefinition<z.AnyZodObject>;
+    const r = new ToolRegistry();
+    r.register(thrower("svc_forbidden", new ForbiddenError("This action requires one of the following roles: owner, admin.")));
+    r.register(thrower("svc_inactive", new UnauthorizedError("USER_INACTIVE", "Your account has been deactivated.")));
+    r.register(thrower("svc_broken", new Error("connection reset by SECRET-HOST")));
+
+    const forbidden = await r.execute(teacherA, call("svc_forbidden"));
+    expect(forbidden).toEqual({ toolUseId: "toolu_svc_forbidden", content: TOOL_REFUSAL.NOT_PERMITTED, isError: true });
+    expect((await r.execute(teacherA, call("svc_inactive"))).content).toBe(TOOL_REFUSAL.INACTIVE);
+    await expect(r.execute(teacherA, call("svc_broken"))).rejects.toThrow(/SECRET-HOST/);
   });
 
   it("an unknown tool is refused", async () => {
