@@ -25,7 +25,7 @@ to 20 arms / 200 enrolled students, and sends no notification.
 
 ## Verification before publication
 
-- 22 local billing unit checks passed.
+- 24 local billing unit checks passed.
 - 28 existing web checks passed (confirmation logic, accent-border rule, guide index).
 - Offline AI eval: 259 checks passed, 1 warning and 5 explicit skips. No live model
   task success is claimed.
@@ -37,3 +37,12 @@ to 20 arms / 200 enrolled students, and sends no notification.
   failed on unavailable privilege changes; no production database was used.
 - See PR CI for full-suite, real database, compiled-app and browser results. Do
   not treat this entry as a claim those checks or deployment have completed.
+
+## First CI feedback
+
+The existing API suites and conformance gate passed, but new billing integration
+cases exposed an incorrect raw-SQL school active column. `School.status` is the
+source; platform roster `is_active` is derived, not stored. Corrected to derive
+it in the locked read. Also restored an invalid-write test's exact raw JSON
+expectation (missing feature entries remain missing after a refused request).
+Fresh full CI is required; no merge or activation.

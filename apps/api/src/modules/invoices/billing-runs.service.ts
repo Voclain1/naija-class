@@ -2,10 +2,10 @@ import { BILLING_RUN_PROMPT, BILLING_RUN_SYSTEM, BILLING_RUN_TASK } from "@schoo
 import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
 import { billingToolRegistry } from "./billing-tools.js";
 import { randomUUID } from "node:crypto";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { withTenant, type PrismaClient } from "@school-kit/db";
 import {
-  ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, parseFeatureSwitches,
+  BaseError, ConflictError, ForbiddenError, InternalError, NotFoundError, UnauthorizedError,
   type BillingContextDto, type BillingRequestInput, type BillingRunDto, type BillingRunInput,
 } from "@school-kit/types";
 import type { AuthContext } from "../../common/auth/auth-context.js";
@@ -14,7 +14,7 @@ import { InvoiceGenerationService } from "./invoice-generation.service.js";
 import { buildBillingPreview } from "./billing-run-preview.js";
 import { resolveBillingRequest } from "./billing-request.js";
 
-interface Payload { input: BillingRunInput; preview: ReturnType<typeof buildBillingPreview>; termLabel: string }
+interface Payload { interactionLogId?: string; input: BillingRunInput; preview: ReturnType<typeof buildBillingPreview>; termLabel: string; academicYearId: string }
 interface RunRow {
   id: string; status: "PENDING" | "COMPLETED"; payload: Payload;
   preview_hash: string; expires_at: Date; created_at: Date; approved_at: Date | null;
@@ -23,6 +23,7 @@ interface RunRow {
 
 @Injectable()
 export class BillingRunsService {
+  private readonly logger = new Logger(BillingRunsService.name);
   constructor(private readonly invoices: InvoiceGenerationService, private readonly features: FeatureSwitchesService, private readonly ai: AiGenerationService) {}
 
   async available(auth: AuthContext): Promise<{ enabled: boolean }> {
@@ -40,6 +41,11 @@ export class BillingRunsService {
     const context = await this.context(auth);
     const classArmIds = resolveBillingRequest(input.request, context, input.termId);
     const scope = { termId: input.termId, classArmIds, dueDate: input.dueDate };
+    const interaction = await withTenant(auth.schoolId, async (db) => {
+      await this.access(db, auth, false);
+      return db.aIInteractionLog.create({ data: { schoolId: auth.schoolId,
+        sessionRef: randomUUID(), payload: { feature: "billing-run-planning" } }, select: { id: true } });
+    });
     let checked = false;
     let requested = false;
     const registry = billingToolRegistry(async () => {
@@ -57,21 +63,23 @@ export class BillingRunsService {
       return requested;
     });
     const turn = await this.ai.runConversationTurn({
-      schoolId: auth.schoolId, userId: auth.userId, prompt: BILLING_RUN_PROMPT,
+      schoolId: auth.schoolId, userId: auth.userId, interactionLogId: interaction.id, prompt: BILLING_RUN_PROMPT,
       system: BILLING_RUN_SYSTEM, history: [{ role: "user", text: BILLING_RUN_TASK }],
       ...registry.forTurn(auth), maxSteps: 4, maxInputTokensPerTurn: 12_000,
     });
     if (turn.outcome !== "answered" || !requested) throw new ConflictError("BILLING_NOT_PREPARED", "The assistant could not finish preparing the run. You can retry or choose classes directly. No invoices were issued.");
     // The model's prose is never stored or used to choose a monetary action.
     // A fresh authoritative preview is the ONLY content of the approval card.
-    return this.prepare(auth, scope, ip);
+    return this.prepare(auth, scope, ip, interaction.id);
   }
 
-  async prepare(auth: AuthContext, input: BillingRunInput, ip: string | null): Promise<BillingRunDto> {
+  async prepare(auth: AuthContext, input: BillingRunInput, ip: string | null, interactionLogId?: string): Promise<BillingRunDto> {
     // No model call or external side effect inside any transaction.
-    return withTenant(auth.schoolId, async (db) => {
+    try {
+      return await withTenant(auth.schoolId, async (db) => {
       await this.access(db, auth, false);
       const payload = await this.preview(db, auth, input);
+      if (interactionLogId) payload.interactionLogId = interactionLogId;
       const id = randomUUID();
       const expires = new Date(Date.now() + 30 * 60_000);
       const rows = await db.$queryRaw<RunRow[]>`
@@ -82,6 +90,7 @@ export class BillingRunsService {
       await this.audit(db, auth, id, "assistant.billing.prepare", ip, { createCount: payload.preview.createCount });
       return this.dto(rows[0]!);
     }, { timeoutMs: 30_000, isolationLevel: "Serializable", label: "billing-preview" });
+    } catch (e) { this.failSafely(auth, "prepare", e); }
   }
 
   async list(auth: AuthContext): Promise<BillingRunDto[]> {
@@ -159,15 +168,23 @@ export class BillingRunsService {
       if (code === "P2034" || code === "P2002" || ["40001", "40P01", "23505"].includes(pgCode ?? "")) {
         throw new ConflictError("BILLING_RETRY", "Another billing action ran at the same time. Check this run, then retry or prepare a fresh preview.");
       }
-      throw e;
+      this.failSafely(auth, "approve", e);
     }
+  }
+
+  private failSafely(auth: AuthContext, operation: "prepare" | "approve", error: unknown): never {
+    if (error instanceof BaseError) throw error;
+    // A raw-query failure can include the JSON preview (names/amounts) in its
+    // driver detail. Never pass that exception to the global logger/Sentry.
+    this.logger.error(`Billing ${operation} failed: school=${auth.schoolId}; details omitted`);
+    throw new InternalError("The billing operation could not finish. Check the run before retrying.");
   }
 
   private async readContext(db: PrismaClient, auth: AuthContext): Promise<BillingContextDto> {
     const terms = await db.term.findMany({ where: { schoolId: auth.schoolId }, include: { academicYear: true }, orderBy: [{ academicYear: { startDate: "desc" } }, { sequence: "asc" }] });
     const arms = await db.classArm.findMany({ where: { schoolId: auth.schoolId, isActive: true }, include: { classLevel: true }, orderBy: { name: "asc" } });
     return {
-      terms: terms.map((t) => ({ id: t.id, name: t.name, year: t.academicYear.label, isCurrent: t.isCurrent })),
+      terms: terms.map((t) => ({ id: t.id, name: t.name, year: t.academicYear.label, academicYearId: t.academicYearId, isCurrent: t.isCurrent })),
       arms: arms.map((a) => ({ id: a.id, name: a.name, level: a.classLevel.name })),
     };
   }
@@ -188,15 +205,15 @@ export class BillingRunsService {
       selected.push({ id, label: `${arm.level} · ${arm.name}`, rows: await this.invoices.previewForArmInTransaction(auth, { termId: input.termId, classArmId: id }, db) });
     }
     const normalised = { ...input, classArmIds: ids };
-    return { input: normalised, preview: buildBillingPreview(normalised, selected, `${term.year} · ${term.name}`), termLabel: `${term.year} · ${term.name}` };
+    return { input: normalised, preview: buildBillingPreview(normalised, selected, `${term.year} · ${term.name}`), termLabel: `${term.year} · ${term.name}`, academicYearId: term.academicYearId };
   }
 
   private async access(db: PrismaClient, auth: AuthContext, write: boolean): Promise<void> {
     const [school] = await db.$queryRaw<{ is_active: boolean; suspended_at: Date | null; status: string; feature_switches: unknown }[]>`
-      SELECT is_active, suspended_at, status, feature_switches FROM schools WHERE id = ${auth.schoolId} FOR SHARE
+      SELECT (status = 'ACTIVE') AS is_active, suspended_at, status::text AS status, feature_switches FROM schools WHERE id = ${auth.schoolId} FOR SHARE
     `;
     if (!school || !school.is_active || school.suspended_at || school.status === "ARCHIVED") throw new ForbiddenError("School access is unavailable.");
-    if (this.features.isPlatformDisabled("assistant-billing") || !parseFeatureSwitches(school.feature_switches)["assistant-billing"]) throw new ForbiddenError("The invoice assistant is switched off.");
+    if (!this.features.isOnFromStored("assistant-billing", school.feature_switches)) throw new ForbiddenError("The invoice assistant is switched off.");
     const grants = await db.$queryRaw<{ is_active: boolean; permissions: unknown }[]>`
       SELECT u.is_active, r.permissions FROM users u
       JOIN user_roles ur ON ur.user_id = u.id JOIN roles r ON r.id = ur.role_id
@@ -210,7 +227,7 @@ export class BillingRunsService {
   private dto(row: RunRow): BillingRunDto {
     return {
       id: row.id, status: row.status, ...row.payload.preview,
-      termId: row.payload.input.termId, termLabel: row.payload.termLabel,
+      termId: row.payload.input.termId, termLabel: row.payload.termLabel, academicYearId: row.payload.academicYearId,
       dueDate: row.payload.input.dueDate ?? null, previewHash: row.preview_hash,
       expiresAt: row.expires_at.toISOString(), createdAt: row.created_at.toISOString(),
       approvedAt: row.approved_at?.toISOString() ?? null, result: row.result,

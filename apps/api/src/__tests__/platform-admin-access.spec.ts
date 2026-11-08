@@ -1158,7 +1158,7 @@ describe("Platform admin access (2026-08-02)", () => {
       expect((await send(schoolA, { key: "assistant-help", enabled: true, schoolId: schoolB })).status).toBe(400);
       expect((await send(schoolA, {})).status).toBe(400);
       expect((await send("does-not-exist", { key: "assistant-help", enabled: true })).status).toBe(404);
-      expect(await stored(schoolA)).toEqual({ "assistant-help": false, "assistant-billing": false });
+      expect(await stored(schoolA)).toEqual({ "assistant-help": false });
     });
   });
 

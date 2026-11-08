@@ -37,7 +37,7 @@ export function BillingAssistant({ onIssued }: { onIssued: () => void }) {
 
   const clear = useCallback(() => {
     generation.current += 1;
-    setRequest(""); setArms([]); setRun(null); setConfirmed(false); setError(null);
+    setRequest(""); setArms([]); setRun(null); setHistory([]); setConfirmed(false); setError(null);
     lastActivity.current = Date.now();
   }, []);
 
@@ -45,8 +45,19 @@ export function BillingAssistant({ onIssued }: { onIssued: () => void }) {
     clear(); setEnabled(false); setOpen(false); setContext(null); setHistory([]); setTerm(""); setDueDate("");
     if (status !== "authed" || !mayRead) return;
     let live = true;
-    apiFetch<{ enabled: boolean }>(`${ROOT}/availability`).then((r) => { if (live) { setEnabled(r.enabled); setShownAccount(account); } }).catch(() => {});
-    return () => { live = false; };
+    let sequence = 0;
+    const refresh = () => {
+      const current = ++sequence;
+      apiFetch<{ enabled: boolean }>(`${ROOT}/availability`).then((r) => {
+        if (!live || current !== sequence) return;
+        setEnabled(r.enabled); setShownAccount(account);
+        if (!r.enabled) { clear(); setOpen(false); setContext(null); setHistory([]); }
+      }).catch(() => { if (live && current === sequence) { setEnabled(false); clear(); } });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener("focus", refresh);
+    return () => { live = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, [account, status, mayRead, clear]);
 
   useEffect(() => {
@@ -132,7 +143,8 @@ export function BillingAssistant({ onIssued }: { onIssued: () => void }) {
           <Button disabled={busy || !confirmed || !!run.blockers.length || !mayIssue || Date.parse(run.expiresAt) <= Date.now()} onClick={() => void approve()}>{busy ? "Working…" : "Approve and issue invoices"}</Button>
           {!mayIssue && <p className="text-sm text-muted-foreground">An authorised bursar or administrator must approve this run.</p>}
         </>}
-        {run.result && <Link className="text-sm font-medium text-primary underline" href={`/finance/invoices?tab=list&termId=${run.termId}`}>Open issued invoices</Link>}
+        {run.approvedAt && <p className="text-sm text-muted-foreground">Issued on {new Date(run.approvedAt).toLocaleString()}.</p>}
+        {run.result && <Link className="text-sm font-medium text-primary underline" href={`/finance/invoices?tab=list&termId=${run.termId}&yearId=${run.academicYearId}`}>Open issued invoices</Link>}
       </div>}
       {!!history.length && <details><summary className="cursor-pointer text-sm font-medium">Recent billing runs</summary><ul className="mt-2 space-y-2">{history.map((h) => <li key={h.id}><button type="button" className="text-left text-sm text-primary underline" disabled={busy} onClick={() => void act(async () => {
         const owner = `${accountRef.current}:${generation.current}`; const next = await apiFetch<BillingRunDto>(`${ROOT}/runs/${h.id}`); if (owner === `${accountRef.current}:${generation.current}`) { setRun(next); setConfirmed(false); }

@@ -23,7 +23,7 @@ export const approveBillingRunSchema = z.object({
 }).strict();
 
 export interface BillingContextDto {
-  terms: { id: string; name: string; year: string; isCurrent: boolean }[];
+  terms: { id: string; name: string; year: string; academicYearId: string; isCurrent: boolean }[];
   arms: { id: string; name: string; level: string }[];
 }
 export interface BillingRunArmDto {
@@ -40,6 +40,7 @@ export interface BillingRunDto {
   status: "PENDING" | "COMPLETED";
   termId: string;
   termLabel: string;
+  academicYearId: string;
   dueDate: string | null;
   previewHash: string;
   expiresAt: string;

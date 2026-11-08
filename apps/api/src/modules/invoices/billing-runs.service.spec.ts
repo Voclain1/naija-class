@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigService } from "@nestjs/config";
+import { Logger } from "@nestjs/common";
 import { basePrisma, withTenant } from "@school-kit/db";
 import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
 import { FeatureSwitchesService } from "../../common/features/feature-switches.service.js";
@@ -139,9 +140,12 @@ describe("billing runs against PostgreSQL", () => {
   it("a later-arm failure rolls back earlier invoices, audits and the completion marker", async () => {
     const run = await prepare();
     const real = invoices.generateForArmInTransaction.bind(invoices);
-    vi.spyOn(invoices, "generateForArmInTransaction").mockImplementationOnce(real).mockRejectedValueOnce(new Error("simulated crash"));
-    await expect(approve(run)).rejects.toThrow("simulated crash");
+    const logs = vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
+    vi.spyOn(invoices, "generateForArmInTransaction").mockImplementationOnce(real).mockRejectedValueOnce(new Error("PrivateStudentA 4735251 simulated driver detail"));
+    await expect(approve(run)).rejects.toThrow("The billing operation could not finish");
     expect(await count(fx.auth.schoolId)).toBe(0);
+    expect(JSON.stringify(logs.mock.calls)).not.toContain("PrivateStudentA");
+    expect(JSON.stringify(logs.mock.calls)).not.toContain("4735251");
     expect((await service.get(fx.auth, run.id)).status).toBe("PENDING");
     expect(await withTenant(fx.auth.schoolId, (db) => db.auditLog.count({ where: { schoolId: fx.auth.schoolId, action: "invoice.issue" } }))).toBe(0);
     vi.restoreAllMocks();
@@ -152,7 +156,7 @@ describe("billing runs against PostgreSQL", () => {
     const run = await prepare();
     vi.spyOn(service as unknown as { audit: (...args: unknown[]) => Promise<void> }, "audit")
       .mockRejectedValueOnce(new Error("crash just before commit"));
-    await expect(approve(run)).rejects.toThrow("crash just before commit");
+    await expect(approve(run)).rejects.toThrow("The billing operation could not finish");
     expect(await count(fx.auth.schoolId)).toBe(0);
     expect((await service.get(fx.auth, run.id)).status).toBe("PENDING");
     vi.restoreAllMocks();
@@ -177,6 +181,7 @@ describe("billing runs against PostgreSQL", () => {
 
   it("the task loop sees counts only and cannot change scope or execute an invoice", async () => {
     fakeTurn.mockImplementation(async (params) => {
+      expect(params.interactionLogId).toMatch(/^[a-f0-9-]{36}$/);
       expect(JSON.stringify(params.history)).not.toContain("JSS");
       expect(JSON.stringify(params.history)).not.toContain(fx.input.termId);
       const checked = await params.executeTool({ id: "one", name: "billing_check_scope", input: {} });
@@ -191,6 +196,9 @@ describe("billing runs against PostgreSQL", () => {
     expect(run.createCount).toBe(2); expect(await count(fx.auth.schoolId)).toBe(0);
     const stored = await withTenant(fx.auth.schoolId, (db) => db.$queryRaw<{ payload: unknown }[]>`SELECT payload FROM assistant_billing_runs WHERE school_id = ${fx.auth.schoolId}`);
     expect(JSON.stringify(stored)).not.toContain("Prepare invoices for JSS 2");
+    const metadata = await withTenant(fx.auth.schoolId, (db) => db.aIInteractionLog.findMany({ where: { schoolId: fx.auth.schoolId } }));
+    expect(metadata).toHaveLength(1);
+    expect(metadata[0]!.payload).toEqual({ feature: "billing-run-planning" });
   });
 
   it.each(["budget_exhausted", "step_limit", "refused"])("%s cannot create a proposal or invoice", async (outcome) => {

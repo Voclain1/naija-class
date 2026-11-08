@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { billingRunInputSchema } from "@school-kit/types";
 import { resolveBillingRequest } from "./billing-request.js";
-const ctx = { terms: [{ id: "t", name: "Second Term", year: "2026/2027", isCurrent: true }], arms: [
+const ctx = { terms: [{ id: "t", name: "Second Term", year: "2026/2027", academicYearId: "y", isCurrent: true }], arms: [
   { id: "a", name: "JSS 2 A", level: "JSS 2" }, { id: "b", name: "JSS 2 B", level: "JSS 2" },
   { id: "c", name: "JSS 3 A", level: "JSS 3" },
 ] };
@@ -9,6 +9,8 @@ describe("local billing request resolution", () => {
   it.each([
     ["Please prepare invoices for all classes", ["a", "b", "c"]],
     ["Generate invoices for JSS 2", ["a", "b"]],
+    ["Generate invoices for all students in JSS2", ["a", "b"]],
+    ["Prepare invoices for JSS2A and JSS2B", ["a", "b"]],
     ["Issue invoices for JSS 2 A and JSS 3 A", ["a", "c"]],
     ["Bill the whole school for Second Term", ["a", "b", "c"]],
   ])("%s", (text, ids) => expect(resolveBillingRequest(text as string, ctx, "t")).toEqual(ids));

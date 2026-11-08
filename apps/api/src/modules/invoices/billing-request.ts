@@ -1,6 +1,6 @@
 import { ConflictError, type BillingContextDto } from "@school-kit/types";
 
-const normalise = (s: string) => s.toLowerCase().replace(/\b(jss|sss|ss|pry|primary)\s*(\d+)/g, "$1 $2").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+const normalise = (s: string) => s.toLowerCase().replace(/\b(jss|sss|ss|pry|primary)\s*(\d+)/g, "$1 $2").replace(/\b((?:jss|sss|ss|pry|primary) \d+)([a-z])\b/g, "$1 $2").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
 const fail = () => new ConflictError("BILLING_CLARIFY", "Please choose the classes below. I could not resolve the whole instruction safely. No invoices were created.");
 
 /** Local, fail-closed scope resolution. User text never becomes a model input. */
@@ -32,13 +32,14 @@ export function resolveBillingRequest(request: string, context: BillingContextDt
     text = text.split(needle).join(" ");
   }
   const all = /\ball (classes|arms|students)\b|\bwhole school\b|\bevery (class|arm|student)\b/.test(text);
-  if (all && picked.size) throw fail();
-  if (all) context.arms.forEach((a) => picked.add(a.id));
+  const scopedQuantifier = /\b(all|every) (classes|arms|students|class|arm|student) (in|of|for)\b/.test(text) && !/\bwhole school\b/.test(text);
+  if (all && picked.size && !scopedQuantifier) throw fail();
+  if (all && !picked.size) context.arms.forEach((a) => picked.add(a.id));
   for (const phrase of [normalise(term.name), normalise(term.year), "selected term", "this term", "current term", "whole school"]) {
     if (phrase) text = text.split(` ${phrase} `).join(" ");
   }
   // A fixed grammar, not redaction. Anything unrecognised prevents execution.
-  text = text.replace(/\b(please|can|could|you|help|me|generate|create|prepare|issue|bill|invoices?|fees?|for|the|all|every|classes|class|arms|arm|students|student|and|in|our|school|now)\b/g, " ").trim();
+  text = text.replace(/\b(please|can|could|you|help|me|generate|create|prepare|issue|bill|invoices?|fees?|for|the|all|every|classes|class|arms|arm|students|student|and|in|of|our|school|now)\b/g, " ").trim();
   if (text || picked.size === 0) throw fail();
   return [...picked].sort();
 }
