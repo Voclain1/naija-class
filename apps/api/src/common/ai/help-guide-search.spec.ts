@@ -4,6 +4,7 @@ import {
   GUIDE_PARAPHRASE_CASES,
   GUIDE_PARAPHRASE_HOLDOUT,
   GUIDE_SECTIONS,
+  GUIDE_UNANSWERABLE_CASES,
   isGuideAnchor,
   queryTerms,
   searchGuide,
@@ -127,5 +128,19 @@ describe("help guide search on paraphrased questions (FD-5a)", () => {
     expect(r.top1).toBeGreaterThanOrEqual(15);
     // The known miss, kept visible rather than tuned away: no shared words.
     expect(r.misses).toEqual([expect.stringMatching(/^what does SchoolKit set up for me automatically ->/)]);
+  });
+
+  it("still returns sections for questions the guide does not answer, scoring like real matches: the fallback is FD-5c's job", () => {
+    const answerableBest = Math.min(
+      ...[...GUIDE_PARAPHRASE_CASES, ...GUIDE_PARAPHRASE_HOLDOUT].map((c) => searchGuide(c.question)[0]!.score),
+    );
+    const unanswerableBest = GUIDE_UNANSWERABLE_CASES.map((q) => searchGuide(q)[0]?.score ?? 0);
+    // Recorded, not a goal: if a future change makes the two separable, this
+    // fails and the plan's FD-5c note (no threshold can say "not covered")
+    // should be revisited rather than this line loosened.
+    expect(unanswerableBest.some((s) => s >= answerableBest)).toBe(true);
+    for (const q of GUIDE_UNANSWERABLE_CASES) {
+      for (const h of searchGuide(q)) expect(isGuideAnchor(h.anchor)).toBe(true);
+    }
   });
 });

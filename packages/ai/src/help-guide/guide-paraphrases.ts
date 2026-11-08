@@ -102,3 +102,24 @@ export const GUIDE_PARAPHRASE_HOLDOUT: readonly ParaphraseCase[] = [
   { question: "make a teacher the form master of a class", accept: ["step-8-choose-a-form-teacher-for-each-class"] },
   { question: "what does SchoolKit set up for me automatically", accept: ["already-done-for-you"] },
 ];
+
+/**
+ * Questions the guide does NOT answer (FD-5c's honest-fallback cases). The
+ * search still returns sections for every one of them: measured 2026-11-08,
+ * their best scores (2.9–5.6) overlap the best scores of answerable questions
+ * (from 4.0), so no score threshold can say "not covered". Saying so is the
+ * prompt's job, and FD-5c's evals must show it does, without inventing steps,
+ * features or citations.
+ */
+export const GUIDE_UNANSWERABLE_CASES: readonly string[] = [
+  "how do I export my accounts to QuickBooks",
+  "what is the current VAT rate in Nigeria",
+  "can SchoolKit register my students for WAEC",
+  "how do I connect a biometric fingerprint scanner",
+  "does SchoolKit work with Moodle",
+  "how much does a school bus cost",
+  "can I change the colour of the menu to purple",
+  "how do I install SchoolKit on my own server",
+  "how do I set up a staff loan scheme",
+  "which bank gives the best interest rate",
+];

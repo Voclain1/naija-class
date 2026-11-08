@@ -192,6 +192,7 @@ export { isGuideAnchor, queryTerms, searchGuide, tokenize, type GuideHit, type G
 export {
   GUIDE_PARAPHRASE_CASES,
   GUIDE_PARAPHRASE_HOLDOUT,
+  GUIDE_UNANSWERABLE_CASES,
   type ParaphraseCase,
 } from "./help-guide/guide-paraphrases.js";
 export { plainText, renderGuideIndexModule, splitGuide, type GuideSection } from "./help-guide/guide-sections.js";
