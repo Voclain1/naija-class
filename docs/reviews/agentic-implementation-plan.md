@@ -489,6 +489,30 @@ widens, the owner reviews the measured miss rate on the §3.6 limitation cases
 and the pilot's blocked-message counts. If items 1–5 are not approved, or the
 review is not acceptable, the fallback is C, which needs none of them.
 
+**How the "single request" rule would apply to a conversation.** The
+allowlist's first binding rule reads: the data "is never retained by the model
+path beyond the single request. No storage object, no queue payload, no
+cache." It was written for one-shot prompts (transcribe a register, draft
+feedback on one answer). **The current wording does not address a
+conversation, and nothing here claims it already permits one.** A
+conversation keeps earlier turns somewhere, and under F-17 (b) that somewhere
+is the browser, which resends them with every new question. An allowlist row
+for `help-assistant` would have to say how the rule applies, layer by layer:
+
+| Layer | What holds the text | For how long | Under F-17 (b) |
+|---|---|---|---|
+| **Browser memory** | The panel's in-memory state on the staff member's own device | Until sign-out, account or school change, 15 minutes' inactivity, tab close or Clear (below) | Outside the model path, on the user's device. The proposed row would have to name it explicitly as the one place the conversation lives between requests, with these limits as conditions. |
+| **Temporary server processing** | The API process's memory while it handles one turn: detectors, prompt assembly, tool calls, the model call(s) of that turn | The life of that HTTP request | This **is** "the single request". Each turn re-receives the earlier turns from the browser, re-runs the detectors on all of them, and drops everything when the response is sent. Nothing is written to a database row, queue payload, cache, log line, error event or analytics event (§3.6 sinks table). |
+| **Server persistence** | Database rows | The retention period | **None for text.** Metadata only: ids, timestamps, the conversation's last-activity time, tool names, token counts, outcome, blocked tally. |
+| **Provider retention** | The model provider's systems | Set by the provider's API data terms, not by SchoolKit | **Outside the rule's reach as written**, which covers "the model path", meaning our code. Resending history means the provider receives earlier turns again on every turn, so each is transmitted more than once within a conversation. The row would have to state this, and the provider's terms (item 5 above) decide what they keep. **No prompt caching over user text:** today no call uses `cache_control`; if caching is added later, its breakpoint must sit before the conversation's messages (system prompt and tool definitions only), or the decision must cover provider-side caching of user text explicitly. |
+
+So the proposed row's first rule would need its own wording, for example:
+"the conversation is held only in the user's browser memory under the stated
+limits; each request carries it to the server, which keeps it only for that
+request and stores no text; the provider receives it on each request under its
+API terms, with no prompt caching over it." That wording is a proposal for the
+owner, not the current rule.
+
 **Browser-memory handling under F-17 (b)** (FD-5d acceptance criteria):
 
 - **Memory only.** The transcript, including a blocked draft, lives only in
