@@ -275,7 +275,7 @@ These are recommendations (R10). Each can change without redesign.
 | F-12 | Real support questions for the eval set (30–50, from the platform admin's inbox and onboarding calls, with any school names removed) | Needed for FD-5c |
 | F-13 | Which roles get `assistant.help` | Every staff role |
 | F-14 | Pilot schools (1–2) | Owner's choice |
-| F-16 | The residual risk of personal data the G-PII detectors miss (§3.6) | **Open.** Not approved; see §3.6 for the options |
+| F-16 | The residual risk of personal data the G-PII detectors miss (§3.6) | **Open.** Not approved. Options compared in §3.6 (2026-11-08); recommendation A for the pilot schools only, not approved |
 | F-17 | Whether user-typed text and assistant replies are stored server-side, given `AIInteractionLog.payload` is documented as PII-free (§3.6) | **Open.** Recommendation in §3.6; not approved |
 | R9, R10 | Approve the first-delivery recommendations | — |
 
@@ -405,6 +405,53 @@ for example "a teacher".
     at all and offering a list of fixed questions instead.
   - This plan does **not** treat any of these as accepted.
 - **F-17 (open).** As in the sinks table.
+
+#### F-16 and F-17 compared (2026-11-08; recommendation, not approved)
+
+Prepared at the owner's request. **No option below is approved.** FD-4a and
+FD-5d stay blocked until the owner decides both.
+
+**F-16: what reaches the model when the detectors miss something**
+
+| Option | What the user gets | What still reaches the model | Main cost |
+|---|---|---|---|
+| **A. Free text, detect and block, with the stated mitigations** | Ask anything in their own words. A message naming someone on the roster, or carrying a phone number, email, long number, full date or pasted rows, is refused with the reason ("a name from your school") and kept as a draft. | Whatever the detectors miss: off-roster names, nicknames, descriptions that identify ("the only boy in JSS1B who uses a wheelchair"), reformatted numbers, addresses, health or behaviour in words. | A residual that can be measured on the tested cases but not ruled out. |
+| **B. Stricter blocking** (any capitalised word not in a known vocabulary, any number) | Frequent refusals of ordinary questions ("How do I set up the Christmas break for JSS 2?", "Why is Paystack failing?"); staff learn to type in lower case, which defeats it. | Less: mostly lower-case names and descriptions. | Usability. The help assistant becomes the thing staff stop using. |
+| **C. No free text to the model** | Pick from fixed questions ("How do I add students?"), or type into a search box answered from the guide by FD-5a's lexical search, which runs in our code. The model, if used at all, only rewrites a fixed question's answer from tool output. | Nothing the user typed. | Loses most of what makes 4A useful: answering the school's own situation in plain words. Close to a better help page. |
+
+**F-17: whether user text and replies are stored on the server**
+
+| Option | What the user gets | What is kept | Main cost |
+|---|---|---|---|
+| **(a) Store in `ai_interaction_logs.payload`** | History on any device; support can read a conversation when a school reports a bad answer. | Possibly-identifying text for the retention period (R10 default 90 days, FD-4b). | Contradicts `CLAUDE.md`'s note that `payload` is PII-free; needs that note amended. Purge, deletion requests and access control all carry the text. |
+| **(b) Store no user or reply text (recommended in §3.6)** | The conversation lasts while the panel is open; a reload or another device starts fresh. "Was this helpful?" works; support sees outcome, tools used and token counts, not words. | Metadata only: ids, times, tool names, token counts, outcome, blocked tally. | No history, no transcript for support, no review of real answers except what users report. Earlier turns are resent by the browser and re-checked each time. |
+| **(c) Separate short-retention table** (for example 7 days) | Pick up a conversation within the week; support can look while the report is fresh. | Possibly-identifying text, for days not months. | A second retention regime and table to secure and purge; still needs F-16. |
+
+**Recommendation (not approved): F-16 option A, limited to the pilot
+schools, with F-17 option (b).** A keeps the assistant useful; (b) means a
+miss is not also kept. Before the pilot widens, the owner reviews the measured
+miss rate on the §3.6 limitation cases and the pilot's blocked-message counts.
+If that review is not acceptable, the fallback is C, which needs no new
+decision about personal data.
+
+**What remains under the recommendation, and is not mitigated away:**
+
+- **Undetected personal data reaches the model provider** with the request.
+  What the provider keeps, and for how long, is set by its API data terms;
+  those should be confirmed against the school-facing privacy notice before
+  the pilot. Nothing here changes P2: the help assistant is not on the
+  allowlist, and a miss is a miss, not an exemption.
+- **Detection is per school.** A child at another school, a new pupil not yet
+  entered, or a parent's first name alone is not detected.
+- **False blocks happen.** A student called Grace blocks "grace period" unless
+  the stop-list covers it; each such case is a decision, recorded in a test.
+- **The transcript lives in the browser while the panel is open.** On a shared
+  office computer it is visible to the next person until the tab is closed or
+  the user signs out; the panel must clear it on sign-out.
+- **The sink protections are only as good as their tests.** Logs, both Sentry
+  clients, both PostHog clients and the ledger are protected by design (§3.6
+  sinks table); the listed tests are what show it, and they must be written
+  before FD-4a merges.
 
 #### Tests for G-PII (to add to §4.5 when F-16 and F-17 are decided)
 
@@ -1079,6 +1126,6 @@ The first-delivery decisions are listed in §3.5. The full register:
 | F-13 | Roles holding `assistant.help` | All staff roles | FD-4a |
 | F-14 | Pilot schools | Owner's choice | Pilot entry |
 | F-15 | Staff data to the model (R6) | Pasted text yes, photos no | S5-04 |
-| F-16 | Residual risk of personal data the G-PII detectors miss (§3.6) | **Open; no option approved.** Options: accept with the stated mitigations, stricter blocking, or fixed questions instead of free text | FD-4a, FD-5d |
+| F-16 | Residual risk of personal data the G-PII detectors miss (§3.6) | **Open; no option approved.** Options: (A) accept with the stated mitigations, (B) stricter blocking, (C) fixed questions instead of free text. Compared in §3.6 (2026-11-08). Recommendation: A, pilot schools only, with F-17 (b); fallback C | FD-4a, FD-5d |
 | F-17 | Whether user-typed text and replies are stored server-side (§3.6 sinks table) | **Open.** Recommendation: option (b), store no user or reply text server-side | FD-4a |
 | R1–R10 | Approve the recommendations in §1.3 | Approve | As listed in §1.3 |
