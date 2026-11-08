@@ -412,8 +412,11 @@ for example "a teacher".
 
 **Decided 2026-11-08 by the owner:** D1 option A for a limited pilot, D2 the
 narrow `help-assistant` exception (now in `CLAUDE.md`), D7 option (b), D8 the
-browser handling. **Still open:** D3, D4 (for decision), D5, D6, and three
-wording corrections not yet received. Pilot activation is gated separately.
+browser handling. Three wording corrections given the same day are applied
+(history sent to the provider; sourced, separate processing and storage
+location with no unconfirmed zero-retention claim; "cannot modify school
+operational records", with metadata still recorded). **Still open:** D3, D4
+(for decision), D5 and D6. Pilot activation is gated separately.
 The record: `docs/reviews/agentic-f16-f17-approval-brief.md`. The comparison
 below is kept as written when it was proposed.
 

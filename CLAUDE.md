@@ -147,8 +147,9 @@ request. The server keeps it only while handling that request, re-checks all
 of it with the detectors, stores no question or reply text, and puts it in no
 queue, cache, log, error report or analytics event. No prompt caching covers
 it. The model provider receives it on each request, under its API data terms.
-Rule 2 holds as written: the assistant's tools are read-only and it writes to
-no record.
+Rule 2 holds as written, with this clarification (2026-11-08): the assistant
+cannot modify school operational records. Usage, security and execution
+metadata are still recorded, without question or reply text.
 
 **This is an allowlist of prompt names, deliberately — not a new
 category.** The distinction is load-bearing: a category ("transcription

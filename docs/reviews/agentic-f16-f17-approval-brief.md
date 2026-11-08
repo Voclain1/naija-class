@@ -18,7 +18,10 @@
 - **D5: legal review.** The help assistant is added to
   `docs/legal/ndpr-ai-review.md` (condition 5a, question 14). The review itself is unsigned.
 - **D6: provider terms. Not verified.** See below.
-- **Three wording corrections** the owner referred to on 2026-11-08 have not been received. They will be applied when given, and this record updated.
+- **Three wording corrections, given by the owner on 2026-11-08 and applied the same day.** They clarify the recorded approval and do not approve pilot activation:
+  1. **History sent to the provider.** The privacy paragraph says each request sends the current question and the earlier messages of the conversation, with the retrieved guide sections and the settings the staff member may see.
+  2. **Provider location and retention.** The unverified "United States" and the retention placeholder are replaced by sourced fields that separate processing location from storage location. No zero-retention claim is made unless it is confirmed for SchoolKit's API organisation, the chosen model and the enabled features (D6).
+  3. **Read-only does not mean no records.** "Writes to no record" becomes: "The assistant cannot modify school operational records. Usage, security and execution metadata are still recorded, without question or reply text." This is applied in `CLAUDE.md` and here.
 
 **Pilot activation is separately gated.** No school's help-assistant switch
 is turned on until all of these are true:
@@ -39,7 +42,7 @@ switch anything on. Background and the options compared:
 | D3 | Privacy policy | Add the paragraph below to the marketing site's policy | Different wording |
 | D4 | Consent versions | Bump `SCHOOL_CONSENT_VERSION`; decide `PARENT_CONSENT_VERSION` with the lawyer | No bump (only if the lawyer advises the wording changes nothing agreed) |
 | D5 | Legal review | Add the help assistant to `docs/legal/ndpr-ai-review.md` before any pilot | — |
-| D6 | Provider terms | Confirm the AI provider's API data terms (what it keeps, how long, where, no training) and fill the bracket in D3 | — |
+| D6 | Provider terms | Confirm from named sources: processing location, storage location and retention (with exceptions), and training; fill the brackets in D3. No zero-retention claim unless confirmed for SchoolKit's organisation, model and features | — |
 | D7 | F-17: server storage of question and reply text | **(b)** store none; metadata only | (a) store in `ai_interaction_logs`; (c) short-retention table |
 | D8 | Browser handling | The rules below, with a **15-minute** inactivity limit | Another limit |
 
@@ -63,8 +66,9 @@ Under the two binding rules, add:
 > cache, log, error report or analytics event. No prompt caching covers it.
 > The model provider receives it on each request, under its API data terms.
 >
-> **Rule 2** holds as written: the assistant's tools are read-only and it
-> writes to no record.
+> **Rule 2** holds as written, with this clarification: the assistant cannot
+> modify school operational records. Usage, security and execution metadata
+> are still recorded, without question or reply text.
 
 And pin `help-assistant` in the eval suite's list of allowlisted prompts in
 the same change.
@@ -72,19 +76,29 @@ the same change.
 ## D3: privacy-policy paragraph (draft; not final until D6 is verified)
 
 > **Help assistant (only if your school switches it on).** Your staff can ask
-> SchoolKit questions about using the product. Each question is sent to an AI
-> model provider (United States), with the relevant parts of our help guide
-> and some of your school's settings, such as its grading bands and term
-> dates. We ask staff not to include anyone's personal details, and we block a
-> question when we recognise a name from your school, a phone number, an email
-> address, an ID number, a full date or a pasted list. We cannot recognise
-> every personal detail, so some may reach the provider. We do not keep the
-> questions or the answers on our servers; the conversation stays in the staff
-> member's browser and is cleared when they sign out or stop using it for 15
-> minutes. [PROVIDER TERMS — to be written only from the signed agreement or
-> the provider's own pages (D6): how long the provider keeps each request, the
-> exceptions (misuse and legal holds), and that it does not use it to train
-> its models.]
+> SchoolKit questions about using the product. Each time a staff member asks,
+> we send an AI model provider the current question **together with the
+> earlier messages of the same conversation**, the relevant parts of our help
+> guide, and those of your school's settings the staff member is allowed to
+> see, such as its grading bands and term dates. We ask staff not to include
+> anyone's personal details, and we block a question, or a conversation, when
+> we recognise a name from your school, a phone number, an email address, an
+> ID number, a full date or a pasted list. We cannot recognise every personal
+> detail, so some may reach the provider. We do not keep the questions or the
+> answers on our servers. We do keep a record that a question was asked and
+> how it was handled (for example the time, which tools were used, and
+> whether it was blocked), never the question or the answer. The conversation
+> stays in the staff member's browser and is cleared when they sign out,
+> switch account or school, or stop using it for 15 minutes.
+> [PROCESSING LOCATION: where the provider processes each request, quoted
+> from source S1.] [STORAGE LOCATION AND RETENTION: where, and for how long,
+> the provider stores requests and responses, and the exceptions, quoted from
+> source S2.] [TRAINING: whether the provider uses them to train models,
+> quoted from source S3.]
+
+The bracketed sentences are written **only** from the sources named under D6,
+and only once those are read. Until then this paragraph is not final and
+nothing in it says where data goes or how long it is kept.
 
 ## D6: provider terms (status 2026-11-08: not verified)
 
@@ -101,13 +115,26 @@ the same change.
     not used for training.
 - **None of these is relied on.** To verify, read the signed Commercial Terms and Data
   Processing Addendum, or the provider's own current pages, and record:
-  - the retention period;
-  - each exception;
-  - where data is processed;
-  - the no-training term;
-  - whether prompt caching changes any of these.
+  - **processing location** (S1): where the provider processes a request;
+  - **storage location and retention** (S2): where requests and responses are
+    stored, for how long, and each exception (misuse review, legal holds);
+  - the **training** term (S3);
+  - whether prompt caching or any other enabled feature changes any of these.
+
+  Name each source in the policy file: the signed Commercial Terms, the Data
+  Processing Addendum, or a dated page of the provider's own documentation.
+  Processing location and storage location are separate facts and are
+  written separately.
 
   Then complete D3. The help assistant uses no prompt caching over user text (the approved rule).
+- **No zero-retention claim** is made anywhere unless a zero-data-retention
+  arrangement is confirmed in writing for **SchoolKit's API organisation**,
+  **for the model chosen under F-6**, and **for every feature the assistant
+  enables**. Secondary sources say some features and newer models override
+  such arrangements.
+- **The existing privacy policy** describes AI providers as "(United States)"
+  (`docs/modules/data-protection.md`). That location is not verified either,
+  and should be checked against S1 and S2 at the same time.
 
 ## D4: consent versions (recommendation, for the owner's decision)
 
