@@ -205,7 +205,15 @@ Each PR is independently reviewable, in this order.
 - **Malformed conversations** are refused before sending: unmatched or missing tool results, forged turns, non-strict schemas.
 - **Assistant turns stay in memory.** Their content sits in a module-private `WeakMap`, so logging, serializing or cloning a turn shows only `{ kind }`. A copy, or a turn restored after a restart, is refused. Thinking blocks never enter stored history or logs.
 - **`converse()` has no production callers today.** That is not a guarantee against misuse: code holding the port could still call `converse()` or `create()` directly and skip the budget check and ledger. The intended boundary is that **only `AiGenerationService` calls port methods**. FD-2b enforces it in two ways: `runConversationTurn()` becomes the single caller, and a CI conformance spec fails if `.converse(`, `.create(` on the port, `createAnthropicClient(` or the `AI_PORT` token appear outside `apps/api/src/common/ai/` (specs excepted). |
-| **FD-2b** | Conversation loop in `AiGenerationService` | FD-2a | D | `runConversationTurn()`: each model step is its own reserve → call → settle with its own `ai_generations` row, linked by `interactionLogId`. Ceilings per turn (steps, tokens) and per conversation. Budget exhaustion mid-turn ends the turn with a user-facing message. Per-user daily cap counts each step. |
+| **FD-2b** ✅ built on branch `agentic/fd-2b-conversation-loop` (no PR yet) | Conversation loop in `AiGenerationService` | FD-2a | D | `runConversationTurn()`: each model step is its own reserve → call → settle with its own `ai_generations` row, linked by `interactionLogId`. Ceilings per turn (steps, tokens) and per conversation. Budget exhaustion mid-turn ends the turn with a user-facing message. Per-user daily cap counts each step. **As built (2026-11-07):**
+- **Single caller.** `runConversationTurn()` is the only caller of `converse()`.
+- **Per step:** reserve → call → settle, with one `ai_generations` row per model call.
+- **Outcomes, not errors:** answered, refused, truncated, step limit, turn token limit, budget exhausted, user rate-limited, unexpected stop.
+- **No content leaves the turn.** Opaque turns never leave the method. Logs carry IDs, counts and outcomes only. Conversation steps record an error *code* only.
+- **History is text only.** The port gains a plain-text assistant message. The live docs (Thinking page, 2026-11-07) allow omitting earlier turns' thinking outside tool use and require it within a tool-use turn.
+- **Boundary enforced in two places:**
+  - the ESLint rule `@typescript-eslint/no-restricted-imports` on the port's names outside `common/ai`;
+  - `apps/api/src/__tests__/ai-port-boundary.spec.ts` for `.converse(`, `createAnthropicClient(`, `AI_PORT` and `AnthropicPort`. |
 | **FD-3a** | Tool registry core (read-only) | FD-2b | E | Typed tool definitions declaring: required permission(s) **or** an explicit `anyActiveStaff` with a written reason (mirroring `PermissionsGuard`'s refusal of undeclared routes); principal type; `read` class only. At execution: re-fetch `isActive`, call `userHoldsPermission` (`role-check.ts:85`) [V], take the tenant from `authCtx` only, validate arguments with Zod, and shape output to an allowlist of fields. **Registering a write-class tool throws at boot** in this delivery. A deny-list scaffold encodes R1 for later. |
 | **FD-3b** | Registry conformance gate | FD-3a | — (CI) | A spec that enumerates every registered tool, like `security-definer-inventory.spec.ts`. It asserts: a declared permission or reasoned `anyActiveStaff`; read class; and that the output of each tool, run over a fixture school, contains **none** of the fixture's student, guardian or staff names, emails, phones, DOBs or kobo amounts (the PII and money scan). It also asserts **no behaviour field or count** (P16) and **no health field** (a health field fails the gate until R2 is decided). The scan covers what tools return; it says nothing about what users type (§3.6). |
 | **FD-4a** | Conversation store and API | FD-2b, FD-1a, **G-PII approved** (§3.6) | E | Conversations on `AIInteractionLog` (`sessionRef` = conversation). Payloads store tool names and shaped outputs, never raw rows. **Whether user-typed text and replies are stored server-side at all is owner decision F-17 (§3.6); until it is decided, this PR may not store them.** Endpoints: `POST /assistant/conversations`, `POST …/:id/messages`, `GET …/:id`, `DELETE …/:id`. Guarded by `AuthGuard`, a new **`assistant.help` permission** (R10; every staff role; migration and seed kept in sync) and the feature switch. Per-user rate limit. A person can read only their own conversations. |
@@ -501,16 +509,27 @@ tick.*
 
 ### 4.3 FD-2 · Port and conversation loop
 
-*Status 2026-11-07: FD-2a built and in review.*
-- **Evidenced by FD-2a's own tests:**
+*Status 2026-11-07: FD-2a in review (#500); FD-2b built on `agentic/fd-2b-conversation-loop`.*
+- **Evidenced by FD-2a's tests:**
   - the unchanged single-call request body;
   - the SDK import ban still holding.
-- **Open until FD-2b:** the ledger, budget, ceilings and logging items below.
+- **Evidenced by FD-2b's tests** (`ai-conversation.service.spec.ts`, `ai-port-boundary.spec.ts`), each also shown to fail when the behaviour is broken:
+  - ledger rows per step;
+  - budget before every step;
+  - ceilings;
+  - per-user cap;
+  - stop reasons;
+  - no content in logs;
+  - the boundary.
+- **Not evidenced by a new test:**
+  - **A crash between reserve and settle.** The loop reuses the same `reserve()`/`settle()`, so the documented single-reservation leak is unchanged, but there is no loop-specific crash test.
+  - **Whether the reservation estimate always errs high.** That can only be measured against real API usage; to measure in the pilot.
 
 - [ ] The existing single-call features are byte-for-byte unchanged in their request to the port. The existing AI specs pass untouched (lesson plans, comments, summaries, insights, question bank, scan, feedback).
 - [ ] The ESLint SDK import ban still holds: `@anthropic-ai/sdk` is imported only in `packages/ai/src/client.ts` (lint).
 - [ ] Each model step writes exactly one `ai_generations` row with prompt name and version, model, tokens, latency, cost and success/error. The row count equals the number of model calls (spec with fake port: 1-, 3- and 4-step turns).
-- [ ] The budget is checked **before every step**. Exhaustion at step 2 ends the turn with the budget message and writes the step-2 ledger row as an error (spec).
+- [ ] The budget is checked **before every step**. Exhaustion before step 2 ends the turn with `budget_exhausted`. Step 1's row exists, and **no row is written for the call that was not made** (spec). *Corrected by owner decision 2026-11-07: keep the existing no-row behaviour, which matches `generate()` and the CLAUDE.md rule that every **call** is logged. This replaces the earlier wording "writes the step-2 ledger row as an error".*
+- [ ] **Boundary:** no file outside `apps/api/src/common/ai` builds, holds or calls the port. Enforced by the ESLint rule and by `ai-port-boundary.spec.ts`, which fails with file and line when broken (spec).
 - [ ] The step ceiling (4) and the per-turn token ceiling stop the loop with a graceful answer (spec).
 - [ ] The per-user daily call cap counts steps (spec).
 - [ ] A refusal stop reason is logged and surfaced, not thrown (spec).

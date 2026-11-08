@@ -156,7 +156,14 @@ export interface AiAssistantTurn {
 export type AiConversationMessage =
   | { readonly role: "user"; readonly text: string }
   | { readonly role: "user"; readonly toolResults: readonly AiToolResult[] }
-  | { readonly role: "assistant"; readonly turn: AiAssistantTurn };
+  | { readonly role: "assistant"; readonly turn: AiAssistantTurn }
+  // FD-2b: an earlier, COMPLETED assistant reply replayed as plain text (for
+  // example from stored history, if F-17 allows storing any). Its thinking
+  // blocks are gone, which the API documents as allowed outside a tool-use
+  // turn ("Allowed: outside tool use, omit prior turns' thinking", Thinking
+  // docs, checked 2026-11-07). Never use it for a turn whose tool calls are
+  // still being answered: that turn must go back as the opaque `turn`.
+  | { readonly role: "assistant"; readonly text: string };
 
 export interface AiConversationRequest {
   readonly model: ModelId;
@@ -366,6 +373,12 @@ function toSdkMessages(messages: readonly AiConversationMessage[]): Anthropic.Me
       if (openCalls && openCalls.size > 0) {
         throw new Error("Every tool call needs a result before the next assistant turn.");
       }
+      if ("text" in message) {
+        if (message.text.trim() === "") throw new Error("A replayed assistant reply needs text.");
+        out.push({ role: "assistant", content: message.text });
+        openCalls = null; // a completed reply opens no calls, and accepts no tool results
+        continue;
+      }
       const content = unwrapAssistantTurn(message.turn);
       out.push({ role: "assistant", content: content as Anthropic.ContentBlockParam[] });
       const ids = content.filter((b) => b.type === "tool_use").map((b) => (b as Anthropic.ToolUseBlock).id);
@@ -400,6 +413,11 @@ function toSdkMessages(messages: readonly AiConversationMessage[]): Anthropic.Me
       throw new Error("Every tool call needs a result before the next user message.");
     }
     out.push({ role: "user", content: message.text });
+  }
+  // Ending on an assistant message is "prefill", which current models reject
+  // with a 400; the loop always ends on a user message or tool results.
+  if (messages[messages.length - 1]!.role !== "user") {
+    throw new Error("A conversation must end with a user message or tool results (assistant prefill is not supported).");
   }
   return out;
 }
