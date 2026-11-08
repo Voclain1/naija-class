@@ -18,6 +18,7 @@
 import { runSuites } from "./harness.js";
 import { assignmentFeedbackLiveCase } from "./cases/assignment-feedback-live.js";
 import { curriculumGroundingCase } from "./cases/curriculum-grounding.js";
+import { helpAssistantCasesCase } from "./cases/help-assistant-cases.js";
 import { liveGenerationCase } from "./cases/live-generation.js";
 import { piiSafetyCase } from "./cases/pii-safety.js";
 import { promptQualityCase } from "./cases/prompt-quality.js";
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
     registryIntegrityCase,
     promptQualityCase,
     curriculumGroundingCase,
+    helpAssistantCasesCase,
     registerScanScoringCase,
     liveGenerationCase,
     assignmentFeedbackLiveCase,

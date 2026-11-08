@@ -252,7 +252,16 @@ Each PR is independently reviewable, in this order.
 - **Known limit, for FD-5c's evals:** still lexical. A question that shares no words with its section misses, as the held-out case shows. The search returns 3 sections, so the top-3 figure is the one that matters for the assistant; FD-5c measures whether answers built on them are right, and F-12's real questions replace these written ones as the measure.
 - **CLAUDE.md** step 14 now says to regenerate the index after editing the guide. |
 | **FD-5b** | Settings read tools | FD-3a | E | `help.search_guide` (top-k sections with anchors; `anyActiveStaff`). `school.profile_summary` (name, plan name, current year and term; no contact or Paystack fields; `anyActiveStaff`). `school.setup_progress` (checklist keys and done flags; `anyActiveStaff`). `grading.scheme` and `grading.boundaries` (their read permissions). `grading.explain_score(score)`: a pure function over boundaries; the user supplies a number, no student is involved. `notifications.channels` (`notification-preferences.read`). Nothing else. |
-| **FD-5c** | `help-assistant` prompt v1 and evals | FD-5a, FD-5b | D | Registered in the prompt registry, with the model per F-6. Answers only from tool output and cited guide sections. Says "I can't see that" when a tool is refused. Treats school-entered strings (names, grade labels) as data. Eval set: real support questions (F-12), refusals, injection inside school-entered labels, **questions whose retrieved sections are irrelevant or insufficient** (FD-5a's `GUIDE_UNANSWERABLE_CASES`, its held-out miss, and questions where the right section is retrieved but does not hold the detail asked), and **factual evaluation** (§4.6), including cases where every number is valid but the explanation is wrong. Injection results are reported as results for the tested scenarios, not as general resistance. |
+| **FD-5c** ◐ eval cases prepared on branch `agentic/fd-5c-eval-cases` (prompt not built) | `help-assistant` prompt v1 and evals | FD-5a, FD-5b | D | Registered in the prompt registry, with the model per F-6. Answers only from tool output and cited guide sections. Says "I can't see that" when a tool is refused. Treats school-entered strings (names, grade labels) as data. Eval set: real support questions (F-12), refusals, injection inside school-entered labels, **questions whose retrieved sections are irrelevant or insufficient** (FD-5a's `GUIDE_UNANSWERABLE_CASES`, its held-out miss, and questions where the right section is retrieved but does not hold the detail asked), and **factual evaluation** (§4.6), including cases where every number is valid but the explanation is wrong. Injection results are reported as results for the tested scenarios, not as general resistance. **Prepared (2026-11-08):**
+- **Cases** in `packages/ai/evals/help-assistant/cases.ts`, **all labelled `source: "synthetic"`**: written by us, not taken from schools or support. Real support questions (F-12) are added before pilot entry, labelled `"support"`, with school names removed.
+  - **answerable** 64: FD-5a's 44 paraphrases and 20 held-out questions, each with the anchors that are a correct citation;
+  - **unanswerable** 10 and **insufficient** 5: honest fallback required, including the held-out retrieval miss, a PIN expiry the guide does not state, a logo size, a plan's student limit, and AI allowance used vs remaining;
+  - **refusal** 4: a teacher or bursar asking for settings their role cannot see;
+  - **injection** 2: instructions planted in a grade-boundary remark;
+  - **factual** 8: gold claims (figure, what it belongs to, period, unit, comparison) for boundary edges (39/40, 59/60, 74/75), term vs year end, component weights, the SMS setting and the plan, each with a crafted wrong answer that uses valid numbers wrongly.
+- **Offline integrity suite** (`evals/cases/help-assistant-cases.ts`, in `pnpm ai:eval`, so in CI): every case synthetic, unique ids, every anchor real, category minimums, factual cases complete, fallback required where it should be, refusal cases asked by a refused role. Shown to fail on a broken anchor and on a case not labelled synthetic.
+- **Not yet:** the prompt, the live run, and the grader. A live run needs the prompt and an API key; this environment has neither.
+- **Model stays configurable:** the prompt's registry entry names its model (`PromptDefinition.model`), the live eval runs the same cases against each registered model, and the ledger records the model per call. See F-6. |
 | **FD-5d** | Staff web assistant panel | FD-4a, FD-5c, **G-PII approved** | E | A panel opened from the Help icon in the admin and teacher topbars. Shows citations as links to `/help/guide#anchor` and to settings pages. Non-streamed, with a progress state. Hidden when the feature is off or `assistant.help` is missing. Follows the design-system rules (Paper, DM Sans, no accent borders). |
 | **FD-5e** | Pilot operations | FD-5d, FD-1b | — | PostHog events with opaque IDs only (turn started/completed, tool refused, budget stop, thumbs up/down with no free text). A runbook for switching on, switching off and purging. The module doc `docs/modules/assistant.md`. An onboarding-guide entry (CLAUDE.md step 14). |
 
@@ -645,6 +654,21 @@ tick.*
 - [ ] **E2E** (Playwright, staff web): an owner asks "How do I set up form teachers?", gets a cited answer and follows the link. A teacher asks about notification channels and is told they can't see that. With the feature off, the panel is absent.
 - [ ] Latency: p90 under 10 s for a 2-step turn on the pilot infrastructure (measured, recorded in the module doc).
 
+
+**F-6 model comparison for the help assistant (2026-11-08; estimates, not measurements).** The two registered models (`packages/ai/src/models.ts`):
+
+| | Haiku 4.5 (`claude-haiku-4-5`) | Sonnet 5 (`claude-sonnet-5`) |
+|---|---|---|
+| Price (registered table, 2026-08-10) | $1 / $5 per million input / output tokens | $3 / $15 |
+| Thinking by default | Off | Adaptive (on) |
+| Estimated cost per help turn* | ~$0.010 | ~$0.029, plus thinking tokens (~$0.005–0.015 more) |
+| Turns per school per month at the default 2M-token budget (P21)* | ~250 | ~250 without thinking; fewer with it, since thinking tokens count |
+| Latency | Lower | Higher, more so with thinking |
+| Answer quality on the FD-5c cases | **Not measured** | **Not measured** |
+
+\*A turn estimated as two model steps (a tool call, then the answer): ~7,500 input tokens (system prompt, tool definitions, the question, three guide excerpts, settings output) and ~450 output tokens.
+
+**Proposed way to choose, not a choice:** once FD-5c's prompt exists, run every case on both models with the same prompt, report each §4.6 bar per model, and choose Haiku 4.5 if it meets them, since it is cheaper, faster and needs no thinking for answers grounded in tool output; otherwise Sonnet 5. The choice is one registry line, and either can be switched back the same way.
 ### 4.7 Cross-cutting
 - [ ] `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm ai:eval` pass. The e2e job passes.
 - [ ] `require()` of the compiled `apps/api/dist` succeeds. This guards the CommonJS/ESM trap in CLAUDE.md if any new dependency is ESM-only.
@@ -1083,7 +1107,7 @@ The first-delivery decisions are listed in §3.5. The full register:
 | F-3 | Expense receipts outside P2/P26; rule for a receipt naming a child | Allow; discard and type by hand if a child is named | S3-14 |
 | F-4 | Feature-switch storage | **Owner-approved 2026-11-06**, conditional on repository checks (passed) | FD-1a |
 | F-5 | Can the requester approve their own proposal? | No for money (Class G); yes elsewhere | S2-06a |
-| F-6 | Models | Haiku 4.5 for the help assistant; evaluate Sonnet 5 for multi-tool agents | FD-5c, S4-03 |
+| F-6 | Models | **Open.** Proposed: run FD-5c's cases on both registered models and choose on the §4.6 bars; Haiku 4.5 if it meets them. Comparison (estimates, not measurements) in §3.3 FD-5c note below | FD-5c, S4-03 |
 | F-7 | Conversation retention, and deletion on deactivation (§3.7) | 90 days; rows age out after deactivation (recommendation) | FD-4b |
 | F-8 | Agents in the school's AI budget; plan availability | The school's budget; help assistant on every plan | FD-4a, S4-03 |
 | F-9 | Parent languages | English first | S6-02 |
