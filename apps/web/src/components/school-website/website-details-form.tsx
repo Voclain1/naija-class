@@ -72,7 +72,7 @@ export function WebsiteDetailsForm({ site, onSaved }: { site: SchoolWebsiteDto; 
     <div className="flex flex-col gap-6">
       <fieldset className="flex flex-col gap-3 rounded-lg border bg-card p-4">
         <legend className="px-1 text-base font-semibold">Cover and welcome</legend>
-        <SectionLock state={section("details")} enforcement={site.enforcement} />
+        <SectionLock state={section("intro")} enforcement={site.enforcement} />
         {cover && !cover.takenDown ? (
           <div className="flex flex-col gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element -- a signed, short-lived URL */}
@@ -100,7 +100,7 @@ export function WebsiteDetailsForm({ site, onSaved }: { site: SchoolWebsiteDto; 
 
       <fieldset className="flex flex-col gap-3 rounded-lg border bg-card p-4">
         <legend className="px-1 text-base font-semibold">About us</legend>
-        <SectionLock state={section("details")} enforcement={site.enforcement} />
+        <SectionLock state={section("intro")} enforcement={site.enforcement} />
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
             <Label htmlFor="w-head-name">Head&apos;s name</Label>
@@ -123,7 +123,7 @@ export function WebsiteDetailsForm({ site, onSaved }: { site: SchoolWebsiteDto; 
 
       <fieldset className="flex flex-col gap-3 rounded-lg border bg-card p-4">
         <legend className="px-1 text-base font-semibold">Quick facts</legend>
-        <SectionLock state={section("details")} enforcement={site.enforcement} />
+        <SectionLock state={section("facts")} enforcement={site.enforcement} />
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
             <Label htmlFor="w-founded">Year founded</Label>
@@ -284,7 +284,7 @@ export function WebsiteDetailsForm({ site, onSaved }: { site: SchoolWebsiteDto; 
         </div>
       </fieldset>
 
-      <SearchPreview d={d} set={set} detailsOpen={section("details").open} />
+      <SearchPreview d={d} set={set} factsOpen={section("facts").open} />
 
       <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t bg-background py-3">
         <Button type="button" disabled={saving} onClick={() => void save()}>

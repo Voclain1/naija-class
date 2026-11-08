@@ -16,6 +16,14 @@ dotenv.config({
 });
 
 const isolated = process.env.E2E_ISOLATED === "1";
+// E2E_NEXT_START=1: serve the web, portal and exam apps from production
+// builds (`next start`) instead of `next dev`. CI sets it and builds the three
+// apps in a step before this one. Measured on #502's run (2026-11-08): under
+// `next dev`, 275 on-demand page compiles took 12.1 of the suite's 46 minutes,
+// and Fast Refresh rebuilt pages in the middle of tests that then hung until
+// the 3- or 6-minute test timeout. A production server compiles nothing at
+// request time and has no hot reloader. Locally, `next dev` stays the default.
+const nextStart = process.env.E2E_NEXT_START === "1";
 const webUrl = process.env.E2E_WEB_URL ?? "http://localhost:3001";
 const SCHOOL_ADDRESS_DOMAIN = process.env.SCHOOL_ADDRESS_DOMAIN || "localhost:3002";
 const apiUrl = (process.env.E2E_API_URL ?? "http://localhost:4000/api/v1/").replace(/\/?api\/v1\/?$/, "");
@@ -73,7 +81,9 @@ export default defineConfig({
           env: { SCHOOL_ADDRESS_DOMAIN: SCHOOL_ADDRESS_DOMAIN },
         },
         {
-          command: "pnpm --filter @school-kit/web dev",
+          command: nextStart
+            ? "pnpm --filter @school-kit/web exec next start --port 3001"
+            : "pnpm --filter @school-kit/web dev",
           url: webUrl,
           reuseExistingServer: !process.env.CI,
           timeout: 180_000,
@@ -99,7 +109,9 @@ export default defineConfig({
     // pre-existing spec relies on). Portal specs use absolute URLs, so the
     // two apps cannot be confused for one another in a test.
     {
-      command: "pnpm --filter @school-kit/portal dev",
+      command: nextStart
+        ? "pnpm --filter @school-kit/portal exec next start --port 3002"
+        : "pnpm --filter @school-kit/portal dev",
       url: "http://localhost:3002/login",
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
@@ -111,7 +123,9 @@ export default defineConfig({
     // apps/cbt (:3003), the lab computers' exam app (docs/modules/cbt.md
     // D9), added with CBT2. Its specs use absolute URLs, like the portal's.
     {
-      command: "pnpm --filter @school-kit/cbt dev",
+      command: nextStart
+        ? "pnpm --filter @school-kit/cbt exec next start --port 3003"
+        : "pnpm --filter @school-kit/cbt dev",
       url: "http://localhost:3003",
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
