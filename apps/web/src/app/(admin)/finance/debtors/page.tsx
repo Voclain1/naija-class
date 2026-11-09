@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { MessageCircle } from "lucide-react";
+import Link from "next/link";
+import { CampaignReview } from "@/components/finance/reminders/campaign-review";
+import type { CampaignRequest } from "@/lib/reminder-campaigns/session";
+import { hasPermission } from "@/lib/auth/has-permission";
 
 import {
   buildDebtorReminderMessage,
@@ -14,8 +18,6 @@ import {
   type AcademicYearDto,
   type DebtorDto,
   type TermDto,
-  reminderResultText,
-  type SendRemindersResult,
 } from "@school-kit/types";
 
 import { FeeRiskBadge, FeeRiskReasons } from "@/components/finance/fee-risk";
@@ -30,7 +32,7 @@ import type { CsvColumn } from "@/lib/csv-export";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
 import { useAuth } from "@/lib/auth/use-auth";
-import { listDebtors, sendReminders } from "@/lib/finance/finance-api";
+import { listDebtors } from "@/lib/finance/finance-api";
 import { getPaymentLink } from "@/lib/finance/invoices-api";
 import { resolveShareablePaymentLink } from "@/lib/finance/shareable-payment-link";
 
@@ -67,11 +69,16 @@ const SELECT_CLASSES =
   "rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50";
 
 export default function DebtorsPage() {
+  const { school, user } = useAuth();
+  return <DebtorsWorkspace key={`${school?.id}:${user?.id}`} />;
+}
+
+function DebtorsWorkspace() {
   const [years, setYears] = useState<AcademicYearDto[]>([]);
   const [yearId, setYearId] = useState("");
   // School name is quoted in the WhatsApp message so a parent knows who is
   // asking before they read the amount.
-  const { school } = useAuth();
+  const { school, user, permissions } = useAuth();
   // Same rule the finance dashboard and the settings preview apply.
   const shareBankDetails = resolveSchoolBankDetails(school);
   const [terms, setTerms] = useState<TermDto[]>([]);
@@ -83,8 +90,7 @@ export default function DebtorsPage() {
   const [referenceError, setReferenceError] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [reminding, setReminding] = useState(false);
-  const [reminderResult, setReminderResult] = useState<SendRemindersResult | null>(null);
+  const [campaign, setCampaign] = useState<CampaignRequest | null>(null);
   const [sharingInvoiceId, setSharingInvoiceId] = useState<string | null>(null);
   // Phase 9 / CP10.2 — show one risk level only ("" = every level).
   const [riskFilter, setRiskFilter] = useState<FeeRiskLevel | "">("");
@@ -139,7 +145,6 @@ export default function DebtorsPage() {
     setDebtors([]);
     setSelected(new Set());
     setError(null);
-    setReminderResult(null);
     if (!termId) return;
     setLoading(true);
     listDebtors(termId)
@@ -164,27 +169,20 @@ export default function DebtorsPage() {
   const shown = riskFilter ? debtors.filter((d) => d.risk.level === riskFilter) : debtors;
 
   function toggleSelectAll() {
-    if (selected.size === shown.length) {
+    if (shown.length > 0 && shown.every((d) => selected.has(d.studentId))) {
       setSelected(new Set());
     } else {
       setSelected(new Set(shown.map((d) => d.studentId)));
     }
   }
 
-  async function handleRemind() {
-    if (!termId || selected.size === 0) return;
-    setReminding(true);
-    setReminderResult(null);
-    try {
-      const result = await sendReminders({ termId, studentIds: Array.from(selected) });
-      setReminderResult(result);
-      setSelected(new Set());
-    } catch (e) {
-      logFinanceError("sendReminders", e);
-      setError(financeErrorMessage(e));
-    } finally {
-      setReminding(false);
-    }
+  function handleRemind() {
+    if (!termId || !selected.size || !hasPermission(permissions, "finance.debtors.remind")) return;
+    const term = terms.find((t) => t.id === termId); const year = years.find((y) => y.id === yearId);
+    if (!term || !year) return;
+    setCampaign({ termId, termLabel: `${year.label} — ${term.name}`, studentIds: [...selected],
+      filters: { search: "", classArm: "", risk: riskFilter, overdueOnly: false, excludePlans: true },
+      canReadChannels: hasPermission(permissions, "notification-preferences.read"), canReadGuardians: hasPermission(permissions, "guardian.read") });
   }
 
   const totalBalance = shown.reduce((sum, d) => sum + d.balance, 0);
@@ -241,6 +239,7 @@ export default function DebtorsPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
+      {campaign && hasPermission(permissions, "finance.debtors.remind") && <CampaignReview key={`${school?.id}:${user?.id}`} request={campaign} onClose={() => { setCampaign(null); setSelected(new Set()); }} />}
       <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Debtor list</h1>
 
       {/* Term selector */}
@@ -307,23 +306,6 @@ export default function DebtorsPage() {
         </InlineAlert>
       )}
 
-      {/* Reminder result */}
-      {reminderResult && (
-        // Each skip says why (reminderResultText): the old line blamed "no
-        // guardian email" for every one, even when the guardian had an email
-        // and only lacked the "primary" tick, or the school had email off.
-        <div
-          role="status"
-          className={
-            reminderResult.sent > 0
-              ? "rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
-              : "rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
-          }
-        >
-          {reminderResultText(reminderResult)}
-        </div>
-      )}
-
       {/* Loading */}
       {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
@@ -359,13 +341,10 @@ export default function DebtorsPage() {
                 disabled={shown.length === 0}
               />
               <PrintButton />
-              <Button onClick={handleRemind} disabled={reminding || selected.size === 0}>
-                {reminding
-                  ? "Sending…"
-                  : selected.size === 0
-                    ? "Send reminder (select rows)"
-                    : `Send reminder to ${selected.size} family${selected.size !== 1 ? "ies" : "y"}`}
-              </Button>
+              {hasPermission(permissions, "finance.debtors.remind") && <>
+                <Button variant="outline" asChild><Link href="/finance/reminders">Plan a reminder run</Link></Button>
+                <Button onClick={handleRemind} disabled={!selected.size || selected.size > 500}>Review reminders{selected.size ? ` (${selected.size} students)` : " (select students)"}</Button>
+              </>}
             </div>
           </div>
 
@@ -377,7 +356,8 @@ export default function DebtorsPage() {
                     <input
                       type="checkbox"
                       className="rounded"
-                      checked={selected.size === shown.length}
+                      aria-label="Select all visible students"
+                      checked={shown.length > 0 && shown.every((d) => selected.has(d.studentId))}
                       onChange={toggleSelectAll}
                     />
                   </TableHead>

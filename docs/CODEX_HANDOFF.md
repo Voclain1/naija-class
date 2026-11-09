@@ -190,6 +190,23 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-09)
 
+- **Durable campaign frontend integration:** #519/#520 are merged. #518 now
+  adapts its frontend to `/finance/reminder-campaigns`, with server preview,
+  reloadable requester-only pages, lost-confirm recovery, polling, halt/resume
+  and per-send outcomes. UNKNOWN is never offered a retry. Legacy loop remains
+  only when availability is off. No switches enabled or backend code changed.
+  Shared types and contracts are authoritative; see reminder-campaign docs.
+
+
+- **Next frontend workflow (November 9):** `frontend/reminder-campaign-workflow`
+  adds `/finance/reminders` and a shared reviewed send from the debtor list.
+  Filters default to overdue-only and excluding payment plans; students are
+  deduplicated across invoices. Recheck before approval, sequential batches of
+  50 (maximum 500), per-batch results and stop without retry on uncertain sends.
+  No new API/database/AI/provider settings. UI-only journal, no durable dedupe.
+  See `docs/modules/reminder-campaign-workflow.md`. Claude's complete backend
+  chunk is in `docs/reviews/reminder-campaign-backend-brief.md`; no invented
+  endpoint is called. PR/browser verification pending; no activation implied.
 - **Fee reminder campaigns, backend (November 9):** branch
   `agentic/reminder-campaigns`, one PR. Contract and frontend steps:
   `docs/modules/reminder-campaigns.md`. Reuses `workflow_proposals` (kind
@@ -220,7 +237,7 @@ those; it doesn't replace them.
   grid remains available with the same uncertain-outcome stop. Read `docs/modules/guided-student-intake.md` for the
   frontend contract and recovery behaviour. Backend contract is in
   `docs/modules/student-intake-proposals.md`; no guessed endpoint is used.
-  Check its PR/CI before treating this frontend as merged or browser-verified.
+  Frontend PR #514 passed full CI and merged as `63cf11e` on November 9.
 
 - **Reviewed student intake, backend (November 9):** branch
   `agentic/guided-student-intake`, one PR. Generic `workflow_proposals` table
@@ -232,7 +249,8 @@ those; it doesn't replace them.
   No model, no invitations, no notifications. `student-intake` switch off
   everywhere. Backend PR #517 merged as `8a57657`. Frontend PR #514 now integrates
   prepare/review/confirm/status recovery when enabled and keeps the bulk
-  fallback when disabled. Frontend CI is pending; no school is enabled.
+  fallback when disabled. Frontend #514 passed full CI and merged as
+  `63cf11e`; no school is enabled.
 
 - **Assistant chunk 1 (November 8):** owner requested complete workflow chunks,
   starting with invoice preparation/approval/issuance. Work is on

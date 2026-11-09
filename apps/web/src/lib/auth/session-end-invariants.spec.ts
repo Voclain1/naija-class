@@ -23,6 +23,7 @@ function read(relative: string): string {
 // new one without wiring it up should fail here rather than ship a dialog
 // whose "Stay" cannot stay.
 const GUARDED_SURFACES: { label: string; path: string }[] = [
+  { label: "reminder campaign send", path: "../../components/finance/reminders/campaign-review.tsx" },
   { label: "gradebook grid", path: "../../components/teacher/gradebook/gradebook-grid.tsx" },
   { label: "lesson plan editor", path: "../../app/(teacher)/teacher/lesson-plans/[id]/page.tsx" },
   { label: "teacher attendance", path: "../../app/(teacher)/teacher/attendance/page.tsx" },
