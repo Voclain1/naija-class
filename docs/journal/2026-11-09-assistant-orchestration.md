@@ -58,3 +58,34 @@ merged first, as asked earlier; its changes are on main and preserved.
 ## Verification
 
 See the PR.
+
+## Review fixes on PR #523 (same day)
+
+ChatGPT reviewed head 01261566. Each finding was reproduced first.
+
+1. **Stale previews stayed approvable after a conversational revision.**
+   - Reproduced in the browser on the original intake and correction cards.
+   - Cause: revisions were applied only inside each card's Editor, so a card
+     showing its Review never saw them.
+   - Fix: one rule in the store for all four workflows. A pending plan disables
+     approval, the card resets its unapproved session, typed rows and picked
+     students live in task memory, and approval takes a lock at the click.
+2. **A blocked request poisoned later turns.**
+   - Reproduced in the store: the blocked text was resent as history.
+   - Fix: user messages carry `eligible`; only server-accepted text is resent.
+3. **Reminder audiences were filtered by class name.**
+   - Fix: debtor rows carry `classArmId`, the card filters by ID, and
+     `options.classArmIds` is enforced by the server at preview and confirm
+     (`OUT_OF_SCOPE`).
+4. **Named student lookup (owner requirement).**
+   - Roster names become `⟨P#⟩` markers before the model.
+   - The server resolves them under tenant, role and teacher scope.
+   - The model sees handles and class labels; matches and records go to the
+     browser only.
+   - Sections reuse existing endpoints: attendance summary and RELEASED report
+     cards.
+   - An on-device search covers the no-model path.
+
+Prompt bumped to `assistant-orchestrator@2`. No approval changed: the prompt
+stays pending and off. Live evals (now 14 scenarios) still not run: no key.
+

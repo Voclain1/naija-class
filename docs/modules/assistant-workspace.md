@@ -119,7 +119,7 @@ authoritative result read back from the server.
   `packages/types/src/assistant/orchestration.ts`). Tenant and user come from
   the session, never the body. The reply is checked text plus **actions**,
   built by code from validated tool calls (`AssistantTurnDto`).
-- **Prompt:** `assistant-orchestrator@1` (Haiku 4.5, 700 output tokens),
+- **Prompt:** `assistant-orchestrator@2` (Haiku 4.5, 700 output tokens),
   `packages/ai/src/prompts/assistant-orchestrator.ts`. It runs through
   `AiGenerationService.runConversationTurn`. Every model step is reserved
   against the school's monthly budget before the call, settled after it, and
@@ -146,12 +146,15 @@ role.
 |---|---|---|
 | `school_structure` | read | Term and class labels. |
 | `prepare_invoices` | **prepare** | Resolves term and class labels in code. Ambiguous or unknown labels return a question, never a guess. Calls `BillingRunsService.prepare` for a **PENDING** preview. Returns counts. |
-| `plan_reminders` | read | Sets the reminder card's term, one class or all, and its options. The card selects the matching families and asks the server for its preview. |
+| `plan_reminders` | read | Sets the reminder card's term, one class (by ID) or all, and its options. The card selects the matching families and asks the server for its preview. The class scope goes with the request (`options.classArmIds`), and the server enforces it at preview and confirm. |
 | `plan_student_intake` | read | Sets the intake card's class and term, or "place later". Students are typed or pasted into the card. |
 | `plan_corrections` | read | Chooses which of the six fields the correction card changes. |
 | `task_status` | read | Reads the original run, proposal or campaign of a task, and shows it in a card. |
 | `recent_campaigns` | read | The person's own last three campaigns: status and counts. |
 | `search_guide` | read | Getting started guide sections. |
+| `find_student` | read | Takes a name MARKER (`P1`) and an optional class label. The server resolves the name it holds for that marker. Returns handles (`s1`…) and class labels; the names go to the browser. |
+| `select_student` | read | Makes a found student the selected one. |
+| `student_record` | read | Shows the person a section of a found student's record (summary, attendance, released results) in a card. The model does not see the record. |
 
 **There is no approval tool.**
 - The registry refuses any tool named like an approval or an execution
@@ -182,14 +185,98 @@ role.
 - **Duplicates.** Calling a tool twice with the same scope in one turn
   prepares once.
 
+### Revisions invalidate previews (all four workflows)
+
+One rule, held in `AssistantStore`, for invoices, reminders, intake and
+corrections:
+
+- **Each plan has a revision.** A card records the revision it has applied
+  (`markApplied`). While a newer plan is not yet applied (`planPending`), the
+  preview on screen is out of date and **cannot be approved**: the approval
+  control is disabled, and `store.approve` refuses even a click that gets
+  through.
+- **The card then starts again.** A card showing an unapproved preview drops
+  its session (`resetSession`), applies the new scope or fields, and needs a
+  fresh server preview. The approval box starts unticked.
+- **What the person typed is kept.** Intake rows and picked correction
+  students live in the task's memory (`store.memo`), not the session's, so
+  they survive the reset. They are dropped by clear, wipe and close.
+- **In-flight work is never touched.** A task that is confirming, checking,
+  uncertain or done is never reset or re-planned.
+- **Races.** Approval takes a lock at the click, synchronously.
+  - A plan that arrives after the click is not applied, and the person is told
+    ("this was already being approved or is finished, so that change was not
+    applied").
+  - A click that lands after a plan arrived, but before the card applied it,
+    does nothing.
+
+### Named student lookup
+
+The owner's requirement (2026-11-09): staff can ask for "the records of Samuel
+in JSS 2" and get them. Built so that **names still never reach the model**.
+
+- **On the model path:**
+  1. The server replaces every roster name in every message with an opaque
+     marker (`⟨P1⟩`), by the detector's own matching rules
+     (`redactRosterNames`). A name no longer blocks the turn. Every other
+     detector still does: contacts, ID-like numbers, dates, pasted rows and
+     admission numbers.
+  2. The model calls `find_student` with the marker and the class label.
+  3. The server looks the name up (`StudentLookupService`) and returns handles
+     and class labels to the model, and the matches (names, admission numbers)
+     to the browser in an action.
+- **On the device** (no model): the router recognises a lookup request and
+  opens a search card, prefilled from the request and editable. It calls
+  `POST /assistant/workspace/students/find`.
+- **Who can find whom.** Decided by existing services, re-read on every call:
+
+  | Caller | Finds |
+  |---|---|
+  | Owner or admin with `student.read` | Students through `StudentsService.list`. |
+  | Teacher with `student.read` | Only students in their own classes, through `TeacherScopeService` (the trimmed roster). |
+  | Anyone else | Refused (`STUDENT_LOOKUP_NOT_PERMITTED`). |
+
+  Another school's students never match.
+- **Matching never guesses:**
+  - One exact match: shown and selected.
+  - Several: a choice. The person picks in the card, or says which class.
+  - No exact match: close spellings, marked "similar".
+  - Nothing: said plainly.
+- **Follow-ups.** The browser sends found students as handles with ids
+  (`students: [{ handle, studentId, selected }]`). The server re-checks each id
+  against tenant and scope every turn and drops any it can't confirm (a forged
+  or another school's id resolves to nothing). The model sees `<students>`:
+  handles, selected or found, and class labels.
+- **Record sections.** The card reads each from its own existing,
+  permission-checked endpoint:
+
+  | Section | Source | Needs |
+  |---|---|---|
+  | Summary | The lookup match, with a link to the student's page | `student.read` |
+  | Attendance this term | `GET /attendance/summary` | `attendance.read`, and the arm in scope |
+  | Released results | `GET /report-cards?status=RELEASED` | `report-card.read`, and the arm in scope. Unreleased cards are never requested. |
+
+  Behaviour, health, contacts and fees are not sections. No new record
+  endpoint was added.
+- **Reads need no approval.** Changing a record still goes through the
+  corrections card's preview and confirmation.
+- **Nothing rendered goes back.** Matches and record cards are UI messages;
+  model history is only the person's own accepted text (re-redacted each turn)
+  and the model's replies.
+- **Approval status.** Named lookup is authorised as product behaviour, and
+  this design sends the model no names, so it needs no approval beyond the
+  orchestrator's own pending row. The residual is unchanged: a name the
+  detector's matching misses (a nickname, a misspelling beyond one edit) is
+  neither redacted nor blocked.
+
 ### What the model receives (field by field)
 
 | Path | Sent to the model |
 |---|---|
 | System prompt | Fixed text (`ASSISTANT_ORCHESTRATOR_SYSTEM`). |
-| The person's messages | Staff-typed text, newest last, at most 12 messages of 1,000 characters (500 from the composer). **Every message is re-checked each turn** by the per-school detectors (`checkConversation`: names on the school's roster, admission numbers, emails, phones, long ID-like numbers, full dates, pasted rows, over-long text). Any hit stops the turn before the model: no call, no ledger row. The browser hears the categories, never the text, and gets the on-device router instead. |
+| The person's messages | Staff-typed text, newest last, at most 12 messages of 1,000 characters (500 from the composer). **Every message is processed again each turn.** Names on the school's roster are replaced by markers (`⟨P1⟩`). The redacted text is then checked by the per-school detectors (`checkConversation`: admission numbers, emails, phones, long ID-like numbers, full dates, pasted rows, over-long text). Any hit stops the turn before the model: no call, no ledger row. The browser hears the categories, never the text, and gets the on-device router instead. Only messages the server accepted are ever resent: a blocked, unavailable, failed or timed-out request stays on screen but never re-enters model history. |
 | Earlier assistant replies | The model's own earlier replies (marked by the browser), after the server's check. |
-| Task summary | `<tasks>` block: handles, workflow, status, term and class labels (`safeLabel`: letters, digits and ordinary punctuation, 40 characters), field names, counts. |
+| Task summary | `<tasks>` block: handles, workflow, status, term and class labels (`safeLabel`: letters, digits and ordinary punctuation, 40 characters), field names, counts. `<students>` block: handles, selected or found, class labels. |
 | Tool results | Term and class labels; counts (classes, new invoices, already invoiced, problems, sends by outcome, saved, changed); statuses; guide section titles and excerpts. |
 
 **Never sent:** student, guardian or staff names; admission numbers; contacts;
@@ -238,7 +325,7 @@ values (intake rows, correction values, debtor lists); campaign recipients.
 Proposed as a fourth row of CLAUDE.md's PII-bearing prompt allowlist. **Not
 added to CLAUDE.md; not approved.**
 
-> | `assistant-orchestrator` | SchoolKit Assistant model orchestration (`docs/modules/assistant-workspace.md`, "Model orchestration") | **Not the payload — incidental, and accepted as a residual.** The assistant prepares invoices, reminder campaigns, intake and corrections through their existing reviewed workflows and needs no personal data: students are found and edited in structured forms the model never sees, and tools return labels and counts only. A staff member may still type some. Mitigated, not exempted: per-school detectors block roster names, admission numbers, emails, phones, long ID-like numbers, full dates and pasted rows in every message, every turn; pasted rows are kept on the device; a standing notice asks for none; nothing the model does can approve a write (no approval tool, approval is the person's control on the server's preview). What the detectors miss reaches the model: this row accepts that residual for this prompt only. Optional at every level: the code-level approval flag, the platform's switch, the school's own `assistant-model-routing` switch (off by default), and the staff member's choice to type. Rule 1 applies as for `help-assistant`: the conversation is held only in browser memory, resent with each request, and stored nowhere on the server. |
+> | `assistant-orchestrator` | SchoolKit Assistant model orchestration (`docs/modules/assistant-workspace.md`, "Model orchestration") | **Not the payload — incidental, and accepted as a residual.** The assistant prepares invoices, reminder campaigns, intake and corrections through their existing reviewed workflows and needs no personal data: students are found and edited in structured forms the model never sees, and tools return labels and counts only. A staff member may still type some. Mitigated, not exempted: roster names are replaced by opaque markers (the server resolves them; named records go to the browser only), and per-school detectors block admission numbers, emails, phones, long ID-like numbers, full dates and pasted rows, in every message, every turn; pasted rows are kept on the device; a standing notice asks for none; nothing the model does can approve a write (no approval tool, approval is the person's control on the server's preview). What the detectors miss reaches the model: this row accepts that residual for this prompt only. Optional at every level: the code-level approval flag, the platform's switch, the school's own `assistant-model-routing` switch (off by default), and the staff member's choice to type. Rule 1 applies as for `help-assistant`: the conversation is held only in browser memory, resent with each request, and stored nowhere on the server. |
 
 Before activation, the owner also needs to decide:
 - **Provider terms.** Same as the help assistant's D6: the API organisation's
@@ -253,6 +340,20 @@ Before activation, the owner also needs to decide:
 
 ### Tests for this path
 
+- **PR #523 review fixes:**
+  - `student-lookup.service.spec.ts` (real PostgreSQL): several same-name
+    students within and across arms, similar names, no match, another school,
+    teacher scope, missing permission, revocation, deactivation, forged ids.
+  - The orchestration spec: names redacted, handles only, follow-up selection,
+    a section refused without its permission, forged handles, behaviour not a
+    section.
+  - `reminder-campaigns.service.spec.ts`: two levels with an arm called "A",
+    scoped by ID through preview, confirm and send.
+  - `orchestration.spec.ts` (web): blocked and failed text never resent,
+    revision and approval races, lookup state.
+  - `e2e/tests/assistant-revisions-lookup.spec.ts`: an intake revision with the
+    box ticked, the confirm-then-revision race, a corrections revision, and
+    lookup with the model and on the device.
 - **API (real PostgreSQL, scripted model port):**
   `orchestrator/assistant-orchestrator.service.spec.ts`. It covers:
   - prepare, revise across turns, and approval only of the new preview;
@@ -281,7 +382,7 @@ Before activation, the owner also needs to decide:
   - unavailable workflows.
 - **Evals:**
   - `assistant-orchestrator` (offline contract, always runs).
-  - `assistant-orchestrator-live` (11 scenarios on the real model with
+  - `assistant-orchestrator-live` (14 scenarios on the real model with
     simulated tools: paraphrase, refinement, task switching, intake,
     corrections, campaign status, ambiguity, refusal, approval wording,
     injection in the request and in history). It is **skipped without a key**,

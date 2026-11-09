@@ -257,7 +257,9 @@ What it may never do, approved or not:
 - **Labels and counts only.** Tools return labels and counts, never names,
   contacts, money or ids.
 - **Detectors first.** Every message passes the per-school detectors, every
-  turn, before the model.
+  turn, before the model. Roster names are replaced by opaque markers first
+  (named student lookup); the server resolves them, and names and records go
+  to the browser only.
 - **Nothing stored.** No conversation text is stored.
 
 Do not reuse the help-assistant exception for it.

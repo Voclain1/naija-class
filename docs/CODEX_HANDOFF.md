@@ -201,6 +201,11 @@ those; it doesn't replace them.
   - The proposed allowlist row is in `docs/modules/assistant-workspace.md`,
     NOT approved.
   - Live evals were skipped (no key here). Not merged, deployed or enabled.
+  - Review fixes pushed to the same PR (#523): revisions invalidate open
+    previews in all four cards, blocked text never re-enters model history,
+    reminders are scoped by class ID on the server (`options.classArmIds`),
+    and named student lookup is added (names become markers; the server
+    resolves them; records show in cards only). Prompt is now `@2`.
 - **SchoolKit Assistant, unified workspace (November 9):** branch
   `agentic/unified-assistant`, one PR. One staff panel (launcher bottom-right
   in both shells, Alt+Shift+A) driving the four reviewed workflows end to end
