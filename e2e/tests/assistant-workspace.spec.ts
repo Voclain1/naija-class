@@ -173,24 +173,37 @@ test("reminders: segmented selection, server preview, one confirmation, saved ca
     await expect(campaign).toBeVisible();
     expect(prepares).toBe(1);
     expect(await withTenant(admin.schoolId, (db) => db.reminderCampaign.count({ where: { schoolId: admin.schoolId } }))).toBe(1);
-    // Halt and explicit resume act on the saved campaign (when it is still running).
-    if (await campaign.getByRole("button", { name: "Halt campaign" }).isVisible()) {
-      await campaign.getByRole("button", { name: "Halt campaign" }).click();
-      await expect(campaign.getByText("Halted", { exact: true })).toBeVisible();
-      await campaign.getByRole("button", { name: /Resume/ }).click();
-    }
-    // UNKNOWN and quiet hours as the server reports them (provider answers
-    // cannot be lost on demand in a browser test; the journal's own tests cover that).
-    await page.route("**/finance/reminder-campaigns/*", async (route) => {
-      if (route.request().method() !== "GET" || route.request().url().includes("/proposals/")) return route.continue();
-      const body = await (await route.fetch()).json();
-      body.status = "RUNNING"; body.heldForQuietHours = true; body.counts.UNKNOWN = 1;
+    // Halt, explicit resume, UNKNOWN and quiet hours as the server reports
+    // them. A real one-family campaign can finish before a click lands, and a
+    // provider's answer cannot be lost on demand in a browser, so the
+    // campaign's status is set here; the server's own halt/resume, UNKNOWN and
+    // quiet hours are covered by the reminder-campaign API tests.
+    let status = "RUNNING"; let unknown = 0; let quiet = false;
+    const actions: string[] = [];
+    await page.route("**/finance/reminder-campaigns/**", async (route) => {
+      const req = route.request(); const url = req.url();
+      const action = req.method() === "POST" ? /\/(halt|resume)$/.exec(url)?.[1] : undefined;
+      if (url.includes("/proposals") || (req.method() !== "GET" && !action)) return route.continue();
+      if (action) { actions.push(action); status = action === "halt" ? "HALTED" : "RUNNING"; }
+      const real = await route.fetch({ url: action ? url.replace(/\/(halt|resume)$/, "") : url, method: "GET" });
+      const body = await real.json();
+      if (!body?.counts) return route.fulfill({ response: real, json: body });
+      body.status = status; body.heldForQuietHours = quiet; body.counts.UNKNOWN = unknown;
       await route.fulfill({ json: body });
     });
+    await campaign.getByRole("button", { name: "Refresh status" }).click();
+    await campaign.getByRole("button", { name: "Halt campaign" }).click();
+    await expect(campaign.getByText("Halted", { exact: true })).toBeVisible();
+    await expect(campaign.getByText(/Nothing more is sent unless you resume/)).toBeVisible();
+    await campaign.getByRole("button", { name: /Resume/ }).click();
+    await expect(campaign.getByText("Sending", { exact: true })).toBeVisible();
+    expect(actions).toEqual(["halt", "resume"]);
+    unknown = 1; quiet = true;
     await campaign.getByRole("button", { name: "Refresh status" }).click();
     await expect(campaign.getByText(/may have gone out/)).toBeVisible();
     await expect(campaign.getByText(/Sends wait until 06:00/)).toBeVisible();
     await expect(campaign.getByRole("button", { name: /Retry/ })).toHaveCount(0);
+    expect(actions).toEqual(["halt", "resume"]);
     await page.screenshot({ path: `${SHOTS}desktop-reminder-campaign.png` });
   } finally { await admin.context.close(); await admin.api.dispose(); }
 });
@@ -248,7 +261,7 @@ test("corrections: find by roster search, explicit clear, server before/after, s
     await card.getByRole("button", { name: "Confirm corrections" }).click();
     await expect(card.getByText("Records changed")).toBeVisible();
     await card.getByRole("button", { name: "Refresh with current records" }).click();
-    await expect(card.getByText(`${target.lastName}y`)).toBeVisible();
+    await expect(card.getByRole("cell", { name: `${target.lastName}y`, exact: true })).toBeVisible();
     await card.getByRole("checkbox", { name: /I checked the before and after/ }).check();
     await card.getByRole("button", { name: "Confirm corrections" }).click();
     await expect(card.getByText(/Applied: 1 record corrected/)).toBeVisible();
