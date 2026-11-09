@@ -197,8 +197,18 @@ those; it doesn't replace them.
   `modelRouting` is gated off pending its own approval. Memory-only
   conversation, cleared on sign-out, account change and 15 minutes idle; open
   operations survive as id-only references. `assistant-workspace` off
-  everywhere. #521 untouched. See `docs/modules/assistant-workspace.md`. Not
-  merged, deployed or enabled.
+  everywhere. See `docs/modules/assistant-workspace.md`. Merged as #522; not
+  deployed or enabled.
+- **Reviewed correction frontend:** branch `frontend/student-correction-workflow`
+  implements #520's published contract: `/students/corrections`, roster picker,
+  six-field editor, explicit clears, authoritative before/after review, atomic
+  confirm, stale refresh and saved-review recovery. No PATCH loop or model.
+  Drafts in memory; only review id in the browser address. Scope/limits are in
+  `docs/modules/student-corrections-frontend.md`; seven browser journeys need
+  final-head CI. #518 merged after full integrated CI and Playwright passed; it connects #519's saved campaign journal UI.
+  Neither branch enables a real school's feature.
+
+
 - **Durable campaign frontend integration:** #519/#520 are merged. #518 now
   adapts its frontend to `/finance/reminder-campaigns`, with server preview,
   reloadable requester-only pages, lost-confirm recovery, polling, halt/resume

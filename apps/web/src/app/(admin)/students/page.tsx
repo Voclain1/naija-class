@@ -19,6 +19,8 @@ import { StudentsListControls } from "@/components/students/students-list-contro
 import { StudentsRosterTable } from "@/components/students/students-roster-table";
 import { Button } from "@/components/ui/button";
 import { Appear, EmptyState, PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
+import { useAuth } from "@/lib/auth/use-auth";
+import { hasPermission } from "@/lib/auth/has-permission";
 import { ApiError } from "@/lib/api-client";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { listStudents } from "@/lib/students/students-api";
@@ -65,6 +67,7 @@ const STUDENT_EXPORT_COLUMNS: CsvColumn<StudentDto>[] = [
 // the current term. `academicYearId` remains accepted-but-unused at the
 // API layer; no UI surface yet.
 export default function StudentsRosterPage() {
+  const { permissions } = useAuth();
   const [students, setStudents] = useState<StudentDto[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
@@ -187,6 +190,7 @@ export default function StudentsRosterPage() {
               </Button>
             </div>
 
+          {hasPermission(permissions, "student.read") && hasPermission(permissions, "student.update") && <Button asChild variant="outline"><Link href="/students/corrections">Review record corrections</Link></Button>}
           <AddStudentChooser />
         </div>
         }
