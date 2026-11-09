@@ -225,6 +225,10 @@ export const baseConfig = [
       // hourly system cron reading the schools list (no RLS); each school's
       // workflow_proposals go through withTenant.
       "**/common/workflow/workflow-proposals-sweeper.service.ts",
+      // reminder-campaign-runner.service.ts (2026-11-09). Same category: a
+      // system cron listing schools (no RLS) by stored switch; each school's
+      // campaigns are read and processed under withTenant.
+      "**/modules/reminder-campaigns/reminder-campaign-runner.service.ts",
       // parent-summaries.service.ts — Phase 5 / Slice 5. Same category again:
       // sweepWeeklySummaries is a weekly system cron that iterates every
       // ACTIVE school which has opted into parent summaries. basePrisma

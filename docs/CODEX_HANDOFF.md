@@ -190,6 +190,16 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-09)
 
+- **Fee reminder campaigns, backend (November 9):** branch
+  `agentic/reminder-campaigns`, one PR. Contract and frontend steps:
+  `docs/modules/reminder-campaigns.md`. Reuses `workflow_proposals` (kind
+  `fee-reminder-campaign`) for prepare/confirm; new `reminder_campaigns` and
+  `reminder_campaign_sends` (journal, FORCE RLS). Worker claims-then-sends;
+  lost answers become UNKNOWN, never retried; halt/resume explicit; quiet
+  hours hold; `reminder-campaigns` switch off everywhere. Shared workflow
+  helpers moved to `apps/api/src/common/workflow/` (fingerprint, expiry,
+  hourly sweeper for every proposal kind). ChatGPT wires
+  `frontend/reminder-campaign-workflow` to it. Not merged, deployed or enabled.
 - **Reviewed student corrections, backend (November 9):** branch
   `agentic/student-corrections`, one PR. Contract and frontend steps:
   `docs/modules/student-corrections.md`. Six fields only; absent = unchanged,

@@ -117,4 +117,47 @@ export class TermiiService {
       throw new InternalError(`Termii SMS send rejected: ${json.message ?? "unknown reason"}.`);
     }
   }
+
+  /**
+   * One SMS, with the outcome classified rather than thrown (2026-11-09,
+   * docs/modules/reminder-campaigns.md). REJECTED means Termii answered and
+   * did not take the message; UNKNOWN means we cannot tell (network failure,
+   * timeout, a 5xx after the request left), and the campaign never retries
+   * it automatically. Termii's API offers no idempotency key that SchoolKit
+   * has verified, so none is sent. Logs carry no number or text.
+   */
+  async sendSmsWithOutcome(
+    to: string,
+    message: string,
+    senderId?: string,
+  ): Promise<{ status: "ACCEPTED"; providerRef: string | null } | { status: "REJECTED" | "UNKNOWN"; reason: string }> {
+    if (!this.apiKey) return { status: "REJECTED", reason: "SMS_NOT_CONFIGURED" };
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/api/sms/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: this.apiKey, to, from: senderId ?? this.senderId, sms: message, type: "plain", channel: "dnd" }),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      this.logger.warn("Termii send uncertain: no answer");
+      return { status: "UNKNOWN", reason: "PROVIDER_NO_ANSWER" };
+    }
+    if (res.status >= 500) {
+      this.logger.warn(`Termii send uncertain: HTTP ${res.status}`);
+      return { status: "UNKNOWN", reason: `PROVIDER_HTTP_${res.status}` };
+    }
+    if (!res.ok) {
+      this.logger.warn(`Termii send refused: HTTP ${res.status}`);
+      return { status: "REJECTED", reason: `PROVIDER_HTTP_${res.status}` };
+    }
+    const json = (await res.json().catch(() => null)) as TermiiSendResponse | null;
+    if (!json) return { status: "UNKNOWN", reason: "PROVIDER_UNREADABLE_ANSWER" };
+    if (json.code !== "ok") {
+      this.logger.warn("Termii send refused: not ok");
+      return { status: "REJECTED", reason: "PROVIDER_REFUSED" };
+    }
+    return { status: "ACCEPTED", providerRef: json.message_id ?? null };
+  }
 }

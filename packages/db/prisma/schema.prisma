@@ -5682,3 +5682,50 @@ model WorkflowProposal {
   @@index([schoolId, kind, createdAt(sort: Desc)])
   @@map("workflow_proposals")
 }
+
+// Durable fee reminder campaigns (2026-11-09, docs/modules/reminder-campaigns.md).
+// Created by confirming a reviewed workflow proposal; its sends are an outbox
+// holding ids and states only, never contact details, text or amounts.
+model ReminderCampaign {
+  id                  String                 @id @default(uuid())
+  schoolId            String                 @map("school_id")
+  proposalId          String                 @unique @map("proposal_id")
+  termId              String                 @map("term_id")
+  requestedBy         String                 @map("requested_by")
+  confirmedBy         String                 @map("confirmed_by")
+  status              String                 @default("RUNNING")
+  haltReason          String?                @map("halt_reason")
+  templateVersion     String                 @map("template_version")
+  includePaymentPlans Boolean                @map("include_payment_plans")
+  overdueOnly         Boolean                @map("overdue_only")
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @default(now()) @map("updated_at")
+  haltedAt            DateTime?              @map("halted_at")
+  completedAt         DateTime?              @map("completed_at")
+  sends               ReminderCampaignSend[]
+
+  @@index([schoolId, status])
+  @@map("reminder_campaigns")
+}
+
+model ReminderCampaignSend {
+  id          String           @id @default(uuid())
+  schoolId    String           @map("school_id")
+  campaignId  String           @map("campaign_id")
+  studentId   String           @map("student_id")
+  guardianId  String           @map("guardian_id")
+  channel     String
+  channelUsed String?          @map("channel_used")
+  status      String           @default("PENDING")
+  reason      String?
+  claimToken  String?          @map("claim_token")
+  claimedAt   DateTime?        @map("claimed_at")
+  finishedAt  DateTime?        @map("finished_at")
+  providerRef String?          @map("provider_ref")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  campaign    ReminderCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, studentId, channel, guardianId], map: "reminder_campaign_sends_slot_key")
+  @@index([schoolId, campaignId, status])
+  @@map("reminder_campaign_sends")
+}

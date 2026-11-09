@@ -843,7 +843,7 @@ function formatKoboForEmail(kobo: number): string {
   return `₦${(kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}`;
 }
 
-function buildReminderHtml(opts: {
+export function buildReminderHtml(opts: {
   guardianFirstName: string;
   studentName: string;
   schoolName: string;
@@ -883,7 +883,7 @@ function buildReminderHtml(opts: {
 // reader's school does not staff makes the instruction unfollowable. "The
 // school" is true everywhere and is also one character shorter, which this
 // builder cares about.
-function buildReminderSms(opts: {
+export function buildReminderSms(opts: {
   studentName: string;
   schoolName: string;
   balance: number;

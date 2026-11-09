@@ -201,6 +201,18 @@ returns the outcome instead of writing twice. Row data is cleared on completion
 or expiry; nothing sends invitations or notifications. `student-intake` is off
 by default. Do not register it as an assistant tool without its own decision.
 
+### Fee reminder campaigns (2026-11-09)
+
+`docs/modules/reminder-campaigns.md`. A reviewed selection of debtors becomes a
+campaign with a journal (`reminder_campaign_sends`) of planned sends, using
+the existing fee-reminder templates and rails. **No model call**; not on the
+PII allowlist. Each send is claimed and committed before the provider call; a
+claim whose answer is lost becomes UNKNOWN and is **never retried
+automatically**. Do not add automatic retries of UNKNOWN sends, and do not
+claim exactly-once delivery: provider idempotency has not been verified. The
+journal stores ids and states only, never contacts, text or amounts.
+`reminder-campaigns` is off by default; `POST /finance/debtors/remind` stays
+as it was.
 ### Reviewed student corrections (2026-11-09)
 
 `docs/modules/student-corrections.md`. Batch corrections to existing students'
