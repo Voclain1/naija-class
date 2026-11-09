@@ -22,6 +22,7 @@ export const FEATURE_KEYS = [
   // this key yet: the assistant itself is not built, and the switch stays off
   // for every school until the owner approves a pilot.
   "assistant-help",
+  "assistant-billing",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -34,6 +35,7 @@ export type FeatureSwitchMap = Record<FeatureKey, boolean>;
 /** A short human label per key, for the operator's screens and audit lines. */
 export const FEATURE_LABELS: Record<FeatureKey, string> = {
   "assistant-help": "Help assistant",
+  "assistant-billing": "Invoice assistant",
 };
 
 /** Narrows an arbitrary string (an audit row, an env entry) to a known key. */

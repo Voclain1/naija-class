@@ -1326,3 +1326,15 @@ The first-delivery decisions are listed in §3.5. The full register:
 | R1–R10 | Approve the recommendations in §1.3 | Approve | As listed in §1.3 |
 
 
+
+
+## Owner-directed workflow chunks (2026-11-08)
+
+The owner requested substantial complete workflow PRs rather than one PR per
+foundation slice. Current order: invoice preparation → student intake/enrolment
+→ notification/SMS campaigns → record updates and coordination. The existing
+privacy, behaviour and messaging policies remain in force. Chunk 1 is scoped
+in `docs/modules/assistant-billing.md`; implementation and CI are in progress,
+not an activation approval. Its bounded atomic executor replaces a multi-step
+journal only for this transaction-sized invoice operation. Larger/background
+actions still require the journal and recovery design in §6.1.

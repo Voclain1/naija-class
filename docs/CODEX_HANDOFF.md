@@ -188,7 +188,17 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-07)
+## Latest state (updated 2026-11-08)
+
+- **Assistant chunk 1 (November 8):** owner requested complete workflow chunks,
+  starting with invoice preparation/approval/issuance. Work is on
+  `feat/assistant-invoice-workflow`; see `docs/modules/assistant-billing.md`.
+  Per-school `assistant-billing` stays off. The read-only task loop receives
+  only counts and fixed task text; explicit human approval executes the existing
+  invoice service in one serializable tenant transaction. No raw chat reaches
+  the model or storage. Provider/legal/consent and pilot decisions remain open.
+  Check the branch PR/CI before treating implementation as merged or live.
+
 
 - **PR #499 base sync (November 7):** cleanly merged main `c83f5524`
   (PR #498 feature switches) into the report-card branch. Both schema changes

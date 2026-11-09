@@ -23,6 +23,7 @@
 //
 // `as const` object, never a TS enum — see the landmine note in ../index.ts.
 
+import { BILLING_RUN_PROMPT } from "./billing-run.js";
 import { MODELS, type ModelId } from "../models.js";
 // Runtime import; lesson-plan.ts imports only the TYPE back from here, and
 // type-only imports are erased at compile time, so there is no runtime cycle.
@@ -53,6 +54,7 @@ export interface PromptDefinition {
 // slices, each with golden eval fixtures — `pnpm ai:eval` becomes a real gate
 // at slice 2, per phase-5.md.
 export const PROMPTS = {
+  BILLING_RUN_PLANNER: BILLING_RUN_PROMPT,
   CONNECTIVITY_CHECK: {
     name: "connectivity-check",
     version: "1",
