@@ -737,6 +737,18 @@ You do not need any of these to get started. Use them when you are ready.
 - **Online exams (CBT)** — children sit exams on your computer lab. This is **not yet switched on**. If you would like to use it, contact the SchoolKit team (see [Getting help](#getting-help)) **at least four weeks** before your exams.
 - **Extra security** — in **Settings → Security** you can turn on two‑factor sign‑in, so a code from your phone is needed as well as your password.
 
+## The SchoolKit Assistant
+
+The assistant is **not yet switched on** for any school. When it is, a **SchoolKit Assistant** button appears in the bottom-right corner of every staff page (or press **Alt+Shift+A**). It opens a panel beside the page you are on, or fills the screen on a phone, and it stays open as you move between pages.
+
+- **What it does:** describe a job in your own words, or tap a suggested task. It can **generate term invoices**, **send fee reminders**, **add and enrol students** and **correct student records** (names, date of birth, gender and email). You fill in what is missing, look at exactly what will change, tick the box and press the button to approve. Nothing changes until you do.
+- **Questions:** ask how to do something and it shows the matching parts of this guide.
+- **What it will not do:** record payments, change scores, behaviour or health records, move children between classes, change admission numbers, link parents, send other messages, or delete anything. It tells you which page to use instead.
+- **Your words stay on your device.** Your requests are not sent to an AI model. The conversation is cleared when you sign out, after 15 minutes without use, or when you press **Clear conversation**. Please do not type passwords, BVNs, PINs or one-time codes.
+- **If the connection drops while you approve,** the assistant checks what actually happened and never sends the same job twice. A reminder marked "may have been sent" is never sent again by itself.
+
+Who sees which tasks depends on your role: teachers see the guide questions only.
+
 **About the AI features** (scanning registers, drafting comments, lesson plans, question drafting, weekly updates): they are switched on for every school. Some also have a switch of your own in **Settings**: weekly updates to parents, and AI-drafted homework feedback, stay off until you turn them on. Nothing written by AI ever goes on a report card without a teacher accepting it. **Settings → AI usage** shows how much you have used this month.
 
 ---

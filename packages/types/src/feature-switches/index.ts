@@ -37,6 +37,11 @@ export const FEATURE_KEYS = [
   // and email (docs/modules/student-corrections.md). No model. PATCH
   // /students/:id is not behind it.
   "student-corrections",
+  // The SchoolKit Assistant workspace panel in the staff shell
+  // (docs/modules/assistant-workspace.md). Routes requests locally, with no
+  // model, into the four reviewed workflows above; each still needs its own
+  // switch. Off by default.
+  "assistant-workspace",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -53,6 +58,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   "student-intake": "Reviewed student intake",
   "reminder-campaigns": "Fee reminder campaigns",
   "student-corrections": "Reviewed student corrections",
+  "assistant-workspace": "SchoolKit Assistant",
 };
 
 /** Narrows an arbitrary string (an audit row, an env entry) to a known key. */

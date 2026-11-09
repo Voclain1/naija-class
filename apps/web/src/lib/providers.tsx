@@ -8,6 +8,8 @@ import type { ReactNode } from "react";
 import { NavigationProgress } from "@/components/navigation-progress";
 import { Toaster } from "@/components/ui/sonner";
 
+import { AssistantProvider } from "@/components/assistant/assistant-provider";
+
 import { AuthProvider } from "./auth/auth-provider";
 import { PostHogProvider } from "./observability/posthog-provider";
 
@@ -37,7 +39,11 @@ export function Providers({ children }: { children: ReactNode }) {
               calls can rely on the SDK being mounted. PostHogProvider
               renders children unwrapped when the key is blank, so the
               no-key dev path costs zero. */}
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            {/* The assistant's in-memory conversation lives above the staff
+                shells so it survives navigation between them. */}
+            <AssistantProvider>{children}</AssistantProvider>
+          </AuthProvider>
         </PostHogProvider>
         {/* useSearchParams() requires a Suspense boundary or Next fails the
             build ("should be wrapped in a suspense boundary") — null fallback

@@ -225,6 +225,20 @@ transaction. Do not widen the field list (admission numbers, status,
 enrolment, guardians, credentials, health, behaviour, grades, money, deletion
 keep their own paths). `student-corrections` is off by default.
 
+### SchoolKit Assistant workspace (2026-11-09)
+
+`docs/modules/assistant-workspace.md`. One staff panel over the four reviewed
+workflows above (invoices, reminder campaigns, intake, corrections) plus guide
+search. **No model call**; NOT on the PII allowlist, and the `help-assistant`
+exception does not cover it. Requests are routed by the deterministic
+`routeAssistantRequest` in the browser; only structural hints prefill
+controls, and every write still needs the workflow's own server preview and
+explicit approval. The conversation lives in browser memory only (never
+storage, URLs, analytics or error reports). `capabilities.modelRouting` is
+hard-wired unavailable: a model-backed router needs its own allowlist row and
+sign-off, or a design that never sends request text. `assistant-workspace` is
+off by default.
+
 ### Git
 
 - Never commit to `main`. Every change goes through a PR (bundled — see Git conventions).
