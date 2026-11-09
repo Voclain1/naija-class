@@ -52,6 +52,8 @@ stays 23.
 | Key | Label | Gates | State |
 |---|---|---|---|
 | `assistant-help` | Help assistant | The staff help and settings assistant (plan 4A) | Not built; off everywhere |
+| `assistant-billing` | Invoice assistant | Term invoice preparation and approval (`docs/modules/assistant-billing.md`) | Built; off everywhere |
+| `student-intake` | Reviewed student intake | Prepare, review and confirm a student batch (`docs/modules/student-intake-proposals.md`); no model. `POST /students/bulk` is not behind it | Backend built; off everywhere |
 
 ## API
 

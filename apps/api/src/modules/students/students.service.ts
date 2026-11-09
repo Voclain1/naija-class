@@ -38,7 +38,7 @@ import {
   loadCurrentEnrollmentsForStudents,
 } from "../enrollments/enrollments.service";
 
-interface RequestContext {
+export interface RequestContext {
   ipAddress: string | null;
   userAgent: string | null;
 }
@@ -303,83 +303,11 @@ export class StudentsService {
       }
 
       try {
-        const now = new Date();
-        const rows = await db.student.createManyAndReturn({
-          data: input.students.map((s, index) => ({
-            schoolId: authCtx.schoolId,
-            admissionNumber: numbers[index]!,
-            firstName: s.firstName,
-            middleName: s.middleName ?? null,
-            lastName: s.lastName,
-            dateOfBirth: s.dateOfBirth,
-            gender: s.gender,
-            photoUrl: s.photoUrl ?? null,
-            address: s.address ?? null,
-            phone: s.phone ?? null,
-            email: s.email ?? null,
-            religion: s.religion ?? null,
-            stateOfOrigin: s.stateOfOrigin ?? null,
-            nationality: s.nationality ?? "Nigerian",
-            admittedAt: s.admittedAt ?? now,
-            notes: s.notes ?? null,
-          })),
-          select: STUDENT_SELECT,
+        const inserted = await insertStudentBatchInTx(db, authCtx, input.students, numbers as string[], placement, reqCtx, {
+          student: { via: "bulk" },
+          enrollment: { via: "student-bulk-create" },
         });
-
-        // One audit row per student, as the single add writes: the same
-        // action and the same PII-free metadata, plus how it was added.
-        await db.auditLog.createMany({
-          data: rows.map((created) => ({
-            schoolId: authCtx.schoolId,
-            userId: authCtx.userId,
-            action: AUDIT.create,
-            entityType: "student",
-            entityId: created.id,
-            ipAddress: reqCtx.ipAddress,
-            metadata: {
-              admissionNumber: created.admissionNumber,
-              gender: created.gender,
-              via: "bulk",
-            },
-          })),
-        });
-
-        if (placement) {
-          const enrollments = await db.enrollment.createManyAndReturn({
-            data: rows.map((r) => ({
-              schoolId: authCtx.schoolId,
-              studentId: r.id,
-              termId: placement.termId,
-              academicYearId: placement.academicYearId,
-              classArmId: placement.classArmId,
-              status: "ENROLLED" as const,
-            })),
-            select: { id: true, studentId: true },
-          });
-          // As the single add audits a placement: its own event, per student.
-          await db.auditLog.createMany({
-            data: enrollments.map((e) => ({
-              schoolId: authCtx.schoolId,
-              userId: authCtx.userId,
-              action: "enrollment.create",
-              entityType: "enrollment",
-              entityId: e.id,
-              ipAddress: reqCtx.ipAddress,
-              metadata: {
-                studentId: e.studentId,
-                termId: placement.termId,
-                classArmId: placement.classArmId,
-                status: "ENROLLED",
-                via: "student-bulk-create",
-              },
-            })),
-          });
-        }
-
-        // RETURNING order is not promised; the admission number is unique in
-        // the request, so it puts the rows back in the order they were sent.
-        const byNumber = new Map(rows.map((r) => [r.admissionNumber, r]));
-        return { created: numbers.map((n) => toStudentDto(byNumber.get(n!)!)) };
+        return { created: inserted.map((r) => r.student) };
       } catch (e) {
         // A row added between the check above and this insert.
         throw mapAdmissionNumberUniqueViolation(e);
@@ -866,7 +794,7 @@ export async function createStudentInTx(
 // the constraint name (see CLAUDE.md "RLS hides constraint name on uniqueness
 // errors"), but this is the only unique on the table so the discriminator is
 // unambiguous.
-function mapAdmissionNumberUniqueViolation(e: unknown): unknown {
+export function mapAdmissionNumberUniqueViolation(e: unknown): unknown {
   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
     return new ConflictError(
       "ADMISSION_NUMBER_TAKEN",
@@ -878,7 +806,7 @@ function mapAdmissionNumberUniqueViolation(e: unknown): unknown {
 
 // The bulk add's one class (POST /students/bulk `enrollment`), checked once:
 // the same checks insertEnrollmentInTx makes per student.
-async function loadPlacement(
+export async function loadPlacement(
   db: Prisma.TransactionClient,
   input: { termId: string; classArmId: string },
 ): Promise<{ termId: string; academicYearId: string; classArmId: string; classCode: string }> {
@@ -893,4 +821,110 @@ async function loadPlacement(
     throw new ValidationError("INACTIVE_CLASS_ARM", "Cannot enroll a student into an inactive class arm.");
   }
   return { termId: input.termId, academicYearId: term.academicYearId, classArmId: input.classArmId, classCode: arm.classLevel.code };
+}
+
+export type StudentBatchRow = Omit<CreateStudentInput, "enrollment">;
+export type StudentPlacement = Awaited<ReturnType<typeof loadPlacement>>;
+
+/**
+ * The shared write behind POST /students/bulk and the reviewed intake's
+ * confirm (docs/modules/student-intake-proposals.md). Runs inside the
+ * caller's transaction, after the caller has checked numbers, room and
+ * placement: one multi-row student INSERT, one audit row per student, and,
+ * with a placement, one multi-row enrolment INSERT with its own audit rows.
+ * `attribution` is merged into each audit row's PII-free metadata; it says
+ * how the row was added, never who or what drafted it. Sends nothing: no
+ * invitation, no notification. Returns rows in the order they were given.
+ */
+export async function insertStudentBatchInTx(
+  db: Prisma.TransactionClient | PrismaClient,
+  authCtx: AuthContext,
+  students: StudentBatchRow[],
+  numbers: string[],
+  placement: StudentPlacement | null,
+  reqCtx: RequestContext,
+  attribution: { student: Record<string, string>; enrollment: Record<string, string> },
+): Promise<{ student: StudentDto; enrollmentId: string | null }[]> {
+  const now = new Date();
+  const rows = await db.student.createManyAndReturn({
+    data: students.map((s, index) => ({
+      schoolId: authCtx.schoolId,
+      admissionNumber: numbers[index]!,
+      firstName: s.firstName,
+      middleName: s.middleName ?? null,
+      lastName: s.lastName,
+      dateOfBirth: s.dateOfBirth,
+      gender: s.gender,
+      photoUrl: s.photoUrl ?? null,
+      address: s.address ?? null,
+      phone: s.phone ?? null,
+      email: s.email ?? null,
+      religion: s.religion ?? null,
+      stateOfOrigin: s.stateOfOrigin ?? null,
+      nationality: s.nationality ?? "Nigerian",
+      admittedAt: s.admittedAt ?? now,
+      notes: s.notes ?? null,
+    })),
+    select: STUDENT_SELECT,
+  });
+
+  // One audit row per student, as the single add writes: the same action
+  // and the same PII-free metadata, plus how it was added.
+  await db.auditLog.createMany({
+    data: rows.map((created) => ({
+      schoolId: authCtx.schoolId,
+      userId: authCtx.userId,
+      action: AUDIT.create,
+      entityType: "student",
+      entityId: created.id,
+      ipAddress: reqCtx.ipAddress,
+      metadata: {
+        admissionNumber: created.admissionNumber,
+        gender: created.gender,
+        ...attribution.student,
+      },
+    })),
+  });
+
+  const enrollmentByStudent = new Map<string, string>();
+  if (placement) {
+    const enrollments = await db.enrollment.createManyAndReturn({
+      data: rows.map((r) => ({
+        schoolId: authCtx.schoolId,
+        studentId: r.id,
+        termId: placement.termId,
+        academicYearId: placement.academicYearId,
+        classArmId: placement.classArmId,
+        status: "ENROLLED" as const,
+      })),
+      select: { id: true, studentId: true },
+    });
+    // As the single add audits a placement: its own event, per student.
+    await db.auditLog.createMany({
+      data: enrollments.map((e) => ({
+        schoolId: authCtx.schoolId,
+        userId: authCtx.userId,
+        action: "enrollment.create",
+        entityType: "enrollment",
+        entityId: e.id,
+        ipAddress: reqCtx.ipAddress,
+        metadata: {
+          studentId: e.studentId,
+          termId: placement.termId,
+          classArmId: placement.classArmId,
+          status: "ENROLLED",
+          ...attribution.enrollment,
+        },
+      })),
+    });
+    for (const e of enrollments) enrollmentByStudent.set(e.studentId, e.id);
+  }
+
+  // RETURNING order is not promised; the admission number is unique in the
+  // batch, so it puts the rows back in the order they were sent.
+  const byNumber = new Map(rows.map((r) => [r.admissionNumber, r]));
+  return numbers.map((n) => {
+    const row = byNumber.get(n)!;
+    return { student: toStudentDto(row), enrollmentId: enrollmentByStudent.get(row.id) ?? null };
+  });
 }
