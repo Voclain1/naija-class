@@ -122,40 +122,53 @@ They were not accessed from this session (its network does not reach them).
 This is the provider's **default** for its own API. It is not a statement
 about SchoolKit's account, which the checklist below covers.
 
-### SchoolKit's actual setup (checklist; status 2026-11-08: **none verified**)
+### D6 part 1: technical checks (done 2026-11-09, from the repository; no key or secret read)
 
-The draft paragraph in D3 is final only when every item is confirmed and
-recorded here, with who checked it and when.
+Checked against `main` at 16365be (code, `.env.example`, `infra/`, `.github/`).
+The deployed environment file is a GitHub secret (`API_ENV_FILE`) this
+session cannot read, so what it contains is listed as unconfirmed, not
+guessed.
 
-1. **Provider route.** Calls go directly to the provider's own API, not
-   through a cloud reseller whose terms and regions differ.
-   *Code observation (2026-11-08), not a verification:* `packages/ai/src/client.ts`
-   builds the provider's own SDK client with no base-URL override, which goes
-   to the provider's API by default. The SDK also honours an
-   `ANTHROPIC_BASE_URL` environment variable. Still to confirm: that
-   `API_ENV_FILE` on the VPS sets no such variable, and which organisation the
-   deployed `ANTHROPIC_API_KEY` belongs to.
-2. **Account agreement.** Which Commercial Terms and Data Processing Addendum
-   SchoolKit's organisation accepted, and their dates.
-3. **Model.** The model chosen under F-6 has no model-specific retention or
-   location terms different from the baseline.
-4. **Features.** The assistant uses no feature that keeps data longer: no
-   Files API, no batch API, and **no prompt caching over user text** (the
-   approved rule). Check any other feature the FD-5c call enables.
-5. **Training overrides.** SchoolKit's organisation has **not** opted in to
-   training. The assistant sends **no feedback** to the provider; its
-   "Was this helpful?" stays in SchoolKit's own analytics, with no text.
-6. **Retention overrides.** Whether any longer retention, or a
-   zero-data-retention arrangement, applies to SchoolKit's organisation.
-   **No zero-retention claim** is made anywhere unless one is confirmed in
-   writing for SchoolKit's API organisation, the model chosen under F-6, and
-   every feature the assistant enables.
-7. **Data residency settings**, if the organisation has any, and whether
-   they change where requests are processed.
+| Check | Finding |
+|---|---|
+| **Effective endpoint** | The code builds the provider's own SDK client (`packages/ai/src/client.ts`) with no base-URL option, which goes to the provider's own API. No `ANTHROPIC_BASE_URL`, base-URL override, or reseller route (Bedrock, Vertex) appears anywhere in code, `.env.example`, `infra/` or the workflows. **Unconfirmed:** the SDK also honours an `ANTHROPIC_BASE_URL` environment variable, and `deploy-vps.yml` passes `API_ENV_FILE` through except for database, Redis, port and job settings, so a value set there would take effect. A code change can close this regardless of the secret's contents (pin the endpoint in the client). |
+| **Models in use** | `claude-haiku-4-5`: report-card and form-teacher comments, insights (router and narration), weekly parent summaries, assignment feedback, the connectivity check, and the billing-run planner (#512). `claude-sonnet-5`: lesson plans and quizzes, exam questions, register extraction. **The help assistant has no prompt or model yet** (F-6 open). |
+| **API features used** | The Messages API only (`messages.create`), with: tool use (the conversation loop: help-assistant tools and the billing planner's two tools); structured output (`output_config` with a JSON schema) on single calls; image input (register photos). No `thinking` parameter is sent, so each model's default applies (Sonnet 5 adaptive thinking on; Haiku 4.5 off). No `metadata`, no service tier, no beta features. |
+| **Caching, files, batches** | None: no `cache_control`, no Files API, no Message Batches API, no beta namespace. |
+| **Feedback or text sent elsewhere** | No call to any provider feedback endpoint. The API's PostHog sends one event (`validation_rejected`) carrying field shapes, not text. Sentry redacts emails and phone numbers. The only other AI provider, the curriculum search-indexing provider, receives curriculum documents a school uploads, never questions or student data. The help assistant has no "Was this helpful?" yet (FD-5e), so nothing about it is sent anywhere today. |
+| **What the billing planner (#512) sends** | A fixed task sentence and its own tool results (counts only). No typed text, school-entered strings, names or amounts. |
 
-**The existing privacy policy** describes AI providers as "(United States)"
-(`docs/modules/data-protection.md`). The baseline says processing may also
-happen in Europe, Asia and Australia, so that line needs updating too.
+### D6 part 2: account facts still missing (need the API organisation's settings or agreements)
+
+1. **Organisation:** which provider organisation the deployed API key belongs to (name or id, not the key).
+2. **Agreements:** the Commercial Terms and Data Processing Addendum that organisation accepted, and their dates.
+3. **Training:** confirmation that the organisation has not opted in to training, and has not submitted feedback through the provider's channels.
+4. **Retention:** any arrangement that changes the 30-day default for the organisation: longer retention, or zero data retention (zero retention is claimed nowhere unless confirmed for this organisation, model and features).
+5. **Residency:** any data-residency or regional-processing setting on the organisation.
+6. **Model exceptions:** any model-specific retention or location terms for the model chosen under F-6 (and for Haiku 4.5 and Sonnet 5, already in use).
+7. **Endpoint in production:** confirmation that `API_ENV_FILE` sets no `ANTHROPIC_BASE_URL` (or the pin above, once merged, makes this moot).
+
+### Correction to the existing privacy-policy line (proposed, with D3)
+
+The marketing site's privacy policy lists AI providers as **"AI model
+providers (United States)"** (`docs/modules/data-protection.md`). That is not
+right for the provider SchoolKit uses for drafting and the assistant, and it
+says nothing verified about the other. Proposed replacement, still naming no
+company (owner's rule, 2026-10-24):
+
+> - **AI model provider** (writing drafts, reading register photos, the help
+>   assistant and preparing billing previews): may process requests in the
+>   United States, Europe, Asia or Australia; stores what it keeps in the
+>   United States; deletes it within 30 days unless a longer period is agreed,
+>   a storage feature is used, or it must keep it to enforce its policies or
+>   comply with the law; does not train on it unless we opt in or send it
+>   feedback, and we do neither.
+> - **Curriculum search provider** (turns curriculum documents a school
+>   uploads into search data; never student data): [location and retention
+>   not yet verified: its terms have not been read (legal review, question 6)].
+
+Like D3, the first item is written from the provider's public baseline and is
+final only when part 2 confirms SchoolKit's account matches it.
 
 ## D4: consent versions (recommendation, for the owner's decision)
 
