@@ -31,9 +31,11 @@ export interface PlacementValue {
   classArmId: string;
 }
 
+export interface PlacementSummary { classLabel: string; termLabel: string }
+
 type State =
   | { kind: "loading" }
-  | { kind: "ready"; terms: TermDto[]; arms: ArmOption[]; defaultTermId: string | null }
+  | { kind: "ready"; terms: TermDto[]; arms: ArmOption[]; yearLabel: string; defaultTermId: string | null }
   /** Nothing to place INTO — no arms, or no calendar. Not an error. */
   | { kind: "unavailable"; reason: "no-arms" | "no-calendar" }
   | { kind: "error" };
@@ -66,6 +68,8 @@ export function PlacementPicker({
   onChange,
   onUnavailable,
   disabled,
+  requireExplicitTerm = false,
+  onSummaryChange,
 }: {
   /** null means the admin explicitly chose "not yet". undefined means unanswered. */
   value: PlacementValue | null | undefined;
@@ -77,6 +81,8 @@ export function PlacementPicker({
    */
   onUnavailable: () => void;
   disabled?: boolean;
+  requireExplicitTerm?: boolean;
+  onSummaryChange?: (summary: PlacementSummary | null) => void;
 }) {
   const [state, setState] = useState<State>({ kind: "loading" });
 
@@ -138,8 +144,9 @@ export function PlacementPicker({
         setState({
           kind: "ready",
           terms,
+          yearLabel: currentYear.label,
           arms: armOptions,
-          defaultTermId: currentTerms.length === 1 ? currentTerms[0]!.id : null,
+          defaultTermId: !requireExplicitTerm && currentTerms.length === 1 ? currentTerms[0]!.id : null,
         });
       } catch {
         if (cancelled) return;
@@ -157,6 +164,13 @@ export function PlacementPicker({
     // every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (state.kind !== "ready" || !value) { onSummaryChange?.(null); return; }
+    const arm = state.arms.find((a) => a.id === value.classArmId);
+    const term = state.terms.find((t) => t.id === value.termId);
+    onSummaryChange?.(arm && term ? { classLabel: arm.label, termLabel: `${state.yearLabel} — ${term.name}` } : null);
+  }, [state, value, onSummaryChange]);
 
   if (state.kind === "loading") {
     return <p className="text-sm text-muted-foreground">Loading classes…</p>;
@@ -203,7 +217,7 @@ export function PlacementPicker({
               onChange(null);
               return;
             }
-            onChange({ termId: termId || state.terms[0]!.id, classArmId: next });
+            onChange({ termId: termId || (requireExplicitTerm ? "" : state.terms[0]!.id), classArmId: next });
           }}
         >
           {/* No pre-selected class, deliberately — see the header. */}
@@ -227,9 +241,10 @@ export function PlacementPicker({
             value={termId}
             onChange={(e) => onChange({ termId: e.target.value, classArmId: armId })}
           >
+            {requireExplicitTerm && <option value="">Choose a term…</option>}
             {state.terms.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name}
+                {requireExplicitTerm ? `${state.yearLabel} — ${t.name}` : t.name}
                 {t.isCurrent ? " (current term)" : ""}
               </option>
             ))}

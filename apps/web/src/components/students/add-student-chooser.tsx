@@ -87,6 +87,7 @@ export function AddStudentChooser({ size = "sm" }: { size?: "sm" | "default" }) 
             </li>
           ))}
         </ul>
+        <Link href="/students/intake" className="rounded-lg bg-primary/5 p-3 text-sm font-medium text-primary hover:underline">Guided intake: review a class list before saving</Link>
       </DialogContent>
     </Dialog>
   );

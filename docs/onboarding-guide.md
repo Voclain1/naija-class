@@ -205,6 +205,19 @@ A photo shows on the student's page and class lists, and is printed on their ID 
 
 **Note:** Scanning is in beta and is switched on for every school. If it ever tells you it is off, contact the SchoolKit team (see [Getting help](#getting-help)), or use one of the other three ways.
 
+**Guided class-list intake:** on **Students → Add students**, choose
+**Guided intake**. You can open the single-student form, CSV import or register
+scan, or choose **Start guided class list** to type or paste several students.
+Choose the class and term yourself, or explicitly defer placement. Press
+**Review students** to check every pending row and the destination, then tick
+that you checked them and confirm. This review has not saved anything yet.
+Students saved successfully get a **View** link to their record, where you can
+link guardians and check enrollments. No parent invitation is sent by this save.
+If a response is lost, saving again is disabled: check the roster first, since
+the students may already exist. Unsaved rows are not kept after leaving or
+reloading the page. Lists over 200 students use separate save requests; earlier
+successful requests stay saved if a later one fails.
+
 ## Step 5. Put your students in their classes
 
 A child on your student list is **not yet in a class**. Registers, invoices and report cards only include children who are in a class for the current term. If you chose a class when adding students, this is already done.
@@ -394,152 +407,7 @@ Go to **Bursary → Debtors**. Choose the year and term to see every child who s
 - Tick the families you want to remind and press **Send reminder**. SchoolKit emails the reminder to **every parent or guardian linked to the child** who has an email address, and sends one text or app alert to one of them. Afterwards a line tells you how many were sent and, for any that were not, why — for example "1 has no parent or guardian linked" or "1 has a guardian with no email, phone or app". If it says email, SMS and app alerts are all off, turn one on in **Settings → Notifications**.
 - Or press **WhatsApp** beside a family to send them a ready‑written reminder from your own WhatsApp. (WhatsApp opens without a contact chosen — pick the right parent before you send.)
 
-**Payment link on WhatsApp:** on any invoice, under **Share payment link**, you can create a link for the balance and press **Share on WhatsApp**. The parent can pay by card or transfer through it. This needs online payment to be switched on — see the next section.
-
-**Showing your bank account to parents:** in **Settings → Payments**, fill in **Bank transfer details** and switch on **Show these details to parents**. Parents will then see your account number in the parent portal and in reminders.
-
-## Letting parents pay online
-
-Cash, POS and bank transfer work from day one. **Online payment by card is optional and switched off until we connect your school.** Until then, any online **Pay** button tells the parent to pay at the school instead — nobody can be charged by mistake.
-
-We connect it for you through Paystack, a Nigerian payment company:
-
-1. Go to **Settings → Payments**.
-2. Fill in **Request Paystack setup**:
-   - **Business name** — the name parents will see when they pay;
-   - your school's **Bank** and **Account number** (10 digits);
-   - **Name on the account** — copy it exactly from a bank statement, because the bank checks it;
-   - a **Finance contact** with their email and phone.
-3. Press **Send request**.
-
-We set it up and tell you when it is done. **There is nothing to copy or paste** — when it is ready, the same page says **Your Paystack subaccount is ready** and online payment is switched on.
-
-- **All the money goes straight to your school's bank account.** SchoolKit takes nothing. Paystack charges its normal fee.
-- If we cannot finish the setup (usually because the account name does not match the bank's records), the page tells you why so you can correct it and send it again.
-- You can switch online payment off at any time with **Accept Paystack payments** on the same page, then press **Save**.
-- When a parent pays online, the invoice updates by itself. You do not need to record it.
-- **What the parent receives:** an email from **your school's name** ("<your school> via SchoolKit") saying how much was received for which child, the payment reference, and what is left to pay. It says **your school will issue the receipt**, so send it as you do for cash. Parents with the SchoolKit app also get a "payment recorded" notification.
-- **Why parents may see "SchoolKit":** online payments for every school go through SchoolKit's Paystack account and are passed straight on to yours. So the parent's bank statement, and Paystack's payment page, may name SchoolKit. The line under every **Pay** button tells parents this before they pay.
-
-## Sending a message to parents or staff
-
-Go to **Announcements** in the menu and press **New announcement**.
-
-1. Choose **Who sees it**: everyone, parents only, staff only, or one class's parents and students.
-2. Write your title and message.
-3. Only tick **Urgent** for real emergencies — urgent messages go out even at night and will wake phones.
-4. Press **Send announcement**.
-
-**Announcements cannot be unsent**, so read it through first. Parents see them in the parent portal under **From the school**.
-
-To show an announcement on your school's public page too, tick **Show on the school website** (only for announcements to everyone or to parents). See [Your school's website](#your-schools-website).
-
-## The school calendar
-
-Go to **Event Calendar** in the menu and press **Add event** to add a PTA meeting, open day, mid‑term break and so on. Everyone at your school can see the calendar, including parents. Nigerian public holidays are already on it; you can hide any your school does not observe. Tick **Show on the school website** to show an event on your school's public page until it is over.
-
----
-
-# Part 3 — Exams, results and report cards
-
-Results move through these stages, one class at a time:
-
-**Teachers enter scores → teachers sign off each subject → report cards are built → form teacher reviews → you approve → you release to parents.**
-
-## Entering scores
-
-Subject teachers enter scores from **Gradebook** in their own menu. They only see the classes and subjects assigned to them ([Step 9](#step-9-say-who-teaches-what)).
-
-1. Pick the class and subject.
-2. Type each child's scores (First CA, Second CA, Exam — or whatever your grading scheme uses). If a test was marked out of a different total, use **Out of** and SchoolKit converts it.
-3. Press **Save**.
-4. When every child has every score, press **Sign off column**. This locks the scores. If a correction is needed later, press **Re-open to edit**.
-
-**You can enter scores yourself** from **Gradebook** in your menu: choose a class, then press **Open gradebook →** beside a subject.
-
-## Making the report cards
-
-Go to **Report Cards** in the menu, choose the term and class, and press **Open board →**.
-
-1. Press **Build report cards**. SchoolKit gathers every subject's scores into one report card per child.
-2. **Form teacher's comment** — the form teacher opens each card and writes a comment. They can also press **Draft comments** to have SchoolKit suggest a comment for each child; every suggestion must be read, edited if needed, and **Accept**ed by the teacher before it goes on the card. (This uses AI, which must be switched on for your school.)
-3. Before review, open **Development & report details** on each card. Choose nursery, primary or secondary, record character and practical-skill ratings (1–5), add the teacher/headteacher names and next-term date, then press **Save report details**. Leave unobserved areas unrated; SchoolKit prints “Not recorded”, never a guessed score. In the app, open the same section under the child's form comment. These details lock at form review, and a draft rebuild keeps them.
-4. The form teacher presses **Send for approval** to send the class to you.
-5. You open a card and write the **Principal's remark**. One remark is used for the whole class.
-6. In the **last term of the year**, set each child's **promotion status** (promoted, repeat and so on) on the board.
-7. Press **Approve report cards**.
-
-**Each of these buttons acts on the whole class at once**, not one child at a time.
-
-**If a student is missing:** the board compares current enrollment with the cards
-already built and lists children who do not yet have a card. While the class is
-in **DRAFT**, an owner or administrator can press **Rebuild draft report cards**.
-This adds missing students and refreshes scores and attendance; existing comments
-are kept. If review has already started, the school owner must first use **Reopen
-arm**, give a reason, and then rebuild. Review, approve and release again when
-ready. Cards are not automatically deleted when a child leaves the class.
-
-**Hiding a subject from results.** Sometimes a subject has scores but should not be on the report cards, for example a subject a class started late. Hide it instead of deleting the scores:
-
-- **For one class arm:** the form teacher (or you) presses **Hide a subject** in the **Hidden subjects** box on the class's report card board.
-- **For a whole class or the whole school:** go to **Sessions & classes → Subjects by class** and press **Hide a subject**.
-
-You choose how long: **this term only**, **this session**, or **until I unhide it**. Press **Unhide** to bring it back at any time; nothing is lost. The subject leaves the cards straight away. Totals, averages and positions change when you press **Rebuild draft report cards** on the board (while the class is still a draft; reopen it first if you have already approved it).
-
-**Showing class position:** in **Settings → Report cards** you can choose whether position in class appears on printed report cards, and whether parents see it on screen.
-
-**Report design:** the Free plan includes a complete standard report, your school logo and student photo when uploaded, assessment maxima, grading key, ratings, signatures, attendance and cumulative results. In **Settings → Report cards**, paid plans can choose Standard, Classic or Compact, a colour, typography and watermark, and up to eight additional text fields. Teachers enter those fields' values for each child before review. Save the design and regenerate a PDF to apply it. Existing PDFs stay as issued. Parents and students see approved development ratings alongside released results in the portal and app; the normal release and result-PIN rules still apply.
-
-## Releasing results to parents
-
-When a class is approved, press **Release results**. You will be asked **How families reach these results**:
-
-- **Free** — parents see the results in the parent portal straight away.
-- **Result PIN required** — parents need a result PIN card from the school to open them (see below).
-
-Press **Release** to confirm. The printable report cards (PDF) are then prepared. A **Download PDF** button appears on each card when it is ready; print them from there.
-
-**Found a mistake after release?** The owner can press **Reopen arm**. It asks for a reason and sends the whole class back to the start. Parents may already have seen the first version.
-
-## Result PIN cards
-
-If you release results with **Result PIN required**, go to **Result Checker** in the menu.
-
-1. Under **Generate a batch**, choose the term, **How many PINs**, and **Uses per PIN**. Press **Generate PINs**.
-2. **The PINs are shown only once.** Press **Download CSV** or **Print cards** straight away. SchoolKit cannot show them again.
-3. Sell or hand out the cards. Parents enter the child's **admission number** and the 12‑digit PIN on your school's result checker page (the address is printed with the cards), or in the parent portal.
-
-If a card is lost or stolen, use **Void one PIN** with the serial number printed on the card. If you forget to download a batch, use **Void batch** and make a new one.
-
----
-
-# Part 4 — Starting a new term or a new session
-
-## A new term
-
-1. **Set the new term as current.** Go to **Sessions & classes → Years**, press **View terms** beside the year, and press **Set current** beside the new term. Check its dates while you are there.
-2. **Move the children into the new term.** Go to **Students → Class enrolment** and press **Promote students**. Choose to move students **from** last term **Into** the new term, and press **Show me the list**. Within the same session, everyone stays in their class. Check the list and press **Review and approve**, then **Apply**.
-3. **Bill for the new term** — see [Billing parents for school fees](#billing-parents-for-school-fees).
-
-## A new session
-
-1. **Create the new academic year.** Go to **Sessions & classes → Years** and press **Add academic year**. Fill in the **Label** (for example `2027/2028`), **Start date** and **End date**, then press **Create year**.
-2. **Add its three terms.** Press **View terms**, then **Add term** for each of First, Second and Third Term, with their dates. Press **Set current** on First Term.
-3. **Move everyone up a class.** Go to **Enrollments → Promote students**. Move students **from** last session's Third Term **Into** the new First Term, and press **Show me the list**. Each class moves up — Primary 1 into Primary 2, JSS 1A into JSS 2A and so on.
-   - For a child who is repeating, choose **Repeat**. For a child who is leaving, choose **Leave out**. You can also do a whole class at once.
-   - If a class does not exist yet in the level above, SchoolKit offers to create it.
-   - Press **Review and approve**, then **Apply**.
-4. **Children who have left or finished:** open the student and use **Withdraw student** or **Graduate student**. They leave the active list but their records are kept.
-5. **Bill for the new term** as usual.
-
----
-
-# Your school's web address
-
-Every school has its own address, for example **virgo-fidelis.schoolkit.ng**. Families who open it see your school's page:
-
-- your **logo** and **name** (and motto), or the SchoolKit logo until you upload yours;
-- **Sign in** for **Parents** and **Staff**, and the **school code** students type in the SchoolKit app;
+**Payment link on WhatsApp:** on any invoice, under **Share payment link**, you can create a link for the balance and press *…3019 tokens truncated…Parents** and **Staff**, and the **school code** students type in the SchoolKit app;
 - **Apply for admission**, while your admission form is open, and **Check results with a PIN**, once you have released results that need a PIN;
 - your school's **address**, **phone** and **email** from **Settings → School**.
 

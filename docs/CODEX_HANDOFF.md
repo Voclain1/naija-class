@@ -188,7 +188,19 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-08)
+## Latest state (updated 2026-11-09)
+
+- **Ownership split (owner, November 9):** Claude owns backend/API/database
+  work unless on limit; ChatGPT owns frontend and browser validation. Continue
+  in complete workflow PRs. `frontend/student-intake-workflow` is the frontend
+  chunk after merged invoice PR #512. It adds a guided entry and an explicit
+  pre-save review around existing `POST /students/bulk` + atomic placement.
+  No API, migration, prompt or feature-switch changes. Unknown save outcomes
+  stop retries, especially with automatic admission numbers. Existing direct
+  grid remains available with the same uncertain-outcome stop. Read `docs/modules/guided-student-intake.md` for the
+  exact current contract and backend follow-ups; no guessed endpoint is used.
+  Check its PR/CI before treating this frontend as merged or browser-verified.
+
 
 - **Assistant chunk 1 (November 8):** owner requested complete workflow chunks,
   starting with invoice preparation/approval/issuance. Work is on

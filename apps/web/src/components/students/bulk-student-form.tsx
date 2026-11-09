@@ -2,7 +2,7 @@
 
 import { AlertCircle, Check, Loader2, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -20,6 +20,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useAuth } from "@/lib/auth/use-auth";
+import { intakeOutcomeUnknown, validIntakeDate, type IntakeReview } from "@/lib/students/intake-review";
+import { IntakeReviewDialog } from "./intake-review-dialog";
 import { ApiError } from "@/lib/api-client";
 import {
   conflictRows,
@@ -31,7 +34,7 @@ import {
 import { bulkCreateStudents } from "@/lib/students/students-api";
 
 import { admissionNumberHint } from "./admission-numbers";
-import { PlacementPicker, type PlacementValue } from "./placement-picker";
+import { PlacementPicker, type PlacementValue, type PlacementSummary } from "./placement-picker";
 
 // /students/new/bulk — spreadsheet-like inline entry for adding several
 // students at once. Deliberately NOT a shared abstraction with
@@ -101,8 +104,8 @@ const rowSchema = z.object({
   dateOfBirth: z
     .string()
     .min(1, "Required")
-    .refine((v) => !Number.isNaN(new Date(v).getTime()), "Invalid date"),
-  gender: z.string().min(1, "Required"),
+    .refine(validIntakeDate, "Invalid date"),
+  gender: z.string().min(1, "Required").refine((v) => GENDER_VALUES.includes(v as typeof GENDER_VALUES[number]), "Choose a gender"),
   email: z
     .string()
     .trim()
@@ -205,10 +208,30 @@ const START_ROWS = 5;
 
 export function BulkStudentForm({
   admissionNumbering = null,
+  guidedReview = false,
 }: {
   /** The school's numbering: on automatic, admission numbers may be left blank. */
   admissionNumbering?: AdmissionNumberSettingsDto | null;
+  guidedReview?: boolean;
 } = {}) {
+  const { user, school, status: authStatus } = useAuth();
+  const account = `${authStatus}:${school?.id ?? ""}:${user?.id ?? ""}`;
+  const accountRef = useRef(account); accountRef.current = account;
+  const mounted = useRef(true);
+  const operation = useRef(false);
+  const reviewResolve = useRef<((approved: boolean) => void) | null>(null);
+  const [review, setReview] = useState<IntakeReview | null>(null);
+  const [placementSummary, setPlacementSummary] = useState<PlacementSummary | null>(null);
+  const [uncertain, setUncertain] = useState(false);
+  const decideReview = useCallback((approved: boolean) => {
+    const resolve = reviewResolve.current; reviewResolve.current = null;
+    setReview(null); resolve?.(approved);
+  }, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; reviewResolve.current?.(false); reviewResolve.current = null; };
+  }, []);
+  useEffect(() => { decideReview(false); }, [account, decideReview]);
   const numberHint = admissionNumberHint(admissionNumbering);
   const perClass = Boolean(numberHint) && admissionNumbering?.order === "CLASS";
   // Every numbering mode can place the batch. Per-class automatic numbers
@@ -227,6 +250,7 @@ export function BulkStudentForm({
   const [rowStatus, setRowStatus] = useState<Record<string, RowStatus>>({});
   const [submitting, setSubmitting] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
+  const busy = submitting || review !== null || uncertain;
 
   const createdCount = fields.filter(
     (f) => rowStatus[f.id]?.state === "success",
@@ -310,6 +334,10 @@ export function BulkStudentForm({
   );
 
   const onSubmit = form.handleSubmit(async (values) => {
+    if (operation.current || uncertain) return;
+    operation.current = true;
+    const expectedAccount = accountRef.current;
+    try {
     form.clearErrors();
 
     // Blank rows are not an error — they are the spares the auto-append
@@ -387,6 +415,23 @@ export function BulkStudentForm({
       return;
     }
 
+    if (guidedReview) {
+      if (placement && (!placement.termId || !placementSummary)) {
+        setSummary("Choose the term for this class before reviewing."); return;
+      }
+      if (!pending.length) return;
+      const approved = await new Promise<boolean>((resolve) => {
+        reviewResolve.current = resolve;
+        setReview({ alreadySaved: alreadySucceededBeforeThisPass, placement: placement ? placementSummary : null,
+          rows: pending.map((i) => {
+            const row = values.rows[i]!;
+            return { rowNumber: i + 1, admissionNumber: row.admissionNumber.trim(),
+              name: [row.firstName, row.middleName, row.lastName].map((v) => v.trim()).filter(Boolean).join(" "),
+              dateOfBirth: row.dateOfBirth, gender: row.gender, email: row.email.trim() };
+          }) });
+      });
+      if (!approved || !mounted.current || accountRef.current !== expectedAccount) return;
+    }
     setSubmitting(true);
     setSummary(null);
     let createdThisPass = 0;
@@ -394,8 +439,10 @@ export function BulkStudentForm({
     // sent: every later batch would fail the same way.
     let terminalAuthFailure = false;
     let stoppedWith: string | null = null;
+    let unknownOutcome = false;
 
     for (const batch of toBatches(pending, MAX_BULK_STUDENTS)) {
+      if (!mounted.current || accountRef.current !== expectedAccount) break;
       const ids = batch.map((i) => fields[i]!.id);
       setRowStatus((prev) => ({
         ...prev,
@@ -422,6 +469,9 @@ export function BulkStudentForm({
           students,
           ...(placement ? { enrollment: placement } : {}),
         });
+        if (guidedReview && (created.length !== batch.length || created.some((student) => !student.id))) {
+          throw new Error("The saved-row response did not match the submitted batch.");
+        }
         setRowStatus((prev) => ({
           ...prev,
           ...Object.fromEntries(
@@ -445,6 +495,14 @@ export function BulkStudentForm({
           terminalAuthFailure = true;
           for (const id of ids) statuses[id] = { state: "error", message: "Not saved — you were signed out." };
           setRowStatus((prev) => ({ ...prev, ...statuses }));
+          break;
+        }
+        if (intakeOutcomeUnknown(error)) {
+          unknownOutcome = true;
+          setUncertain(true);
+          for (const id of ids) statuses[id] = { state: "error", message: "Save outcome not confirmed. Check the roster." };
+          setRowStatus((prev) => ({ ...prev, ...statuses }));
+          stoppedWith = "The last save outcome could not be confirmed. Some or all of those students may already be saved. Check the roster before starting another intake. Retry is disabled to avoid duplicates.";
           break;
         }
         if (error instanceof ApiError && conflictRows(error)) {
@@ -487,7 +545,9 @@ export function BulkStudentForm({
       // will not help — the credential is gone. What the user needs is the
       // COUNT that actually landed, because the redirect is about to take
       // this grid away and those students are real.
-      terminalAuthFailure
+      unknownOutcome
+        ? `${totalSuccess} confirmed saved. ${stoppedWith ?? ""}`
+        : terminalAuthFailure
         ? partialSaveNotice(totalSuccess, liveIndexes.length)
         : failedCount > 0
           ? totalSuccess > 0
@@ -495,10 +555,12 @@ export function BulkStudentForm({
             : (stoppedWith ?? `None of the ${liveIndexes.length} rows were added.`)
           : `All ${totalSuccess} student${totalSuccess === 1 ? "" : "s"} created.`,
     );
+    } finally { operation.current = false; if (mounted.current) setSubmitting(false); }
   });
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+      {guidedReview && <IntakeReviewDialog review={review} onDecision={decideReview} />}
       {numberHint && (
         <p className="text-xs text-muted-foreground">
           Leave the admission number blank and SchoolKit fills it in when you create the students.
@@ -514,7 +576,9 @@ export function BulkStudentForm({
           value={placement}
           onChange={setPlacement}
           onUnavailable={() => setPlacement(null)}
-          disabled={submitting || placementLocked}
+          disabled={busy || placementLocked}
+          requireExplicitTerm={guidedReview}
+          onSummaryChange={setPlacementSummary}
         />
         {placementLocked && (
           <p className="text-xs text-muted-foreground">
@@ -541,6 +605,15 @@ export function BulkStudentForm({
         </div>
       )}
 
+      {uncertain && <div role="alert" className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950">
+        <p className="font-medium">Check the roster before saving again</p>
+        <p className="mt-1">The last response was lost or failed. Do not assume those students were not added. In particular, another save with automatic admission numbers could create duplicates.</p>
+        <Link href="/students" className="mt-2 inline-block font-medium underline">Open the roster to check</Link>
+      </div>}
+      {guidedReview && allDone && <div className="rounded-lg bg-primary/5 p-4 text-sm">
+        <p className="font-medium">Next: link parents and check class placement</p>
+        <p className="mt-1">Use each saved student’s View link below to open their record. Their Guardians tab handles parent links and invitations; the Enrollments tab shows their class. Nothing has been sent to parents.</p>
+      </div>}
       <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
@@ -566,7 +639,7 @@ export function BulkStudentForm({
             {fields.map((field, index) => {
               const status = rowStatus[field.id];
               const isLocked =
-                status?.state === "success" || status?.state === "submitting";
+                status?.state === "success" || status?.state === "submitting" || busy;
               const rowErrors = form.formState.errors.rows?.[index];
 
               // Wires each cell into the grid behaviours: paste spreading,
@@ -685,7 +758,7 @@ export function BulkStudentForm({
                       variant="ghost"
                       size="sm"
                       className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                      disabled={submitting || fields.length <= 1}
+                      disabled={busy || fields.length <= 1}
                       onClick={() => remove(index)}
                       title="Remove row"
                     >
@@ -705,7 +778,7 @@ export function BulkStudentForm({
             type="button"
             variant="outline"
             size="sm"
-            disabled={submitting}
+            disabled={busy}
             onClick={() => append(emptyRow(), { shouldFocus: false })}
           >
             <Plus className="mr-1 h-4 w-4" />
@@ -715,7 +788,7 @@ export function BulkStudentForm({
             type="button"
             variant="ghost"
             size="sm"
-            disabled={submitting}
+            disabled={busy}
             onClick={() =>
               append(Array.from({ length: 10 }, emptyRow), { shouldFocus: false })
             }
@@ -730,9 +803,9 @@ export function BulkStudentForm({
               <Link href="/students">View roster</Link>
             </Button>
           ) : (
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={busy}>
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {submitting ? "Creating…" : "Create students"}
+              {submitting ? "Creating…" : guidedReview ? "Review students" : "Create students"}
             </Button>
           )}
         </div>
