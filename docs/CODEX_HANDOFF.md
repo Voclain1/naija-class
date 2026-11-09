@@ -190,6 +190,14 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-09)
 
+- **Durable campaign frontend integration:** #519/#520 are merged. #518 now
+  adapts its frontend to `/finance/reminder-campaigns`, with server preview,
+  reloadable requester-only pages, lost-confirm recovery, polling, halt/resume
+  and per-send outcomes. UNKNOWN is never offered a retry. Legacy loop remains
+  only when availability is off. No switches enabled or backend code changed.
+  Shared types and contracts are authoritative; see reminder-campaign docs.
+
+
 - **Next frontend workflow (November 9):** `frontend/reminder-campaign-workflow`
   adds `/finance/reminders` and a shared reviewed send from the debtor list.
   Filters default to overdue-only and excluding payment plans; students are
@@ -199,6 +207,25 @@ those; it doesn't replace them.
   See `docs/modules/reminder-campaign-workflow.md`. Claude's complete backend
   chunk is in `docs/reviews/reminder-campaign-backend-brief.md`; no invented
   endpoint is called. PR/browser verification pending; no activation implied.
+- **Fee reminder campaigns, backend (November 9):** branch
+  `agentic/reminder-campaigns`, one PR. Contract and frontend steps:
+  `docs/modules/reminder-campaigns.md`. Reuses `workflow_proposals` (kind
+  `fee-reminder-campaign`) for prepare/confirm; new `reminder_campaigns` and
+  `reminder_campaign_sends` (journal, FORCE RLS). Worker claims-then-sends;
+  lost answers become UNKNOWN, never retried; halt/resume explicit; quiet
+  hours hold; `reminder-campaigns` switch off everywhere. Shared workflow
+  helpers moved to `apps/api/src/common/workflow/` (fingerprint, expiry,
+  hourly sweeper for every proposal kind). ChatGPT wires
+  `frontend/reminder-campaign-workflow` to it. Not merged, deployed or enabled.
+- **Reviewed student corrections, backend (November 9):** branch
+  `agentic/student-corrections`, one PR. Contract and frontend steps:
+  `docs/modules/student-corrections.md`. Six fields only; absent = unchanged,
+  `null` clears middle name or email. Confirm locks the students, rejects a
+  stale before/after fingerprint and applies atomically with value-free
+  `student.update` audits (`via: "student-corrections"`). No migration.
+  Carries the same shared `common/workflow` helpers as the reminder-campaigns
+  PR (identical files). `student-corrections` off everywhere. ChatGPT owns the
+  frontend. Not merged, deployed or enabled.
 
 - **Ownership split (owner, November 9):** Claude owns backend/API/database
   work unless on limit; ChatGPT owns frontend and browser validation. Continue

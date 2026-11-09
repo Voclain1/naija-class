@@ -432,8 +432,21 @@ sent/skipped counts and reasons. They do not prove a parent read the message.
 
 If a response is lost, the run stops: some reminders may already have been sent.
 Do not reload and send the same run again. Check with your school administrator.
-Selections and run results are kept only while the page is open; there is no
-campaign history, scheduled follow-up or automatic retry yet.
+In the ordinary reminder flow, selections and run results are kept only while
+the page is open; there is no saved campaign history or automatic retry.
+
+**Where saved campaigns are enabled:** the review comes from the server and
+shows eligible students, exclusions, balances and planned channels. Confirming
+opens a saved campaign page. Bookmark its link to reopen the same results after
+reloading; only the staff member who prepared it can open it. Accepted means the
+provider or app-alert queue took the message, not proof of delivery or reading.
+
+The campaign page refreshes progress, shows quiet-hours holds (21:00–06:00 Lagos),
+and lets you **Halt remaining sends**. Resuming a halted campaign needs an
+explicit acknowledgement: **Resume unattempted sends** only processes work
+never attempted. Unknown sends may already have gone out and are never
+retried automatically. On a lost confirmation response, SchoolKit checks the
+original saved preview instead of preparing another campaign.
 
 **Payment link on WhatsApp:** on any invoice, under **Share payment link**, you can create a link for the balance and press **Share on WhatsApp**. The parent can pay by card or transfer through it. This needs online payment to be switched on — see the next section.
 

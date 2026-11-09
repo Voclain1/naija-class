@@ -392,7 +392,7 @@ describe("Platform admin access (2026-08-02)", () => {
     expect(row.slug).toBe(`platform-admin-a-${runId}`);
     expect(row.hasOwner).toBe(true);
     // Every known feature, resolved, and off for a school nobody switched on.
-    expect(row.featureSwitches).toEqual({ "assistant-help": false, "assistant-billing": false, "student-intake": false });
+    expect(row.featureSwitches).toEqual({ "assistant-help": false, "assistant-billing": false, "student-intake": false, "reminder-campaigns": false, "student-corrections": false });
   });
 
   it("GET /platform-admin/users with no filter returns users across BOTH schools; with schoolId filters to one", async () => {
@@ -1089,11 +1089,11 @@ describe("Platform admin access (2026-08-02)", () => {
         .set("Authorization", `Bearer ${platformAdminToken}`)
         .send({ key: "assistant-help", enabled: true });
       expect(on.status).toBe(200);
-      expect(on.body).toEqual({ schoolId: schoolA, featureSwitches: { "assistant-help": true, "assistant-billing": false, "student-intake": false } });
-      expect(await listed(schoolA)).toEqual({ "assistant-help": true, "assistant-billing": false, "student-intake": false });
+      expect(on.body).toEqual({ schoolId: schoolA, featureSwitches: { "assistant-help": true, "assistant-billing": false, "student-intake": false, "reminder-campaigns": false, "student-corrections": false } });
+      expect(await listed(schoolA)).toEqual({ "assistant-help": true, "assistant-billing": false, "student-intake": false, "reminder-campaigns": false, "student-corrections": false });
       // The other school is untouched.
       expect(await stored(schoolB)).toEqual({});
-      expect(await listed(schoolB)).toEqual({ "assistant-help": false, "assistant-billing": false, "student-intake": false });
+      expect(await listed(schoolB)).toEqual({ "assistant-help": false, "assistant-billing": false, "student-intake": false, "reminder-campaigns": false, "student-corrections": false });
 
       const audit = await basePrisma.auditLog.findFirst({
         where: { action: "platform_admin.schools.set-feature", entityId: schoolA },
@@ -1111,7 +1111,7 @@ describe("Platform admin access (2026-08-02)", () => {
         .set("Authorization", `Bearer ${platformAdminToken}`)
         .send({ key: "assistant-help", enabled: false });
       expect(off.status).toBe(200);
-      expect(await listed(schoolA)).toEqual({ "assistant-help": false, "assistant-billing": false, "student-intake": false });
+      expect(await listed(schoolA)).toEqual({ "assistant-help": false, "assistant-billing": false, "student-intake": false, "reminder-campaigns": false, "student-corrections": false });
       expect(await resolver.isOn(schoolA, "assistant-help")).toBe(false);
       const offAudit = await basePrisma.auditLog.findFirst({
         where: { action: "platform_admin.schools.set-feature", entityId: schoolA },
@@ -1143,7 +1143,7 @@ describe("Platform admin access (2026-08-02)", () => {
         .send({ key: "assistant-help", enabled: true })
         .expect(200);
       expect(await stored(schoolB)).toEqual({ "legacy-key": true, "assistant-help": true });
-      expect(await listed(schoolB)).toEqual({ "assistant-help": true, "assistant-billing": false, "student-intake": false });
+      expect(await listed(schoolB)).toEqual({ "assistant-help": true, "assistant-billing": false, "student-intake": false, "reminder-campaigns": false, "student-corrections": false });
       await basePrisma.school.update({ where: { id: schoolB }, data: { featureSwitches: {} } });
     });
 

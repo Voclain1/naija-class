@@ -87,3 +87,33 @@ The complete next backend chunk is specified in
 `docs/reviews/reminder-campaign-backend-brief.md`. It can be implemented without
 frontend edits or a clarification round; publish the actual contract for the
 frontend adapter rather than guessing endpoints here.
+
+
+## Durable backend integration (#519)
+
+The availability endpoint selects the server-owned campaign path when enabled;
+only a deliberate off/legacy-404 uses the ordinary sender. A failed availability
+check blocks sending and offers a retry. Saved preview and campaign pages do not
+require the feature to remain on for their status reads.
+
+`durable-api.ts` uses the published shared DTOs and endpoints. Preparation keeps
+one client UUID across retries. Confirmation recovery reads the same proposal
+and follows its campaignId; it never prepares another selection after an
+uncertain confirmation. Stale/expired previews require refresh and another
+unchecked approval. Refresh retries keep the same identity.
+
+Authorised routes `/finance/reminders/proposals/[id]` and
+`/finance/reminders/runs/[id]` survive reload. They hold opaque ids only in the
+URL, never names, contacts, balances or text. Status polling stops when the page
+unmounts, pauses longer during quiet hours, and reads only the original campaign.
+Provider acceptance is explicitly distinct from delivery. Each guardian/channel
+slot shows its own outcome/reason; UNKNOWN has no retry action. Halt/resume
+commands re-read status if their response is lost. Resume needs an explicit
+acknowledgement and is offered only for HALTED campaigns.
+
+The server owns persistence, journal claims and eligibility checks; the legacy
+local-loop limitations above apply only while saved campaigns are off. There is
+no new frontend storage, automatic feature enablement or backend implementation
+change in this integration. Tests use fresh tenants and push-only fake guardian
+fixtures, never real family emails/SMS. One synthetic UNKNOWN journal fixture
+checks presentation only; backend worker/crash guarantees remain backend tests.

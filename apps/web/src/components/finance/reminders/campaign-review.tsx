@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { ApiError } from "@/lib/api-client";
+import { durableCampaignApi } from "@/lib/reminder-campaigns/durable-api";
+import { DurableCampaignPanel } from "./durable-campaign";
 import { reminderResultText } from "@school-kit/types";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -9,7 +12,19 @@ import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
 import { formatKobo } from "@/lib/finance/format";
 import { ReminderCampaignSession, type CampaignRequest } from "@/lib/reminder-campaigns/session";
 
-export function CampaignReview({ request, onClose }: { request: CampaignRequest; onClose: () => void }) {
+export function CampaignReview(props: { request: CampaignRequest; onClose: () => void }) {
+  const [mode, setMode] = useState<"loading" | "on" | "off" | "error">("loading");
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => { let cancelled = false; setMode("loading");
+    void durableCampaignApi.available().then(({ enabled }) => { if (!cancelled) setMode(enabled === true ? "on" : enabled === false ? "off" : "error"); }).catch((e) => { if (!cancelled) setMode(e instanceof ApiError && e.status === 404 ? "off" : "error"); });
+    return () => { cancelled = true; };
+  }, [attempt]);
+  if (mode === "loading") return <p role="status">Checking saved campaign availability…</p>;
+  if (mode === "error") return <div role="alert"><p>Could not check campaign availability. No reminders were requested.</p><Button onClick={() => setAttempt((n) => n + 1)}>Retry availability check</Button><Button variant="outline" onClick={props.onClose}>Cancel review</Button></div>;
+  return mode === "on" ? <DurableCampaignPanel {...props} /> : <LegacyCampaignReview {...props} />;
+}
+
+function LegacyCampaignReview({ request, onClose }: { request: CampaignRequest; onClose: () => void }) {
   const [session, setSession] = useState<ReminderCampaignSession | null>(null);
   useEffect(() => { const s = new ReminderCampaignSession(); setSession(s); void s.open(request); return () => s.dispose(); }, [request]);
   return session ? <ReviewDialog session={session} termLabel={request.termLabel} canReadGuardians={!!request.canReadGuardians} excludePlans={request.filters.excludePlans} onClose={onClose} /> : null;

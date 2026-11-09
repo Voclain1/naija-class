@@ -42,3 +42,17 @@ unpaid-fees section diluted the short reminder question's score. The detailed
 workflow now has its own guide subsection and regenerated index. All 12 existing
 API help-search checks and all four web guide-index checks pass unchanged. No
 retrieval tuning, test threshold reduction or backend implementation change.
+
+
+## Durable campaign integration
+
+Verified #519 and #520 merged; reviewed their actual contracts. #518's frontend
+now chooses the durable campaign API only when its availability is on, renders
+the authoritative preview, recovers lost confirmation and exposes reloadable
+requester-only preview/campaign routes. Added live status polling, explicit
+halt/resume, quiet-hours holds and per-send unknown/accepted/skip results.
+Legacy path remains available when off. No backend or activation changes.
+
+Added ten lifecycle unit cases and three browser journeys for durable workflow
+recovery, stale-channel refresh and unknown journal presentation. Final-head
+checks pending; prior-head #518 CI was green before backend merge conflicts.

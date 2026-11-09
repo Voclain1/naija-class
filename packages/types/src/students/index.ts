@@ -7,3 +7,4 @@ export * from "./import.js";
 export * from "./scan.js";
 export * from "./bulk-create-students.dto.js";
 export * from "./student-intake.dto.js";
+export * from "./student-correction.dto.js";
