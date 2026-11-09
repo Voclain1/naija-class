@@ -203,4 +203,7 @@ export {
   ASSISTANT_ORCHESTRATOR_APPROVAL,
   ASSISTANT_ORCHESTRATOR_PROMPT,
   ASSISTANT_ORCHESTRATOR_SYSTEM,
+  ASSISTANT_ORCHESTRATOR_TOOLS,
+  orchestratorToolSpec,
+  type OrchestratorToolSpec,
 } from "./prompts/assistant-orchestrator.js";

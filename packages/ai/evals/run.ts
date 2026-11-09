@@ -15,6 +15,8 @@
 // run — they are tripwires for judgement calls (cost profile, pressure
 // phrasing), not correctness.
 
+import { assistantOrchestratorCase } from "./cases/assistant-orchestrator.js";
+import { assistantOrchestratorLiveCase } from "./cases/assistant-orchestrator-live.js";
 import { assistantRouterCase } from "./cases/assistant-router.js";
 import { billingRunCase } from "./cases/billing-run.js";
 import { runSuites } from "./harness.js";
@@ -34,6 +36,7 @@ import { registryIntegrityCase } from "./cases/registry-integrity.js";
 async function main(): Promise<void> {
   const exitCode = await runSuites([
     assistantRouterCase,
+    assistantOrchestratorCase,
     billingRunCase,
     piiSafetyCase,
     registryIntegrityCase,
@@ -43,6 +46,7 @@ async function main(): Promise<void> {
     registerScanScoringCase,
     liveGenerationCase,
     assignmentFeedbackLiveCase,
+    assistantOrchestratorLiveCase,
   ]);
   process.exit(exitCode);
 }

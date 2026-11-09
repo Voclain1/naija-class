@@ -1,3 +1,4 @@
+import { orchestratorToolSpec } from "@school-kit/ai";
 import { z } from "zod";
 
 import {
@@ -161,7 +162,6 @@ export class TurnState {
 // ---- argument schemas -------------------------------------------------------
 
 const TASK = z.string().regex(/^(new|t[1-9])$/);
-const TASK_SCHEMA = { type: "string", pattern: "^(new|t[1-9])$", description: 'A handle from <tasks> to change that task, or "new".' };
 const LABEL = z.string().trim().min(1).max(40);
 const LABELS = z.array(LABEL).max(20);
 
@@ -177,9 +177,6 @@ const statusArgs = z.object({ task: z.string().regex(/^t[1-9]$/) }).strict();
 const noArgs = z.object({}).strict();
 const guideArgs = z.object({ question: z.string().trim().min(2).max(300) }).strict();
 
-const obj = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false });
-const labelSchema = (description: string) => ({ type: "string", maxLength: 40, description });
-const labelsSchema = (description: string) => ({ type: "array", items: { type: "string", maxLength: 40 }, maxItems: 20, description });
 
 type Def = ReadToolDefinition<z.AnyZodObject>;
 
@@ -214,11 +211,10 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
 
   const schoolStructure: ReadToolDefinition<typeof noArgs> = {
     name: "school_structure",
-    description: "The school's terms (with which is current) and its active classes, as labels. Use it to match what the person said.",
+    ...orchestratorToolSpec("school_structure"),
     access: { kind: "anyActiveStaff", reason: "Term and class names are school structure every staff member works with; no person is listed." },
     effect: "read",
     args: noArgs,
-    inputSchema: obj({}, []),
     outputFields: ["terms", "classes"],
     conformanceCalls: [{}],
     async run() {
@@ -231,21 +227,10 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
 
   const prepareInvoices: ReadToolDefinition<typeof invoiceArgs> = {
     name: "prepare_invoices",
-    description:
-      "Prepare the server's preview of term invoices for some classes, in the invoice card. For a follow-up, pass the task's handle and only what changes (exclude_classes removes classes from its current set). Issues nothing: the person approves in the card.",
+    ...orchestratorToolSpec("prepare_invoices"),
     access: { kind: "permissions", permissions: ["invoice.read"] },
     effect: "prepare",
     args: invoiceArgs,
-    inputSchema: obj(
-      {
-        task: TASK_SCHEMA,
-        term: labelSchema('"current", "next", "first"/"second"/"third", or a term label. Omit to keep the task\'s term (new task: current).'),
-        classes: labelsSchema('Class labels ("JSS 2A") or whole levels ("JSS 2"). Omit to keep the task\'s classes.'),
-        exclude_classes: labelsSchema("Classes to leave out."),
-        all_classes: { type: "boolean", description: "Every active class." },
-      },
-      ["task"],
-    ),
     outputFields: ["status", "task", "term", "classes", "classCount", "newInvoices", "alreadyInvoiced", "problems", "reason", "note"],
     conformanceCalls: [{ task: "new", term: "current", all_classes: true }, { task: "new", classes: ["No Such Class"] }],
     async run({ authCtx }, args) {
@@ -291,22 +276,10 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
 
   const planReminders: ReadToolDefinition<typeof reminderArgs> = {
     name: "plan_reminders",
-    description:
-      "Set the fee-reminder card's term, ONE class or all classes, and options, then ask the server for its preview of matching families. Sends nothing: the person confirms in the card.",
+    ...orchestratorToolSpec("plan_reminders"),
     access: { kind: "permissions", permissions: ["finance.debtors.read"] },
     effect: "read",
     args: reminderArgs,
-    inputSchema: obj(
-      {
-        task: TASK_SCHEMA,
-        term: labelSchema('"current" or a term label. Omit to keep the task\'s term (new task: current).'),
-        class: labelSchema("One class label. Omit with all_classes for every class."),
-        all_classes: { type: "boolean", description: "Every class." },
-        overdue_only: { type: "boolean", description: "Only families with an overdue invoice." },
-        include_payment_plans: { type: "boolean", description: "Include families on a payment plan (default: leave them out)." },
-      },
-      ["task"],
-    ),
     outputFields: ["status", "task", "term", "class", "overdueOnly", "includePaymentPlans", "note"],
     conformanceCalls: [{ task: "new", all_classes: true, overdue_only: true }],
     async run({ authCtx }, args) {
@@ -332,20 +305,10 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
 
   const planIntake: ReadToolDefinition<typeof intakeArgs> = {
     name: "plan_student_intake",
-    description:
-      "Open or update the add-and-enrol card with a class and term, or place later. The person types or pastes the students into the card's form, never into chat. Saves nothing.",
+    ...orchestratorToolSpec("plan_student_intake"),
     access: { kind: "permissions", permissions: ["student.create"] },
     effect: "read",
     args: intakeArgs,
-    inputSchema: obj(
-      {
-        task: TASK_SCHEMA,
-        class: labelSchema("One class label."),
-        term: labelSchema('"current" or a term label (default current).'),
-        place_later: { type: "boolean", description: "Add the students without a class for now." },
-      },
-      ["task"],
-    ),
     outputFields: ["status", "task", "class", "term", "placeLater", "studentsInForm", "note"],
     conformanceCalls: [{ task: "new", place_later: true }],
     async run({ authCtx }, args) {
@@ -374,12 +337,10 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
 
   const planCorrections: ReadToolDefinition<typeof correctionArgs> = {
     name: "plan_corrections",
-    description:
-      "Choose which fields the student-correction card changes (firstName, middleName, lastName, dateOfBirth, gender, email). The person finds the students and types the new values in the card. Changes nothing.",
+    ...orchestratorToolSpec("plan_corrections"),
     access: { kind: "permissions", permissions: ["student.read", "student.update"] },
     effect: "read",
     args: correctionArgs,
-    inputSchema: obj({ task: TASK_SCHEMA, fields: { type: "array", items: { type: "string", enum: [...STUDENT_CORRECTION_FIELDS] }, minItems: 1, maxItems: 6 } }, ["task", "fields"]),
     outputFields: ["status", "task", "fields", "selectedStudents", "note"],
     conformanceCalls: [{ task: "new", fields: ["email"] }],
     async run({ authCtx }, args) {
@@ -398,11 +359,10 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
 
   const taskStatus: ReadToolDefinition<typeof statusArgs> = {
     name: "task_status",
-    description: "What happened to a task's saved work (its invoice run, intake, corrections or reminder campaign), read from the server now. Also shows it in a card.",
+    ...orchestratorToolSpec("task_status"),
     access: { kind: "anyActiveStaff", reason: "Reads only the person's own saved operation, through its own service's checks." },
     effect: "read",
     args: statusArgs,
-    inputSchema: obj({ task: { type: "string", pattern: "^t[1-9]$" } }, ["task"]),
     outputFields: ["status", "task", "workflow", "state", "issued", "skipped", "saved", "changed", "sends", "heldForQuietHours", "note"],
     conformanceCalls: [{ task: "t1" }],
     async run({ authCtx }, { task: handle }) {
@@ -437,11 +397,10 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
 
   const recentCampaigns: ReadToolDefinition<typeof noArgs> = {
     name: "recent_campaigns",
-    description: "The person's own most recent fee-reminder campaigns (newest first): when, status and send counts. Shows the newest in a card.",
+    ...orchestratorToolSpec("recent_campaigns"),
     access: { kind: "permissions", permissions: ["finance.debtors.read"] },
     effect: "read",
     args: noArgs,
-    inputSchema: obj({}, []),
     outputFields: ["campaigns", "note"],
     conformanceCalls: [{}],
     async run({ authCtx }) {
@@ -458,11 +417,10 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
 
   const guide: ReadToolDefinition<typeof guideArgs> = {
     name: "search_guide",
-    description: "Search SchoolKit's Getting started guide for how to do something. Returns up to three sections.",
+    ...orchestratorToolSpec("search_guide"),
     access: { kind: "anyActiveStaff", reason: "The Getting started guide is product documentation every staff member can read." },
     effect: "read",
     args: guideArgs,
-    inputSchema: obj({ question: { type: "string", minLength: 2, maxLength: 300 } }, ["question"]),
     outputFields: ["sections"],
     conformanceCalls: [{ question: "How do I add parents?" }],
     async run(_ctx, { question }) {
