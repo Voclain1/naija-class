@@ -6,13 +6,14 @@ import { withTenant } from "@school-kit/db";
 import { ForbiddenError, type AssistantTurnDto, type AssistantTurnInput, type AssistantTurnOutcome } from "@school-kit/types";
 
 import { AiGenerationService, type TurnOutcome } from "../../../common/ai/ai-generation.service.js";
-import { checkConversation, loadQuestionRoster } from "../../../common/ai/pii/question-check.js";
+import { PersonRefs, checkConversation, loadQuestionRoster, redactRosterNames } from "../../../common/ai/pii/question-check.js";
 import type { AuthContext } from "../../../common/auth/auth-context.js";
 import { BillingRunsService } from "../../invoices/billing-runs.service.js";
 import { ReminderCampaignsService } from "../../reminder-campaigns/reminder-campaigns.service.js";
 import { StudentCorrectionsService } from "../../student-corrections/student-corrections.service.js";
 import { StudentIntakeService } from "../../student-intake/student-intake.service.js";
 import { AssistantWorkspaceService } from "../assistant-workspace.service.js";
+import { StudentLookupService } from "../student-lookup.service.js";
 import { orchestratorToolRegistry, TurnState, type OrchestratorDeps } from "./orchestrator-tools.js";
 import { checkReply, type SchoolStructure } from "./resolve.js";
 
@@ -66,6 +67,7 @@ export class AssistantOrchestratorService {
     campaigns: ReminderCampaignsService,
     intake: StudentIntakeService,
     corrections: StudentCorrectionsService,
+    private readonly lookup: StudentLookupService,
   ) {
     this.deps = {
       structure: (auth) => loadStructure(auth),
@@ -86,6 +88,8 @@ export class AssistantOrchestratorService {
             select: { id: true },
           })).map((c) => c.id),
         ),
+      findStudents: (auth, query) => lookup.find(auth, query),
+      permissions: (auth) => loadPermissions(auth),
       searchGuide: (question) =>
         searchGuide(question, { limit: 3, maxExcerptChars: 600 }).map((h) => ({ anchor: h.anchor, title: h.title, path: h.path, excerpt: h.excerpt })),
     };
@@ -100,13 +104,26 @@ export class AssistantOrchestratorService {
     const caps = await this.workspace.capabilities(auth);
     if (!caps.enabled || !caps.modelRouting.available) return result("unavailable");
 
-    // Every message the browser resent is checked again, every turn. A hit
-    // means NOTHING goes to the model; the categories go back, never the text.
+    // Every message the browser resent is checked again, every turn. Names on
+    // the school's roster are first REPLACED by opaque markers (⟨P1⟩), by the
+    // detector's own rules, so a name never reaches the model and never blocks
+    // the task; the markers' names stay on the server for this request only.
+    // Any other detector hit (contacts, ID numbers, dates, pasted rows,
+    // admission numbers) still means NOTHING goes to the model.
     const roster = await loadQuestionRoster(auth.schoolId);
-    const check = checkConversation(input.messages.map((m) => m.text), roster);
+    const persons = new PersonRefs();
+    const messages = input.messages.map((m) => ({ ...m, text: redactRosterNames(m.text, roster, persons) }));
+    const check = checkConversation(messages.map((m) => m.text), roster);
     if (check.blocked) return { outcome: "blocked", reply: "", actions: [], blockedCategories: [...check.categories], toolsUsed: [] };
 
-    const state = new TurnState(await this.deps.structure(auth), input.tasks);
+    // Students found earlier, re-checked now against tenant, role and scope:
+    // another school's id, or one outside a teacher's classes, is dropped.
+    const known = await this.lookup.describe(auth, input.students.map((st) => st.studentId));
+    const students = input.students.flatMap((st) => {
+      const d = known.get(st.studentId);
+      return d ? [{ handle: st.handle, studentId: st.studentId, selected: st.selected, classLabel: d.classLabel }] : [];
+    });
+    const state = new TurnState(await this.deps.structure(auth), input.tasks, students, persons.values);
     const registry = orchestratorToolRegistry(this.deps, state).forTurn(auth);
     const deadline = Date.now() + TURN_DEADLINE_MS;
     const executeTool = (call: AiToolCall): Promise<AiToolResult> =>
@@ -130,7 +147,7 @@ export class AssistantOrchestratorService {
         interactionLogId: interaction.id,
         prompt: ASSISTANT_ORCHESTRATOR_PROMPT,
         system: ASSISTANT_ORCHESTRATOR_SYSTEM,
-        history: modelHistory(input, state.summary()).map((m): AiConversationMessage => (m.role === "user" ? { role: "user", text: m.text } : { role: "assistant", text: m.text })),
+        history: modelHistory({ ...input, messages }, state.summary()).map((m): AiConversationMessage => (m.role === "user" ? { role: "user", text: m.text } : { role: "assistant", text: m.text })),
         tools: registry.tools,
         executeTool,
         maxSteps: TURN_MAX_STEPS,
@@ -176,5 +193,13 @@ async function loadStructure(auth: AuthContext): Promise<SchoolStructure> {
       terms: terms.map((t) => ({ id: t.id, name: t.name, year: t.academicYear.label, academicYearId: t.academicYearId, sequence: t.sequence, isCurrent: t.isCurrent, startDate: t.startDate })),
       arms: arms.map((a) => ({ id: a.id, name: a.name, level: a.classLevel.name })),
     };
+  });
+}
+
+/** The caller's current permissions (the same read PermissionsGuard makes). */
+async function loadPermissions(auth: AuthContext): Promise<Set<string>> {
+  return withTenant(auth.schoolId, async (db) => {
+    const grants = await db.userRole.findMany({ where: { userId: auth.userId }, select: { role: { select: { permissions: true } } } });
+    return new Set(grants.flatMap((g) => (Array.isArray(g.role.permissions) ? (g.role.permissions as unknown[]) : []).filter((p): p is string => typeof p === "string")));
   });
 }

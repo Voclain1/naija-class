@@ -14,8 +14,12 @@ import {
   type AssistantTurnDto,
   type AssistantTurnInput,
   type AssistantWorkflow,
+  type AssistantStudentRef,
   type RouteHints,
   type StudentCorrectionField,
+  type StudentLookupResultDto,
+  type StudentMatchDto,
+  type StudentRecordSection,
 } from "@school-kit/types";
 
 // The SchoolKit Assistant's conversation (docs/modules/assistant-workspace.md).
@@ -65,7 +69,7 @@ export interface TaskScope {
 /** A change the model turn asked a card to make. Applied by the card when `revision` moves on. */
 export type TaskPlan =
   | { kind: "invoices"; termId: string; classArmIds: string[]; runId: string | null; problem: string | null }
-  | { kind: "reminders"; termId: string | null; classArmId: string | null; className: string | null; overdueOnly: boolean; includePaymentPlans: boolean; autoPreview: boolean }
+  | { kind: "reminders"; termId: string | null; classArmId: string | null; overdueOnly: boolean; includePaymentPlans: boolean; autoPreview: boolean }
   | { kind: "intake"; termId: string | null; classArmId: string | null; placeLater: boolean; pasted?: string }
   | { kind: "corrections"; fields: StudentCorrectionField[] };
 
@@ -87,7 +91,14 @@ export interface AssistantTask {
 }
 
 export type AssistantMessage =
-  | { id: string; role: "user"; text: string }
+  /**
+   * `eligible`: the server accepted this text for model processing (it passed
+   * the detectors and a turn ran). Only eligible messages are ever resent to
+   * the model. A blocked, unavailable, failed or timed-out request stays on
+   * screen but never re-enters model history (it would otherwise be resent,
+   * and re-blocked, on every later turn).
+   */
+  | { id: string; role: "user"; text: string; eligible?: boolean }
   /** `model`: written by the AI model (after the server's check), not by this app. */
   | { id: string; role: "assistant"; kind: "text"; text: string; model?: boolean }
   /** A model turn in flight. Replaced by its answer; never sent back to the model. */
@@ -95,12 +106,29 @@ export type AssistantMessage =
   | { id: string; role: "assistant"; kind: "task"; taskId: string; text: string }
   | { id: string; role: "assistant"; kind: "help"; text: string; hits: AssistantHelpHitDto[] | null; query: string }
   | { id: string; role: "assistant"; kind: "refusal"; text: string; next: AssistantWorkflow | "help" | null }
-  | { id: string; role: "assistant"; kind: "clarify"; text: string; options: AssistantWorkflow[] };
+  | { id: string; role: "assistant"; kind: "clarify"; text: string; options: AssistantWorkflow[] }
+  /**
+   * Named lookup (UI channel only; never part of model history): the matches
+   * for a name the person typed, a selected student's record section, or the
+   * on-device search form when the model is not in use.
+   */
+  | { id: string; role: "assistant"; kind: "students"; asked: string; status: StudentLookupResultDto["status"]; studentIds: string[] }
+  | { id: string; role: "assistant"; kind: "student-record"; studentId: string; section: StudentRecordSection }
+  | { id: string; role: "assistant"; kind: "lookup"; query: string; classHints: string[] };
+
+/** A student found in this conversation. Memory only; names go to the screen, never to the model. */
+export interface StudentEntry {
+  studentId: string;
+  match: StudentMatchDto;
+  selected: boolean;
+}
 
 export interface AssistantState {
   open: boolean;
   messages: AssistantMessage[];
   tasks: Record<string, AssistantTask>;
+  /** Students found by named lookup, oldest first (at most 9: the turn's s1…s9 handles). */
+  students: StudentEntry[];
   account: string | null;
   lastActivity: number;
   /** Shown once after an automatic clear, so the person knows why. */
@@ -122,9 +150,17 @@ export class AssistantStore {
   private seq = 0;
   /** Moves on at every wipe or clear, so a late model answer for an earlier conversation is dropped. */
   private generation = 0;
+  /**
+   * Memory-only state per task that must outlive a session reset: the person's
+   * typed rows and picked students, and the plan revision the card has applied.
+   * Never serialised; dropped with the task (wipe, clear, close).
+   */
+  private memos = new Map<string, Map<string, unknown>>();
+  /** Tasks whose approval the person has started (set synchronously at the click). */
+  private approving = new Set<string>();
 
   constructor(private now: () => number = () => Date.now(), private id: () => string = () => crypto.randomUUID()) {
-    this.state = { open: false, messages: [], tasks: {}, account: null, lastActivity: now(), notice: null };
+    this.state = { open: false, messages: [], tasks: {}, students: [], account: null, lastActivity: now(), notice: null };
   }
 
   snapshot = (): AssistantState => this.state;
@@ -154,9 +190,11 @@ export class AssistantStore {
   /** Sign-out, a forced session end, or an account change: nothing survives. */
   wipe() {
     this.generation += 1;
+    this.memos.clear();
+    this.approving.clear();
     for (const s of this.sessions.values()) s.dispose();
     this.sessions.clear();
-    this.set({ messages: [], tasks: {}, notice: null, lastActivity: this.now() });
+    this.set({ messages: [], tasks: {}, students: [], notice: null, lastActivity: this.now() });
   }
 
   touch() {
@@ -183,6 +221,7 @@ export class AssistantStore {
    */
   clear(reason: "user" | "idle") {
     this.generation += 1;
+    this.memos.clear();
     const keep = Object.values(this.state.tasks).filter((t) => (t.status === "confirming" || t.status === "uncertain" || (t.status === "active" && (t.ref.campaignId || t.ref.runId))) && (t.ref.proposalId || t.ref.campaignId || t.ref.runId));
     for (const [id, s] of this.sessions) {
       s.dispose();
@@ -197,6 +236,7 @@ export class AssistantStore {
     this.set({
       messages,
       tasks,
+      students: [],
       lastActivity: this.now(),
       notice: reason === "idle" ? `The conversation was cleared after ${ASSISTANT_INACTIVITY_MINUTES} minutes without activity.` : null,
     });
@@ -242,6 +282,13 @@ export class AssistantStore {
         return;
       case "unsupported":
         this.say({ id: this.nextId(), role: "assistant", kind: "refusal", text: route.message, next: route.next });
+        return;
+      case "lookup":
+        if (!caps?.lookup.available) {
+          this.say({ id: this.nextId(), role: "assistant", kind: "refusal", text: "Your account can’t look up students here. Open Students from the menu, or ask someone who can.", next: null });
+          return;
+        }
+        this.say({ id: this.nextId(), role: "assistant", kind: "lookup", query: route.query, classHints: route.hints.classes ?? [] });
         return;
       case "help":
         if (caps && !caps.help.available) {
@@ -298,9 +345,11 @@ export class AssistantStore {
     const generation = this.generation;
     const history = this.modelMessages();
     const { tasks, handles } = this.turnTasks();
+    const students: AssistantStudentRef[] = this.state.students.slice(0, 9).map((e, i) => ({ handle: `s${i + 1}`, studentId: e.studentId, selected: e.selected }));
     const pendingId = this.nextId();
+    const userId = this.nextId();
     this.set({
-      messages: [...this.state.messages, { id: this.nextId(), role: "user", text }, { id: pendingId, role: "assistant", kind: "pending", text: "Working on it…" }],
+      messages: [...this.state.messages, { id: userId, role: "user", text, eligible: false }, { id: pendingId, role: "assistant", kind: "pending", text: "Working on it…" }],
       lastActivity: this.now(),
       notice: null,
     });
@@ -308,7 +357,7 @@ export class AssistantStore {
     let answer: AssistantTurnDto | null = null;
     let failed = false;
     try {
-      answer = await withTimeout(api.turn({ messages: [...history, { role: "user", text }], tasks }), timeoutMs);
+      answer = await withTimeout(api.turn({ messages: [...history, { role: "user", text }], tasks, students }), timeoutMs);
     } catch {
       failed = true;
     }
@@ -319,7 +368,9 @@ export class AssistantStore {
       this.set({ messages: [...drop(), { id: this.nextId(), role: "assistant", kind: "text", text: "I couldn’t get an answer from the assistant. Nothing was approved or changed. Try again, or use the task buttons below." }] });
       return;
     }
-    this.set({ messages: drop() });
+    // Promote the request into model history only when the server accepted it.
+    const accepted = answer.outcome !== "blocked" && answer.outcome !== "unavailable";
+    this.set({ messages: drop().map((m) => (m.id === userId && m.role === "user" ? { ...m, eligible: accepted } : m)) });
     switch (answer.outcome) {
       case "blocked": {
         const found = answer.blockedCategories.map((c) => ASSISTANT_BLOCK_LABELS[c] ?? c).join(", ");
@@ -341,7 +392,7 @@ export class AssistantStore {
   private modelMessages(): AssistantTurnInput["messages"] {
     const out: AssistantTurnInput["messages"] = [];
     for (const m of this.state.messages) {
-      if (m.role === "user") out.push({ role: "user", text: m.text.slice(0, 1_000) });
+      if (m.role === "user") { if (m.eligible) out.push({ role: "user", text: m.text.slice(0, 1_000) }); }
       else if (m.kind === "text" && m.model) out.push({ role: "assistant", text: m.text.slice(0, 1_000) });
     }
     return out.slice(-(ASSISTANT_TURN_MAX_MESSAGES - 1));
@@ -380,6 +431,22 @@ export class AssistantStore {
         this.say({ id: this.nextId(), role: "assistant", kind: "help", text: "From the Getting started guide:", hits: a.hits, query: a.query });
         continue;
       }
+      if (a.kind === "students") {
+        for (const m of a.matches) this.rememberStudent(m);
+        this.say({ id: this.nextId(), role: "assistant", kind: "students", asked: a.asked, status: a.status, studentIds: a.matches.map((m) => m.studentId) });
+        if (a.status === "found" && a.matches[0]) this.selectStudent(a.matches[0].studentId);
+        continue;
+      }
+      if (a.kind === "select-student") {
+        if (this.state.students.some((e) => e.studentId === a.studentId)) this.selectStudent(a.studentId);
+        continue;
+      }
+      if (a.kind === "student-record") {
+        if (this.state.students.some((e) => e.studentId === a.studentId)) {
+          this.say({ id: this.nextId(), role: "assistant", kind: "student-record", studentId: a.studentId, section: a.section });
+        }
+        continue;
+      }
       if (a.kind === "show") {
         const existing = Object.values(this.state.tasks).find((t) => (a.runId && t.ref.runId === a.runId) || (a.campaignId && t.ref.campaignId === a.campaignId) || (a.proposalId && t.ref.proposalId === a.proposalId));
         if (existing) continue;
@@ -393,15 +460,19 @@ export class AssistantStore {
       const plan: TaskPlan = a.kind === "invoices"
         ? { kind: "invoices", termId: a.termId, classArmIds: a.classArmIds, runId: a.runId, problem: a.problem }
         : a.kind === "reminders"
-          ? { kind: "reminders", termId: a.termId, classArmId: a.classArmId, className: a.className, overdueOnly: a.overdueOnly, includePaymentPlans: a.includePaymentPlans, autoPreview: a.autoPreview }
+          ? { kind: "reminders", termId: a.termId, classArmId: a.classArmId, overdueOnly: a.overdueOnly, includePaymentPlans: a.includePaymentPlans, autoPreview: a.autoPreview }
           : a.kind === "intake"
             ? { kind: "intake", termId: a.termId, classArmId: a.classArmId, placeLater: a.placeLater }
             : { kind: "corrections", fields: a.fields };
       const known = handles.get(a.handle);
       const current = known ? this.state.tasks[known] : undefined;
       if (current && current.workflow === a.kind) {
-        // Never re-plan a task whose operation is in flight or finished.
-        if (current.status !== "active") continue;
+        // Never re-plan a task whose operation is in flight, finished, or whose
+        // approval the person has just started: say so instead of applying it.
+        if (current.status !== "active" || this.approving.has(current.id)) {
+          this.say({ id: this.nextId(), role: "assistant", kind: "text", text: `${ASSISTANT_WORKFLOW_LABELS[a.kind]}: this was already being approved or is finished, so that change was not applied. Ask again to start a new one.` });
+          continue;
+        }
         this.set({ tasks: { ...this.state.tasks, [current.id]: { ...current, plan, revision: current.revision + 1 } }, lastActivity: this.now() });
         continue;
       }
@@ -410,6 +481,37 @@ export class AssistantStore {
       this.set({ tasks: { ...this.state.tasks, [id]: { ...newTask(id, a.kind, {}), plan, revision: 1 } } });
       this.say({ id: this.nextId(), role: "assistant", kind: "task", taskId: id, text: ASSISTANT_WORKFLOW_LABELS[a.kind] });
     }
+  }
+
+  // ---- Named student lookup (UI channel) -----------------------------------
+
+  /** Adds or refreshes a found student (at most 9 kept, the turn's handles). */
+  rememberStudent(match: StudentMatchDto) {
+    const list = this.state.students;
+    const i = list.findIndex((e) => e.studentId === match.studentId);
+    if (i >= 0) {
+      this.set({ students: list.map((e, j) => (j === i ? { ...e, match } : e)) });
+    } else if (list.length < 9) {
+      this.set({ students: [...list, { studentId: match.studentId, match, selected: false }] });
+    }
+  }
+
+  student(studentId: string): StudentEntry | undefined {
+    return this.state.students.find((e) => e.studentId === studentId);
+  }
+
+  /** The person (or the model's select_student) chose this student: it becomes "the selected one", and its summary shows. */
+  selectStudent(studentId: string) {
+    if (!this.student(studentId)) return;
+    this.set({ students: this.state.students.map((e) => ({ ...e, selected: e.studentId === studentId })), lastActivity: this.now() });
+    this.say({ id: this.nextId(), role: "assistant", kind: "student-record", studentId, section: "summary" });
+  }
+
+  /** Results of the on-device search form (no model). */
+  showLookup(asked: string, result: StudentLookupResultDto) {
+    for (const m of result.matches) this.rememberStudent(m);
+    this.say({ id: this.nextId(), role: "assistant", kind: "students", asked, status: result.status, studentIds: result.matches.map((m) => m.studentId) });
+    if (result.status === "found" && result.matches[0]) this.selectStudent(result.matches[0].studentId);
   }
 
   /** Pasted rows go into the intake form, never to the model. */
@@ -463,10 +565,65 @@ export class AssistantStore {
    */
   resetSession(id: string): boolean {
     const t = this.state.tasks[id];
-    if (!t || t.status !== "active") return false;
+    if (!t || t.status !== "active" || this.approving.has(id)) return false;
     this.sessions.get(id)?.dispose();
     this.sessions.delete(id);
     this.set({ tasks: { ...this.state.tasks, [id]: { ...t, stage: "editing" } } });
+    return true;
+  }
+
+  // ---- Plan revisions and approval (one rule for all four workflows) -------
+
+  /** Memory-only value for a task, created once; survives resetSession, not wipe/clear/close. */
+  memo<T>(taskId: string, key: string, init: () => T): T {
+    let m = this.memos.get(taskId);
+    if (!m) { m = new Map(); this.memos.set(taskId, m); }
+    if (!m.has(key)) m.set(key, init());
+    return m.get(key) as T;
+  }
+
+  setMemo(taskId: string, key: string, value: unknown) {
+    this.memo(taskId, key, () => value);
+    this.memos.get(taskId)!.set(key, value);
+  }
+
+  /** The plan revision the card has applied to what it shows. */
+  appliedRevision(taskId: string): number {
+    return this.memo(taskId, "appliedRevision", () => 0);
+  }
+
+  markApplied(taskId: string, revision: number) {
+    this.setMemo(taskId, "appliedRevision", revision);
+    this.set({});
+  }
+
+  /** A model plan the card has not applied yet: the preview on screen is out of date. */
+  planPending(taskId: string): boolean {
+    const t = this.state.tasks[taskId];
+    return !!t && t.revision > this.appliedRevision(taskId);
+  }
+
+  /** Whether the person may approve this task's preview NOW. */
+  canApprove(taskId: string): boolean {
+    const t = this.state.tasks[taskId];
+    return !!t && t.status === "active" && !t.reference && !this.planPending(taskId) && !this.approving.has(taskId);
+  }
+
+  /**
+   * Runs the person's approval, if allowed, holding a lock from the click
+   * (synchronously) until the request settles: a model plan arriving meanwhile
+   * is not applied, and an approval cannot start while a plan is pending.
+   */
+  async approve(taskId: string, run: () => Promise<unknown> | void): Promise<boolean> {
+    if (!this.canApprove(taskId)) return false;
+    this.approving.add(taskId);
+    this.set({});
+    try {
+      await run();
+    } finally {
+      this.approving.delete(taskId);
+      this.set({});
+    }
     return true;
   }
 
@@ -476,6 +633,7 @@ export class AssistantStore {
     if (!t || t.status === "confirming" || t.status === "uncertain") return false;
     this.sessions.get(id)?.dispose();
     this.sessions.delete(id);
+    this.memos.delete(id);
     this.set({ tasks: { ...this.state.tasks, [id]: { ...t, status: "closed" } } });
     return true;
   }

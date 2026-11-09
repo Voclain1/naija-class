@@ -1,4 +1,6 @@
 import type {
+  StudentLookupQuery,
+  StudentLookupResultDto,
   AssistantTurnDto,
   AssistantTurnInput,
   AssistantCapabilitiesDto,
@@ -16,6 +18,8 @@ import { apiFetch } from "@/lib/api-client";
 export const assistantApi = {
   capabilities: () => apiFetch<AssistantCapabilitiesDto>("/assistant/workspace/capabilities"),
   help: (question: string) => apiFetch<{ hits: AssistantHelpHitDto[] }>("/assistant/workspace/help", { method: "POST", body: { question } }),
+  /** Named student lookup without the model (POST: a name never travels in a URL). */
+  findStudents: (input: StudentLookupQuery) => apiFetch<StudentLookupResultDto>("/assistant/workspace/students/find", { method: "POST", body: input }),
   /** One model-backed turn (docs/modules/assistant-workspace.md, "Model orchestration"). POST body only. */
   turn: (input: AssistantTurnInput) => apiFetch<AssistantTurnDto>("/assistant/workspace/turn", { method: "POST", body: input }),
 };

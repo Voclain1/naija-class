@@ -55,6 +55,50 @@ export const assistantTaskStateSchema = z
   .strict();
 export type AssistantTaskState = z.infer<typeof assistantTaskStateSchema>;
 
+// ---- Named student lookup (2026-11-09; docs/modules/assistant-workspace.md,
+// "Named student lookup"). Names are resolved by the SERVER under the caller's
+// tenant, permissions and teacher scope. The model sees opaque handles
+// (s1…s9) and class labels only; names and records travel to the browser in
+// actions and cards, which are never part of model history.
+
+export const ASSISTANT_STUDENT_HANDLE = /^s[1-9]$/;
+export const STUDENT_RECORD_SECTIONS = ["summary", "attendance", "results"] as const;
+export type StudentRecordSection = (typeof STUDENT_RECORD_SECTIONS)[number];
+
+/** A student the conversation found, by id. The server re-checks it against tenant and scope every turn. */
+export const assistantStudentRefSchema = z
+  .object({ handle: z.string().regex(ASSISTANT_STUDENT_HANDLE), studentId: z.string().uuid(), selected: z.boolean() })
+  .strict();
+export type AssistantStudentRef = z.infer<typeof assistantStudentRefSchema>;
+
+/** One student a lookup found. Shown in the browser only; never sent to the model. */
+export interface StudentMatchDto {
+  studentId: string;
+  name: string;
+  admissionNumber: string;
+  classArmId: string | null;
+  /** "JSS 2 · JSS 2A", this term. */
+  classLabel: string | null;
+  termId: string | null;
+  status: string;
+  /** "exact": every name part typed is one of the student's names; "similar": a close spelling. */
+  match: "exact" | "similar";
+}
+
+export const studentLookupQuerySchema = z
+  .object({
+    name: z.string().trim().min(2).max(60),
+    classArmIds: z.array(z.string().uuid()).min(1).max(20).optional(),
+  })
+  .strict();
+export type StudentLookupQuery = z.infer<typeof studentLookupQuerySchema>;
+
+export interface StudentLookupResultDto {
+  /** found: one exact match. several: more than one exact. similar: no exact, close spellings. none. */
+  status: "found" | "several" | "similar" | "none";
+  matches: StudentMatchDto[];
+}
+
 export const assistantTurnSchema = z
   .object({
     messages: z
@@ -70,6 +114,11 @@ export const assistantTurnSchema = z
       .array(assistantTaskStateSchema)
       .max(ASSISTANT_TURN_MAX_TASKS)
       .refine((t) => new Set(t.map((x) => x.handle)).size === t.length, "Each task handle may appear once.")
+      .default([]),
+    students: z
+      .array(assistantStudentRefSchema)
+      .max(9)
+      .refine((t) => new Set(t.map((x) => x.handle)).size === t.length, "Each student handle may appear once.")
       .default([]),
   })
   .strict();
@@ -94,9 +143,8 @@ export type AssistantTurnAction =
       kind: "reminders";
       handle: string;
       termId: string;
+      /** The class by ID (enforced by the server at preview and confirm), or null for all classes. */
       classArmId: string | null;
-      /** The class's own name, as the debtor list shows it (for the browser's filter; never sent to the model). */
-      className: string | null;
       overdueOnly: boolean;
       includePaymentPlans: boolean;
       /** Select every matching family and ask the server for its preview. Approval stays separate. */
@@ -106,7 +154,12 @@ export type AssistantTurnAction =
   | { kind: "corrections"; handle: string; fields: StudentCorrectionField[] }
   /** Show a saved operation's authoritative state in a card (read only). */
   | { kind: "show"; workflow: AssistantWorkflow; runId?: string; proposalId?: string; campaignId?: string }
-  | { kind: "help"; query: string; hits: AssistantHelpHitDto[] };
+  | { kind: "help"; query: string; hits: AssistantHelpHitDto[] }
+  /** A lookup's matches, with their handles: names for the browser only. `asked` is the name as the person typed it. */
+  | { kind: "students"; asked: string; status: StudentLookupResultDto["status"]; matches: Array<StudentMatchDto & { handle: string }> }
+  | { kind: "select-student"; handle: string; studentId: string }
+  /** Show a section of a selected student's record, read by the browser from existing authorised endpoints. */
+  | { kind: "student-record"; handle: string; studentId: string; section: StudentRecordSection };
 
 export const ASSISTANT_TURN_OUTCOMES = [
   "answered",

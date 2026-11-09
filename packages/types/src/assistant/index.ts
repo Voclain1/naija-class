@@ -37,6 +37,8 @@ export interface AssistantCapabilitiesDto {
   workflows: Record<AssistantWorkflow, { available: boolean; reason: AssistantUnavailableReason | null; canApprove: boolean }>;
   /** Searching the in-app guide. No model. */
   help: { available: boolean };
+  /** Named student lookup: the workspace switch, and student.read with an owner/admin role, or a teacher (own classes). */
+  lookup: { available: boolean };
   /** A model reading free-text requests. Not approved: always false in this build. */
   /**
    * Model-backed understanding (./orchestration.ts). NOT_APPROVED: the prompt's
@@ -95,7 +97,13 @@ export type AssistantRoute =
   | { kind: "help"; query: string }
   | { kind: "unsupported"; topic: UnsupportedTopic; message: string; next: AssistantWorkflow | "help" | null }
   | { kind: "greeting" }
-  | { kind: "clarify"; options: AssistantWorkflow[] };
+  | { kind: "clarify"; options: AssistantWorkflow[] }
+  /**
+   * Named student lookup, on the device. `query` prefills an editable search
+   * field (the server does the matching, under the person's own scope); it is
+   * a starting point, not an identification.
+   */
+  | { kind: "lookup"; query: string; hints: RouteHints };
 
 const UNSUPPORTED: { topic: UnsupportedTopic; test: RegExp; message: string; next: AssistantWorkflow | "help" | null }[] = [
   {
@@ -221,6 +229,25 @@ const FIELDS: { field: NonNullable<RouteHints["fields"]>[number]; test: RegExp }
  * into the workflow's own structured controls, and the request text is not
  * sent anywhere by routing.
  */
+/** Reading a student's record: "show Samuel in JSS2", "records of Ada", "who is Tunde in SS1?", "find Bola's attendance". */
+const LOOKUP =
+  /\b(show|find|look ?up|search(?: for)?|pull up|open|get|see|view|check)\b[^.?!]*\b(records?|details?|profile|file|info(?:rmation)?|student|pupil|attendance|results?)\b|\b(records?|details?|profile|file) (?:of|for)\b|\blook ?up\b(?! (?:how|the|a|an|where|what|when|which|invoices?|fees?|reminders?)\b) \S+|\b(?:show|find|look ?up|pull up|who is)\b \S+(?: \S+)? (?:in|from) (?:jss|sss|js|ss|primary|pri|basic|year|kg|nursery)\s*-?\s*\d/;
+const CHANGE = /\b(change|edit|update|enter|fix|correct|set|record (?:a|the)? ?(?:mark|score)|add|remove|delete)\b/;
+const LOOKUP_FILLER = new Set(
+  ("show find look lookup up search for pull open get see view check the a an me please records record details detail profile file info information " +
+    "of on about student students pupil pupils in from class who is his her their s attendance results result released can you i want to").split(" "),
+);
+
+/** The words left after the request's own vocabulary and class mentions: a prefill for the search field. */
+export function lookupQuery(raw: string): string {
+  const words = raw
+    .replace(new RegExp(CLASS.source, "gi"), " ")
+    .replace(/['\u2019]s\b/g, " ")
+    .split(/[^\p{L}'-]+/u)
+    .filter((w) => w && !LOOKUP_FILLER.has(w.toLowerCase()));
+  return words.join(" ").trim().slice(0, 60);
+}
+
 export function routeAssistantRequest(raw: string): AssistantRoute {
   const t = raw.toLowerCase().replace(/\s+/g, " ").trim().slice(0, ASSISTANT_MAX_REQUEST_CHARS);
   if (!t) return { kind: "clarify", options: [...ASSISTANT_WORKFLOWS] };
@@ -230,9 +257,17 @@ export function routeAssistantRequest(raw: string): AssistantRoute {
     if (!u.test.test(t)) continue;
     // "fix the date of birth" is a correction, not "results"; "admission" alone is fine.
     if (u.topic === "grades" && /\b(date of birth|names?|gender|emails?)\b/.test(t)) continue;
+    // Reading released results through named lookup is allowed; changing grades is not.
+    if (u.topic === "grades" && LOOKUP.test(t) && !CHANGE.test(t)) continue;
     if (u.topic === "money" && /\b(remind\w*|invoices?)\b/.test(t) && !/\b(refunds?|discounts?|record\w* (a )?payments?|cancel\w*)\b/.test(t)) continue;
     if (u.topic === "deletion" && /\b(remove|drop)\b/.test(t) && !/\b(students?|records?|pupils?|everyone|account|data|invoices?)\b/.test(t)) continue;
     return { kind: "unsupported", topic: u.topic, message: u.message, next: u.next };
+  }
+
+  // Reading a named student's record (before the guide: "who is Tunde in SS1?").
+  if (LOOKUP.test(t) && !CHANGE.test(t) && !DETECT.some((d) => d.test.test(t))) {
+    const classes = classHints(t);
+    return { kind: "lookup", query: lookupQuery(raw), hints: classes.length ? { classes } : {} };
   }
 
   // "Where do I find the debtors list?" is a question about the product, not

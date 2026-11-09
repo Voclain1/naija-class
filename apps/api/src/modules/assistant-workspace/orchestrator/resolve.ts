@@ -39,7 +39,7 @@ export interface SchoolStructure {
 export function safeLabel(raw: string): string {
   return raw
     .normalize("NFKC")
-    .replace(/[^\p{L}\p{N} .,'()/&-]/gu, " ")
+    .replace(/[^\p{L}\p{N} .,'()/&·-]/gu, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 40);

@@ -371,7 +371,7 @@ describe("assistant tool conformance gate (FD-3b)", () => {
     const deps: OrchestratorDeps = {
       structure: async () => ({ terms: [term], arms: [arm] }),
       capabilities: async () => ({
-        enabled: true, help: { available: true }, inactivityMinutes: 15, modelRouting: { available: true, reason: null },
+        enabled: true, help: { available: true }, lookup: { available: true }, inactivityMinutes: 15, modelRouting: { available: true, reason: null },
         workflows: Object.fromEntries(["invoices", "reminders", "intake", "corrections"].map((w) => [w, { available: true, reason: null, canApprove: true }])) as never,
       }),
       prepareInvoices: async () => run as never,
@@ -382,8 +382,19 @@ describe("assistant tool conformance gate (FD-3b)", () => {
       correctionProposal: async () => ({ id: "p", status: "COMPLETED", outcome: { updatedCount: 1, students: named } }) as never,
       recentCampaignIds: async () => [campaign.id],
       searchGuide: (q) => searchGuide(q, { limit: 3 }).map((h) => ({ anchor: h.anchor, title: h.title, path: h.path, excerpt: h.excerpt })),
+      // Named lookup returns the planted names and admission number: only handles and class labels may reach the model.
+      findStudents: async () => ({
+        status: "several",
+        matches: [0, 1].map((i) => ({ studentId: `00000000-0000-4000-8000-00000000000${i}`, name: named.join(" "), admissionNumber: named[6]!, classArmId: arm.id, classLabel: "JSS 2 · JSS 2A", termId: term.id, status: "ACTIVE", match: "exact" as const })),
+      }),
+      permissions: async () => new Set(["*"]),
     };
-    const state = new TurnState(await deps.structure(fx.owner), [{ handle: "t1", workflow: "reminders", status: "done", campaignId: campaign.id }]);
+    const state = new TurnState(
+      await deps.structure(fx.owner),
+      [{ handle: "t1", workflow: "reminders", status: "done", campaignId: campaign.id }],
+      [{ handle: "s1", studentId: "00000000-0000-4000-8000-000000000009", selected: true, classLabel: "JSS 2 · JSS 2A" }],
+      new Map([["P1", named[3]!]]),
+    );
     const registry = orchestratorToolRegistry(deps, state);
     expect(registry.names()).toEqual([...ORCHESTRATOR_TOOL_NAMES]);
     const result = await runGate(registry, fx.owner, fx.scan, ["prepare_invoices"]);

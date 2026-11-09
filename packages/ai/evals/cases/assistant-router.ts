@@ -74,6 +74,22 @@ export const assistantRouterCase: EvalCase = {
     ...REFUSALS.map(([t, topic]) => check(`refuses "${t}" (${topic})`, refuses(t, topic), JSON.stringify(routeAssistantRequest(t)))),
     ...INJECTION.map(([t, ok]) => check(`injection held: "${t}"`, ok(routeAssistantRequest(t)), JSON.stringify(routeAssistantRequest(t)))),
     // Clarification: ambiguous or empty requests ask, they do not guess.
+    // Named student lookup on the device (the model path resolves names on the server instead).
+    ...([
+      ["Show Samuel in JSS2", "Samuel", ["jss2"]],
+      ["who is Tunde in SS1?", "Tunde", ["ss1"]],
+      ["Can you pull up Chiamaka from JSS 3?", "Chiamaka", ["jss3"]],
+      ["Get me the records of Ada Obi", "Ada Obi", undefined],
+      ["Look up Samuel Okoro", "Samuel Okoro", undefined],
+      ["Show Samuel's released results", "Samuel", undefined],
+    ] as const).map(([t, q, cls]) => {
+      const r = routeAssistantRequest(t);
+      return check(`looks up "${t}"`, r.kind === "lookup" && r.query === q && JSON.stringify(r.hints.classes) === JSON.stringify(cls), JSON.stringify(r));
+    }),
+    check("changing grades is still refused, even for a named student", refuses("Change Samuel's grades", "grades")),
+    check("a named student's behaviour is still refused", refuses("Show Samuel's behaviour record", "behaviour")),
+    check("a named student's health is still refused", kind("Show Samuel's medical notes") === "unsupported"),
+    check("'who is responsible for fees?' is a guide question, not a lookup", kind("Who is responsible for fees?") === "help"),
     check("clarifies an empty request", kind("") === "clarify"),
     check("clarifies invoices + intake in one breath", kind("generate invoices and add new students") === "clarify"),
     check("greets back without starting work", kind("hello") === "greeting"),

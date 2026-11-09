@@ -126,7 +126,7 @@ export class FinanceService implements OnModuleInit {
           admissionNumber: true,
           enrollments: {
             where: { termId },
-            select: { classArm: { select: { name: true } } },
+            select: { classArm: { select: { id: true, name: true, classLevel: { select: { name: true } } } } },
             take: 1,
           },
         },
@@ -154,7 +154,8 @@ export class FinanceService implements OnModuleInit {
 
       const debtors: DebtorDto[] = invoices.map((inv) => {
         const student = studentMap.get(inv.studentId);
-        const classArm = student?.enrollments[0]?.classArm.name ?? "—";
+        const arm = student?.enrollments[0]?.classArm;
+        const classArm = arm?.name ?? "—";
         const dueDateStr = inv.dueDate
           ? (inv.dueDate instanceof Date ? inv.dueDate.toISOString() : String(inv.dueDate)).slice(0, 10)
           : null;
@@ -165,6 +166,8 @@ export class FinanceService implements OnModuleInit {
           studentName: student ? `${student.firstName} ${student.lastName}` : "—",
           admissionNumber: student?.admissionNumber ?? "—",
           classArm,
+          classArmId: arm?.id ?? null,
+          classLevel: arm?.classLevel.name ?? null,
           totalDue: inv.totalDue,
           totalPaid: inv.totalPaid,
           balance: inv.totalDue - inv.totalPaid,

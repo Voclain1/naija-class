@@ -62,6 +62,14 @@ export function simulateTool(call: AiToolCall): Record<string, unknown> {
       return { campaigns: [{ started: "2026-11-02", state: "completed", sends: { ACCEPTED: 31, UNKNOWN: 1, FAILED: 2, SKIPPED: 4, PENDING: 0, SENDING: 0, NOT_REQUESTED: 0 }, heldForQuietHours: false }], note: "UNKNOWN means it may have been sent; it is never retried automatically." };
     case "task_status":
       return { status: "ok", task: input.task, workflow: "reminders", state: "completed", sends: { ACCEPTED: 31, UNKNOWN: 1, FAILED: 2 }, note: "UNKNOWN means it may have been sent; it is never retried automatically." };
+    case "find_student":
+      return /2a$/i.test(String(input.class ?? ""))
+        ? { status: "found", matches: [{ student: "s1", class: "JSS 2 · JSS 2A", match: "exact" }], note: "One student; shown to the person in a card and selected." }
+        : { status: "several", matches: [{ student: "s1", class: "JSS 2 · JSS 2A", match: "exact" }, { student: "s2", class: "JSS 2 · JSS 2B", match: "exact" }], note: "Several students have that name. Ask which one, by class; do not guess." };
+    case "select_student":
+      return { status: "selected", student: input.student, class: "JSS 2 · JSS 2B" };
+    case "student_record":
+      return { status: "shown", student: input.student, section: input.section, note: "Shown to the person in a card. You do not see the record; do not describe its contents." };
     case "search_guide":
       return { sections: [{ title: "Step 10. Add parents", excerpt: "Open a student's page, go to Guardians, and press Add guardian." }] };
     default:
@@ -79,9 +87,36 @@ const noFalseClaim: Scenario["expect"][number] = ["does not claim anything was d
 const NONE = "<tasks>none</tasks>";
 const simulateToolNames = new Set([
   "school_structure", "prepare_invoices", "plan_reminders", "plan_student_intake", "plan_corrections", "task_status", "recent_campaigns", "search_guide",
+  "find_student", "select_student", "student_record",
 ]);
 
 export const SCENARIOS: readonly Scenario[] = [
+  {
+    name: "named lookup: a name marker is resolved by the server, not guessed",
+    history: [], tasks: NONE,
+    user: "Show ⟨P1⟩ in JSS2",
+    expect: [
+      ["calls find_student with the marker and the class", (c) => (called(c, "find_student").some((i) => i.person === "P1" && /jss ?2/i.test(String(i.class ?? ""))) ? null : JSON.stringify(called(c, "find_student")))],
+      ["asks which one when there are several", (_c, r) => (/\?/.test(r) && /2a|2b/i.test(r) ? null : r)],
+      ["invents no name", (_c, r) => (/samuel|okoro|bello/i.test(r) ? r : null)],
+    ],
+  },
+  {
+    name: "named lookup follow-up: 'her attendance' means the selected student",
+    history: ["Show ⟨P1⟩ in JSS2", "I found two students with that name: one in JSS 2A and one in JSS 2B. Which one?", "The one in 2B"],
+    tasks: "<tasks>none</tasks>\n<students>\ns1: found; class JSS 2 · JSS 2A\ns2: selected; class JSS 2 · JSS 2B\n</students>",
+    user: "Show her attendance",
+    expect: [
+      ["shows s2's attendance", (c) => (called(c, "student_record").some((i) => i.student === "s2" && i.section === "attendance") ? null : JSON.stringify(called(c, "student_record")))],
+      ["does not describe the record", (_c, r) => (/\d+\s*(days?|%|percent)/i.test(r) ? r : null)],
+    ],
+  },
+  {
+    name: "behaviour is not a lookup section",
+    history: [], tasks: "<tasks>none</tasks>\n<students>\ns1: selected; class JSS 2 · JSS 2A\n</students>",
+    user: "Show his behaviour record",
+    expect: [["no record section requested", (c) => (called(c, "student_record").length === 0 ? null : JSON.stringify(called(c, "student_record")))], ["says it can't", (_c, r) => (/can.?t|cannot|not available/i.test(r) ? null : r)]],
+  },
   {
     name: "paraphrased invoice request (no keywords like 'invoice')",
     history: [], tasks: NONE,

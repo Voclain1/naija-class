@@ -12,14 +12,12 @@ import type { AssistantTask, TaskStatus } from "@/lib/assistant/store";
 import { formatKobo } from "@/lib/finance/format";
 
 import { useAssistant } from "../assistant-provider";
-import { ApproveControl, CardShell, Field, Notice, control } from "./common";
+import { ApproveControl, CardShell, Field, IN_FLIGHT_PHASES, Notice, PlanChangedNotice, control, useApprovalGate } from "./common";
 
 // Term invoices through the existing #512 service: an explicit term and class
 // selection, the server’s preview (with its exceptions and totals), then a
 // separate approval that the server re-checks. Figures are the server’s.
 
-/** The plan revision each session has applied (sessions outlive the card across navigation). */
-const applied = new WeakMap<object, number>();
 const PROBLEMS: Record<string, string> = {
   BILLING_LIMIT: "That is too many classes or students for one run. Choose fewer classes.",
 };
@@ -34,6 +32,7 @@ export function InvoiceCard({ task, caps }: { task: AssistantTask; caps: Assista
     return s;
   });
   const st = useSyncExternalStore(session.subscribe, session.snapshot, session.snapshot);
+  const gate = useApprovalGate(task.id);
   const [ctx, setCtx] = useState<BillingContextDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [termId, setTermId] = useState("");
@@ -60,13 +59,18 @@ export function InvoiceCard({ task, caps }: { task: AssistantTask; caps: Assista
   // unticked for every revision, and approval stays this card's own button.
   useEffect(() => {
     const plan = task.plan;
-    if (!ctx || plan?.kind !== "invoices" || applied.get(session) === task.revision) return;
-    applied.set(session, task.revision);
+    if (!ctx || plan?.kind !== "invoices" || store.appliedRevision(task.id) >= task.revision) return;
+    // Never over an approval in flight, an open outcome, or a finished run.
+    if (IN_FLIGHT_PHASES.has(st.phase) || st.phase === "done") return;
     setTermId(plan.termId);
     setArms(plan.classArmIds);
     setChecked(false);
     if (plan.runId) void session.adopt(plan.runId, { termId: plan.termId, classArmIds: plan.classArmIds });
-  }, [ctx, task.plan, task.revision, session]);
+    // No prepared run (the server could not prepare it): an unapproved preview
+    // on screen is out of date, so drop it; the person prepares again.
+    else if (st.phase === "review" || st.phase === "stale") store.resetSession(task.id);
+    store.markApplied(task.id, task.revision);
+  }, [ctx, task.plan, task.revision, session, st.phase, store, task.id]);
 
   useEffect(() => {
     store.reportTask(task.id, { stage: st.phase === "review" ? "review" : "editing", scope: { termId: termId || null, classArmIds: arms } });
@@ -144,10 +148,11 @@ export function InvoiceCard({ task, caps }: { task: AssistantTask; caps: Assista
           {run.blockers.length > 0 && <Notice tone="warning">Fix first: {run.blockers.join("; ")}</Notice>}
         </>
       )}
+      {st.phase === "review" && gate.pending && <PlanChangedNotice />}
       {st.phase === "review" && run && (
         caps.workflows.invoices.canApprove ? (
-          <ApproveControl id={ids.approve} checked={checked} onChecked={setChecked} disabled={run.blockers.length > 0}
-            statement={`I checked this preview: issue ${run.createCount} invoices for ${run.termLabel}.`} button="Approve and issue invoices" onApprove={() => void session.approve()} />
+          <ApproveControl id={ids.approve} checked={checked} onChecked={setChecked} disabled={run.blockers.length > 0 || !gate.canApprove}
+            statement={`I checked this preview: issue ${run.createCount} invoices for ${run.termLabel}.`} button="Approve and issue invoices" onApprove={() => gate.approve(() => session.approve())} />
         ) : <Notice>Your account can preview but not issue invoices. Ask someone with permission to issue them.</Notice>
       )}
       {st.phase === "approving" && <p role="status">Issuing on the server…</p>}

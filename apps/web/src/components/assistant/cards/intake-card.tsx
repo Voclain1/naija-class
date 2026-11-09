@@ -10,15 +10,12 @@ import type { AssistantTask, TaskStatus } from "@/lib/assistant/store";
 import { validIntakeDate } from "@/lib/students/intake-review";
 
 import { useAssistant } from "../assistant-provider";
-import { ApproveControl, CardShell, Field, Notice, control } from "./common";
+import { ApproveControl, CardShell, Field, IN_FLIGHT_PHASES, Notice, PlanChangedNotice, control, useApprovalGate } from "./common";
 
 // Add and enrol students through the reviewed intake service (#517/#514).
 // Rows are typed or pasted into structured fields IN THE BROWSER and go only
 // to the intake API; the server’s preview (identities, numbers, placement,
 // warnings) is what the person confirms.
-
-/** The plan revision each intake task has applied (it outlives the card across navigation). */
-const applied = new WeakMap<object, number>();
 
 const empty = (): PastedRow => ({ firstName: "", lastName: "", dateOfBirth: "", gender: "", admissionNumber: "" });
 const ready = (r: PastedRow) => r.firstName.trim() && r.lastName.trim() && validIntakeDate(r.dateOfBirth) && r.gender;
@@ -37,6 +34,14 @@ export function IntakeCard({ task, caps }: { task: AssistantTask; caps: Assistan
   });
   const st = useSyncExternalStore(it.subscribe, it.snapshot, it.snapshot);
   useEffect(() => { store.reportTask(task.id, { stage: st.started && !st.outcome ? "review" : "editing" }); }, [store, task.id, st.started, st.outcome]);
+  // A model plan revising this task while its preview shows: the preview is
+  // out of date. Start a fresh session (the typed rows are kept in the task's
+  // memory) so the old preview can never be confirmed. Never while a save is in
+  // flight, its outcome open, or done.
+  const phase = st.session.phase;
+  useEffect(() => {
+    if (store.planPending(task.id) && st.started && !st.outcome && !IN_FLIGHT_PHASES.has(phase)) store.resetSession(task.id);
+  }, [store, task.id, task.revision, st.started, st.outcome, phase]);
   if (st.outcome) {
     return (
       <CardShell title="Add and enrol students" status="Saved" tone="done">
@@ -45,15 +50,17 @@ export function IntakeCard({ task, caps }: { task: AssistantTask; caps: Assistan
       </CardShell>
     );
   }
-  return st.started ? <Review it={it} canApprove={caps.workflows.intake.canApprove} /> : <Editor task={task} it={it} />;
+  return st.started ? <Review task={task} it={it} canApprove={caps.workflows.intake.canApprove} /> : <Editor task={task} it={it} />;
 }
 
 function Editor({ task, it }: { task: AssistantTask; it: IntakeTask }) {
   const { store } = useAssistant();
-  const [rows, setRows] = useState<PastedRow[]>(() => it.draft?.rows ?? Array.from({ length: Math.min(Math.max(task.hints.studentCount ?? 1, 1), 10) }, empty));
+  // The task's memory (not the session's): it survives a session reset.
+  const saved = store.memo<IntakeTask["draft"]>(task.id, "intakeDraft", () => it.draft);
+  const [rows, setRows] = useState<PastedRow[]>(() => saved?.rows ?? Array.from({ length: Math.min(Math.max(task.hints.studentCount ?? 1, 1), 10) }, empty));
   const [paste, setPaste] = useState("");
   const [pasteNote, setPasteNote] = useState<string | null>(null);
-  const [placement, setPlacement] = useState<PlacementValue | null | undefined>(it.draft?.placement);
+  const [placement, setPlacement] = useState<PlacementValue | null | undefined>(saved?.placement);
   const pasteId = useId();
   const set = (i: number, patch: Partial<PastedRow>) => setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const filled = rows.filter((r) => r.firstName || r.lastName || r.dateOfBirth || r.gender || r.admissionNumber);
@@ -63,8 +70,7 @@ function Editor({ task, it }: { task: AssistantTask; it: IntakeTask }) {
   // applied once per revision. The rows stay in this browser's memory.
   useEffect(() => {
     const plan = task.plan;
-    if (plan?.kind !== "intake" || applied.get(it) === task.revision) return;
-    applied.set(it, task.revision);
+    if (plan?.kind !== "intake" || store.appliedRevision(task.id) >= task.revision) return;
     if (plan.pasted) {
       const { rows: parsed, skipped } = parsePastedRows(plan.pasted);
       if (parsed.length) setRows(parsed.slice(0, 200));
@@ -72,11 +78,13 @@ function Editor({ task, it }: { task: AssistantTask; it: IntakeTask }) {
     }
     if (plan.placeLater) setPlacement(null);
     else if (plan.termId && plan.classArmId) setPlacement({ termId: plan.termId, classArmId: plan.classArmId });
-  }, [task.plan, task.revision, it]);
+    store.markApplied(task.id, task.revision);
+  }, [task.plan, task.revision, store, task.id]);
 
   // Memory only: keeps what was typed across navigation, and tells the turn how many rows (a count, never content).
   useEffect(() => {
     it.draft = { rows, placement };
+    store.setMemo(task.id, "intakeDraft", it.draft);
     store.reportTask(task.id, { scope: { termId: placement?.termId ?? null, classArmIds: placement ? [placement.classArmId] : [], placeLater: placement === null, studentCount: filled.length } });
   }, [it, rows, placement, store, task.id, filled.length]);
 
@@ -134,8 +142,9 @@ function Editor({ task, it }: { task: AssistantTask; it: IntakeTask }) {
   );
 }
 
-function Review({ it, canApprove }: { it: IntakeTask; canApprove: boolean }) {
+function Review({ task, it, canApprove }: { task: AssistantTask; it: IntakeTask; canApprove: boolean }) {
   const st = useSyncExternalStore(it.subscribe, it.snapshot, it.snapshot).session;
+  const gate = useApprovalGate(task.id);
   const [checked, setChecked] = useState(false);
   const approveId = useId();
   const p = st.proposal;
@@ -158,9 +167,10 @@ function Review({ it, canApprove }: { it: IntakeTask; canApprove: boolean }) {
         </>
       )}
       {st.message && <Notice tone={st.phase === "prepare-error" || st.phase === "refresh-error" ? "error" : "warning"}>{st.message}</Notice>}
+      {gate.pending && <PlanChangedNotice />}
       {st.phase === "review" && p && (canApprove ? (
-        <ApproveControl id={approveId} checked={checked} onChecked={setChecked} disabled={!p.canConfirm}
-          statement={`I checked these ${p.counts.rows} students and where they go.`} button="Confirm and save students" onApprove={() => void it.session.confirm()} />
+        <ApproveControl id={approveId} checked={checked} onChecked={setChecked} disabled={!p.canConfirm || !gate.canApprove}
+          statement={`I checked these ${p.counts.rows} students and where they go.`} button="Confirm and save students" onApprove={() => gate.approve(() => it.session.confirm())} />
       ) : <Notice>Your account can’t save students.</Notice>)}
       {st.phase === "confirming" && <p role="status">Saving on the server…</p>}
       {(st.phase === "refresh-needed" || st.phase === "refresh-error") && <button type="button" className="inline-flex h-10 items-center rounded-md border border-input px-4 text-sm" onClick={() => { setChecked(false); void it.session.refresh(); }}>Refresh the preview</button>}

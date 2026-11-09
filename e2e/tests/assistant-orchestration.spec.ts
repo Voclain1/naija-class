@@ -140,7 +140,7 @@ test("a reminders plan selects the matching families and asks the server for its
     expect((await admin.api.post(`students/${scaffold.students[0]!.id}/guardians/new`, { data: { firstName: "Test", lastName: "Guardian", relationship: "MOTHER", phone: "+2348000000000", isPrimary: true } })).ok()).toBe(true);
     await fakeModel(page, () => ({
       reply: "I've asked the server for a preview of families who owe. Check it and confirm in the card.",
-      actions: [{ kind: "reminders", handle: "t1", termId: structure.termId, classArmId: null, className: null, overdueOnly: false, includePaymentPlans: false, autoPreview: true }],
+      actions: [{ kind: "reminders", handle: "t1", termId: structure.termId, classArmId: null, overdueOnly: false, includePaymentPlans: false, autoPreview: true }],
       toolsUsed: ["plan_reminders"],
     }));
     await page.goto("/finance/debtors");

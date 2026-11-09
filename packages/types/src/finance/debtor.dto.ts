@@ -12,7 +12,11 @@ export interface DebtorDto {
   studentId: string;
   studentName: string;         // firstName + " " + lastName
   admissionNumber: string;
-  classArm: string;            // e.g. "JSS2 Blue"
+  classArm: string;            // e.g. "JSS2 Blue" (the arm's own name; not unique across levels)
+  /** The arm's id this term (2026-11-09): the identity to filter by. Null when not enrolled this term. */
+  classArmId: string | null;
+  /** The arm's level name, e.g. "JSS 2". Null when not enrolled this term. */
+  classLevel: string | null;
   totalDue: number;            // kobo
   totalPaid: number;           // kobo
   balance: number;             // totalDue − totalPaid (kobo), computed server-side

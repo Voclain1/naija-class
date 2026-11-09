@@ -64,6 +64,8 @@ export class AssistantWorkspaceService {
       enabled,
       workflows,
       help: { available: enabled },
+      // Named lookup: the same rule StudentLookupService enforces again on every search.
+      lookup: { available: enabled && holds(["student.read"]) && (isAdmin || roles.includes("teacher")) },
       modelRouting: enabled && this.modelRouting ? await this.modelRouting.status(auth.schoolId) : { available: false, reason: "FEATURE_OFF" },
       inactivityMinutes: ASSISTANT_INACTIVITY_MINUTES,
     };

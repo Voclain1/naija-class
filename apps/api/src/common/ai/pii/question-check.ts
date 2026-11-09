@@ -139,34 +139,7 @@ export function checkQuestion(text: string, roster: QuestionRoster): QuestionChe
   else if (LONG_NUMBER.test(compact)) found.add("long-number");
   if (FULL_DATE.some((re) => re.test(text))) found.add("full-date");
 
-  // Words, with their position so a capitalised word at a sentence start is known.
-  const words = [...text.matchAll(/[\p{L}][\p{L}'\u2019-]*/gu)].map((m) => {
-    const before = text.slice(0, m.index).trimEnd();
-    return { raw: m[0], sentenceStart: before === "" || /[.!?:\n]$/.test(before) };
-  });
-  for (const w of words) {
-    // Possessive off first ("Ada's" → "ada"), then any other apostrophe.
-    const t = fold(w.raw).replace(/['\u2019]s$/, "").replace(/['\u2019]/g, "");
-    for (const part of t.split("-")) {
-      if (part.length < 2 || STOPWORDS.has(part) || PRODUCT_WORDS.has(part)) continue;
-      const capitalised = /^\p{Lu}/u.test(w.raw);
-      if (roster.nameParts.has(part)) {
-        if (!COMMON_WORD_NAMES.has(part) || (capitalised && !w.sentenceStart)) found.add("roster-name");
-        continue;
-      }
-      // One-edit matches ("Chimaka" for Chiamaka) only for a capitalised word
-      // mid-sentence: lowercase, they would catch ordinary words ("hello" for a
-      // pupil called Bello). A lowercase misspelling is a known miss (§3.6).
-      if (capitalised && !w.sentenceStart && part.length >= 5 && !COMMON_WORD_NAMES.has(part)) {
-        for (const name of roster.nameParts) {
-          if (name.length >= 5 && !COMMON_WORD_NAMES.has(name) && withinOneEdit(part, name)) {
-            found.add("roster-name");
-            break;
-          }
-        }
-      }
-    }
-  }
+  if (rosterNameSpans(text, roster).length > 0) found.add("roster-name");
 
   for (const token of text.split(/[\s,;()]+/)) {
     const t = fold(token).replace(/[.?!]+$/, "");
@@ -178,6 +151,87 @@ export function checkQuestion(text: string, roster: QuestionRoster): QuestionChe
 
   const categories = [...found].sort();
   return { blocked: categories.length > 0, categories };
+}
+
+/**
+ * The words in `text` that match a name on the school's roster, by the SAME
+ * rules the "roster-name" detector uses (case, sentence start, common-word
+ * names, one-edit misspellings). Positions are character offsets.
+ */
+export function rosterNameSpans(text: string, roster: QuestionRoster): { start: number; end: number }[] {
+  const spans: { start: number; end: number }[] = [];
+  // Words, with their position so a capitalised word at a sentence start is known.
+  for (const m of text.matchAll(/[\p{L}][\p{L}'\u2019-]*/gu)) {
+    const before = text.slice(0, m.index).trimEnd();
+    const w = { raw: m[0], sentenceStart: before === "" || /[.!?:\n]$/.test(before) };
+    // Possessive off first ("Ada's" → "ada"), then any other apostrophe.
+    const t = fold(w.raw).replace(/['\u2019]s$/, "").replace(/['\u2019]/g, "");
+    let hit = false;
+    for (const part of t.split("-")) {
+      if (part.length < 2 || STOPWORDS.has(part) || PRODUCT_WORDS.has(part)) continue;
+      const capitalised = /^\p{Lu}/u.test(w.raw);
+      if (roster.nameParts.has(part)) {
+        if (!COMMON_WORD_NAMES.has(part) || (capitalised && !w.sentenceStart)) hit = true;
+        continue;
+      }
+      // One-edit matches ("Chimaka" for Chiamaka) only for a capitalised word
+      // mid-sentence: lowercase, they would catch ordinary words ("hello" for a
+      // pupil called Bello). A lowercase misspelling is a known miss (§3.6).
+      if (capitalised && !w.sentenceStart && part.length >= 5 && !COMMON_WORD_NAMES.has(part)) {
+        for (const name of roster.nameParts) {
+          if (name.length >= 5 && !COMMON_WORD_NAMES.has(name) && withinOneEdit(part, name)) {
+            hit = true;
+            break;
+          }
+        }
+      }
+    }
+    if (hit) spans.push({ start: m.index!, end: m.index! + m[0].length });
+  }
+  return spans;
+}
+
+/**
+ * Names on the roster, replaced by opaque markers before any text reaches the
+ * model (SchoolKit Assistant, docs/modules/assistant-workspace.md, "Named
+ * student lookup"). Adjacent name words ("Samuel Okoro") are one marker. The
+ * same name gets the same marker across every message of a turn, through
+ * `refs`, which the server keeps for that request only and uses to resolve the
+ * person; the model only ever sees "⟨P1⟩". Every other detector still applies
+ * to the redacted text.
+ */
+export class PersonRefs {
+  private readonly byKey = new Map<string, string>();
+  readonly values = new Map<string, string>();
+  ref(raw: string): string {
+    const key = fold(raw).replace(/[^a-z\s]/g, "").replace(/\s+/g, " ").trim();
+    let r = this.byKey.get(key);
+    if (!r) {
+      r = `P${this.byKey.size + 1}`;
+      this.byKey.set(key, r);
+      this.values.set(r, raw.trim());
+    }
+    return r;
+  }
+}
+
+export function redactRosterNames(text: string, roster: QuestionRoster, refs: PersonRefs): string {
+  const spans = rosterNameSpans(text, roster);
+  if (spans.length === 0) return text;
+  // Merge words separated only by spaces into one name.
+  const merged: { start: number; end: number }[] = [];
+  for (const s of spans) {
+    const last = merged[merged.length - 1];
+    if (last && /^\s+$/.test(text.slice(last.end, s.start))) last.end = s.end;
+    else merged.push({ ...s });
+  }
+  let out = "";
+  let at = 0;
+  for (const s of merged) {
+    out += text.slice(at, s.start) + `⟨${refs.ref(text.slice(s.start, s.end))}⟩`;
+    at = s.end;
+  }
+  return out + text.slice(at);
 }
 
 /** The school's students, guardians and staff, read under the school's own tenant. */

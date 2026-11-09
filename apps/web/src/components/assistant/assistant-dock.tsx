@@ -19,6 +19,7 @@ import { stripBasePath } from "@/lib/base-path";
 import { cn } from "@/lib/utils";
 
 import { useAssistant } from "./assistant-provider";
+import { StudentMatchesCard, StudentRecordCard, StudentSearchCard } from "./cards/student-cards";
 import { TaskCard } from "./cards/task-card";
 
 // The SchoolKit Assistant: one launcher and one panel in the staff shell
@@ -236,6 +237,12 @@ function Message({ message: m, caps }: { message: AssistantMessage; caps: Assist
       );
     case "help":
       return <li><HelpAnswer id={m.id} query={m.query} hits={m.hits} /></li>;
+    case "students":
+      return <li><StudentMatchesCard asked={m.asked} status={m.status} studentIds={m.studentIds} /></li>;
+    case "student-record":
+      return <li><StudentRecordCard studentId={m.studentId} section={m.section} /></li>;
+    case "lookup":
+      return <li><StudentSearchCard query={m.query} classHints={m.classHints} /></li>;
     case "task":
       return (
         <li className="space-y-2">

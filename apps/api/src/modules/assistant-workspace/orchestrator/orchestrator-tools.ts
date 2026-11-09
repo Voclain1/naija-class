@@ -13,8 +13,9 @@ import {
   type ReminderCampaignDto,
   type StudentCorrectionProposalDto,
   type StudentIntakeProposalDto,
+  type StudentLookupResultDto,
 } from "@school-kit/types";
-import { ConflictError, ForbiddenError, NotFoundError } from "@school-kit/types";
+import { ConflictError, ForbiddenError, NotFoundError, STUDENT_RECORD_SECTIONS } from "@school-kit/types";
 
 import type { AuthContext } from "../../../common/auth/auth-context.js";
 import { ToolRegistry, type ReadToolDefinition } from "../../../common/ai/tools/tool-registry.js";
@@ -50,6 +51,18 @@ export interface OrchestratorDeps {
   correctionProposal(auth: AuthContext, id: string): Promise<StudentCorrectionProposalDto>;
   recentCampaignIds(auth: AuthContext): Promise<string[]>;
   searchGuide(question: string): AssistantHelpHitDto[];
+  /** Named lookup through StudentLookupService (tenant, role, student.read, teacher scope). */
+  findStudents(auth: AuthContext, query: { name: string; classArmIds?: string[] }): Promise<StudentLookupResultDto>;
+  /** The caller's current permissions, for per-section checks. */
+  permissions(auth: AuthContext): Promise<Set<string>>;
+}
+
+/** A student this conversation found, re-checked against tenant and scope this turn. */
+export interface TurnStudent {
+  handle: string;
+  studentId: string;
+  selected: boolean;
+  classLabel: string | null;
 }
 
 /** A task the browser described, with its ids checked against this school. */
@@ -78,7 +91,21 @@ export class TurnState {
   /** Same scope prepared twice in one turn (a repeated tool call): one preview, one action. */
   private readonly prepared = new Map<string, Record<string, unknown>>();
 
-  constructor(readonly structure: SchoolStructure, tasks: readonly AssistantTaskState[]) {
+  readonly students = new Map<string, TurnStudent>();
+
+  /**
+   * `students`: found earlier and already re-checked by the caller (ids from
+   * another school, or outside a teacher's classes, are absent). `persons`:
+   * the ⟨P#⟩ markers of this request → the name as typed, held by the server
+   * for this request only and never sent to the model.
+   */
+  constructor(
+    readonly structure: SchoolStructure,
+    tasks: readonly AssistantTaskState[],
+    students: readonly TurnStudent[] = [],
+    readonly persons: ReadonlyMap<string, string> = new Map(),
+  ) {
+    for (const st of students) this.students.set(st.handle, st);
     const termIds = new Set(structure.terms.map((t) => t.id));
     const arms = new Map(structure.arms.map((a) => [a.id, a]));
     for (const t of tasks) {
@@ -140,8 +167,27 @@ export class TurnState {
     this.prepared.set(key, out);
   }
 
-  /** The structured task summary appended to the person's latest message. Labels and counts only. */
+  /** A handle for a student: the existing one, or the next free s1…s9 (null when full). */
+  studentHandle(studentId: string, classLabel: string | null): string | null {
+    for (const st of this.students.values()) if (st.studentId === studentId) return st.handle;
+    for (let i = 1; i <= 9; i++) {
+      const h = `s${i}`;
+      if (!this.students.has(h)) {
+        this.students.set(h, { handle: h, studentId, selected: false, classLabel });
+        return h;
+      }
+    }
+    return null;
+  }
+
+  /** The structured task summary appended to the person's latest message. Handles, labels and counts only. */
   summary(): string {
+    const students = [...this.students.values()].map((st) => `${st.handle}: ${st.selected ? "selected" : "found"}; class ${st.classLabel ? safeLabel(st.classLabel) : "none this term"}`);
+    const block = students.length ? `\n<students>\n${students.join("\n")}\n</students>` : "";
+    return this.taskSummary() + block;
+  }
+
+  private taskSummary(): string {
     if (this.tasks.size === 0) return "<tasks>none</tasks>";
     const armLabel = (a: StructureArm) => distinctArmLabel(a, this.structure.arms);
     const lines = [...this.tasks.values()].map((t) => {
@@ -176,6 +222,10 @@ const correctionArgs = z.object({ task: TASK, fields: z.array(z.enum(STUDENT_COR
 const statusArgs = z.object({ task: z.string().regex(/^t[1-9]$/) }).strict();
 const noArgs = z.object({}).strict();
 const guideArgs = z.object({ question: z.string().trim().min(2).max(300) }).strict();
+const findStudentArgs = z.object({ person: z.string().regex(/^P[1-9]\d?$/), class: LABEL.optional() }).strict();
+const studentArgs = z.object({ student: z.string().regex(/^s[1-9]$/) }).strict();
+const recordArgs = z.object({ student: z.string().regex(/^s[1-9]$/), section: z.enum(STUDENT_RECORD_SECTIONS) }).strict();
+const SECTION_PERMISSION: Record<(typeof STUDENT_RECORD_SECTIONS)[number], string> = { summary: "student.read", attendance: "attendance.read", results: "report-card.read" };
 
 
 type Def = ReadToolDefinition<z.AnyZodObject>;
@@ -295,7 +345,7 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
       const overdueOnly = args.overdue_only ?? task.overdueOnly;
       const includePaymentPlans = args.include_payment_plans ?? task.includePaymentPlans;
       Object.assign(task, { termId: term.term.id, arms: arm ? [arm] : [], overdueOnly, includePaymentPlans });
-      state.act({ kind: "reminders", handle: task.handle, termId: term.term.id, classArmId: arm?.id ?? null, className: arm?.name ?? null, overdueOnly, includePaymentPlans, autoPreview: true });
+      state.act({ kind: "reminders", handle: task.handle, termId: term.term.id, classArmId: arm?.id ?? null, overdueOnly, includePaymentPlans, autoPreview: true });
       return {
         status: "preview_requested", task: task.handle, term: termLabel(term.term), class: arm ? armLabel(arm) : "all classes", overdueOnly, includePaymentPlans,
         note: "The card selects the matching families and shows the server's preview. The person confirms there; nothing is sent before that.",
@@ -430,10 +480,81 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
     },
   };
 
-  return [schoolStructure, prepareInvoices, planReminders, planIntake, planCorrections, taskStatus, recentCampaigns, guide] as unknown as Def[];
+  const findStudent: ReadToolDefinition<typeof findStudentArgs> = {
+    name: "find_student",
+    ...orchestratorToolSpec("find_student"),
+    access: { kind: "permissions", permissions: ["student.read"] },
+    effect: "read",
+    args: findStudentArgs,
+    outputFields: ["status", "matches", "note"],
+    conformanceCalls: [{ person: "P1" }, { person: "P1", class: "JSS 2" }],
+    async run({ authCtx }, args) {
+      const raw = state.persons.get(args.person);
+      if (!raw) return { status: "unknown_person", note: "Use a ⟨P#⟩ marker from the person's message." };
+      const cls = args.class ? resolveClasses(s, [args.class]) : null;
+      if (cls && (cls.unknown.length || cls.ambiguous.length)) return clarification(s, null, cls);
+      // The server resolves the name it holds for this marker, under the caller's tenant, role and scope.
+      const result = await deps.findStudents(authCtx, { name: raw, ...(cls ? { classArmIds: cls.arms.map((a) => a.id) } : {}) });
+      const matches = result.matches.flatMap((m) => {
+        const handle = state.studentHandle(m.studentId, m.classLabel);
+        return handle ? [{ ...m, handle }] : [];
+      });
+      if (result.status === "found" && matches[0]) state.students.get(matches[0].handle)!.selected = true;
+      state.act({ kind: "students", asked: raw, status: result.status, matches });
+      return {
+        status: result.status,
+        // Handles and class labels only: the names are shown to the person in a card.
+        matches: matches.map((m) => ({ student: m.handle, class: m.classLabel ? safeLabel(m.classLabel) : "none this term", match: m.match })),
+        note:
+          result.status === "found" ? "One student; shown to the person in a card and selected."
+            : result.status === "several" ? "Several students have that name. Ask which one, by class; do not guess."
+              : result.status === "similar" ? "No exact match; close spellings are shown. Ask the person to choose or correct the name."
+                : "No student the person can see matches. Say so and ask them to check the name or class.",
+      };
+    },
+  };
+
+  const selectStudent: ReadToolDefinition<typeof studentArgs> = {
+    name: "select_student",
+    ...orchestratorToolSpec("select_student"),
+    access: { kind: "permissions", permissions: ["student.read"] },
+    effect: "read",
+    args: studentArgs,
+    outputFields: ["status", "student", "class"],
+    conformanceCalls: [{ student: "s1" }],
+    async run(_ctx, { student }) {
+      const st = state.students.get(student);
+      if (!st) return { status: "unknown_student" };
+      for (const other of state.students.values()) other.selected = other.handle === student;
+      state.act({ kind: "select-student", handle: st.handle, studentId: st.studentId });
+      return { status: "selected", student: st.handle, class: st.classLabel ? safeLabel(st.classLabel) : "none this term" };
+    },
+  };
+
+  const studentRecord: ReadToolDefinition<typeof recordArgs> = {
+    name: "student_record",
+    ...orchestratorToolSpec("student_record"),
+    access: { kind: "permissions", permissions: ["student.read"] },
+    effect: "read",
+    args: recordArgs,
+    outputFields: ["status", "student", "section", "note"],
+    conformanceCalls: [{ student: "s1", section: "summary" }, { student: "s1", section: "attendance" }, { student: "s1", section: "results" }],
+    async run({ authCtx }, { student, section }) {
+      const st = state.students.get(student);
+      if (!st) return { status: "unknown_student", note: "Find the student first." };
+      // Each section is read by the browser from its own permission-checked endpoint; refuse early when it would be refused there.
+      const perms = await deps.permissions(authCtx);
+      if (!perms.has("*") && !perms.has(SECTION_PERMISSION[section])) return { status: "not_permitted", student, section };
+      state.act({ kind: "student-record", handle: st.handle, studentId: st.studentId, section });
+      return { status: "shown", student, section, note: "Shown to the person in a card. You do not see the record; do not describe its contents." };
+    },
+  };
+
+  return [schoolStructure, prepareInvoices, planReminders, planIntake, planCorrections, taskStatus, recentCampaigns, guide, findStudent, selectStudent, studentRecord] as unknown as Def[];
 }
 
 export const ORCHESTRATOR_TOOL_NAMES = [
+  "find_student",
   "plan_corrections",
   "plan_reminders",
   "plan_student_intake",
@@ -441,5 +562,7 @@ export const ORCHESTRATOR_TOOL_NAMES = [
   "recent_campaigns",
   "school_structure",
   "search_guide",
+  "select_student",
+  "student_record",
   "task_status",
 ] as const;

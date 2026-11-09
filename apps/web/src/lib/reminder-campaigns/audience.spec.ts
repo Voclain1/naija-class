@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { DebtorDto, SendRemindersResult } from "@school-kit/types";
 import { DEFAULT_REMINDER_FILTERS as defaults, reminderAudience, reminderBatches, validReminderResult } from "./audience";
-const row = (patch: Partial<DebtorDto> = {}): DebtorDto => ({ studentId: "a", invoiceId: "i1", studentName: "Ada Example", admissionNumber: "A1", classArm: "JSS 2 A", totalDue: 5000000, totalPaid: 0, balance: 5000000, status: "OVERDUE", dueDate: "2026-01-01", hasPaymentPlan: false, supplementary: false, risk: { level: "LOW", reasons: [] }, ...patch });
+const row = (patch: Partial<DebtorDto> = {}): DebtorDto => ({ studentId: "a", invoiceId: "i1", studentName: "Ada Example", admissionNumber: "A1", classArm: "JSS 2 A", classArmId: "arm-jss2-a", classLevel: "JSS 2", totalDue: 5000000, totalPaid: 0, balance: 5000000, status: "OVERDUE", dueDate: "2026-01-01", hasPaymentPlan: false, supplementary: false, risk: { level: "LOW", reasons: [] }, ...patch });
 describe("fee reminder audience", () => {
+  it("filters by class IDENTITY: two levels with an arm of the same name stay apart", () => {
+    const rows = [
+      row({ studentId: "j1", invoiceId: "a", classArm: "A", classArmId: "jss1-a", classLevel: "JSS 1" }),
+      row({ studentId: "j2", invoiceId: "b", classArm: "A", classArmId: "jss2-a", classLevel: "JSS 2" }),
+    ];
+    expect(reminderAudience(rows, { ...defaults, classArmId: "jss2-a" }).map((s) => s.studentId)).toEqual(["j2"]);
+    // The name filter (the Reminders page's) cannot tell them apart, which is why the assistant uses the ID.
+    expect(reminderAudience(rows, { ...defaults, classArm: "A" }).map((s) => s.studentId)).toEqual(["j1", "j2"]);
+  });
   it("deduplicates students while retaining separate invoice balances", () => {
     const rows = [row(), row({ invoiceId: "i2", supplementary: true, balance: 70000 })];
     const audience = reminderAudience(rows, defaults); expect(audience).toHaveLength(1);

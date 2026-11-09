@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
+import { useAssistant } from "../assistant-provider";
+
 // Shared pieces for the assistant’s task cards. Tints, never accent borders
 // (CLAUDE.md design rule); every state is said in words as well.
 
@@ -70,4 +72,29 @@ export function ApproveControl({ id, checked, onChecked, statement, button, onAp
       </button>
     </div>
   );
+}
+
+/**
+ * Phases in which an operation is in flight or its outcome is open: a model
+ * plan never resets these, and the store refuses to re-plan them.
+ */
+export const IN_FLIGHT_PHASES: ReadonlySet<string> = new Set(["approving", "confirming", "checking", "recovering", "unknown", "acting"]);
+
+/**
+ * The person's approval of a task's preview, through the store's gate
+ * (docs/modules/assistant-workspace.md, "Model orchestration"): refused while a
+ * model plan for the task is not yet applied (the preview on screen is out of
+ * date), and locked from the click until the request settles.
+ */
+export function useApprovalGate(taskId: string) {
+  const { store } = useAssistant();
+  return {
+    canApprove: store.canApprove(taskId),
+    pending: store.planPending(taskId),
+    approve: (run: () => Promise<unknown> | void) => { void store.approve(taskId, run); },
+  };
+}
+
+export function PlanChangedNotice() {
+  return <Notice tone="warning">The assistant changed this task. This preview is out of date: check the updated details and ask for a fresh preview.</Notice>;
 }

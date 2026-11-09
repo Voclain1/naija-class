@@ -142,8 +142,13 @@ export async function computeReminderPreview(
   const byId = new Map(students.map((s) => [s.id, s]));
   const enrolments = await db.enrollment.findMany({
     where: { schoolId, termId: input.termId, studentId: { in: ids } },
-    select: { studentId: true, classArm: { select: { name: true, classLevel: { select: { name: true } } } } },
+    select: { studentId: true, status: true, classArmId: true, classArm: { select: { name: true, classLevel: { select: { name: true } } } } },
   });
+  // The request's class scope, by ID: only students ENROLLED this term in one
+  // of these classes may be reminded. Enforced here, so at prepare and again
+  // inside the confirm transaction, never by the browser's filter alone.
+  const scope = input.options.classArmIds ? new Set(input.options.classArmIds) : null;
+  const inScope = new Set(enrolments.filter((e) => e.status === "ENROLLED" && (!scope || scope.has(e.classArmId))).map((e) => e.studentId));
   const classOf = new Map(enrolments.map((e) => [e.studentId, `${e.classArm.classLevel.name} · ${e.classArm.name}`]));
   const debt = await loadDebtFacts(db, schoolId, input.termId, ids);
   const links = await db.studentGuardian.findMany({
@@ -184,6 +189,7 @@ export async function computeReminderPreview(
             : "NONE";
     let eligibility: ReminderEligibility;
     if (!s) eligibility = "NOT_FOUND";
+    else if (scope && !inScope.has(id)) eligibility = "OUT_OF_SCOPE";
     else {
       eligibility = debtEligibility(facts, input.options);
       if (eligibility === "ELIGIBLE" && guardians.length === 0) eligibility = "NO_GUARDIAN";
@@ -221,7 +227,7 @@ export async function computeReminderPreview(
     });
   }
 
-  const excluded = { NOT_FOUND: 0, NO_BALANCE: 0, ON_PAYMENT_PLAN: 0, NOT_OVERDUE: 0, NO_GUARDIAN: 0, NO_CONTACT: 0 };
+  const excluded = { NOT_FOUND: 0, NO_BALANCE: 0, ON_PAYMENT_PLAN: 0, NOT_OVERDUE: 0, NO_GUARDIAN: 0, NO_CONTACT: 0, OUT_OF_SCOPE: 0 };
   for (const r of rows) if (r.eligibility !== "ELIGIBLE") excluded[r.eligibility] += 1;
   const plannedSends = plan.reduce((n, p) => n + p.emailGuardianIds.length + (p.mobileGuardianId ? 1 : 0), 0);
   if (batchErrors.length === 0 && plan.length === 0) {
