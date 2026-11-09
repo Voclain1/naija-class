@@ -71,7 +71,9 @@ test("is reachable across staff pages, keeps the conversation across navigation,
     await expect(page).toHaveURL(/\/finance\/dashboard/);
     await expect(panel.getByText("How do I add parents?")).toBeVisible();
     expect(await page.evaluate(() => (window as unknown as { __sameDoc?: boolean }).__sameDoc)).toBe(true);
-    // Escape minimises; the page underneath was never left.
+    // Escape inside the panel minimises (outside it, Esc belongs to the page);
+    // the page underneath was never left.
+    await page.getByRole("textbox", { name: "Describe a task" }).focus();
     await page.keyboard.press("Escape");
     await expect(panel).toBeHidden();
 
