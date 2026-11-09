@@ -10,5 +10,7 @@ import { StudentCorrectionsService } from "./student-corrections.service";
   imports: [AuthModule, FeatureSwitchesModule],
   controllers: [StudentCorrectionsController],
   providers: [StudentCorrectionsService],
+  // The SchoolKit Assistant's task_status tool reads proposals through it.
+  exports: [StudentCorrectionsService],
 })
 export class StudentCorrectionsModule {}

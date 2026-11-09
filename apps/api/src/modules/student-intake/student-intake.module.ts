@@ -10,5 +10,7 @@ import { StudentIntakeService } from "./student-intake.service";
   imports: [AuthModule, FeatureSwitchesModule],
   controllers: [StudentIntakeController],
   providers: [StudentIntakeService],
+  // The SchoolKit Assistant's task_status tool reads proposals through it.
+  exports: [StudentIntakeService],
 })
 export class StudentIntakeModule {}

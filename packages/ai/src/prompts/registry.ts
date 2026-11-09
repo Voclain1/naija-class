@@ -23,6 +23,7 @@
 //
 // `as const` object, never a TS enum — see the landmine note in ../index.ts.
 
+import { ASSISTANT_ORCHESTRATOR_PROMPT } from "./assistant-orchestrator.js";
 import { BILLING_RUN_PROMPT } from "./billing-run.js";
 import { MODELS, type ModelId } from "../models.js";
 // Runtime import; lesson-plan.ts imports only the TYPE back from here, and
@@ -55,6 +56,10 @@ export interface PromptDefinition {
 // at slice 2, per phase-5.md.
 export const PROMPTS = {
   BILLING_RUN_PLANNER: BILLING_RUN_PROMPT,
+  // SchoolKit Assistant model orchestration. NOT on the PII allowlist; its
+  // own row is pending the owner's approval, and the API refuses it in
+  // production until then (ASSISTANT_ORCHESTRATOR_APPROVAL).
+  ASSISTANT_ORCHESTRATOR: ASSISTANT_ORCHESTRATOR_PROMPT,
   CONNECTIVITY_CHECK: {
     name: "connectivity-check",
     version: "1",

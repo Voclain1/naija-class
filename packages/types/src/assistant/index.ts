@@ -7,8 +7,12 @@ import { z } from "zod";
 // deterministic router below, IN THE BROWSER. No request text goes to a model:
 // operational chat is not covered by any approved model prompt, and the
 // help-assistant exception (CLAUDE.md) is scoped to help questions in a pilot
-// that is not active. A model-backed router is a separate, gated decision
-// (`modelRouting` below is always unavailable until the owner approves one).
+// that is not active.
+//
+// Model orchestration (2026-11-09, ./orchestration.ts) is a separate, gated
+// path: the `assistant-model-routing` switch, off everywhere, and refused in
+// production until its own allowlist row is approved. When it is unavailable
+// the browser uses the deterministic router below.
 
 export const ASSISTANT_WORKFLOWS = ["invoices", "reminders", "intake", "corrections"] as const;
 export type AssistantWorkflow = (typeof ASSISTANT_WORKFLOWS)[number];
@@ -34,7 +38,13 @@ export interface AssistantCapabilitiesDto {
   /** Searching the in-app guide. No model. */
   help: { available: boolean };
   /** A model reading free-text requests. Not approved: always false in this build. */
-  modelRouting: { available: false; reason: "NOT_APPROVED" };
+  /**
+   * Model-backed understanding (./orchestration.ts). NOT_APPROVED: the prompt's
+   * allowlist row is pending and this is a production deployment.
+   * FEATURE_OFF: the school's `assistant-model-routing` switch is off.
+   * AI_UNAVAILABLE: AI is off for the school or not configured.
+   */
+  modelRouting: { available: boolean; reason: "NOT_APPROVED" | "FEATURE_OFF" | "AI_UNAVAILABLE" | null };
   inactivityMinutes: number;
 }
 

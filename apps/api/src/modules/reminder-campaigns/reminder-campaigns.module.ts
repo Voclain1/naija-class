@@ -15,5 +15,7 @@ import { LiveReminderSendPort, ReminderSendPort } from "./reminder-send.port";
   imports: [AuthModule, FeatureSwitchesModule, EmailModule, TermiiModule, NotificationDispatchModule],
   controllers: [ReminderCampaignsController],
   providers: [ReminderCampaignsService, ReminderCampaignRunnerService, { provide: ReminderSendPort, useClass: LiveReminderSendPort }],
+  // The SchoolKit Assistant reads campaigns through it (requester-checked).
+  exports: [ReminderCampaignsService],
 })
 export class ReminderCampaignsModule {}

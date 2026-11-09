@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { withTenant } from "@school-kit/db";
 import { searchGuide } from "@school-kit/ai";
 import {
@@ -15,6 +15,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { FeatureSwitchesService } from "../../common/features/feature-switches.service";
+import { ModelRoutingGate } from "./orchestrator/model-routing-gate";
 
 // The SchoolKit Assistant workspace (docs/modules/assistant-workspace.md).
 //
@@ -22,7 +23,9 @@ import { FeatureSwitchesService } from "../../common/features/feature-switches.s
 // person may start, from the SAME rules each workflow's own service enforces
 // again on every request (switch, active account, permissions, role). Help
 // searches the in-app guide lexically. No model is called, nothing is
-// written, and the question text is neither stored nor logged.
+// written, and the question text is neither stored nor logged. Whether the
+// model-backed path is usable comes from ModelRoutingGate (read only; the
+// orchestrator, ./orchestrator, is the only caller of the model).
 
 const WORKFLOW_RULES: Record<AssistantWorkflow, { feature: FeatureKey; read: string[]; approve: string[]; adminRole: boolean }> = {
   invoices: { feature: "assistant-billing", read: ["invoice.read"], approve: ["invoice.read", "invoice.issue"], adminRole: false },
@@ -36,7 +39,10 @@ const ADMIN_ROLES = new Set(["owner", "admin"]);
 export class AssistantWorkspaceService {
   private readonly logger = new Logger(AssistantWorkspaceService.name);
 
-  constructor(private readonly features: FeatureSwitchesService) {}
+  constructor(
+    private readonly features: FeatureSwitchesService,
+    @Optional() private readonly modelRouting?: ModelRoutingGate,
+  ) {}
 
   async capabilities(auth: AuthContext): Promise<AssistantCapabilitiesDto> {
     const { permissions, roles } = await this.person(auth);
@@ -58,7 +64,7 @@ export class AssistantWorkspaceService {
       enabled,
       workflows,
       help: { available: enabled },
-      modelRouting: { available: false, reason: "NOT_APPROVED" },
+      modelRouting: enabled && this.modelRouting ? await this.modelRouting.status(auth.schoolId) : { available: false, reason: "FEATURE_OFF" },
       inactivityMinutes: ASSISTANT_INACTIVITY_MINUTES,
     };
   }

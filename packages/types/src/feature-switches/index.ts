@@ -42,6 +42,12 @@ export const FEATURE_KEYS = [
   // model, into the four reviewed workflows above; each still needs its own
   // switch. Off by default.
   "assistant-workspace",
+  // Model-backed understanding for the SchoolKit Assistant
+  // (docs/modules/assistant-workspace.md, "Model orchestration"): staff text
+  // goes to the `assistant-orchestrator` prompt. PENDING OWNER APPROVAL of its
+  // own allowlist row; the API also refuses it in production until that
+  // approval is recorded in code. Off by default and for every school.
+  "assistant-model-routing",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -59,6 +65,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   "reminder-campaigns": "Fee reminder campaigns",
   "student-corrections": "Reviewed student corrections",
   "assistant-workspace": "SchoolKit Assistant",
+  "assistant-model-routing": "SchoolKit Assistant: AI understanding (pending approval)",
 };
 
 /** Narrows an arbitrary string (an audit row, an env entry) to a known key. */

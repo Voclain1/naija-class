@@ -52,7 +52,9 @@ describe("assistant workspace capabilities against PostgreSQL", () => {
     const admin = await service.capabilities(s.admin);
     expect(admin.enabled).toBe(true);
     expect(Object.values(admin.workflows).every((w) => w.available && w.canApprove)).toBe(true);
-    expect(admin.modelRouting).toEqual({ available: false, reason: "NOT_APPROVED" });
+    // Model routing has its own switch, off here; every one of its gates is
+    // covered in orchestrator/assistant-orchestrator.service.spec.ts.
+    expect(admin.modelRouting).toEqual({ available: false, reason: "FEATURE_OFF" });
     expect(admin.inactivityMinutes).toBe(15);
 
     const bursar = await service.capabilities(s.bursar);

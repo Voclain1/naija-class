@@ -17,6 +17,7 @@ import { PaymentLinksService } from "./payment-links.service.js";
   // StudentChargeService is stateless; provided here too so invoices need not
   // import the finance module (which sends reminders and email).
   providers: [BillingRunsService, InvoiceGenerationService, PaymentLinksService, PaymentLinkInvalidationService, StudentChargeService],
-  exports: [InvoiceGenerationService, PaymentLinksService, PaymentLinkInvalidationService],
+  // BillingRunsService: the SchoolKit Assistant prepares (never approves) runs through it.
+  exports: [InvoiceGenerationService, PaymentLinksService, PaymentLinkInvalidationService, BillingRunsService],
 })
 export class InvoicesModule {}
