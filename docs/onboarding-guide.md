@@ -205,6 +205,27 @@ A photo shows on the student's page and class lists, and is printed on their ID 
 
 **Note:** Scanning is in beta and is switched on for every school. If it ever tells you it is off, contact the SchoolKit team (see [Getting help](#getting-help)), or use one of the other three ways.
 
+**Guided class-list intake:** on **Students → Add students**, choose
+**Guided intake**. You can open the single-student form, CSV import or register
+scan, or choose **Start guided class list** to type or paste several students.
+Choose the class and term yourself, or explicitly defer placement. Press
+**Review students** to check every pending row and the destination, then tick
+that you checked them and confirm. This review has not saved anything yet.
+Students saved successfully get a **View** link to their record, where you can
+link guardians and check enrollments. No parent invitation is sent by this save.
+Where server-reviewed intake is enabled for your school, the review shows the
+server's checks and any duplicate warnings. Save up to **200 students at once**.
+If the preview changes or expires, press **Refresh preview**, read it again and
+confirm again. If the save response is lost, SchoolKit checks the original
+intake. If it cannot reach the server, press **Check save outcome**; do not
+start another intake, reload or leave until the result is known.
+
+For schools using the ordinary bulk path, a lost response disables another
+save: check the roster first, since the students may already exist. Lists over
+200 use separate save requests; earlier successful requests stay saved if a
+later one fails. Unsaved rows and the open review are not kept after leaving
+or reloading the page. This workflow does not send student details to an AI model.
+
 ## Step 5. Put your students in their classes
 
 A child on your student list is **not yet in a class**. Registers, invoices and report cards only include children who are in a class for the current term. If you chose a class when adding students, this is already done.
@@ -743,7 +764,7 @@ Refresh the page first. If it still does not work, write down which page you wer
 
 We are happy to help — no question is too small.
 
-- **WhatsApp:** [+234 704 967 7393](https://wa.me/2347049677393) — the quickest way to reach us. You can send a photo of your screen.
+- **WhatsApp support number:** [+234 704 967 7393](https://wa.me/2347049677393) — the quickest way to reach us. You can send a photo of your screen.
 - **Email:** [hello@schoolkit.ng](mailto:hello@schoolkit.ng)
 
 It helps us a lot if you tell us your **school's name**, **which page** you were on, and **which button** you pressed.

@@ -190,6 +190,18 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-09)
 
+- **Ownership split (owner, November 9):** Claude owns backend/API/database
+  work unless on limit; ChatGPT owns frontend and browser validation. Continue
+  in complete workflow PRs. `frontend/student-intake-workflow` is the frontend
+  chunk after merged invoice PR #512. It adds a guided entry and an explicit
+  pre-save review around existing `POST /students/bulk` + atomic placement.
+  No API, migration, prompt or feature-switch changes. Unknown save outcomes
+  stop retries, especially with automatic admission numbers. Existing direct
+  grid remains available with the same uncertain-outcome stop. Read `docs/modules/guided-student-intake.md` for the
+  frontend contract and recovery behaviour. Backend contract is in
+  `docs/modules/student-intake-proposals.md`; no guessed endpoint is used.
+  Check its PR/CI before treating this frontend as merged or browser-verified.
+
 - **Reviewed student intake, backend (November 9):** branch
   `agentic/guided-student-intake`, one PR. Generic `workflow_proposals` table
   (FORCE RLS) and `/api/v1/student-intake/proposals` prepare / get / confirm /
@@ -198,8 +210,9 @@ those; it doesn't replace them.
   audits, COMPLETED marker); retries return the stored outcome. `POST
   /students/bulk` is unchanged and shares the writer (`insertStudentBatchInTx`).
   No model, no invitations, no notifications. `student-intake` switch off
-  everywhere. Frontend (PR #514) still calls `/students/bulk`; ChatGPT owns
-  wiring it to these endpoints. Not merged, deployed or enabled.
+  everywhere. Backend PR #517 merged as `8a57657`. Frontend PR #514 now integrates
+  prepare/review/confirm/status recovery when enabled and keeps the bulk
+  fallback when disabled. Frontend CI is pending; no school is enabled.
 
 - **Assistant chunk 1 (November 8):** owner requested complete workflow chunks,
   starting with invoice preparation/approval/issuance. Work is on
