@@ -188,7 +188,18 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-08)
+## Latest state (updated 2026-11-09)
+
+- **Reviewed student intake, backend (November 9):** branch
+  `agentic/guided-student-intake`, one PR. Generic `workflow_proposals` table
+  (FORCE RLS) and `/api/v1/student-intake/proposals` prepare / get / confirm /
+  refresh. Contract and frontend sequence: `docs/modules/student-intake-proposals.md`.
+  Confirm is one transaction (fingerprint recheck, students, enrolments,
+  audits, COMPLETED marker); retries return the stored outcome. `POST
+  /students/bulk` is unchanged and shares the writer (`insertStudentBatchInTx`).
+  No model, no invitations, no notifications. `student-intake` switch off
+  everywhere. Frontend (PR #514) still calls `/students/bulk`; ChatGPT owns
+  wiring it to these endpoints. Not merged, deployed or enabled.
 
 - **Assistant chunk 1 (November 8):** owner requested complete workflow chunks,
   starting with invoice preparation/approval/issuance. Work is on
