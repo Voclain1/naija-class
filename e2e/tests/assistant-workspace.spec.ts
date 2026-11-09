@@ -278,8 +278,8 @@ test("signing out clears the conversation", async ({ browser }) => {
     await ask(page, "How do I set up term dates?");
     await expect(panel.getByText("How do I set up term dates?")).toBeVisible();
     await panel.getByRole("button", { name: "Minimise assistant" }).click();
-    await page.getByRole("button", { name: /account menu/i }).click();
-    await page.getByRole("menuitem", { name: /log out/i }).click();
+    await page.getByRole("button", { name: /Eve Owner/ }).click();
+    await page.getByRole("menuitem", { name: /log out|sign out/i }).click();
     await page.waitForURL(/login/);
     expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toMatch(/term dates/);
   } finally { await admin.context.close(); await admin.api.dispose(); }
