@@ -226,6 +226,27 @@ save: check the roster first, since the students may already exist. Lists over
 later one fails. Unsaved rows and the open review are not kept after leaving
 or reloading the page. This workflow does not send student details to an AI model.
 
+### Correcting existing records
+
+From **Students**, open **Review record corrections**. Where enabled for your
+school, an owner or administrator can search existing records and add up to 100
+students to one correction batch. Edit names, date of birth, gender or email.
+Unedited fields are left alone. To remove a recorded middle name or email,
+tick its **Clear** box explicitly; blanking an input does not silently clear it.
+
+Press **Review record changes** and check the named before/after values and any
+warnings. Nothing is applied until you tick the approval and confirm. If a
+record changed elsewhere, refresh the review, check its new before values and
+confirm again. The batch applies together; records with no changes are not
+rewritten. No parent invitation or message is sent by this action.
+
+The saved review id appears in the page address. Bookmark that link to reopen
+the preview or outcome with the same account, including after a lost save
+response. Use **Check original review** if the result is uncertain; do not start
+another batch to retry it. Unsaved editor drafts are lost on leaving/reloading.
+When batch corrections are off, keep using each student's existing **Edit**
+action. Admission numbers, enrolments and status changes keep their own screens.
+
 ## Step 5. Put your students in their classes
 
 A child on your student list is **not yet in a class**. Registers, invoices and report cards only include children who are in a class for the current term. If you chose a class when adding students, this is already done.

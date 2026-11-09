@@ -90,6 +90,17 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     "searchable": true
   },
   {
+    "anchor": "correcting-existing-records",
+    "title": "Correcting existing records",
+    "level": 3,
+    "parents": [
+      "Part 1 — Setting up your school",
+      "Step 4. Add your students"
+    ],
+    "text": "From Students, open Review record corrections. Where enabled for your\nschool, an owner or administrator can search existing records and add up to 100\nstudents to one correction batch. Edit names, date of birth, gender or email.\nUnedited fields are left alone. To remove a recorded middle name or email,\ntick its Clear box explicitly; blanking an input does not silently clear it.\nPress Review record changes and check the named before/after values and any\nwarnings. Nothing is applied until you tick the approval and confirm. If a\nrecord changed elsewhere, refresh the review, check its new before values and\nconfirm again. The batch applies together; records with no changes are not\nrewritten. No parent invitation or message is sent by this action.\nThe saved review id appears in the page address. Bookmark that link to reopen\nthe preview or outcome with the same account, including after a lost save\nresponse. Use Check original review if the result is uncertain; do not start\nanother batch to retry it. Unsaved editor drafts are lost on leaving/reloading.\nWhen batch corrections are off, keep using each student's existing Edit\naction. Admission numbers, enrolments and status changes keep their own screens.",
+    "searchable": true
+  },
+  {
     "anchor": "step-5-put-your-students-in-their-classes",
     "title": "Step 5. Put your students in their classes",
     "level": 2,
