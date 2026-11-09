@@ -230,8 +230,12 @@ items:
   - the workspace switch off, and a teacher with guide search only;
   - the invoice journey, including a lost approval recovered with no
     duplicates;
-  - the reminder journey, with one confirmation, halt and resume, and UNKNOWN
-    and quiet hours as the server reports them;
+  - the reminder journey, with a real preview and one real confirmation that
+    saves one campaign. Halt, resume, UNKNOWN and quiet hours are then shown
+    from the real campaign with its status set by the test, because a
+    one-family campaign can finish before a click lands and a lost provider
+    answer cannot be produced on demand. The server's own halt, resume,
+    UNKNOWN and quiet hours are covered by the reminder-campaign API tests;
   - the intake journey, including a lost confirmation recovered;
   - the corrections journey, including a stale preview and a fresh review;
   - sign-out clearing the conversation.
