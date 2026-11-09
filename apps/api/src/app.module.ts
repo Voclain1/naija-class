@@ -90,6 +90,8 @@ import { StaffBankAccountModule } from "./modules/staff-bank-accounts/staff-bank
 import { SystemModule } from "./modules/system/system.module";
 import { StudentsModule } from "./modules/students/students.module";
 import { StudentIntakeModule } from "./modules/student-intake/student-intake.module";
+import { WorkflowModule } from "./common/workflow/workflow.module";
+import { ReminderCampaignsModule } from "./modules/reminder-campaigns/reminder-campaigns.module";
 import { SubjectAttendanceModule } from "./modules/subject-attendance/subject-attendance.module";
 import { SubjectsModule } from "./modules/subjects/subjects.module";
 import { TeacherAssignmentsModule } from "./modules/teacher-assignments/teacher-assignments.module";
@@ -153,6 +155,8 @@ const isProd = process.env.NODE_ENV === "production";
     ClassSubjectsModule,
     StudentsModule,
     StudentIntakeModule,
+    WorkflowModule,
+    ReminderCampaignsModule,
     NotificationsModule,
     AnnouncementsModule,
     HomeworkModule,

@@ -28,6 +28,11 @@ export const FEATURE_KEYS = [
   // involved; the switch is the rollout control for the new endpoints only.
   // POST /students/bulk is not behind it.
   "student-intake",
+  // Durable fee reminder campaigns (docs/modules/reminder-campaigns.md):
+  // reviewed selection, confirmed once, sent through a journal. No model.
+  // POST /finance/debtors/remind is not behind it. Turning it off also halts
+  // running campaigns before their next send.
+  "reminder-campaigns",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -42,6 +47,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   "assistant-help": "Help assistant",
   "assistant-billing": "Invoice assistant",
   "student-intake": "Reviewed student intake",
+  "reminder-campaigns": "Fee reminder campaigns",
 };
 
 /** Narrows an arbitrary string (an audit row, an env entry) to a known key. */

@@ -23,3 +23,4 @@ export * from "./student-charge.dto.js";
 export * from "./amount-words.js";
 
 export * from "./billing-run.dto.js";
+export * from "./reminder-campaign.dto.js";

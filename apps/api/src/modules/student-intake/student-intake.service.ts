@@ -22,6 +22,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { FeatureSwitchesService } from "../../common/features/feature-switches.service";
+import { expireWorkflowProposals } from "../../common/workflow/workflow-proposals";
 import { assignAdmissionNumbers } from "../students/admission-numbers";
 import { insertStudentBatchInTx, type RequestContext } from "../students/students.service";
 import {
@@ -390,15 +391,7 @@ export class StudentIntakeService {
   }
 }
 
-/**
- * Marks a school's expired intake proposals EXPIRED and clears their rows.
- * Shared by the service (on every touch) and the hourly sweeper.
- */
-export async function expireStudentIntakeProposals(db: Db, schoolId: string, now: Date = new Date()): Promise<number> {
-  return db.$executeRaw`
-    UPDATE workflow_proposals
-       SET status = 'EXPIRED', payload = NULL, data_cleared_at = CURRENT_TIMESTAMP
-     WHERE school_id = ${schoolId} AND kind = ${STUDENT_INTAKE_KIND}
-       AND status = 'PENDING' AND expires_at <= ${now}
-  `;
+/** Expires this school's intake proposals (the sweeper covers every kind). */
+export function expireStudentIntakeProposals(db: Db, schoolId: string, now: Date = new Date()): Promise<number> {
+  return expireWorkflowProposals(db, schoolId, now, STUDENT_INTAKE_KIND);
 }
