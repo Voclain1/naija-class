@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { AssistantDock } from "@/components/assistant/assistant-dock";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { TeacherSidebar } from "@/components/teacher/sidebar";
 import { TeacherTopbar } from "@/components/teacher/topbar";
@@ -46,6 +47,7 @@ export default function TeacherLayout({ children }: { children: ReactNode }) {
           </div>
           <main className="min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6 print:p-0">{children}</main>
         </div>
+        <AssistantDock />
       </div>
     </RequireAuth>
   );

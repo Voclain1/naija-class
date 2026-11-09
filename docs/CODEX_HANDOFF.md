@@ -190,6 +190,15 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-09)
 
+- **SchoolKit Assistant, unified workspace (November 9):** branch
+  `agentic/unified-assistant`, one PR. One staff panel (launcher bottom-right
+  in both shells, Alt+Shift+A) driving the four reviewed workflows end to end
+  plus guide search. No model: routing is deterministic in the browser;
+  `modelRouting` is gated off pending its own approval. Memory-only
+  conversation, cleared on sign-out, account change and 15 minutes idle; open
+  operations survive as id-only references. `assistant-workspace` off
+  everywhere. #521 untouched. See `docs/modules/assistant-workspace.md`. Not
+  merged, deployed or enabled.
 - **Durable campaign frontend integration:** #519/#520 are merged. #518 now
   adapts its frontend to `/finance/reminder-campaigns`, with server preview,
   reloadable requester-only pages, lost-confirm recovery, polling, halt/resume
