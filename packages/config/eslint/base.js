@@ -221,10 +221,10 @@ export const baseConfig = [
       // ONLY the school id list; every read and delete of
       // assignment_submission_files goes through withTenant per school.
       "**/modules/assignments/staged-files-sweeper.service.ts",
-      // student-intake-sweeper.service.ts (2026-11-09). Same category: an
+      // workflow-proposals-sweeper.service.ts (2026-11-09). Same category: an
       // hourly system cron reading the schools list (no RLS); each school's
       // workflow_proposals go through withTenant.
-      "**/modules/student-intake/student-intake-sweeper.service.ts",
+      "**/common/workflow/workflow-proposals-sweeper.service.ts",
       // parent-summaries.service.ts — Phase 5 / Slice 5. Same category again:
       // sweepWeeklySummaries is a weekly system cron that iterates every
       // ACTIVE school which has opted into parent summaries. basePrisma

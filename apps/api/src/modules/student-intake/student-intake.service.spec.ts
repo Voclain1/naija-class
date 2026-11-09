@@ -12,7 +12,7 @@ import type { AuthContext } from "../../common/auth/auth-context";
 import { FeatureSwitchesService } from "../../common/features/feature-switches.service";
 import { deleteSchoolRows } from "../platform-admin/school-deletion";
 import { StudentsService } from "../students/students.service";
-import { StudentIntakeSweeperService } from "./student-intake-sweeper.service";
+import { WorkflowProposalsSweeperService } from "../../common/workflow/workflow-proposals-sweeper.service";
 import { StudentIntakeService } from "./student-intake.service";
 
 // Real PostgreSQL, as app_user under RLS (docs/modules/student-intake-proposals.md).
@@ -368,7 +368,7 @@ describe("student intake proposals against PostgreSQL", () => {
     await expect(service.confirm(A.admin.auth, p.id, "f".repeat(64), req)).rejects.toMatchObject({ code: "INTAKE_PREVIEW_MISMATCH" });
     await withTenant(A.schoolId, (db) => db.$executeRaw`UPDATE workflow_proposals SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE id = ${p.id}`);
     await expect(confirm(A, p)).rejects.toMatchObject({ code: "INTAKE_EXPIRED" });
-    expect(await new StudentIntakeSweeperService().sweep(new Date())).toBeGreaterThanOrEqual(1);
+    expect(await new WorkflowProposalsSweeperService().sweep(new Date())).toBeGreaterThanOrEqual(1);
     expect(await service.get(A.admin.auth, p.id)).toMatchObject({ status: "EXPIRED", dataCleared: true, rows: [] });
     await expect(service.refresh(A.admin.auth, p.id, randomUUID(), null)).rejects.toMatchObject({ code: "INTAKE_EXPIRED" });
     expect(await studentCount(A.schoolId)).toBe(0);

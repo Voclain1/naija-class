@@ -2,7 +2,6 @@ import { Module } from "@nestjs/common";
 
 import { FeatureSwitchesModule } from "../../common/features/feature-switches.module";
 import { AuthModule } from "../auth/auth.module";
-import { StudentIntakeSweeperService } from "./student-intake-sweeper.service";
 import { StudentIntakeController } from "./student-intake.controller";
 import { StudentIntakeService } from "./student-intake.service";
 
@@ -10,6 +9,6 @@ import { StudentIntakeService } from "./student-intake.service";
 @Module({
   imports: [AuthModule, FeatureSwitchesModule],
   controllers: [StudentIntakeController],
-  providers: [StudentIntakeService, StudentIntakeSweeperService],
+  providers: [StudentIntakeService],
 })
 export class StudentIntakeModule {}
