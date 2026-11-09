@@ -322,7 +322,7 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
       const overdueOnly = args.overdue_only ?? task.overdueOnly;
       const includePaymentPlans = args.include_payment_plans ?? task.includePaymentPlans;
       Object.assign(task, { termId: term.term.id, arms: arm ? [arm] : [], overdueOnly, includePaymentPlans });
-      state.act({ kind: "reminders", handle: task.handle, termId: term.term.id, classArmId: arm?.id ?? null, overdueOnly, includePaymentPlans, autoPreview: true });
+      state.act({ kind: "reminders", handle: task.handle, termId: term.term.id, classArmId: arm?.id ?? null, className: arm?.name ?? null, overdueOnly, includePaymentPlans, autoPreview: true });
       return {
         status: "preview_requested", task: task.handle, term: termLabel(term.term), class: arm ? armLabel(arm) : "all classes", overdueOnly, includePaymentPlans,
         note: "The card selects the matching families and shows the server's preview. The person confirms there; nothing is sent before that.",

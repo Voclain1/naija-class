@@ -18,6 +18,12 @@ import { ApproveControl, CardShell, Field, Notice, control } from "./common";
 // selection, the server’s preview (with its exceptions and totals), then a
 // separate approval that the server re-checks. Figures are the server’s.
 
+/** The plan revision each session has applied (sessions outlive the card across navigation). */
+const applied = new WeakMap<object, number>();
+const PROBLEMS: Record<string, string> = {
+  BILLING_LIMIT: "That is too many classes or students for one run. Choose fewer classes.",
+};
+
 const status = (p: InvoicePhase): TaskStatus => (p === "approving" || p === "checking" ? "confirming" : p === "unknown" ? "uncertain" : p === "done" ? "done" : "active");
 
 export function InvoiceCard({ task, caps }: { task: AssistantTask; caps: AssistantCapabilitiesDto }) {
@@ -48,6 +54,23 @@ export function InvoiceCard({ task, caps }: { task: AssistantTask; caps: Assista
     }).catch((e) => { if (live) setLoadError(e instanceof ApiError ? e.message : "Could not load terms and classes."); });
     return () => { live = false; };
   }, [task.hints]);
+
+  // A model plan (docs/modules/assistant-workspace.md): the server already
+  // prepared this run's PENDING preview. Show it; the approval checkbox starts
+  // unticked for every revision, and approval stays this card's own button.
+  useEffect(() => {
+    const plan = task.plan;
+    if (!ctx || plan?.kind !== "invoices" || applied.get(session) === task.revision) return;
+    applied.set(session, task.revision);
+    setTermId(plan.termId);
+    setArms(plan.classArmIds);
+    setChecked(false);
+    if (plan.runId) void session.adopt(plan.runId, { termId: plan.termId, classArmIds: plan.classArmIds });
+  }, [ctx, task.plan, task.revision, session]);
+
+  useEffect(() => {
+    store.reportTask(task.id, { stage: st.phase === "review" ? "review" : "editing", scope: { termId: termId || null, classArmIds: arms } });
+  }, [store, task.id, st.phase, termId, arms]);
 
   const unmatched = useMemo(() => (ctx && task.hints.classes ? matchClassHints(task.hints.classes, ctx.arms).unmatched : []), [ctx, task.hints.classes]);
   const run = st.run;
@@ -82,6 +105,9 @@ export function InvoiceCard({ task, caps }: { task: AssistantTask; caps: Assista
           <Field label="Due date (optional)" htmlFor={ids.due}>
             <input id={ids.due} type="date" className={control} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           </Field>
+          {task.plan?.kind === "invoices" && task.plan.problem && !st.message && (
+            <Notice tone="warning">{PROBLEMS[task.plan.problem] ?? "The server couldn’t prepare that preview. Check the selection and try again."}</Notice>
+          )}
           {st.message && <Notice tone="error">{st.message}</Notice>}
           <button
             type="button"

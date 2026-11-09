@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ASSISTANT_WORKFLOW_LABELS } from "@school-kit/types";
 
 import { ApiError } from "@/lib/api-client";
@@ -15,6 +15,8 @@ import { CardShell, Notice } from "./common";
 // What remains of a task after the conversation was cleared while its outcome
 // was open: its workflow and opaque server ids, nothing typed. It can only
 // READ the original proposal, run or campaign; it never repeats an action.
+// Also used when the model turn shows a saved operation ("what happened to the
+// campaign I started?"): then it reads the server's record at once.
 
 export function ReferenceCard({ task }: { task: AssistantTask }) {
   const { store } = useAssistant();
@@ -55,9 +57,16 @@ export function ReferenceCard({ task }: { task: AssistantTask }) {
     }
   }
 
+  const started = useRef(false);
+  useEffect(() => {
+    if (!task.autoCheck || started.current) return;
+    started.current = true;
+    void check();
+  }, [task.autoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <CardShell title={ASSISTANT_WORKFLOW_LABELS[task.workflow]} status={result ? "Checked" : "Check the outcome"} tone={result ? "done" : "warning"}>
-      {result ? <Notice tone="success">{result}</Notice> : <Notice tone="warning">This task’s outcome was still open when the conversation was cleared. Check it before doing it again.</Notice>}
+    <CardShell title={ASSISTANT_WORKFLOW_LABELS[task.workflow]} status={result ? "From the server" : task.autoCheck ? "Reading" : "Check the outcome"} tone={result ? "done" : task.autoCheck ? "default" : "warning"}>
+      {result ? <Notice tone="success">{result}</Notice> : task.autoCheck ? <p role="status">{busy ? "Reading the server’s record…" : "Not read yet."}</p> : <Notice tone="warning">This task’s outcome was still open when the conversation was cleared. Check it before doing it again.</Notice>}
       {error && <Notice tone="error">{error}</Notice>}
       {!result && <button type="button" className="inline-flex h-10 items-center rounded-md border border-input px-4 text-sm" disabled={busy} onClick={() => void check()}>{busy ? "Checking…" : "Check the original outcome"}</button>}
     </CardShell>

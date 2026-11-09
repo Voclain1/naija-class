@@ -38,6 +38,11 @@ const FIELDS: { field: StudentCorrectionField; label: string; optional: boolean;
 ];
 const HINT_FIELDS: Record<string, StudentCorrectionField[]> = { name: ["firstName", "lastName"], dateOfBirth: ["dateOfBirth"], gender: ["gender"], email: ["email"] };
 
+/** Memory only, per task session (which outlives the card across navigation): picked students, planned fields, applied plan revision. */
+const picksOf = new WeakMap<object, Picked[]>();
+const plannedOf = new WeakMap<object, StudentCorrectionField[]>();
+const applied = new WeakMap<object, number>();
+
 const status = (p: CorrectionPhase): TaskStatus => (p === "confirming" || p === "checking" ? "confirming" : p === "unknown" ? "uncertain" : p === "done" ? "done" : "active");
 
 export function CorrectionCard({ task, caps }: { task: AssistantTask; caps: AssistantCapabilitiesDto }) {
@@ -48,7 +53,9 @@ export function CorrectionCard({ task, caps }: { task: AssistantTask; caps: Assi
     return s;
   });
   const st = useSyncExternalStore(session.subscribe, session.snapshot, session.snapshot);
-  if (st.phase === "idle" || (st.phase === "prepare-error" && !st.proposal)) return <Editor task={task} session={session} error={st.message} />;
+  const editing = st.phase === "idle" || (st.phase === "prepare-error" && !st.proposal);
+  useEffect(() => { store.reportTask(task.id, { stage: editing ? "editing" : "review" }); }, [store, task.id, editing]);
+  if (editing) return <Editor task={task} session={session} error={st.message} />;
   return <Review session={session} canApprove={caps.workflows.corrections.canApprove} />;
 }
 
@@ -58,12 +65,34 @@ function currentOf(s: StudentDto): Picked["current"] {
 }
 
 function Editor({ task, session, error }: { task: AssistantTask; session: CorrectionSession; error: string | null }) {
+  const { store } = useAssistant();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<StudentDto[] | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<Picked[]>([]);
+  const [picked, setPicked] = useState<Picked[]>(() => picksOf.get(session) ?? []);
+  const [planned, setPlanned] = useState<StudentCorrectionField[]>(() => plannedOf.get(session) ?? []);
   const searchId = useId();
-  const initial = (task.hints.fields ?? []).flatMap((f) => HINT_FIELDS[f] ?? []);
+  const initial = [...new Set([...(task.hints.fields ?? []).flatMap((f) => HINT_FIELDS[f] ?? []), ...planned])];
+
+  // A model plan: which fields to change, for the students already picked and
+  // those picked next. The new values are typed here, never in the chat.
+  useEffect(() => {
+    const plan = task.plan;
+    if (plan?.kind !== "corrections" || applied.get(session) === task.revision) return;
+    applied.set(session, task.revision);
+    setPlanned(plan.fields);
+    setPicked((x) => x.map((p) => {
+      const edits = { ...p.edits };
+      for (const f of plan.fields) if (!edits[f] || edits[f]!.mode === "keep") edits[f] = { mode: "set", value: p.current[f] ?? "" };
+      return { ...p, edits };
+    }));
+  }, [task.plan, task.revision, session]);
+
+  useEffect(() => {
+    picksOf.set(session, picked);
+    plannedOf.set(session, planned);
+    store.reportTask(task.id, { scope: { fields: initial, studentCount: picked.length } });
+  }, [session, picked, planned, store, task.id, initial.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Roster search through the existing, permission-checked students API.
   useEffect(() => {

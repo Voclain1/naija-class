@@ -33,6 +33,10 @@ const ELIGIBILITY: Record<string, string> = {
   NOT_OVERDUE: "Not overdue", NO_GUARDIAN: "No linked guardian", NO_CONTACT: "No reachable contact",
 };
 
+/** The plan revision each session has applied (sessions outlive the card across navigation). */
+const applied = new WeakMap<object, number>();
+const STALE_PREVIEW = new Set(["review", "prepare-error", "refresh-needed", "refresh-error"]);
+
 export function ReminderCard({ task, caps }: { task: AssistantTask; caps: AssistantCapabilitiesDto }) {
   const { store } = useAssistant();
   const session = store.session(task.id, () => {
@@ -44,13 +48,23 @@ export function ReminderCard({ task, caps }: { task: AssistantTask; caps: Assist
     return s;
   });
   const st = useSyncExternalStore(session.subscribe, session.snapshot, session.snapshot);
+  // A model plan revising this card while an unapproved preview shows: start
+  // again with a fresh session, so the old preview cannot be confirmed.
+  useEffect(() => {
+    if (task.plan?.kind === "reminders" && applied.get(session) !== task.revision && STALE_PREVIEW.has(st.phase)) store.resetSession(task.id);
+  }, [task.plan, task.revision, session, st.phase, store, task.id]);
+  useEffect(() => { store.reportTask(task.id, { stage: st.phase === "review" ? "review" : "editing" }); }, [st.phase, store, task.id]);
   return st.phase === "idle" ? <Selection task={task} session={session} /> : <Campaign session={session} st={st} canApprove={caps.workflows.reminders.canApprove} />;
 }
 
 function Selection({ task, session }: { task: AssistantTask; session: DurableCampaignSession }) {
+  const { store } = useAssistant();
   const [terms, setTerms] = useState<TermDto[]>([]);
   const [termId, setTermId] = useState("");
   const [rows, setRows] = useState<DebtorDto[] | null>(null);
+  const [rowsTerm, setRowsTerm] = useState("");
+  const [armId, setArmId] = useState<string | null>(null);
+  const [auto, setAuto] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [classArm, setClassArm] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(task.hints.overdueOnly ?? false);
@@ -72,12 +86,26 @@ function Selection({ task, session }: { task: AssistantTask; session: DurableCam
     return () => { live = false; };
   }, [task.hints.term]);
 
+  // A model plan (docs/modules/assistant-workspace.md): set the filters once per revision.
+  useEffect(() => {
+    const plan = task.plan;
+    if (plan?.kind !== "reminders" || applied.get(session) === task.revision) return;
+    applied.set(session, task.revision);
+    if (plan.termId) setTermId(plan.termId);
+    setClassArm(plan.className ?? "");
+    setArmId(plan.classArmId);
+    setOverdueOnly(plan.overdueOnly);
+    setExcludePlans(!plan.includePaymentPlans);
+    setAuto(plan.autoPreview);
+  }, [task.plan, task.revision, session]);
+
   useEffect(() => {
     let live = true;
-    setRows(null); setSelected(new Set());
+    setRows(null); setRowsTerm(""); setSelected(new Set());
     if (termId) listDebtors(termId).then((d) => {
       if (!live) return;
       setRows(d);
+      setRowsTerm(termId);
       // A class named in the request preselects that class’s filter.
       if (task.hints.classes?.length) {
         const names = [...new Set(d.map((x) => x.classArm))].map((n) => ({ id: n, name: n, level: "" }));
@@ -91,6 +119,20 @@ function Selection({ task, session }: { task: AssistantTask; session: DurableCam
   const audience = useMemo(() => reminderAudience(rows ?? [], { search: "", classArm, risk: "", overdueOnly, excludePlans }), [rows, classArm, overdueOnly, excludePlans]);
   const classes = useMemo(() => [...new Set((rows ?? []).map((r) => r.classArm))].sort(), [rows]);
   const chosen = audience.filter((s) => selected.has(s.studentId));
+
+  // Planned by the model: select every matching family and ask the server for
+  // its preview, once. Confirming stays the person's, on that preview.
+  useEffect(() => {
+    if (!auto || !rows || rowsTerm !== termId) return;
+    setAuto(false);
+    const pick = audience.slice(0, MAX_REMINDER_CAMPAIGN_STUDENTS).map((s) => s.studentId);
+    setSelected(new Set(pick));
+    if (pick.length > 0) void session.start({ termId, studentIds: pick, options: { includePaymentPlans: !excludePlans, overdueOnly } });
+  }, [auto, rows, rowsTerm, termId, audience, session, excludePlans, overdueOnly]);
+
+  useEffect(() => {
+    store.reportTask(task.id, { scope: { termId: termId || null, classArmIds: armId ? [armId] : [], overdueOnly, includePaymentPlans: !excludePlans, studentCount: chosen.length } });
+  }, [store, task.id, termId, armId, overdueOnly, excludePlans, chosen.length]);
 
   if (error) return <CardShell title="Fee reminders"><Notice tone="error">{error}</Notice></CardShell>;
   return (
@@ -106,7 +148,7 @@ function Selection({ task, session }: { task: AssistantTask; session: DurableCam
         <>
           <div className="grid gap-2 sm:grid-cols-2">
             <Field label="Class" htmlFor={ids.cls}>
-              <select id={ids.cls} className={control} value={classArm} onChange={(e) => { setClassArm(e.target.value); setSelected(new Set()); }}>
+              <select id={ids.cls} className={control} value={classArm} onChange={(e) => { setClassArm(e.target.value); setArmId(null); setSelected(new Set()); }}>
                 <option value="">All classes</option>
                 {classes.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>

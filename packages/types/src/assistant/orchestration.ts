@@ -95,6 +95,8 @@ export type AssistantTurnAction =
       handle: string;
       termId: string;
       classArmId: string | null;
+      /** The class's own name, as the debtor list shows it (for the browser's filter; never sent to the model). */
+      className: string | null;
       overdueOnly: boolean;
       includePaymentPlans: boolean;
       /** Select every matching family and ask the server for its preview. Approval stays separate. */

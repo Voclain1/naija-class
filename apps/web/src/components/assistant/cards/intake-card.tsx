@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import type { AssistantCapabilitiesDto } from "@school-kit/types";
 
 import { PlacementPicker, type PlacementValue } from "@/components/students/placement-picker";
@@ -16,6 +16,9 @@ import { ApproveControl, CardShell, Field, Notice, control } from "./common";
 // Rows are typed or pasted into structured fields IN THE BROWSER and go only
 // to the intake API; the server’s preview (identities, numbers, placement,
 // warnings) is what the person confirms.
+
+/** The plan revision each intake task has applied (it outlives the card across navigation). */
+const applied = new WeakMap<object, number>();
 
 const empty = (): PastedRow => ({ firstName: "", lastName: "", dateOfBirth: "", gender: "", admissionNumber: "" });
 const ready = (r: PastedRow) => r.firstName.trim() && r.lastName.trim() && validIntakeDate(r.dateOfBirth) && r.gender;
@@ -33,6 +36,7 @@ export function IntakeCard({ task, caps }: { task: AssistantTask; caps: Assistan
     return t;
   });
   const st = useSyncExternalStore(it.subscribe, it.snapshot, it.snapshot);
+  useEffect(() => { store.reportTask(task.id, { stage: st.started && !st.outcome ? "review" : "editing" }); }, [store, task.id, st.started, st.outcome]);
   if (st.outcome) {
     return (
       <CardShell title="Add and enrol students" status="Saved" tone="done">
@@ -45,6 +49,7 @@ export function IntakeCard({ task, caps }: { task: AssistantTask; caps: Assistan
 }
 
 function Editor({ task, it }: { task: AssistantTask; it: IntakeTask }) {
+  const { store } = useAssistant();
   const [rows, setRows] = useState<PastedRow[]>(() => it.draft?.rows ?? Array.from({ length: Math.min(Math.max(task.hints.studentCount ?? 1, 1), 10) }, empty));
   const [paste, setPaste] = useState("");
   const [pasteNote, setPasteNote] = useState<string | null>(null);
@@ -53,6 +58,27 @@ function Editor({ task, it }: { task: AssistantTask; it: IntakeTask }) {
   const set = (i: number, patch: Partial<PastedRow>) => setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const filled = rows.filter((r) => r.firstName || r.lastName || r.dateOfBirth || r.gender || r.admissionNumber);
   const valid = filled.length > 0 && filled.every(ready);
+
+  // A model plan, or rows pasted into the chat (which never reach the model):
+  // applied once per revision. The rows stay in this browser's memory.
+  useEffect(() => {
+    const plan = task.plan;
+    if (plan?.kind !== "intake" || applied.get(it) === task.revision) return;
+    applied.set(it, task.revision);
+    if (plan.pasted) {
+      const { rows: parsed, skipped } = parsePastedRows(plan.pasted);
+      if (parsed.length) setRows(parsed.slice(0, 200));
+      setPasteNote(`${parsed.length} rows read${skipped ? `, ${skipped} skipped (header or incomplete)` : ""}. Check them below.`);
+    }
+    if (plan.placeLater) setPlacement(null);
+    else if (plan.termId && plan.classArmId) setPlacement({ termId: plan.termId, classArmId: plan.classArmId });
+  }, [task.plan, task.revision, it]);
+
+  // Memory only: keeps what was typed across navigation, and tells the turn how many rows (a count, never content).
+  useEffect(() => {
+    it.draft = { rows, placement };
+    store.reportTask(task.id, { scope: { termId: placement?.termId ?? null, classArmIds: placement ? [placement.classArmId] : [], placeLater: placement === null, studentCount: filled.length } });
+  }, [it, rows, placement, store, task.id, filled.length]);
 
   return (
     <CardShell title="Add and enrol students" status="Entering students">
