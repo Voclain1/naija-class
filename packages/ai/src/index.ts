@@ -38,6 +38,7 @@ export {
 } from "./models.js";
 
 export {
+  PROVIDER_API_BASE_URL,
   createAnthropicClient,
   type AiCallRequest,
   type AiImageInput,

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   MODELS,
+  PROVIDER_API_BASE_URL,
   createAnthropicClient,
   type AiConversationMessage,
   type AiToolDefinition,
@@ -102,6 +103,22 @@ describe("create() — the single-call path is unchanged", () => {
       ],
     });
     expect(calls[0]!.body).not.toHaveProperty("tools");
+  });
+});
+
+describe("the provider endpoint is pinned (D6)", () => {
+  it("goes to the provider's own API even when ANTHROPIC_BASE_URL points elsewhere", async () => {
+    const before = process.env.ANTHROPIC_BASE_URL;
+    process.env.ANTHROPIC_BASE_URL = "https://proxy.example.invalid";
+    try {
+      const { port, calls } = fakeApi([message([{ type: "text", text: "ok" }], "end_turn")]);
+      await port.create({ model: MODELS.HAIKU_4_5, userContent: "hi", maxTokens: 10 });
+      expect(PROVIDER_API_BASE_URL).toBe("https://api.anthropic.com");
+      expect(calls[0]!.url).toBe(`${PROVIDER_API_BASE_URL}/v1/messages`);
+    } finally {
+      if (before === undefined) delete process.env.ANTHROPIC_BASE_URL;
+      else process.env.ANTHROPIC_BASE_URL = before;
+    }
   });
 });
 
