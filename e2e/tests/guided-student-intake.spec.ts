@@ -1,13 +1,15 @@
+import { basePrisma } from "@school-kit/db";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { loginAsAdmin, setupAcademicStructure, uniqueSuffix } from "../fixtures/index.js";
 
-async function setup(browser: Browser, automatic = false, guided = true) {
+async function setup(browser: Browser, automatic = false, guided = true, reviewed = false) {
   const admin = await loginAsAdmin(browser);
   const structure = await setupAcademicStructure(admin.api, { arms: [{ name: "Guided Intake A", code: "guided-intake-a" }] });
   if (automatic) {
     const res = await admin.api.patch("schools/me/admission-numbers", { data: { mode: "AUTO", format: "GI/{NNNNN}", order: "SCHOOL" } });
     expect(res.ok()).toBe(true);
   }
+  if (reviewed) await basePrisma.school.update({ where: { id: admin.schoolId }, data: { featureSwitches: { "student-intake": true } } });
   await admin.page.goto(guided ? "/students/intake" : "/students/new/bulk");
   if (guided) await admin.page.getByRole("button", { name: "Start guided class list" }).click();
   await expect(admin.page.getByText(automatic ? /Admission numbers: automatic/ : "Admission numbers: typed by you")).toBeVisible();
@@ -135,5 +137,96 @@ test("intake entry and review fit a phone and leave no browser draft", async ({ 
     await page.reload();
     await page.getByRole("button", { name: "Start guided class list" }).click();
     await expect(page.locator('[data-cell="0:1"]')).toHaveValue("");
+  } finally { await admin.context.close(); await admin.api.dispose(); }
+});
+
+
+test("server-reviewed intake recovers a lost confirm through the original proposal even with the feature off", async ({ browser }) => {
+  const { admin, page, structure } = await setup(browser, true, true, true);
+  try {
+    await row(page, 0, "");
+    await page.getByRole("combobox", { name: "Class", exact: true }).selectOption(structure.arms[0]!.id);
+    await page.getByRole("combobox", { name: "Term", exact: true }).selectOption(structure.termId);
+    let prepares = 0, confirms = 0, reads = 0;
+    page.on("request", (r) => { if (r.method() === "POST" && r.url().endsWith("/student-intake/proposals")) prepares++; });
+    await page.route("**/student-intake/proposals/*/confirm", async (route) => {
+      confirms++; const response = await route.fetch(); expect(response.ok()).toBe(true);
+      await basePrisma.school.update({ where: { id: admin.schoolId }, data: { featureSwitches: {} } });
+      await route.abort("failed");
+    });
+    await page.route(/\/student-intake\/proposals\/[^/]+$/, async (route) => {
+      if (route.request().method() !== "GET") { await route.continue(); return; }
+      reads++; if (reads === 1) await route.abort("failed"); else await route.continue();
+    });
+    await page.getByRole("button", { name: "Review students", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText("Assigned when you confirm", { exact: true })).toBeVisible();
+    await confirm(page);
+    await expect(dialog.getByRole("button", { name: "Check save outcome" })).toBeVisible();
+    await page.keyboard.press("Escape"); await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Check save outcome" }).click();
+    await expect(page.getByText("All 1 student created.", { exact: true })).toBeVisible();
+    expect(prepares).toBe(1); expect(confirms).toBe(1);
+    expect((await (await admin.api.get("students")).json()).data).toHaveLength(1);
+    expect((await (await admin.api.get(`enrollments?termId=${structure.termId}`)).json()).data).toHaveLength(1);
+  } finally { await admin.context.close(); await admin.api.dispose(); }
+});
+
+test("server preview exposes duplicate warnings and blocks taken admission numbers before confirmation", async ({ browser }) => {
+  const { admin, page } = await setup(browser, false, true, true);
+  try {
+    const number = `TAKEN-${uniqueSuffix()}`;
+    expect((await admin.api.post("students", { data: { admissionNumber: number, firstName: "Guided0", lastName: "Example", dateOfBirth: "2012-05-04", gender: "MALE" } })).ok()).toBe(true);
+    await row(page, 0, number);
+    await page.getByRole("combobox", { name: "Class", exact: true }).selectOption("__later__");
+    await page.getByRole("button", { name: "Review students", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("button", { name: /Confirm and save/ })).toBeDisabled();
+    await expect(dialog.getByText(/already in use/i)).toBeVisible();
+    await expect(dialog.getByText(/same first name, last name and date of birth/i)).toBeVisible();
+    await dialog.getByRole("button", { name: "Back to editing" }).click();
+    await page.locator('[data-cell="0:0"]').fill(`NEW-${uniqueSuffix()}`);
+    await page.getByRole("button", { name: "Review students", exact: true }).click();
+    await expect(dialog.getByRole("checkbox")).not.toBeChecked();
+    await confirm(page); await expect(page.getByText("All 1 student created.", { exact: true })).toBeVisible();
+  } finally { await admin.context.close(); await admin.api.dispose(); }
+});
+
+test("a changed numbering policy requires refresh and a new human confirmation", async ({ browser }) => {
+  const { admin, page, structure } = await setup(browser, true, true, true);
+  try {
+    await row(page, 0, "");
+    await page.getByRole("combobox", { name: "Class", exact: true }).selectOption(structure.arms[0]!.id);
+    await page.getByRole("combobox", { name: "Term", exact: true }).selectOption(structure.termId);
+    await page.getByRole("button", { name: "Review students", exact: true }).click();
+    await expect(page.getByRole("dialog").getByRole("checkbox")).toBeVisible();
+    expect((await admin.api.patch("schools/me/admission-numbers", { data: { mode: "AUTO", format: "REFRESH/{NNNNN}", order: "SCHOOL" } })).ok()).toBe(true);
+    await confirm(page);
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("button", { name: "Refresh preview" })).toBeVisible();
+    expect((await (await admin.api.get("students")).json()).data).toHaveLength(0);
+    await dialog.getByRole("button", { name: "Refresh preview" }).click();
+    await expect(dialog.getByRole("checkbox")).not.toBeChecked();
+    await expect(dialog.getByRole("button", { name: /Confirm and save/ })).toBeDisabled();
+    await confirm(page); await expect(page.getByText("All 1 student created.", { exact: true })).toBeVisible();
+    expect((await (await admin.api.get("students")).json()).data[0].admissionNumber).toMatch(/^REFRESH\//);
+  } finally { await admin.context.close(); await admin.api.dispose(); }
+});
+
+test("a lost prepare retries the same client request instead of making another batch", async ({ browser }) => {
+  const { admin, page } = await setup(browser, false, true, true);
+  try {
+    await row(page, 0); await page.getByRole("combobox", { name: "Class", exact: true }).selectOption("__later__");
+    const requestIds: string[] = [];
+    await page.route("**/student-intake/proposals", async (route) => {
+      requestIds.push(route.request().postDataJSON().clientRequestId);
+      if (requestIds.length === 1) { const response = await route.fetch(); expect(response.ok()).toBe(true); await route.abort("failed"); }
+      else await route.continue();
+    });
+    await page.getByRole("button", { name: "Review students", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Retry preview" }).click();
+    await expect(page.getByRole("dialog").getByRole("checkbox")).toBeVisible();
+    expect(requestIds).toHaveLength(2); expect(requestIds[0]).toBe(requestIds[1]);
+    await confirm(page); await expect(page.getByText("All 1 student created.", { exact: true })).toBeVisible();
   } finally { await admin.context.close(); await admin.api.dispose(); }
 });

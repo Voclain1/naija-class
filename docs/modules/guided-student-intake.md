@@ -25,8 +25,8 @@ CSV jobs continue to use their existing screens and permissions/consent gates.
   Larger lists are separate sequential requests; the review says so explicitly.
 - This frontend preview is not a server reservation or authoritative duplicate
   check. The server revalidates on save. No name-based merge is inferred.
-- A network failure or 5xx can leave the outcome unknown. Both grid flows stop
-  and disables retry, telling the person to inspect the roster. It never claims
+- A network failure or 5xx can leave the outcome unknown. The legacy bulk flows stop
+  and disable retry, telling the person to inspect the roster. It never claims
   an unacknowledged request saved nothing, especially with automatic numbering.
 - No guardian is linked or invited automatically, and no notification is sent.
   Successful students have links to their existing records for those next steps.
@@ -41,14 +41,31 @@ students and selected enrollments together. `ADMISSION_NUMBERS_TAKEN` returns
 batch-relative row indexes; known successes are retained and only pending rows
 are considered for a later reviewed attempt.
 
-## Backend handoff for Claude
+## Server-reviewed intake (backend PR #517)
 
-No endpoint is needed to ship this frontend. A later conversational intake agent
-should supply reviewable rows and scope to this UI through an agreed typed
-contract. Server-owned proposal snapshots, idempotency keys and an outcome/read
-endpoint are needed before an unknown automatic-number save can be retried
-automatically. These are requirements, not endpoints implemented by this PR.
-Do not expand the PII allowlist or reuse the help prompt for student writes.
+When `/student-intake/availability` reports enabled, the guided grid prepares
+one server-owned proposal (maximum 200 rows) and renders its normalised rows,
+placement, blocking problems and advisory warnings. Confirmation sends only
+the proposal identifier and preview hash. An expired or stale preview must be
+refreshed and reviewed again, including a new unchecked acknowledgement.
+
+A lost prepare retries the same client request id and immutable payload. A lost
+confirm reads the original proposal: completion maps the server's indexed
+outcome to saved rows; a pending proposal needs another human confirmation.
+If status cannot be read, the dialog locks editing and new preparation and
+provides **Check save outcome**. It works after the feature is switched off.
+Do not reload or leave while checking an uncertain outcome: proposal identity
+and unsaved rows are intentionally in page memory only.
+
+Feature off (or a backend without the availability endpoint) retains the
+existing client-review/bulk path. Other availability errors block saving and
+offer a retry, never silently fall back. The direct bulk grid remains unchanged
+apart from the uncertain-outcome stop and stricter local calendar validation.
+
+The backend contract and transaction guarantees live in
+`docs/modules/student-intake-proposals.md`. No backend file is changed by this
+frontend integration. All switches remain operator-controlled and off unless
+explicitly enabled; integration tests enable only their fresh test school.
 
 ## Verification
 

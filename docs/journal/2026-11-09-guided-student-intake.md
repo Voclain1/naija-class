@@ -26,3 +26,21 @@ review attachments and a genuinely committed save with a dropped response.
 Full browser and existing regression verification require the PR CI's disposable
 database services. No merge, deployment, assistant activation or live model
 quality is claimed here.
+
+
+## Backend integration follow-up
+
+Backend #517 passed full CI and was squash-merged as `8a57657` under the owner's
+standing instruction to merge ready PRs. Frontend #514 remains separate and
+adds server-owned review, warnings/errors, explicit refresh and original-proposal
+outcome recovery. No backend implementation files are modified here.
+
+CI on #514's first head found two exact-text locator failures after successful
+saves and a published guide missing a block present locally. Success copy is
+now its own paragraph; the complete guide is restored and regenerated. The
+next publication verifies every changed blob against the local Git tree.
+
+Added 15 state-machine tests for request identity, double clicks, refresh,
+expiry, malformed outcomes and lost-response recovery. Four additional browser
+journeys exercise real proposal endpoints on freshly provisioned test schools.
+Full CI on the integrated head is pending. Nothing is enabled for real schools.

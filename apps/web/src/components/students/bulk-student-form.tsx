@@ -22,6 +22,9 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth/use-auth";
 import { intakeOutcomeUnknown, validIntakeDate, type IntakeReview } from "@/lib/students/intake-review";
+import { ServerIntakeDialog } from "./server-intake-dialog";
+import { IntakeSession } from "@/lib/students/intake-session";
+import { intakeApi } from "@/lib/students/intake-api";
 import { IntakeReviewDialog } from "./intake-review-dialog";
 import { ApiError } from "@/lib/api-client";
 import {
@@ -232,6 +235,17 @@ export function BulkStudentForm({
     return () => { mounted.current = false; reviewResolve.current?.(false); reviewResolve.current = null; };
   }, []);
   useEffect(() => { decideReview(false); }, [account, decideReview]);
+  const [serverSession, setServerSession] = useState<IntakeSession | null>(null);
+  const [serverMode, setServerMode] = useState<"loading" | "on" | "off" | "error">(guidedReview ? "loading" : "off");
+  const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
+  useEffect(() => {
+    if (!guidedReview) return;
+    let cancelled = false;
+    const session = new IntakeSession(); setServerSession(session); setServerMode("loading");
+    void intakeApi.availability().then(({ enabled }) => { if (!cancelled) setServerMode(enabled === true ? "on" : enabled === false ? "off" : "error"); })
+      .catch((e) => { if (!cancelled) setServerMode(e instanceof ApiError && e.status === 404 ? "off" : "error"); });
+    return () => { cancelled = true; session.dispose(); };
+  }, [account, guidedReview, availabilityAttempt]);
   const numberHint = admissionNumberHint(admissionNumbering);
   const perClass = Boolean(numberHint) && admissionNumbering?.order === "CLASS";
   // Every numbering mode can place the batch. Per-class automatic numbers
@@ -250,7 +264,7 @@ export function BulkStudentForm({
   const [rowStatus, setRowStatus] = useState<Record<string, RowStatus>>({});
   const [submitting, setSubmitting] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
-  const busy = submitting || review !== null || uncertain;
+  const busy = submitting || review !== null || uncertain || (guidedReview && (serverMode === "loading" || serverMode === "error"));
 
   const createdCount = fields.filter(
     (f) => rowStatus[f.id]?.state === "success",
@@ -415,6 +429,33 @@ export function BulkStudentForm({
       return;
     }
 
+    if (guidedReview && serverMode === "on" && serverSession) {
+      if (placement && (!placement.termId || !placementSummary)) {
+        setSummary("Choose the term for this class before reviewing."); return;
+      }
+      if (!pending.length) return;
+      if (pending.length > MAX_BULK_STUDENTS) {
+        setSummary(`Reviewed intake accepts up to ${MAX_BULK_STUDENTS} students at once. Split this class list into smaller batches; nothing has been saved.`); return;
+      }
+      setSubmitting(true); setSummary(null);
+      const outcome = await serverSession.start({
+        placement: placement ? { mode: "ENROL", ...placement } : { mode: "DEFER" },
+        students: pending.map((i) => { const r = values.rows[i]!; return {
+          admissionNumber: emptyToUndefined(r.admissionNumber), firstName: r.firstName.trim(),
+          middleName: emptyToUndefined(r.middleName), lastName: r.lastName.trim(),
+          dateOfBirth: new Date(r.dateOfBirth), gender: r.gender as CreateStudentInput["gender"], email: emptyToUndefined(r.email),
+        }; }),
+      });
+      if (!outcome || !mounted.current || accountRef.current !== expectedAccount) return;
+      setRowStatus((prev) => ({ ...prev, ...Object.fromEntries(outcome.students.map((r) => [fields[pending[r.index]!]!.id, { state: "success" as const, studentId: r.studentId }])) }));
+      outcome.students.forEach((r) => form.setValue(`rows.${pending[r.index]!}.admissionNumber`, r.admissionNumber));
+      const total = alreadySucceededBeforeThisPass + outcome.createdCount;
+      setSummary(`All ${total} student${total === 1 ? "" : "s"} created.`);
+      toast.success(`Created ${outcome.createdCount} student${outcome.createdCount === 1 ? "" : "s"}.`);
+      return;
+    }
+    if (guidedReview && serverMode !== "off") { setSummary("Wait for the intake availability check, or retry it."); return; }
+
     if (guidedReview) {
       if (placement && (!placement.termId || !placementSummary)) {
         setSummary("Choose the term for this class before reviewing."); return;
@@ -485,8 +526,8 @@ export function BulkStudentForm({
         });
         createdThisPass += created.length;
       } catch (error) {
-        // Nothing in this batch was created (the request is all or nothing),
-        // so every row in it goes back to waiting unless it is the problem.
+        // A known refusal rolls back the batch. Transport/5xx failures have an
+        // unknown outcome and lock retries below instead of claiming rollback.
         const statuses: Record<string, RowStatus> = Object.fromEntries(
           ids.map((id) => [id, { state: "idle" as const }]),
         );
@@ -560,6 +601,9 @@ export function BulkStudentForm({
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+      {guidedReview && serverSession && <ServerIntakeDialog session={serverSession} />}
+      {guidedReview && serverMode === "loading" && <p role="status">Checking reviewed intake availability…</p>}
+      {guidedReview && serverMode === "error" && <div role="alert"><p>Could not check intake availability. Your rows are unchanged.</p><Button type="button" variant="outline" onClick={() => setAvailabilityAttempt((v) => v + 1)}>Retry availability check</Button></div>}
       {guidedReview && <IntakeReviewDialog review={review} onDecision={decideReview} />}
       {numberHint && (
         <p className="text-xs text-muted-foreground">
@@ -595,7 +639,7 @@ export function BulkStudentForm({
               : "rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
           }
         >
-          {summary}
+          <p>{summary}</p>
           {allDone && placement && (
             <p className="mt-1">They were also added to the class and term selected above.</p>
           )}
