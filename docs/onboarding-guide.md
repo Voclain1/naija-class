@@ -412,8 +412,26 @@ The balance updates straight away, and the parent sees it too. You can also reco
 
 Go to **Bursary → Debtors**. Choose the year and term to see every child who still owes money.
 
-- Tick the families you want to remind and press **Send reminder**. SchoolKit emails the reminder to **every parent or guardian linked to the child** who has an email address, and sends one text or app alert to one of them. Afterwards a line tells you how many were sent and, for any that were not, why — for example "1 has no parent or guardian linked" or "1 has a guardian with no email, phone or app". If it says email, SMS and app alerts are all off, turn one on in **Settings → Notifications**.
+- Tick the students you want to remind and press **Review reminders**. Check the term and student list, then tick the approval and press **Confirm and send reminders**. SchoolKit emails the reminder to **every parent or guardian linked to the child** who has an email address, and sends one text or app alert to one of them. Afterwards a line tells you how many were sent and, for any that were not, why — for example "1 has no parent or guardian linked" or "1 has a guardian with no email, phone or app". If it says email, SMS and app alerts are all off, turn one on in **Settings → Notifications**.
 - Or press **WhatsApp** beside a family to send them a ready‑written reminder from your own WhatsApp. (WhatsApp opens without a contact chosen — pick the right parent before you send.)
+
+**Planning a reminder run:** open **Finance → Reminders**. Choose the year and
+term, then filter by class, risk, name or admission number. **Overdue invoices
+only** and **Exclude students with payment plans** start ticked. Changing a filter
+clears the selection. Students appear once even if they have supplementary
+invoices; reminders may still be separate for siblings in the same family.
+
+Press **Review reminder run**. SchoolKit rechecks the selected students and drops
+those who no longer match. Where your account may read notification settings,
+the review shows enabled channels; that does not guarantee provider availability
+or a usable guardian contact. Tick your approval to send sequential requests of
+up to 50 students, with a maximum of 500 in a run. Results explain each batch's
+sent/skipped counts and reasons. They do not prove a parent read the message.
+
+If a response is lost, the run stops: some reminders may already have been sent.
+Do not reload and send the same run again. Check with your school administrator.
+Selections and run results are kept only while the page is open; there is no
+campaign history, scheduled follow-up or automatic retry yet.
 
 **Payment link on WhatsApp:** on any invoice, under **Share payment link**, you can create a link for the balance and press **Share on WhatsApp**. The parent can pay by card or transfer through it. This needs online payment to be switched on — see the next section.
 

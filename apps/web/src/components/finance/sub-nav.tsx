@@ -35,6 +35,7 @@ const TABS: SectionTabItem[] = [
   // Phase 9 / CP5.1 — student charges and supplementary invoices.
   { href: "/finance/charges", label: "Charges", exact: true },
   { href: "/finance/debtors", label: "Debtors", exact: true },
+  { href: "/finance/reminders", label: "Reminders", exact: true },
   { href: "/finance/fees", label: "Fee Catalog", exact: true },
   { href: "/finance/discounts", label: "Discounts", exact: true },
   { href: "/finance/expenses", label: "Expenses", exact: true },
@@ -81,7 +82,9 @@ function FinanceSectionActions() {
 }
 
 export function FinanceSubNav() {
+  const { permissions } = useAuth();
+  const tabs = TABS.filter((tab) => tab.href !== "/finance/reminders" || (hasPermission(permissions, "finance.debtors.read") && hasPermission(permissions, "finance.debtors.remind")));
   return (
-    <SectionTabs ariaLabel="Finance sections" items={TABS} actions={<FinanceSectionActions />} />
+    <SectionTabs ariaLabel="Finance sections" items={tabs} actions={<FinanceSectionActions />} />
   );
 }
