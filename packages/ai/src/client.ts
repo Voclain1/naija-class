@@ -197,6 +197,16 @@ export interface AnthropicPort {
 }
 
 /** Options for tests only: the real client needs neither. */
+/**
+ * The provider's own API, pinned (D6, docs/reviews/agentic-f16-f17-approval-brief.md).
+ * Without an explicit base URL the SDK reads ANTHROPIC_BASE_URL from the
+ * environment, so a stray variable in a deployed env file could send every
+ * prompt somewhere else, under other terms and in other regions. Pinned here,
+ * no environment setting can redirect it; changing the endpoint is a visible
+ * code change.
+ */
+export const PROVIDER_API_BASE_URL = "https://api.anthropic.com";
+
 export interface AnthropicClientOptions {
   readonly fetch?: typeof fetch;
   readonly maxRetries?: number;
@@ -208,6 +218,7 @@ class AnthropicSdkPort implements AnthropicPort {
   constructor(apiKey: string, options: AnthropicClientOptions = {}) {
     this.client = new Anthropic({
       apiKey,
+      baseURL: PROVIDER_API_BASE_URL,
       ...(options.fetch ? { fetch: options.fetch } : {}),
       ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
     });
