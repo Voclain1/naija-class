@@ -33,3 +33,12 @@ Student intake #514 finished green on its latest head and merged as `63cf11e`.
 This branch includes that main update; the reminder PR diff remains frontend
 only. Deliberate breakages of student dedupe, uncertain-send retry refusal and
 the forced-sign-out guard each failed their relevant test, then were restored.
+
+## CI follow-up
+
+The first-head Playwright job passed, including the six reminder browser
+journeys. The main job found a help-search ranking regression: extending the
+unpaid-fees section diluted the short reminder question's score. The detailed
+workflow now has its own guide subsection and regenerated index. All 12 existing
+API help-search checks and all four web guide-index checks pass unchanged. No
+retrieval tuning, test threshold reduction or backend implementation change.

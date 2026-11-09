@@ -415,7 +415,9 @@ Go to **Bursary → Debtors**. Choose the year and term to see every child who s
 - Tick the students you want to remind and press **Review reminders**. Check the term and student list, then tick the approval and press **Confirm and send reminders**. SchoolKit emails the reminder to **every parent or guardian linked to the child** who has an email address, and sends one text or app alert to one of them. Afterwards a line tells you how many were sent and, for any that were not, why — for example "1 has no parent or guardian linked" or "1 has a guardian with no email, phone or app". If it says email, SMS and app alerts are all off, turn one on in **Settings → Notifications**.
 - Or press **WhatsApp** beside a family to send them a ready‑written reminder from your own WhatsApp. (WhatsApp opens without a contact chosen — pick the right parent before you send.)
 
-**Planning a reminder run:** open **Finance → Reminders**. Choose the year and
+### Planning a reminder run
+
+Open **Finance → Reminders**. Choose the year and
 term, then filter by class, risk, name or admission number. **Overdue invoices
 only** and **Exclude students with payment plans** start ticked. Changing a filter
 clears the selection. Students appear once even if they have supplementary
