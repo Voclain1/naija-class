@@ -764,7 +764,7 @@ Refresh the page first. If it still does not work, write down which page you wer
 
 We are happy to help — no question is too small.
 
-- **WhatsApp:** [+234 704 967 7393](https://wa.me/2347049677393) — the quickest way to reach us. You can send a photo of your screen.
+- **WhatsApp support number:** [+234 704 967 7393](https://wa.me/2347049677393) — the quickest way to reach us. You can send a photo of your screen.
 - **Email:** [hello@schoolkit.ng](mailto:hello@schoolkit.ng)
 
 It helps us a lot if you tell us your **school's name**, **which page** you were on, and **which button** you pressed.

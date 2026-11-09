@@ -366,7 +366,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     "title": "Getting help",
     "level": 1,
     "parents": [],
-    "text": "We are happy to help — no question is too small.\nWhatsApp: +234 704 967 7393 — the quickest way to reach us. You can send a photo of your screen.\nEmail: hello@schoolkit.ng\nIt helps us a lot if you tell us your school's name, which page you were on, and which button you pressed.\nNever send us passwords, PINs or bank card details — we will never ask for them.",
+    "text": "We are happy to help — no question is too small.\nWhatsApp support number: +234 704 967 7393 — the quickest way to reach us. You can send a photo of your screen.\nEmail: hello@schoolkit.ng\nIt helps us a lot if you tell us your school's name, which page you were on, and which button you pressed.\nNever send us passwords, PINs or bank card details — we will never ask for them.",
     "searchable": true
   }
 ];
