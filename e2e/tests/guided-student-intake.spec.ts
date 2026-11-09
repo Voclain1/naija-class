@@ -182,7 +182,7 @@ test("server preview exposes duplicate warnings and blocks taken admission numbe
     await page.getByRole("button", { name: "Review students", exact: true }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("button", { name: /Confirm and save/ })).toBeDisabled();
-    await expect(dialog.getByText(/already in use/i)).toBeVisible();
+    await expect(dialog.getByText("A student of this school already has this admission number.", { exact: true })).toBeVisible();
     await expect(dialog.getByText(/same first name, last name and date of birth/i)).toBeVisible();
     await dialog.getByRole("button", { name: "Back to editing" }).click();
     await page.locator('[data-cell="0:0"]').fill(`NEW-${uniqueSuffix()}`);
