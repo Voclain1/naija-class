@@ -15,6 +15,7 @@ import {
   type TermDto,
 } from "@school-kit/types";
 
+import { BillingAssistant } from "@/components/finance/billing-assistant";
 import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
 import { GenerateInvoicesDialog } from "@/components/finance/generate-invoices-dialog";
 import { ListExportMenu } from "@/components/shared/list-export-menu";
@@ -356,6 +357,7 @@ export default function InvoicesPage() {
   return (
     <div className="max-w-6xl space-y-6 p-6">
       <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Invoices</h1>
+      <BillingAssistant onIssued={() => setListReloadKey((k) => k + 1)} />
 
       {/* The two ways a fee run here silently produces nothing. With no fees
           priced, GET /invoices/arm/preview returns an empty list; with no

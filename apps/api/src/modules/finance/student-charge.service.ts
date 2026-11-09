@@ -46,6 +46,7 @@ export interface ChargeActor {
   schoolId: string;
   userId: string | null;
   ipAddress: string | null;
+  assistantRunId?: string;
 }
 
 export interface RaiseChargeArgs {
@@ -365,7 +366,7 @@ async function audit(
       entityType: "student_charge",
       entityId,
       ipAddress: actor.ipAddress,
-      metadata,
+      metadata: { ...metadata, ...(actor.assistantRunId ? { via: "assistant", proposalId: actor.assistantRunId } : {}) },
     },
   });
 }

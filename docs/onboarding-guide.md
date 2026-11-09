@@ -350,6 +350,21 @@ Children who already have an invoice for that term are skipped, so **pressing it
 
 To see all invoices, press the **Invoice list** tab. Click any invoice to open it.
 
+**Invoice assistant (limited pilot, normally hidden):** if SchoolKit has enabled
+it for your school, the **Prepare a billing run** button can prepare several
+classes together. Choose the term explicitly. Ask, for example, “Prepare invoices
+for JSS 2”, or open **Choose classes directly**. Requests that SchoolKit cannot
+fully resolve require you to choose the classes; nothing is silently assumed.
+Review the named students, amounts, due date, skipped invoices and exceptions.
+Tick the confirmation and press **Approve and issue invoices**. Only staff with
+invoice-issuing permission can approve. A changed or expired preview must be
+prepared again. **Recent billing runs** restores the saved result after a lost
+connection. A run covers at most 20 classes and 200 enrolled students; split a
+larger selection into reviewed runs. This action issues invoices; it sends no
+notifications or SMS. Do not put personal details in the request. The typed
+request is not stored or sent to the model.
+
+
 **If nothing is charged:** either no fees have been set for that class (see [Step 6](#step-6-set-your-school-fees)), or no children are in that class this term (see [Step 5](#step-5-put-your-students-in-their-classes)). The page tells you which.
 
 ## When a parent pays at the school

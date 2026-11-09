@@ -86,6 +86,12 @@ export class FeatureSwitchesService {
     return resolveFeature({ platformDisabled: false, schoolValue: switches[key] });
   }
 
+  /** Authoritative check when a caller already holds the school row in its
+   * write transaction. Avoids using the short-lived read cache for a commit. */
+  isOnFromStored(key: FeatureKey, raw: unknown): boolean {
+    return resolveFeature({ platformDisabled: this.isPlatformDisabled(key), schoolValue: parseFeatureSwitches(raw)[key] });
+  }
+
   /** The school's own switches (before the platform override), cached. An unknown school reads as all off. */
   async schoolSwitches(schoolId: string): Promise<FeatureSwitchMap> {
     const hit = this.cache.get(schoolId);

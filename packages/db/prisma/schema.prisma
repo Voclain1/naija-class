@@ -5634,3 +5634,51 @@ model SubjectHide {
   @@index([subjectId])
   @@map("subject_hides")
 }
+
+// Operational invoice proposals. No conversation transcript or model text.
+// Plain school/user references follow Invoice's immutable audit convention.
+model AssistantBillingRun {
+  id          String   @id @default(uuid())
+  schoolId    String   @map("school_id")
+  requestedBy String   @map("requested_by")
+  approvedBy  String?  @map("approved_by")
+  status      String   @default("PENDING")
+  payload     Json
+  previewHash String   @map("preview_hash")
+  result      Json?
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  approvedAt  DateTime? @map("approved_at")
+
+  @@index([schoolId, createdAt(sort: Desc)])
+  @@map("assistant_billing_runs")
+}
+
+// Server-owned workflow proposals (2026-11-09, docs/modules/student-intake-proposals.md).
+// A prepared, reviewed batch of operational work, confirmed by a person and
+// executed once. Kind-tagged so later workflows reuse it; the first kind is
+// "student-intake". `payload` holds the operational rows only while they are
+// needed (until completion or expiry) and is then cleared; `summary`, `result`
+// and the fingerprints are metadata. No model text or chat lives here.
+model WorkflowProposal {
+  id              String    @id @default(uuid())
+  schoolId        String    @map("school_id")
+  kind            String
+  requestedBy     String    @map("requested_by")
+  confirmedBy     String?   @map("confirmed_by")
+  status          String    @default("PENDING")
+  clientRequestId String    @map("client_request_id")
+  requestHash     String    @map("request_hash")
+  previewHash     String    @map("preview_hash")
+  payload         Json?
+  summary         Json
+  result          Json?
+  expiresAt       DateTime  @map("expires_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  confirmedAt     DateTime? @map("confirmed_at")
+  dataClearedAt   DateTime? @map("data_cleared_at")
+
+  @@unique([schoolId, kind, requestedBy, clientRequestId], map: "workflow_proposals_client_request_key")
+  @@index([schoolId, kind, createdAt(sort: Desc)])
+  @@map("workflow_proposals")
+}

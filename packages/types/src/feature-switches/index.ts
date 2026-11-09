@@ -22,6 +22,12 @@ export const FEATURE_KEYS = [
   // this key yet: the assistant itself is not built, and the switch stays off
   // for every school until the owner approves a pilot.
   "assistant-help",
+  "assistant-billing",
+  // Reviewed student intake (docs/modules/student-intake-proposals.md):
+  // prepare a batch, review the server's preview, confirm once. No model is
+  // involved; the switch is the rollout control for the new endpoints only.
+  // POST /students/bulk is not behind it.
+  "student-intake",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -34,6 +40,8 @@ export type FeatureSwitchMap = Record<FeatureKey, boolean>;
 /** A short human label per key, for the operator's screens and audit lines. */
 export const FEATURE_LABELS: Record<FeatureKey, string> = {
   "assistant-help": "Help assistant",
+  "assistant-billing": "Invoice assistant",
+  "student-intake": "Reviewed student intake",
 };
 
 /** Narrows an arbitrary string (an audit row, an env entry) to a known key. */

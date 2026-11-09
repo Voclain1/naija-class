@@ -143,6 +143,12 @@ export interface WithTenantOptions {
   // blanket default, which would just let every transaction hold its Neon
   // connection open longer under normal load.
   timeoutMs?: number;
+  // Atomic approval executors use Serializable to reject concurrent source
+  // changes. Ordinary tenant calls retain the existing default isolation.
+  isolationLevel?: "Serializable";
+  // Money approval endpoints require an explicit retry after uncertain
+  // connection loss; ordinary callers retain the existing one retry.
+  retryConnectionErrors?: boolean;
 
   // Names this call site in the diagnostic emitted when a retryable error
   // fires. Optional, and worth setting on any long or hot path.
@@ -190,7 +196,8 @@ export async function withTenant<T>(
     throw new Error("withTenant: schoolId must be a UUID");
   }
 
-  const txOptions = options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : undefined;
+  const txOptions = { ...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
+    ...(options?.isolationLevel ? { isolationLevel: options.isolationLevel } : {}) };
 
   const attempt = () =>
     basePrisma.$transaction(async (tx) => {
@@ -212,7 +219,7 @@ export async function withTenant<T>(
       );
       throw e;
     }
-    if (!isRetryableConnectionError(e)) throw e;
+    if (options?.retryConnectionErrors === false || !isRetryableConnectionError(e)) throw e;
     // packages/db has no injected Logger; this is the one chokepoint for
     // every tenant call, worth a visible signal when the retry path fires.
     console.warn(describeAttemptFailure(e, Date.now() - startedAt, options?.label));

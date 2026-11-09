@@ -188,7 +188,28 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-07)
+## Latest state (updated 2026-11-09)
+
+- **Reviewed student intake, backend (November 9):** branch
+  `agentic/guided-student-intake`, one PR. Generic `workflow_proposals` table
+  (FORCE RLS) and `/api/v1/student-intake/proposals` prepare / get / confirm /
+  refresh. Contract and frontend sequence: `docs/modules/student-intake-proposals.md`.
+  Confirm is one transaction (fingerprint recheck, students, enrolments,
+  audits, COMPLETED marker); retries return the stored outcome. `POST
+  /students/bulk` is unchanged and shares the writer (`insertStudentBatchInTx`).
+  No model, no invitations, no notifications. `student-intake` switch off
+  everywhere. Frontend (PR #514) still calls `/students/bulk`; ChatGPT owns
+  wiring it to these endpoints. Not merged, deployed or enabled.
+
+- **Assistant chunk 1 (November 8):** owner requested complete workflow chunks,
+  starting with invoice preparation/approval/issuance. Work is on
+  `feat/assistant-invoice-workflow`; see `docs/modules/assistant-billing.md`.
+  Per-school `assistant-billing` stays off. The read-only task loop receives
+  only counts and fixed task text; explicit human approval executes the existing
+  invoice service in one serializable tenant transaction. No raw chat reaches
+  the model or storage. Provider/legal/consent and pilot decisions remain open.
+  Check the branch PR/CI before treating implementation as merged or live.
+
 
 - **PR #499 base sync (November 7):** cleanly merged main `c83f5524`
   (PR #498 feature switches) into the report-card branch. Both schema changes

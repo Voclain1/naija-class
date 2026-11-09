@@ -21,3 +21,5 @@ export * from "./staff-bank-account.dto.js";
 export * from "./staff-salary.dto.js";
 export * from "./student-charge.dto.js";
 export * from "./amount-words.js";
+
+export * from "./billing-run.dto.js";

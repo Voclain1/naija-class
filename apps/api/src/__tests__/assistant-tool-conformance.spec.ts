@@ -1,3 +1,4 @@
+import { billingToolRegistry } from "../modules/invoices/billing-tools.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -332,6 +333,17 @@ describe("assistant tool conformance gate (FD-3b)", () => {
   it("the registered tools are exactly the pinned list", () => {
     expect(buildAssistantToolRegistry().names()).toEqual([...REGISTERED_TOOLS].sort());
     expect(ASSISTANT_TOOLS.map((t) => t.name).sort()).toEqual([...REGISTERED_TOOLS].sort());
+  });
+
+  it("the invoice task tools conform over the same PII, money, behaviour and health fixture", async () => {
+    const registry = billingToolRegistry(async () => {
+      // Rows carry all the planted fields; only counts cross this boundary.
+      const rows = await withTenant(fx.schoolId, (db) => db.invoice.findMany({ where: { schoolId: fx.schoolId } }));
+      return { classCount: 1, newInvoiceCount: 0, existingInvoiceCount: rows.length, classesMissingFees: 0 };
+    }, async () => true);
+    expect(registry.names()).toEqual(["billing_check_scope", "billing_request_review"]);
+    const result = await runGate(registry, fx.owner, fx.scan);
+    expect(result).toEqual({ billing_check_scope: [], billing_request_review: [] });
   });
 
   it("the fixture really holds what the scan looks for, so an empty table cannot pass", async () => {
