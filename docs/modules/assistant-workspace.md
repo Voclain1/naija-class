@@ -240,8 +240,25 @@ in JSS 2" and get them. Built so that **names still never reach the model**.
 - **Matching never guesses:**
   - One exact match: shown and selected.
   - Several: a choice. The person picks in the card, or says which class.
-  - No exact match: close spellings, marked "similar".
+  - No exact match: close spellings, marked "similar" and never selected for
+    the person. Each part typed must be one of the student's names or a close
+    spelling of one (one or two letters off, two letters swapped, or its
+    beginning), so "Samual Okoro" suggests Samuel Okoro.
   - Nothing: said plainly.
+- **Possessives are grammar, not names.** "Samuel Okoro's attendance" is
+  looked up as "Samuel Okoro", and gets the same marker as "Samuel Okoro"
+  elsewhere in the conversation (`stripPossessive`).
+- **Answers come from the whole scope, never page one.** The Students list
+  pages 200 at a time; the lookup reads every page before it answers.
+  - With a class: every student of each requested class, whatever their name.
+  - Without one: the list's search, once per name part typed (by its first
+    three letters), so a full name with one misspelt part is found through the
+    other.
+  - A search too broad to read completely (over 100 pages) is refused with
+    `STUDENT_LOOKUP_TOO_BROAD`; the person is asked for the class or more of
+    the name. It is never answered from part of the roster.
+  - Known limit: a single name misspelt within its first three letters, with
+    no class given, is not found. Giving the class finds it.
 - **Follow-ups.** The browser sends found students as handles with ids
   (`students: [{ handle, studentId, selected }]`). The server re-checks each id
   against tenant and scope every turn and drops any it can't confirm (a forged
@@ -344,6 +361,10 @@ Before activation, the owner also needs to decide:
   - `student-lookup.service.spec.ts` (real PostgreSQL): several same-name
     students within and across arms, similar names, no match, another school,
     teacher scope, missing permission, revocation, deactivation, forged ids.
+  - `student-lookup.pagination.spec.ts` (real PostgreSQL, 450+ students):
+    matches beyond page one, a namesake on a later page, a class larger than a
+    page, a too-broad search refused, full names with one part misspelt, and
+    possessives through redaction to lookup.
   - The orchestration spec: names redacted, handles only, follow-up selection,
     a section refused without its permission, forged handles, behaviour not a
     section.

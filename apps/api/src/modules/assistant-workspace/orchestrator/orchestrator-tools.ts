@@ -494,7 +494,16 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
       const cls = args.class ? resolveClasses(s, [args.class]) : null;
       if (cls && (cls.unknown.length || cls.ambiguous.length)) return clarification(s, null, cls);
       // The server resolves the name it holds for this marker, under the caller's tenant, role and scope.
-      const result = await deps.findStudents(authCtx, { name: raw, ...(cls ? { classArmIds: cls.arms.map((a) => a.id) } : {}) });
+      let result: StudentLookupResultDto;
+      try {
+        result = await deps.findStudents(authCtx, { name: raw, ...(cls ? { classArmIds: cls.arms.map((a) => a.id) } : {}) });
+      } catch (e) {
+        // Too many students to read completely: never answer from part of them.
+        if (e instanceof ConflictError && e.code === "STUDENT_LOOKUP_TOO_BROAD") {
+          return { status: "too_broad", note: "Too many students match to search completely. Ask the person for the class, or more of the name." };
+        }
+        throw e;
+      }
       const matches = result.matches.flatMap((m) => {
         const handle = state.studentHandle(m.studentId, m.classLabel);
         return handle ? [{ ...m, handle }] : [];

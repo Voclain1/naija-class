@@ -89,3 +89,19 @@ ChatGPT reviewed head 01261566. Each finding was reproduced first.
 Prompt bumped to `assistant-orchestrator@2`. No approval changed: the prompt
 stays pending and off. Live evals (now 14 scenarios) still not run: no key.
 
+## Second review round on PR #523: StudentLookupService
+
+Both reproduced with failing tests first (`student-lookup.pagination.spec.ts`).
+
+1. **Only page one was read.** `adminCandidates` took the first 200 results,
+   ignored `meta.cursor`, and filtered by class afterwards. With two students
+   called Samuel Okoro, one on a later page, it answered "found". Fixed: every
+   page is read; a class scope reads the classes themselves; an unreadably
+   broad search is refused, not answered in part.
+2. **Similar matching required every part to differ**, so "Samual Okoro" found
+   nobody. Fixed: each part is exact or close, with at least one only close;
+   a swapped pair of letters counts as one slip. Possessives are stripped
+   before matching and before a marker is assigned.
+
+Similar matches are still a choice for the person, never a selection.
+

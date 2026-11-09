@@ -380,6 +380,27 @@ describe("SchoolKit Assistant model orchestration (PostgreSQL, scripted model)",
     for (const s of fx.students) expect(seen2).not.toContain(s.firstName);
   });
 
+  it("a possessive and a misspelt full name go through redaction to lookup: one marker, the right students, 'similar' never auto-selected", async () => {
+    // "Chidinma Okafor's attendance": the possessive is not part of the name.
+    const port = new ScriptedPort([calls(tool("find_student", { person: "P1", class: "JSS 2B" })), answer("Here she is.")]);
+    const r = await build(port).service.turn(fx.auth, turn("Show Chidinma Okafor's attendance in JSS 2B", [], [
+      { role: "user", text: "I need Chidinma Okafor" }, { role: "assistant", text: "Which class?" },
+    ]));
+    expect(port.seen()).toContain("I need ⟨P1⟩");
+    expect(port.seen()).toContain("Show ⟨P1⟩ attendance in JSS 2B"); // the same marker both times
+    const found = r.actions.find((a) => a.kind === "students");
+    expect(found).toMatchObject({ asked: "Chidinma Okafor", status: "found", matches: [{ studentId: fx.students[1]!.id, match: "exact" }] });
+    expect(r.actions.some((a) => a.kind === "select-student")).toBe(false); // selection is the browser's, from "found"
+
+    // One part exact, one misspelt: suggested as similar, for the person to choose.
+    const port2 = new ScriptedPort([calls(tool("find_student", { person: "P1", class: "JSS 2B" })), answer("Did you mean this student?")]);
+    const r2 = await build(port2).service.turn(fx.auth, turn("Show Chidinma Okaffor in JSS 2B"));
+    const similar = r2.actions.find((a) => a.kind === "students");
+    expect(similar).toMatchObject({ status: "similar", matches: [{ studentId: fx.students[1]!.id, match: "similar" }] });
+    expect(port2.seen()).toContain('"status":"similar"');
+    expect(port2.seen()).not.toContain("Okaf");
+  });
+
   it("a forged or another school's student handle resolves to nothing; behaviour and health are not sections", async () => {
     const other = await fixture();
     const otherStudent = await withTenant(other.schoolId, (db) => db.student.findFirstOrThrow({ where: { schoolId: other.schoolId } }));

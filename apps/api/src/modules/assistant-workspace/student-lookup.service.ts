@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { withTenant } from "@school-kit/db";
 import {
+  ConflictError,
   ForbiddenError,
   PERMISSION_WILDCARD,
   UnauthorizedError,
@@ -10,7 +11,7 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
-import { nameParts } from "../../common/ai/pii/question-check";
+import { nameParts, stripPossessive } from "../../common/ai/pii/question-check";
 import { StudentsService } from "../students/students.service";
 import { TeacherScopeService } from "../teacher-scope/teacher-scope.service";
 
@@ -27,11 +28,18 @@ import { TeacherScopeService } from "../teacher-scope/teacher-scope.service";
 // matches (names, admission numbers) go to the browser only.
 
 const MAX_MATCHES = 10;
+/** The Students list's own maximum page. */
+const PAGE_SIZE = 200;
+/** Pages read for one lookup before it is refused as too broad (20,000 students). */
+const MAX_PAGES = 100;
 
 type Candidate = { id: string; firstName: string; middleName: string | null; lastName: string; admissionNumber: string; status: string; armId: string | null; armLabel: string | null };
 
 @Injectable()
 export class StudentLookupService {
+  /** Pages one lookup may read before it is refused as too broad. A field so a test can lower it. */
+  maxPages = MAX_PAGES;
+
   constructor(private readonly students: StudentsService, private readonly teacherScope: TeacherScopeService) {}
 
   /** Who may look students up, re-read now. */
@@ -52,7 +60,7 @@ export class StudentLookupService {
   async find(auth: AuthContext, query: StudentLookupQuery): Promise<StudentLookupResultDto> {
     const who = await this.access(auth);
     if (!who) throw new ForbiddenError("STUDENT_LOOKUP_NOT_PERMITTED", "Your account can't look up students.");
-    const asked = nameParts(query.name);
+    const asked = nameParts(stripPossessive(query.name));
     if (asked.length === 0) return { status: "none", matches: [] };
     const scope = query.classArmIds ? new Set(query.classArmIds) : null;
 
@@ -113,18 +121,47 @@ export class StudentLookupService {
     return out;
   }
 
+  /**
+   * Every student who could match, read to the END of the Students list's
+   * pages (it pages by cursor, 200 at a time). A match is only ever reported
+   * from a complete candidate set: "none" and "the only one" are claims about
+   * the whole scope, not about page one.
+   *   - With a class scope: every student of each requested class, whatever
+   *     their name, so close spellings are found too.
+   *   - Without one: the Students page's own search, once per name part typed
+   *     (by its first three letters), so a full name with one misspelt part is
+   *     still found through the other.
+   * If a search is too broad to read completely, it is refused with
+   * STUDENT_LOOKUP_TOO_BROAD rather than answered from part of it.
+   */
   private async adminCandidates(auth: AuthContext, asked: string[], scope: Set<string> | null): Promise<Candidate[]> {
-    // The Students page's own search, by the longest name part's first three
-    // letters, so close spellings ("Samual") are candidates too.
-    const longest = [...asked].sort((a, b) => b.length - a.length)[0]!;
-    const res = await this.students.list(auth, { search: longest.slice(0, Math.min(3, longest.length)), limit: 200 });
-    return res.data
-      .map((s) => ({
-        id: s.id, firstName: s.firstName, middleName: s.middleName ?? null, lastName: s.lastName, admissionNumber: s.admissionNumber, status: s.status,
-        armId: s.currentEnrollment?.classArm.id ?? null,
-        armLabel: s.currentEnrollment ? `${s.currentEnrollment.classArm.classLevel.name} · ${s.currentEnrollment.classArm.name}` : null,
-      }))
-      .filter((c) => !scope || (c.armId !== null && scope.has(c.armId)));
+    const found = new Map<string, Candidate>();
+    let pages = 0;
+    const readAll = async (query: { search?: string; classArmId?: string }) => {
+      let cursor: string | undefined;
+      do {
+        if (++pages > this.maxPages) {
+          throw new ConflictError("STUDENT_LOOKUP_TOO_BROAD", "That matches too many students to search completely. Add the class, or more of the name.");
+        }
+        const res = await this.students.list(auth, { ...query, limit: PAGE_SIZE, ...(cursor ? { cursor } : {}) });
+        for (const s of res.data) {
+          const armId = s.currentEnrollment?.classArm.id ?? null;
+          if (scope && (armId === null || !scope.has(armId))) continue;
+          found.set(s.id, {
+            id: s.id, firstName: s.firstName, middleName: s.middleName ?? null, lastName: s.lastName, admissionNumber: s.admissionNumber, status: s.status,
+            armId,
+            armLabel: s.currentEnrollment ? `${s.currentEnrollment.classArm.classLevel.name} · ${s.currentEnrollment.classArm.name}` : null,
+          });
+        }
+        cursor = res.meta.cursor;
+      } while (cursor);
+    };
+    if (scope) {
+      for (const classArmId of scope) await readAll({ classArmId });
+    } else {
+      for (const prefix of new Set(asked.map((part) => part.slice(0, 3)))) await readAll({ search: prefix });
+    }
+    return [...found.values()];
   }
 
   private async teacherCandidates(auth: AuthContext, scope: Set<string> | null): Promise<Candidate[]> {
@@ -153,15 +190,29 @@ function within(a: string, b: string, edits: number): boolean {
   for (let i = 1; i <= a.length; i++) {
     for (let j = 1; j <= b.length; j++) {
       dp[i]![j] = Math.min(dp[i - 1]![j]! + 1, dp[i]![j - 1]! + 1, dp[i - 1]![j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+      // Two adjacent letters swapped ("Smauel") is one slip, not two.
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) dp[i]![j] = Math.min(dp[i]![j]!, dp[i - 2]![j - 2]! + 1);
     }
   }
   return dp[a.length]![b.length]! <= edits;
 }
 
-/** Every part the person typed is one of the student's names (exact), or close to one (similar). */
+/** A close spelling of a name part: one or two letters off, or its beginning. */
+function close(a: string, o: string): boolean {
+  return (a.length >= 4 && within(a, o, a.length >= 7 ? 2 : 1)) || (a.length >= 3 && o.startsWith(a));
+}
+
+/**
+ * exact: every part the person typed is one of the student's names.
+ * similar: every part is one of the student's names OR a close spelling of
+ * one, and at least one is only close ("Samual Okoro" for Samuel Okoro). A
+ * similar match is a suggestion for the person to choose, never a selection.
+ */
 function matches(asked: string[], c: Candidate, how: "exact" | "similar"): boolean {
   const own = nameParts(c.firstName, c.middleName, c.lastName);
-  return asked.every((a) => own.some((o) => (how === "exact" ? o === a : o !== a && ((a.length >= 4 && within(a, o, a.length >= 7 ? 2 : 1)) || (a.length >= 3 && o.startsWith(a))))));
+  const allExact = asked.every((a) => own.includes(a));
+  if (how === "exact") return allExact;
+  return !allExact && asked.every((a) => own.includes(a) || own.some((o) => close(a, o)));
 }
 
 function sort(list: Candidate[]): Candidate[] {

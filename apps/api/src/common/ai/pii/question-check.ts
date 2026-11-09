@@ -200,10 +200,18 @@ export function rosterNameSpans(text: string, roster: QuestionRoster): { start: 
  * person; the model only ever sees "⟨P1⟩". Every other detector still applies
  * to the redacted text.
  */
+/** "Samuel Okoro's" → "Samuel Okoro": the possessive is grammar, not part of the name. */
+export function stripPossessive(name: string): string {
+  return name.replace(/['\u2019]s(?=\s|$)/gi, "").replace(/s['\u2019](?=\s|$)/gi, "s").trim();
+}
+
 export class PersonRefs {
   private readonly byKey = new Map<string, string>();
   readonly values = new Map<string, string>();
-  ref(raw: string): string {
+  ref(rawName: string): string {
+    // "Samuel Okoro's" and "Samuel Okoro" are the same person: one marker, and
+    // the name the server later looks up carries no possessive.
+    const raw = stripPossessive(rawName);
     const key = fold(raw).replace(/[^a-z\s]/g, "").replace(/\s+/g, " ").trim();
     let r = this.byKey.get(key);
     if (!r) {
