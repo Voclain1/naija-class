@@ -28,6 +28,10 @@ export const FEATURE_KEYS = [
   // involved; the switch is the rollout control for the new endpoints only.
   // POST /students/bulk is not behind it.
   "student-intake",
+  // Reviewed corrections to existing students' names, date of birth, gender
+  // and email (docs/modules/student-corrections.md). No model. PATCH
+  // /students/:id is not behind it.
+  "student-corrections",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -42,6 +46,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   "assistant-help": "Help assistant",
   "assistant-billing": "Invoice assistant",
   "student-intake": "Reviewed student intake",
+  "student-corrections": "Reviewed student corrections",
 };
 
 /** Narrows an arbitrary string (an audit row, an env entry) to a known key. */

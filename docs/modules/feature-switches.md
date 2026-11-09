@@ -54,6 +54,7 @@ stays 23.
 | `assistant-help` | Help assistant | The staff help and settings assistant (plan 4A) | Not built; off everywhere |
 | `assistant-billing` | Invoice assistant | Term invoice preparation and approval (`docs/modules/assistant-billing.md`) | Built; off everywhere |
 | `student-intake` | Reviewed student intake | Prepare, review and confirm a student batch (`docs/modules/student-intake-proposals.md`); no model. `POST /students/bulk` is not behind it | Backend built; off everywhere |
+| `student-corrections` | Reviewed student corrections | Reviewed batch corrections to names, date of birth, gender and email (`docs/modules/student-corrections.md`); no model. `PATCH /students/:id` is not behind it | Backend built; off everywhere |
 
 ## API
 
