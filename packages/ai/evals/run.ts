@@ -15,6 +15,7 @@
 // run — they are tripwires for judgement calls (cost profile, pressure
 // phrasing), not correctness.
 
+import { assistantRouterCase } from "./cases/assistant-router.js";
 import { billingRunCase } from "./cases/billing-run.js";
 import { runSuites } from "./harness.js";
 import { assignmentFeedbackLiveCase } from "./cases/assignment-feedback-live.js";
@@ -32,6 +33,7 @@ import { registryIntegrityCase } from "./cases/registry-integrity.js";
 // dist/ layout that apps/api consumes — not worth it for an entry point.
 async function main(): Promise<void> {
   const exitCode = await runSuites([
+    assistantRouterCase,
     billingRunCase,
     piiSafetyCase,
     registryIntegrityCase,

@@ -7,6 +7,7 @@ import { RequireAuth } from "@/components/auth/require-auth";
 import { SetupCallGate } from "@/components/onboarding/setup-call-gate";
 import { AdminSidebar } from "@/components/admin/sidebar";
 import { AdminTopbar } from "@/components/admin/topbar";
+import { AssistantDock } from "@/components/assistant/assistant-dock";
 import { TourProvider, useTour } from "@/components/tour/first-login-tour";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -94,6 +95,7 @@ function AdminShell({
           {children}
         </main>
       </div>
+      <AssistantDock />
     </div>
   );
 }

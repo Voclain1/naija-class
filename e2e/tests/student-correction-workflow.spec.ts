@@ -112,7 +112,7 @@ test("frontend correction editor also requires an owner or admin role", async ({
     // Frontend visibility only. The real API token is unchanged; backend
     // authorization is verified by the backend's real-Postgres suite.
     await admin.page.route("**/auth/me", async (route) => { const response = await route.fetch(); const me = await response.json(); await route.fulfill({ json: { ...me, permissions: ["student.read", "student.update"], roles: me.roles.map((r: { key: string }) => ({ ...r, key: "bursar" })) } }); });
-    await admin.page.goto("/students/corrections"); await expect(admin.page.getByRole("alert")).toContainText("not available for this account");
+    await admin.page.goto("/students/corrections"); await expect(admin.page.getByRole("alert").filter({ hasText: "not available for this account" })).toBeVisible();
     await expect(admin.page.getByRole("button", { name: "Review record changes" })).toHaveCount(0);
   } finally { await admin.context.close(); await admin.api.dispose(); }
 });
