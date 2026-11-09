@@ -19,7 +19,7 @@ const ALL_ON = { "assistant-workspace": true, "assistant-billing": true, "remind
 async function setup(browser: Browser, switches: Record<string, boolean> = ALL_ON, finance = true) {
   const admin = await loginAsAdmin(browser);
   const suffix = uniqueSuffix();
-  const structure = await setupAcademicStructure(admin.api, { arms: [{ name: "JSS 1A", code: `a-${suffix}`.slice(0, 20) }] });
+  const structure = await setupAcademicStructure(admin.api, { arms: [{ name: "JSS 2B", code: `a-${suffix}`.slice(0, 20) }] });
   const scaffold = finance ? await setupFinanceScaffold(admin.api, { suffix, ...structure, classArmId: structure.arms[0]!.id }) : null;
   await basePrisma.school.update({ where: { id: admin.schoolId }, data: { featureSwitches: switches } });
   return { admin, structure, scaffold, page: admin.page };
@@ -101,17 +101,22 @@ test("is hidden when the school's switch is off, and help-only for a teacher", a
     await page.goto("/dashboard");
     await expect(page.getByRole("heading").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Open SchoolKit Assistant" })).toHaveCount(0);
-    await basePrisma.school.update({ where: { id: admin.schoolId }, data: { featureSwitches: ALL_ON } });
-    const teacher = await inviteAndAcceptTeacher(browser, { schoolId: admin.schoolId, invitedByUserId: admin.ownerUserId });
+  } finally { await admin.context.close(); await admin.api.dispose(); }
+
+  // A second school with the assistant on (the API caches each school's
+  // switches for 30 seconds, so the first school is not flipped in place).
+  const on = await setup(browser, ALL_ON, false);
+  try {
+    const teacher = await inviteAndAcceptTeacher(browser, { schoolId: on.admin.schoolId, invitedByUserId: on.admin.ownerUserId });
     try {
       await teacher.page.goto("/teacher/dashboard");
       const panel = await openAssistant(teacher.page);
       await expect(panel.getByRole("navigation", { name: "Suggested tasks" })).toHaveCount(0);
-      await ask(teacher.page, "Add new students to JSS 1A");
+      await ask(teacher.page, "Add new students to JSS 2B");
       await expect(panel.getByText(/permission/)).toBeVisible();
-      await expect(panel.getByRole("button", { name: "Show the server's preview" })).toHaveCount(0);
+      await expect(panel.getByRole("button", { name: /^Show the server['’]s preview$/ })).toHaveCount(0);
     } finally { await teacher.context.close(); }
-  } finally { await admin.context.close(); await admin.api.dispose(); }
+  } finally { await on.admin.context.close(); await on.admin.api.dispose(); }
 });
 
 test("invoices: request, server preview without writes, explicit approval, and a lost approval recovers the original run", async ({ browser }) => {
@@ -119,10 +124,10 @@ test("invoices: request, server preview without writes, explicit approval, and a
   try {
     await page.goto("/finance/invoices");
     const panel = await openAssistant(page);
-    await ask(page, "Generate invoices for JSS 1A this term");
+    await ask(page, "Generate invoices for JSS 2B this term");
     const card = panel.getByRole("region", { name: "Term invoices" });
-    await expect(card.getByRole("checkbox", { name: /JSS 1A/ })).toBeChecked();
-    await card.getByRole("button", { name: "Show the server's preview" }).click();
+    await expect(card.getByRole("checkbox", { name: /JSS 2B/ })).toBeChecked();
+    await card.getByRole("button", { name: /^Show the server['’]s preview$/ }).click();
     await expect(card.getByText("Awaiting your approval")).toBeVisible();
     expect((await apiListInvoices(admin.api, { termId: structure.termId })).total).toBe(0);
     await expect(card.getByRole("button", { name: "Approve and issue invoices" })).toBeDisabled();
@@ -149,15 +154,15 @@ test("reminders: segmented selection, server preview, one confirmation, saved ca
     expect((await admin.api.post("invoices/arm/generate", { data: { termId: structure.termId, classArmId: structure.arms[0]!.id } })).ok()).toBe(true);
     expect((await admin.api.put("notification-preferences", { data: { emailEnabled: false, smsEnabled: false, pushEnabled: true } })).ok()).toBe(true);
     expect((await admin.api.post(`students/${scaffold!.students[0]!.id}/guardians/new`, { data: { firstName: "Test", lastName: "Guardian", relationship: "MOTHER", phone: "+2348000000000", isPrimary: true } })).ok()).toBe(true);
-    await page.goto("/finance");
+    await page.goto("/finance/debtors");
     const panel = await openAssistant(page);
-    await ask(page, "Remind parents who owe fees in JSS 1A");
+    await ask(page, "Remind parents who owe fees in JSS 2B");
     const card = panel.getByRole("region", { name: "Fee reminders" });
     await expect(card.getByText(/3 matching students · 0 selected/)).toBeVisible();
     await card.getByRole("button", { name: "Select all matching" }).click();
     let prepares = 0;
     page.on("request", (r) => { if (r.method() === "POST" && r.url().endsWith("/finance/reminder-campaigns/proposals")) prepares += 1; });
-    await card.getByRole("button", { name: "Show the server's preview" }).click();
+    await card.getByRole("button", { name: /^Show the server['’]s preview$/ }).click();
     await expect(card.getByText("Awaiting your confirmation")).toBeVisible();
     expect(await withTenant(admin.schoolId, (db) => db.reminderCampaign.count({ where: { schoolId: admin.schoolId } }))).toBe(0);
     await card.getByRole("checkbox", { name: /I checked this preview/ }).check();
@@ -193,7 +198,7 @@ test("intake: structured rows and placement, preview without writes, lost confir
   try {
     await page.goto("/students");
     const panel = await openAssistant(page);
-    await ask(page, "Add 2 new students to JSS 1A");
+    await ask(page, "Add 2 new students to JSS 2B");
     const card = panel.getByRole("region", { name: "Add and enrol students" });
     const fill = async (i: number, first: string, last: string, dob: string, gender: string, adm: string) => {
       await card.getByRole("textbox", { name: `Student ${i} first name` }).fill(first);
@@ -207,7 +212,7 @@ test("intake: structured rows and placement, preview without writes, lost confir
     await fill(2, "Tunde", "Bello", "2013-11-20", "MALE", `AS-${suffix}-2`);
     await card.getByRole("combobox", { name: "Class" }).selectOption(structure.arms[0]!.id);
     await card.getByRole("combobox", { name: "Term" }).selectOption(structure.termId);
-    await card.getByRole("button", { name: "Show the server's preview" }).click();
+    await card.getByRole("button", { name: /^Show the server['’]s preview$/ }).click();
     await expect(card.getByText("Awaiting your confirmation")).toBeVisible();
     await expect(card.getByText("Amaka Nwosu")).toBeVisible();
     const count = () => withTenant(admin.schoolId, (db) => db.student.count({ where: { schoolId: admin.schoolId } }));
@@ -232,7 +237,7 @@ test("corrections: find by roster search, explicit clear, server before/after, s
     await card.getByRole("button", { name: new RegExp(target.admissionNumber) }).click();
     const lastName = card.getByRole("textbox", { name: /New last name/ });
     await lastName.fill(`${target.lastName}x`);
-    await card.getByRole("button", { name: "Show the server's before and after" }).click();
+    await card.getByRole("button", { name: /^Show the server['’]s before and after$/ }).click();
     await expect(card.getByText("Awaiting your confirmation")).toBeVisible();
     await expect(card.getByText(`${target.lastName}x`)).toBeVisible();
     // Someone else edits the same field: the reviewed preview is now stale.
