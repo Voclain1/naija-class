@@ -200,6 +200,15 @@ those; it doesn't replace them.
   helpers moved to `apps/api/src/common/workflow/` (fingerprint, expiry,
   hourly sweeper for every proposal kind). ChatGPT wires
   `frontend/reminder-campaign-workflow` to it. Not merged, deployed or enabled.
+- **Reviewed student corrections, backend (November 9):** branch
+  `agentic/student-corrections`, one PR. Contract and frontend steps:
+  `docs/modules/student-corrections.md`. Six fields only; absent = unchanged,
+  `null` clears middle name or email. Confirm locks the students, rejects a
+  stale before/after fingerprint and applies atomically with value-free
+  `student.update` audits (`via: "student-corrections"`). No migration.
+  Carries the same shared `common/workflow` helpers as the reminder-campaigns
+  PR (identical files). `student-corrections` off everywhere. ChatGPT owns the
+  frontend. Not merged, deployed or enabled.
 
 - **Ownership split (owner, November 9):** Claude owns backend/API/database
   work unless on limit; ChatGPT owns frontend and browser validation. Continue

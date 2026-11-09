@@ -33,6 +33,10 @@ export const FEATURE_KEYS = [
   // POST /finance/debtors/remind is not behind it. Turning it off also halts
   // running campaigns before their next send.
   "reminder-campaigns",
+  // Reviewed corrections to existing students' names, date of birth, gender
+  // and email (docs/modules/student-corrections.md). No model. PATCH
+  // /students/:id is not behind it.
+  "student-corrections",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -48,6 +52,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   "assistant-billing": "Invoice assistant",
   "student-intake": "Reviewed student intake",
   "reminder-campaigns": "Fee reminder campaigns",
+  "student-corrections": "Reviewed student corrections",
 };
 
 /** Narrows an arbitrary string (an audit row, an env entry) to a known key. */

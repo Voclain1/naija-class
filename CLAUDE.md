@@ -213,6 +213,17 @@ claim exactly-once delivery: provider idempotency has not been verified. The
 journal stores ids and states only, never contacts, text or amounts.
 `reminder-campaigns` is off by default; `POST /finance/debtors/remind` stays
 as it was.
+### Reviewed student corrections (2026-11-09)
+
+`docs/modules/student-corrections.md`. Batch corrections to existing students'
+first, middle and last name, date of birth, gender and email only, through a
+`workflow_proposals` row (kind `student-correction`). **No model call**; not
+on the PII allowlist. Records are found by id, never by name. Confirm locks
+the affected students, recomputes the before/after fingerprint and writes
+every update, its value-free audit and the COMPLETED marker in one
+transaction. Do not widen the field list (admission numbers, status,
+enrolment, guardians, credentials, health, behaviour, grades, money, deletion
+keep their own paths). `student-corrections` is off by default.
 
 ### Git
 
