@@ -278,7 +278,7 @@ executor is bounded to one batch of 200, the bulk-add limit.
   - at confirm;
   - when a refresh retires the proposal;
   - on expiry, at the next intake call from that school or by the hourly
-    sweeper (`StudentIntakeSweeperService`, `:17` past each hour), whichever
+    sweeper (`WorkflowProposalsSweeperService`, `:17` past each hour, every proposal kind), whichever
     comes first.
 
   At most, rows outlive the 30-minute expiry by about an hour.

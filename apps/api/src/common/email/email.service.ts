@@ -90,6 +90,45 @@ export class EmailService {
   }
 
   /**
+   * One email, with the outcome classified rather than thrown (2026-11-09,
+   * docs/modules/reminder-campaigns.md). The campaign journal needs to tell
+   * "Resend answered and refused it" (REJECTED: nothing was sent) from "we do
+   * not know whether Resend accepted it" (UNKNOWN: a network failure, a
+   * timeout, or a server-side error after the request left), because an
+   * UNKNOWN send is never retried automatically. `idempotencyKey` is passed
+   * as Resend's Idempotency-Key header (SDK-documented); the campaign does not
+   * rely on it for safety. Logs carry no address, subject or body.
+   */
+  async sendWithOutcome(params: {
+    to: string;
+    subject: string;
+    html: string;
+    schoolName?: string;
+    idempotencyKey?: string;
+    purpose: string;
+  }): Promise<{ status: "ACCEPTED"; providerRef: string | null } | { status: "REJECTED" | "UNKNOWN"; reason: string }> {
+    if (!this.client) return { status: "REJECTED", reason: "EMAIL_NOT_CONFIGURED" };
+    try {
+      const { data, error } = await this.client.emails.send(
+        { from: emailFrom(params.schoolName), to: params.to, subject: params.subject, html: params.html },
+        params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined,
+      );
+      if (error) {
+        const code = error.name ?? "error";
+        // Resend answered with a client error: it did not take the email. A
+        // missing status or a 5xx can follow a request it already accepted.
+        const unknown = error.statusCode === null || error.statusCode >= 500 || code === "concurrent_idempotent_requests";
+        this.logger.warn(`Resend ${params.purpose} send ${unknown ? "uncertain" : "refused"}: ${code}`);
+        return { status: unknown ? "UNKNOWN" : "REJECTED", reason: `PROVIDER_${code.toUpperCase()}` };
+      }
+      return { status: "ACCEPTED", providerRef: data?.id ?? null };
+    } catch {
+      this.logger.warn(`Resend ${params.purpose} send uncertain: no answer`);
+      return { status: "UNKNOWN", reason: "PROVIDER_NO_ANSWER" };
+    }
+  }
+
+  /**
    * Phase 9 / CP8.3 — up to 100 emails in one call (Resend's batch send), for
    * announcement emails. Returns each email's Resend id, in order. Throws on
    * any failure, so the caller marks the whole batch failed; the addresses
