@@ -102,7 +102,7 @@ How to work:
 const obj = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false });
 const TASK = { type: "string", pattern: "^(new|t[1-9])$", description: 'A handle from <tasks> to change that task, or "new".' };
 const label = (description: string) => ({ type: "string", maxLength: 40, description });
-const labels = (description: string) => ({ type: "array", items: { type: "string", maxLength: 40 }, maxItems: 20, description });
+const labels = (description: string) => ({ type: "array", items: { type: "string", maxLength: 40 }, description });
 const CORRECTION_FIELDS = ["firstName", "middleName", "lastName", "dateOfBirth", "gender", "email"];
 
 export interface OrchestratorToolSpec {
@@ -166,7 +166,7 @@ export const ASSISTANT_ORCHESTRATOR_TOOLS: readonly OrchestratorToolSpec[] = [
     name: "plan_corrections",
     description:
       "Choose which fields the student-correction card changes (firstName, middleName, lastName, dateOfBirth, gender, email). The person finds the students and types the new values in the card. Changes nothing.",
-    inputSchema: obj({ task: TASK, fields: { type: "array", items: { type: "string", enum: CORRECTION_FIELDS }, minItems: 1, maxItems: 6 } }, ["task", "fields"]),
+    inputSchema: obj({ task: TASK, fields: { type: "array", items: { type: "string", enum: CORRECTION_FIELDS },  } }, ["task", "fields"]),
   },
   {
     name: "task_status",
