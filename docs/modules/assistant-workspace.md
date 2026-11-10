@@ -337,6 +337,19 @@ values (intake rows, correction values, debtor lists); campaign recipients.
 5. The workspace switch, each workflow's own switch, and the person's
    permissions and role, re-checked on every tool call.
 
+### Virgo Fidelis pilot decision (2026-11-10)
+
+The owner approved **preparing** a narrowly scoped model-routing pilot for Virgo Fidelis Montessori School, including review of the documented residual risk that incidental personal details may pass the detectors. This is **not authorization to send live staff text to Anthropic yet**. The production approval constant remains `pending`, and the `assistant-model-routing` switch must remain off until all release gates are evidenced.
+
+**Release checklist (evidence required before code approval and activation):**
+
+- [ ] Verify the production Anthropic account's API retention, training, and data-processing terms and document the accepted settings; do not record keys.
+- [ ] Review privacy notice, data-controller/processor responsibilities, and whether school consent wording or `SCHOOL_CONSENT_VERSION` needs updating; implement and obtain approval for any changes.
+- [ ] Run `assistant-orchestrator-live` against the configured production-equivalent model; record all scenario results (skipped is not passed), plus PII-safety and conformance checks.
+- [ ] Confirm the production AI provider is configured, platform AI is enabled, and Virgo Fidelis's `aiEnabled` and monthly budget are appropriate, without exposing secrets.
+- [ ] In a separate reviewed change, add the exact `assistant-orchestrator` row to `CLAUDE.md`, update the PII-safety pins, and set `ASSISTANT_ORCHESTRATOR_APPROVAL` to `approved` only after the above evidence and owner sign-off.
+- [ ] After deployment, enable `assistant-model-routing` for **Virgo Fidelis only**; verify other schools remain off, test read-only conversation and approval boundaries, and retain the platform kill switch.
+
 ### Proposed allowlist row (for owner review; NOT APPROVED)
 
 Proposed as a fourth row of CLAUDE.md's PII-bearing prompt allowlist. **Not
