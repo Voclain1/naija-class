@@ -504,7 +504,9 @@ export class AssistantStore {
   selectStudent(studentId: string) {
     if (!this.student(studentId)) return;
     this.set({ students: this.state.students.map((e) => ({ ...e, selected: e.studentId === studentId })), lastActivity: this.now() });
-    this.say({ id: this.nextId(), role: "assistant", kind: "student-record", studentId, section: "summary" });
+    // Re-selecting a student already shown must not append duplicate summary cards.
+    const alreadyShown = this.state.messages.some((m) => m.role === "assistant" && m.kind === "student-record" && m.studentId === studentId && m.section === "summary");
+    if (!alreadyShown) this.say({ id: this.nextId(), role: "assistant", kind: "student-record", studentId, section: "summary" });
   }
 
   /** Results of the on-device search form (no model). */
