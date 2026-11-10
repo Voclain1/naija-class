@@ -231,11 +231,11 @@ const FIELDS: { field: NonNullable<RouteHints["fields"]>[number]; test: RegExp }
  */
 /** Reading a student's record: "show Samuel in JSS2", "records of Ada", "who is Tunde in SS1?", "find Bola's attendance". */
 const LOOKUP =
-  /\b(show|find|look ?up|search(?: for)?|pull up|open|get|see|view|check)\b[^.?!]*\b(records?|details?|profile|file|info(?:rmation)?|student|pupil|attendance|results?)\b|\b(records?|details?|profile|file) (?:of|for)\b|\blook ?up\b(?! (?:how|the|a|an|where|what|when|which|invoices?|fees?|reminders?)\b) \S+|\b(?:show|find|look ?up|pull up|who is)\b \S+(?: \S+)? (?:in|from) (?:jss|sss|js|ss|primary|pri|basic|year|kg|nursery)\s*-?\s*\d/;
+  /\b(show|find|look ?up|search(?: for)?|pull up|open|get|see|view|check)\b[^.?!]*\b(records?|details?|profile|file|info(?:rmation)?|student|pupil|attendance|results?)\b|\b(records?|details?|profile|file) (?:of|for)\b|\blook ?up\b(?! (?:how|the|a|an|where|what|when|which|invoices?|fees?|reminders?)\b) \S+|\b(?:find|look ?up|search(?: for)?)\b (?:the )?(?:student |pupil )?(?:named |called )?[a-z]+(?: [a-z]+){1,2}(?:[.?!]|$)|\b(?:show|find|look ?up|pull up|who is)\b \S+(?: \S+)? (?:in|from) (?:jss|sss|js|ss|primary|pri|basic|year|kg|nursery)\s*-?\s*\d/;
 const CHANGE = /\b(change|edit|update|enter|fix|correct|set|record (?:a|the)? ?(?:mark|score)|add|remove|delete)\b/;
 const LOOKUP_FILLER = new Set(
   ("show find look lookup up search for pull open get see view check the a an me please records record details detail profile file info information " +
-    "of on about student students pupil pupils in from class who is his her their s attendance results result released can you i want to").split(" "),
+    "of on about student students pupil pupils named called in from class who is his her their s attendance results result released can you i want to").split(" "),
 );
 
 /** The words left after the request's own vocabulary and class mentions: a prefill for the search field. */
