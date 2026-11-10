@@ -151,6 +151,28 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
 
+      # A failed pull can fill the VPS disk before the health/rollback path runs.
+      # Remove only disposable build cache and dangling images; never prune
+      # volumes, tagged rollback images, containers, or school data.
+      - name: VPS disk preflight
+        run: |
+          ssh vps 'bash -s' <<'SCRIPT'
+          set -euo pipefail
+          echo '=== Disk space before cleanup ==='
+          df -h /var/lib/docker /var/lib/containerd /opt/school-kit 2>/dev/null || df -h /
+          docker system df || true
+          docker builder prune -af --filter 'until=24h'
+          docker image prune -f
+          echo '=== Disk space after safe cleanup ==='
+          df -h /var/lib/docker /var/lib/containerd /opt/school-kit 2>/dev/null || df -h /
+          free_kb=$(df -Pk /var/lib/containerd 2>/dev/null | awk 'NR==2 {print $4}')
+          if [ -z "$free_kb" ]; then free_kb=$(df -Pk / | awk 'NR==2 {print $4}'); fi
+          if [ "$free_kb" -lt 5242880 ]; then
+            echo '::error::VPS has less than 5 GiB free for image extraction. Investigate disk usage or expand the volume; no volumes or tagged images were deleted.'
+            exit 1
+          fi
+          SCRIPT
+
       # Postgres listens on the server's loopback only; this tunnel is how the
       # runner reaches it for migrations and the smoke-school cleanup.
       - name: Tunnel to the VPS database
