@@ -239,6 +239,31 @@ hard-wired unavailable: a model-backed router needs its own allowlist row and
 sign-off, or a design that never sends request text. `assistant-workspace` is
 off by default.
 
+**Model orchestration (2026-11-09), BUILT BUT NOT APPROVED.** The
+`assistant-orchestrator` prompt (`docs/modules/assistant-workspace.md`,
+"Model orchestration") runs one budgeted, ledgered tool turn per request. It
+is **NOT on the PII allowlist above**. Staff-typed operational text can carry
+personal data the detectors miss, so it needs its own row and sign-off; the
+proposed wording is in the module doc, for the owner. Until then:
+- `ASSISTANT_ORCHESTRATOR_APPROVAL` stays `"pending"`, and the API refuses the
+  prompt in production;
+- the `assistant-model-routing` switch is off for every school;
+- the evals pin both.
+
+What it may never do, approved or not:
+- **No approval tool.** Tools may read or PREPARE a reviewable preview, and the
+  registry refuses any tool named like an approval or an execution; approval
+  stays the person's control on the server's preview.
+- **Labels and counts only.** Tools return labels and counts, never names,
+  contacts, money or ids.
+- **Detectors first.** Every message passes the per-school detectors, every
+  turn, before the model. Roster names are replaced by opaque markers first
+  (named student lookup); the server resolves them, and names and records go
+  to the browser only.
+- **Nothing stored.** No conversation text is stored.
+
+Do not reuse the help-assistant exception for it.
+
 ### Git
 
 - Never commit to `main`. Every change goes through a PR (bundled — see Git conventions).

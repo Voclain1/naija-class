@@ -364,3 +364,14 @@ providers:
   boundary.
 
 Browser integration is not tested here; it belongs to the frontend PR.
+
+## Class scope (2026-11-09)
+
+`options.classArmIds` (optional, 1–20 class IDs) on prepare. When given, only
+students **enrolled this term in one of those classes** are eligible; any other
+selected student is `OUT_OF_SCOPE`. The scope is part of the request hash and
+the preview fingerprint, and it is recomputed inside the confirm transaction,
+so the server enforces it whatever the browser filtered. It is by class ID:
+two levels can both have an arm called "A". `DebtorDto` now carries
+`classArmId` and `classLevel`, so a debtor list can be filtered by identity.
+Without the option, behaviour is unchanged.

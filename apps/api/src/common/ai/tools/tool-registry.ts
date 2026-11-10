@@ -37,6 +37,11 @@ import type { AuthContext } from "../../auth/auth-context";
 //
 // FD-3a scope: READ tools only. A write-class tool is refused at registration;
 // writes arrive in Stage 5 with proposals and approvals (S2-06a/b, S2-08).
+// 2026-11-09 (assistant orchestration): a "prepare" tool may also create a
+// server-owned PREVIEW for a person to review (a billing run in its PENDING
+// state). It writes no school record and cannot approve: no tool may be
+// named like an approval or an execution (APPROVAL_LIKE_NAME), and approval
+// stays a separate, permission-checked endpoint the person calls.
 // Staff principal only: guardian and student tools are Stage 6.
 // The PII, money, behaviour and health conformance gate over every registered
 // tool is FD-3b (tool-conformance.ts, assistant-tool-conformance.spec.ts).
@@ -56,8 +61,11 @@ export interface ReadToolDefinition<Args extends z.AnyZodObject> {
   readonly name: string;
   readonly description: string;
   readonly access: ToolAccess;
-  /** Only "read" exists in FD-3a. Anything else is refused at registration. */
-  readonly effect: "read";
+  /**
+   * "read", or "prepare": creates a server-owned preview for human review and
+   * nothing else. Anything else is refused at registration.
+   */
+  readonly effect: "read" | "prepare";
   /** Strict Zod object; validated on every call. */
   readonly args: Args;
   /** The JSON Schema the model is shown. Must describe exactly the same keys as `args`. */
@@ -93,6 +101,12 @@ export const TOOL_OUTPUT_MAX_CHARS = 8_000;
 export const R1_DENIED_TOOL_NAMES: ReadonlySet<string> = new Set<string>([]);
 
 const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
+/**
+ * No tool may look like it approves or executes: approval is a person's
+ * explicit control on the server's preview, never a model's call.
+ */
+export const APPROVAL_LIKE_NAME =
+  /(^|_)(approve|approval|confirm|issue|send|execute|run|resume|halt|delete|remove|apply|save|commit|pay|refund|publish|submit|finali[sz]e|enrol|enroll)(_|$)/;
 // An argument that names a record could reach another school's id, or one the
 // model invented. FD-3a has no tool that needs one; opaque handles (S2-05)
 // come first.
@@ -113,8 +127,9 @@ export class ToolRegistry {
     if (!TOOL_NAME.test(def.name)) fail("name must be lowercase letters, digits and _ (max 64)");
     if (this.tools.has(def.name)) fail("a tool with this name is already registered");
     if (R1_DENIED_TOOL_NAMES.has(def.name)) fail("this action may not be executed by an agent (R1)");
+    if (APPROVAL_LIKE_NAME.test(def.name)) fail("a tool may not approve or execute; approval is a person's control");
     if (def.description.trim().length < 10) fail("needs a real description");
-    if ((def.effect as string) !== "read") fail("only read tools are allowed in this delivery");
+    if (!["read", "prepare"].includes(def.effect as string)) fail("only read tools are allowed in this delivery (and prepare tools that create a preview)");
 
     if (!def.access) {
       fail("declares no access rule");

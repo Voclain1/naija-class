@@ -17,7 +17,7 @@ import type { AssistantTask, TaskStatus } from "@/lib/assistant/store";
 import { listStudents } from "@/lib/students/students-api";
 
 import { useAssistant } from "../assistant-provider";
-import { ApproveControl, CardShell, Field, Notice, control } from "./common";
+import { ApproveControl, CardShell, Field, IN_FLIGHT_PHASES, Notice, PlanChangedNotice, control, useApprovalGate } from "./common";
 
 // Reviewed corrections through the #520 service: find each student with the
 // roster search (by id from then on, never by name), change only the six
@@ -48,8 +48,16 @@ export function CorrectionCard({ task, caps }: { task: AssistantTask; caps: Assi
     return s;
   });
   const st = useSyncExternalStore(session.subscribe, session.snapshot, session.snapshot);
-  if (st.phase === "idle" || (st.phase === "prepare-error" && !st.proposal)) return <Editor task={task} session={session} error={st.message} />;
-  return <Review session={session} canApprove={caps.workflows.corrections.canApprove} />;
+  const editing = st.phase === "idle" || (st.phase === "prepare-error" && !st.proposal);
+  useEffect(() => { store.reportTask(task.id, { stage: editing ? "editing" : "review" }); }, [store, task.id, editing]);
+  // A model plan revising this task while its before-and-after shows: start a
+  // fresh session (picked students stay in the task's memory) so the old review
+  // can never be confirmed. Never while confirming, checking, uncertain or done.
+  useEffect(() => {
+    if (store.planPending(task.id) && !editing && !IN_FLIGHT_PHASES.has(st.phase) && st.phase !== "done") store.resetSession(task.id);
+  }, [store, task.id, task.revision, editing, st.phase]);
+  if (editing) return <Editor task={task} session={session} error={st.message} />;
+  return <Review task={task} session={session} canApprove={caps.workflows.corrections.canApprove} />;
 }
 
 function currentOf(s: StudentDto): Picked["current"] {
@@ -58,12 +66,35 @@ function currentOf(s: StudentDto): Picked["current"] {
 }
 
 function Editor({ task, session, error }: { task: AssistantTask; session: CorrectionSession; error: string | null }) {
+  const { store } = useAssistant();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<StudentDto[] | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<Picked[]>([]);
+  // The task's memory (not the session's): it survives a session reset.
+  const [picked, setPicked] = useState<Picked[]>(() => store.memo<Picked[]>(task.id, "picked", () => []));
+  const [planned, setPlanned] = useState<StudentCorrectionField[]>(() => store.memo<StudentCorrectionField[]>(task.id, "plannedFields", () => []));
   const searchId = useId();
-  const initial = (task.hints.fields ?? []).flatMap((f) => HINT_FIELDS[f] ?? []);
+  const initial = [...new Set([...(task.hints.fields ?? []).flatMap((f) => HINT_FIELDS[f] ?? []), ...planned])];
+
+  // A model plan: which fields to change, for the students already picked and
+  // those picked next. The new values are typed here, never in the chat.
+  useEffect(() => {
+    const plan = task.plan;
+    if (plan?.kind !== "corrections" || store.appliedRevision(task.id) >= task.revision) return;
+    setPlanned(plan.fields);
+    setPicked((x) => x.map((p) => {
+      const edits = { ...p.edits };
+      for (const f of plan.fields) if (!edits[f] || edits[f]!.mode === "keep") edits[f] = { mode: "set", value: p.current[f] ?? "" };
+      return { ...p, edits };
+    }));
+    store.markApplied(task.id, task.revision);
+  }, [task.plan, task.revision, store, task.id]);
+
+  useEffect(() => {
+    store.setMemo(task.id, "picked", picked);
+    store.setMemo(task.id, "plannedFields", planned);
+    store.reportTask(task.id, { scope: { fields: initial, studentCount: picked.length } });
+  }, [session, picked, planned, store, task.id, initial.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Roster search through the existing, permission-checked students API.
   useEffect(() => {
@@ -156,8 +187,9 @@ function Editor({ task, session, error }: { task: AssistantTask; session: Correc
   );
 }
 
-function Review({ session, canApprove }: { session: CorrectionSession; canApprove: boolean }) {
+function Review({ task, session, canApprove }: { task: AssistantTask; session: CorrectionSession; canApprove: boolean }) {
   const st = useSyncExternalStore(session.subscribe, session.snapshot, session.snapshot);
+  const gate = useApprovalGate(task.id);
   const [checked, setChecked] = useState(false);
   const approveId = useId();
   const p = st.proposal;
@@ -191,9 +223,10 @@ function Review({ session, canApprove }: { session: CorrectionSession; canApprov
       )}
       {p && st.phase !== "done" && p.batchErrors.map((e) => <Notice key={e.code} tone="error">{e.message}</Notice>)}
       {st.message && !["preparing", "refreshing", "checking"].includes(st.phase) && <Notice tone={st.phase === "refresh-error" || st.phase === "prepare-error" ? "error" : "warning"}>{st.message}</Notice>}
+      {gate.pending && <PlanChangedNotice />}
       {st.phase === "review" && p && (canApprove ? (
-        <ApproveControl id={approveId} checked={checked} onChecked={setChecked} disabled={!p.canConfirm}
-          statement={`I checked the before and after for ${p.counts.toUpdate} ${p.counts.toUpdate === 1 ? "student" : "students"}.`} button="Confirm corrections" onApprove={() => void session.confirm()} />
+        <ApproveControl id={approveId} checked={checked} onChecked={setChecked} disabled={!p.canConfirm || !gate.canApprove}
+          statement={`I checked the before and after for ${p.counts.toUpdate} ${p.counts.toUpdate === 1 ? "student" : "students"}.`} button="Confirm corrections" onApprove={() => gate.approve(() => session.confirm())} />
       ) : <Notice>Your account can’t apply corrections.</Notice>)}
       {st.phase === "confirming" && <p role="status">Applying on the server…</p>}
       {(st.phase === "refresh-needed" || st.phase === "refresh-error") && <button type="button" className="inline-flex h-10 items-center rounded-md border border-input px-4 text-sm" onClick={() => { setChecked(false); void session.refresh(); }}>Refresh with current records</button>}

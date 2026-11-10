@@ -34,6 +34,13 @@ export const prepareReminderCampaignSchema = z
         includePaymentPlans: z.boolean().default(false),
         /** Default false. When true, a student with no OVERDUE invoice this term is excluded. */
         overdueOnly: z.boolean().default(false),
+        /**
+         * Optional class scope (2026-11-09): when given, only students enrolled
+         * this term in one of these classes are eligible; anyone else selected
+         * is OUT_OF_SCOPE. Enforced by the server at preview and again at
+         * confirm, by class ID (two levels can both have an arm called "A").
+         */
+        classArmIds: z.array(z.string().uuid()).min(1).max(20).optional(),
       })
       .strict()
       .default({ includePaymentPlans: false, overdueOnly: false }),
@@ -60,6 +67,8 @@ export const REMINDER_ELIGIBILITY = [
   "NOT_OVERDUE",
   "NO_GUARDIAN",
   "NO_CONTACT",
+  /** Not enrolled this term in one of the classes the request was scoped to (options.classArmIds). */
+  "OUT_OF_SCOPE",
 ] as const;
 export type ReminderEligibility = (typeof REMINDER_ELIGIBILITY)[number];
 

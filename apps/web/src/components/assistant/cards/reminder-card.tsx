@@ -15,7 +15,7 @@ import { MAX_REMINDER_CAMPAIGN_STUDENTS, reminderAudience } from "@/lib/reminder
 import { DurableCampaignSession, type DurableState } from "@/lib/reminder-campaigns/durable-session";
 
 import { useAssistant } from "../assistant-provider";
-import { ApproveControl, CardShell, Field, Notice, control } from "./common";
+import { ApproveControl, CardShell, Field, Notice, PlanChangedNotice, control, useApprovalGate } from "./common";
 
 // Fee-reminder campaigns through the durable #519 service, driven by the same
 // session the Reminders page uses (#518). Segment debtors, review the
@@ -30,8 +30,10 @@ const status = (s: DurableState): TaskStatus =>
 
 const ELIGIBILITY: Record<string, string> = {
   ELIGIBLE: "Will be reminded", NOT_FOUND: "Student unavailable", NO_BALANCE: "Nothing owed", ON_PAYMENT_PLAN: "On a payment plan",
-  NOT_OVERDUE: "Not overdue", NO_GUARDIAN: "No linked guardian", NO_CONTACT: "No reachable contact",
+  NOT_OVERDUE: "Not overdue", NO_GUARDIAN: "No linked guardian", NO_CONTACT: "No reachable contact", OUT_OF_SCOPE: "Not in the chosen class",
 };
+
+const STALE_PREVIEW = new Set(["review", "prepare-error", "refresh-needed", "refresh-error"]);
 
 export function ReminderCard({ task, caps }: { task: AssistantTask; caps: AssistantCapabilitiesDto }) {
   const { store } = useAssistant();
@@ -44,14 +46,24 @@ export function ReminderCard({ task, caps }: { task: AssistantTask; caps: Assist
     return s;
   });
   const st = useSyncExternalStore(session.subscribe, session.snapshot, session.snapshot);
-  return st.phase === "idle" ? <Selection task={task} session={session} /> : <Campaign session={session} st={st} canApprove={caps.workflows.reminders.canApprove} />;
+  // A model plan revising this card while an unapproved preview shows: start
+  // again with a fresh session, so the old preview cannot be confirmed.
+  useEffect(() => {
+    if (task.plan?.kind === "reminders" && store.planPending(task.id) && STALE_PREVIEW.has(st.phase)) store.resetSession(task.id);
+  }, [task.plan, task.revision, session, st.phase, store, task.id]);
+  useEffect(() => { store.reportTask(task.id, { stage: st.phase === "review" ? "review" : "editing" }); }, [st.phase, store, task.id]);
+  return st.phase === "idle" ? <Selection task={task} session={session} /> : <Campaign task={task} session={session} st={st} canApprove={caps.workflows.reminders.canApprove} />;
 }
 
 function Selection({ task, session }: { task: AssistantTask; session: DurableCampaignSession }) {
+  const { store } = useAssistant();
   const [terms, setTerms] = useState<TermDto[]>([]);
   const [termId, setTermId] = useState("");
   const [rows, setRows] = useState<DebtorDto[] | null>(null);
+  const [rowsTerm, setRowsTerm] = useState("");
+  const [auto, setAuto] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The class filter, by arm ID (two levels can both have an arm called "A"). */
   const [classArm, setClassArm] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(task.hints.overdueOnly ?? false);
   const [excludePlans, setExcludePlans] = useState(!task.hints.includePaymentPlans);
@@ -72,25 +84,54 @@ function Selection({ task, session }: { task: AssistantTask; session: DurableCam
     return () => { live = false; };
   }, [task.hints.term]);
 
+  // A model plan (docs/modules/assistant-workspace.md): set the filters once per revision.
+  useEffect(() => {
+    const plan = task.plan;
+    if (plan?.kind !== "reminders" || store.appliedRevision(task.id) >= task.revision) return;
+    store.markApplied(task.id, task.revision);
+    if (plan.termId) setTermId(plan.termId);
+    setClassArm(plan.classArmId ?? "");
+    setOverdueOnly(plan.overdueOnly);
+    setExcludePlans(!plan.includePaymentPlans);
+    setAuto(plan.autoPreview);
+  }, [task.plan, task.revision, store, task.id]);
+
   useEffect(() => {
     let live = true;
-    setRows(null); setSelected(new Set());
+    setRows(null); setRowsTerm(""); setSelected(new Set());
     if (termId) listDebtors(termId).then((d) => {
       if (!live) return;
       setRows(d);
-      // A class named in the request preselects that class’s filter.
+      setRowsTerm(termId);
+      // A class named in the request preselects that class’s filter (by ID).
       if (task.hints.classes?.length) {
-        const names = [...new Set(d.map((x) => x.classArm))].map((n) => ({ id: n, name: n, level: "" }));
-        const hit = matchClassHints(task.hints.classes, names).matched[0];
+        const arms = classesOf(d);
+        const hit = matchClassHints(task.hints.classes, arms.map((a) => ({ id: a.id, name: a.name, level: a.level }))).matched[0];
         if (hit) setClassArm(hit.id);
       }
     }).catch((e) => { if (live) setError(e instanceof ApiError ? e.message : "Could not load debtors."); });
     return () => { live = false; };
   }, [termId, task.hints.classes]);
 
-  const audience = useMemo(() => reminderAudience(rows ?? [], { search: "", classArm, risk: "", overdueOnly, excludePlans }), [rows, classArm, overdueOnly, excludePlans]);
-  const classes = useMemo(() => [...new Set((rows ?? []).map((r) => r.classArm))].sort(), [rows]);
+  const audience = useMemo(() => reminderAudience(rows ?? [], { search: "", classArm: "", classArmId: classArm || undefined, risk: "", overdueOnly, excludePlans }), [rows, classArm, overdueOnly, excludePlans]);
+  const classes = useMemo(() => classesOf(rows ?? []), [rows]);
+  // The scope the SERVER enforces too: a chosen class goes with the request by ID.
+  const options = useMemo(() => ({ includePaymentPlans: !excludePlans, overdueOnly, ...(classArm ? { classArmIds: [classArm] } : {}) }), [excludePlans, overdueOnly, classArm]);
   const chosen = audience.filter((s) => selected.has(s.studentId));
+
+  // Planned by the model: select every matching family and ask the server for
+  // its preview, once. Confirming stays the person's, on that preview.
+  useEffect(() => {
+    if (!auto || !rows || rowsTerm !== termId) return;
+    setAuto(false);
+    const pick = audience.slice(0, MAX_REMINDER_CAMPAIGN_STUDENTS).map((s) => s.studentId);
+    setSelected(new Set(pick));
+    if (pick.length > 0) void session.start({ termId, studentIds: pick, options });
+  }, [auto, rows, rowsTerm, termId, audience, session, options]);
+
+  useEffect(() => {
+    store.reportTask(task.id, { scope: { termId: termId || null, classArmIds: classArm ? [classArm] : [], overdueOnly, includePaymentPlans: !excludePlans, studentCount: chosen.length } });
+  }, [store, task.id, termId, classArm, overdueOnly, excludePlans, chosen.length]);
 
   if (error) return <CardShell title="Fee reminders"><Notice tone="error">{error}</Notice></CardShell>;
   return (
@@ -108,7 +149,7 @@ function Selection({ task, session }: { task: AssistantTask; session: DurableCam
             <Field label="Class" htmlFor={ids.cls}>
               <select id={ids.cls} className={control} value={classArm} onChange={(e) => { setClassArm(e.target.value); setSelected(new Set()); }}>
                 <option value="">All classes</option>
-                {classes.map((c) => <option key={c} value={c}>{c}</option>)}
+                {classes.map((c) => <option key={c.id} value={c.id}>{c.level ? `${c.level} · ${c.name}` : c.name}</option>)}
               </select>
             </Field>
             <div className="space-y-1 pt-5 text-sm">
@@ -136,7 +177,7 @@ function Selection({ task, session }: { task: AssistantTask; session: DurableCam
             type="button"
             className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
             disabled={chosen.length === 0}
-            onClick={() => void session.start({ termId, studentIds: chosen.map((s) => s.studentId), options: { includePaymentPlans: !excludePlans, overdueOnly } })}
+            onClick={() => void session.start({ termId, studentIds: chosen.map((s) => s.studentId), options })}
           >
             Show the server’s preview
           </button>
@@ -147,7 +188,15 @@ function Selection({ task, session }: { task: AssistantTask; session: DurableCam
   );
 }
 
-function Campaign({ session, st, canApprove }: { session: DurableCampaignSession; st: DurableState; canApprove: boolean }) {
+/** The classes in the debtor list, by ID, labelled with their level. */
+function classesOf(rows: readonly DebtorDto[]): { id: string; name: string; level: string }[] {
+  const seen = new Map<string, { id: string; name: string; level: string }>();
+  for (const r of rows) if (r.classArmId && !seen.has(r.classArmId)) seen.set(r.classArmId, { id: r.classArmId, name: r.classArm, level: r.classLevel ?? "" });
+  return [...seen.values()].sort((a, b) => `${a.level} ${a.name}`.localeCompare(`${b.level} ${b.name}`));
+}
+
+function Campaign({ task, session, st, canApprove }: { task: AssistantTask; session: DurableCampaignSession; st: DurableState; canApprove: boolean }) {
+  const gate = useApprovalGate(task.id);
   const [checked, setChecked] = useState(false);
   const approveId = useId();
   const p = st.proposal;
@@ -222,9 +271,10 @@ function Campaign({ session, st, canApprove }: { session: DurableCampaignSession
         </>
       )}
       {st.message && st.phase !== "recovering" && st.phase !== "preparing" && <Notice tone={st.phase === "prepare-error" || st.phase === "refresh-error" || st.phase === "status-error" ? "error" : "warning"}>{st.message}</Notice>}
+      {gate.pending && <PlanChangedNotice />}
       {st.phase === "review" && p && (canApprove ? (
-        <ApproveControl id={approveId} checked={checked} onChecked={setChecked} disabled={!p.canConfirm}
-          statement={`I checked this preview: send reminders for ${p.counts.eligible} students in ${p.termLabel ?? "this term"}.`} button="Confirm and start sending" onApprove={() => void session.confirm()} />
+        <ApproveControl id={approveId} checked={checked} onChecked={setChecked} disabled={!p.canConfirm || !gate.canApprove}
+          statement={`I checked this preview: send reminders for ${p.counts.eligible} students in ${p.termLabel ?? "this term"}.`} button="Confirm and start sending" onApprove={() => gate.approve(() => session.confirm())} />
       ) : <Notice>Your account can’t send reminders.</Notice>)}
       {st.phase === "confirming" && <p role="status">Confirming on the server…</p>}
       {(st.phase === "refresh-needed" || st.phase === "refresh-error") && <button type="button" className="inline-flex h-10 items-center rounded-md border border-input px-4 text-sm" onClick={() => { setChecked(false); void session.refresh(); }}>Refresh the preview</button>}

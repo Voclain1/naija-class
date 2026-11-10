@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { DebtorDto, SendRemindersResult } from "@school-kit/types";
 import { ReminderCampaignSession, type CampaignRequest } from "./session";
 import { DEFAULT_REMINDER_FILTERS } from "./audience";
-const rows = (n: number): DebtorDto[] => Array.from({ length: n }, (_, i) => ({ studentId: `${i}`, invoiceId: `invoice-${i}`, studentName: `Student ${i}`, admissionNumber: `${i}`, classArm: "JSS 2 A", totalDue: 5000000, totalPaid: 0, balance: 5000000, status: "OVERDUE", dueDate: null, hasPaymentPlan: false, supplementary: false, risk: { level: "LOW", reasons: [] } }));
+const rows = (n: number): DebtorDto[] => Array.from({ length: n }, (_, i) => ({ studentId: `${i}`, invoiceId: `invoice-${i}`, studentName: `Student ${i}`, admissionNumber: `${i}`, classArm: "JSS 2 A", classArmId: "arm-a", classLevel: "JSS 2", totalDue: 5000000, totalPaid: 0, balance: 5000000, status: "OVERDUE", dueDate: null, hasPaymentPlan: false, supplementary: false, risk: { level: "LOW", reasons: [] } }));
 const response = (n: number): SendRemindersResult => ({ sent: n, skipped: 0, skippedBy: { NO_BALANCE: 0, NO_GUARDIAN: 0, NO_CONTACT: 0, NOT_DELIVERED: 0 }, noChannel: false });
 function fixture(n = 51, canReadChannels = true) {
   const api = { list: vi.fn().mockResolvedValue(rows(n)), send: vi.fn().mockImplementation(async (input) => response(input.studentIds.length)), channels: vi.fn().mockResolvedValue({ emailEnabled: true, smsEnabled: false, pushEnabled: false, updatedBy: null, updatedAt: null }) };

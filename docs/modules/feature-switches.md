@@ -57,6 +57,7 @@ stays 23.
 | `reminder-campaigns` | Fee reminder campaigns | Reviewed, journaled fee reminder campaigns (`docs/modules/reminder-campaigns.md`); no model. Off halts running campaigns before their next send. `POST /finance/debtors/remind` is not behind it | Backend built; off everywhere |
 | `student-corrections` | Reviewed student corrections | Reviewed batch corrections to names, date of birth, gender and email (`docs/modules/student-corrections.md`); no model. `PATCH /students/:id` is not behind it | Backend built; off everywhere |
 | `assistant-workspace` | SchoolKit Assistant | The staff assistant panel (`docs/modules/assistant-workspace.md`); no model. Each task also needs its own switch (`assistant-billing`, `reminder-campaigns`, `student-intake`, `student-corrections`) | Built; off everywhere |
+| `assistant-model-routing` | SchoolKit Assistant: AI understanding (pending approval) | Sends staff requests to the `assistant-orchestrator` prompt (`docs/modules/assistant-workspace.md`, "Model orchestration"). Its allowlist row is NOT approved; production refuses it until `ASSISTANT_ORCHESTRATOR_APPROVAL` is "approved". Needs `assistant-workspace` and AI on for the school | Built; off everywhere; do not switch on |
 
 ## API
 

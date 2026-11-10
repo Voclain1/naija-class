@@ -15,6 +15,7 @@ const caps = (over: Partial<AssistantCapabilitiesDto["workflows"]> = {}): Assist
     ...over,
   },
   help: { available: true },
+  lookup: { available: true },
   modelRouting: { available: false, reason: "NOT_APPROVED" },
   inactivityMinutes: 15,
 });

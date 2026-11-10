@@ -80,6 +80,11 @@ const DEBTOR_KEYS = [
   // level and its reasons, for the same readers (finance.debtors.read). No
   // contact detail; a sibling reason names only the child.
   "risk",
+  // 2026-11-09 (docs/modules/reminder-campaigns.md, "Class scope"): the class
+  // by identity, so a list can be filtered by ID when two levels both have an
+  // arm of the same name. A class id and a level name; no contact detail.
+  "classArmId",
+  "classLevel",
 ].sort();
 
 const DASHBOARD_KEYS = [

@@ -1,4 +1,6 @@
 import { billingToolRegistry } from "../modules/invoices/billing-tools.js";
+import { ORCHESTRATOR_TOOL_NAMES, orchestratorToolRegistry, TurnState, type OrchestratorDeps } from "../modules/assistant-workspace/orchestrator/orchestrator-tools.js";
+import { searchGuide } from "@school-kit/ai";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -233,7 +235,8 @@ async function dropFixture(schoolId: string): Promise<void> {
  * Returns the findings per tool; a conforming registry gives an empty list
  * for every tool.
  */
-async function runGate(registry: ToolRegistry, actor: AuthContext, scan: ConformanceFixture): Promise<Record<string, string[]>> {
+/** `prepare`: tool names allowed effect "prepare" (a reviewable preview, never an approval). */
+async function runGate(registry: ToolRegistry, actor: AuthContext, scan: ConformanceFixture, prepare: readonly string[] = []): Promise<Record<string, string[]>> {
   const result: Record<string, string[]> = {};
   for (const name of registry.names()) {
     const findings: string[] = [];
@@ -242,7 +245,7 @@ async function runGate(registry: ToolRegistry, actor: AuthContext, scan: Conform
     if (!access) findings.push("no access declaration");
     else if (access.kind === "permissions" && access.permissions.length === 0) findings.push("empty permission list");
     else if (access.kind === "anyActiveStaff" && access.reason.trim().length < 20) findings.push("anyActiveStaff without a reason");
-    if (conf.effect !== "read") findings.push(`effect "${conf.effect}" is not read`);
+    if (conf.effect !== "read" && !(conf.effect === "prepare" && prepare.includes(name))) findings.push(`effect "${conf.effect}" is not read`);
     findings.push(...scanFieldNames(conf.outputFields).map((f) => `declares ${f}`));
     if (conf.calls.length === 0) findings.push("no conformance calls");
 
@@ -344,6 +347,58 @@ describe("assistant tool conformance gate (FD-3b)", () => {
     expect(registry.names()).toEqual(["billing_check_scope", "billing_request_review"]);
     const result = await runGate(registry, fx.owner, fx.scan);
     expect(result).toEqual({ billing_check_scope: [], billing_request_review: [] });
+  });
+
+  it("the SchoolKit Assistant's orchestration tools conform: labels and counts reach the model, never the planted records", async () => {
+    // Every dependency returns the fixture's planted names, admission number,
+    // emails and kobo amounts; only labels and counts may cross to the model.
+    const named = fx.scan.personal.map((v) => v.value);
+    const kobo = String(AMOUNTS.totalDue);
+    const term = { id: "11111111-1111-4111-8111-111111111111", name: "Second Term", year: "2026/2027", academicYearId: "22222222-2222-4222-8222-222222222222", sequence: 2, isCurrent: true, startDate: new Date("2027-01-01") };
+    const arm = { id: "33333333-3333-4333-8333-333333333333", name: "JSS 2A", level: "JSS 2" };
+    const campaign = {
+      id: "44444444-4444-4444-8444-444444444444", proposalId: "x", termId: term.id, status: "COMPLETED", haltReason: null, templateVersion: "fee-reminder@1",
+      createdAt: "2027-02-01T10:00:00.000Z", haltedAt: null, completedAt: null, heldForQuietHours: false,
+      counts: { PENDING: 0, SENDING: 0, ACCEPTED: 2, SKIPPED: 0, FAILED: 0, UNKNOWN: 1, NOT_REQUESTED: 0 },
+      students: [{ studentId: "s", name: named.join(" "), admissionNumber: named[6], sends: [] }], limits: "",
+    };
+    const run = {
+      id: "55555555-5555-4555-8555-555555555555", status: "PENDING", termId: term.id, termLabel: named.join(" "), academicYearId: term.academicYearId,
+      dueDate: null, previewHash: "h", expiresAt: "", createdAt: "", approvedAt: null,
+      arms: [{ classArmId: arm.id, name: named.join(" "), students: named.map((n) => ({ name: n, totalDueKobo: kobo })) }],
+      createCount: 3, skipCount: 1, totalDueKobo: kobo, blockers: [named.join(" ")], result: null,
+    };
+    const deps: OrchestratorDeps = {
+      structure: async () => ({ terms: [term], arms: [arm] }),
+      capabilities: async () => ({
+        enabled: true, help: { available: true }, lookup: { available: true }, inactivityMinutes: 15, modelRouting: { available: true, reason: null },
+        workflows: Object.fromEntries(["invoices", "reminders", "intake", "corrections"].map((w) => [w, { available: true, reason: null, canApprove: true }])) as never,
+      }),
+      prepareInvoices: async () => run as never,
+      invoiceRun: async () => run as never,
+      campaign: async () => campaign as never,
+      reminderProposalCampaignId: async () => campaign.id,
+      intakeProposal: async () => ({ id: "p", status: "COMPLETED", outcome: { createdCount: 2, students: named } }) as never,
+      correctionProposal: async () => ({ id: "p", status: "COMPLETED", outcome: { updatedCount: 1, students: named } }) as never,
+      recentCampaignIds: async () => [campaign.id],
+      searchGuide: (q) => searchGuide(q, { limit: 3 }).map((h) => ({ anchor: h.anchor, title: h.title, path: h.path, excerpt: h.excerpt })),
+      // Named lookup returns the planted names and admission number: only handles and class labels may reach the model.
+      findStudents: async () => ({
+        status: "several",
+        matches: [0, 1].map((i) => ({ studentId: `00000000-0000-4000-8000-00000000000${i}`, name: named.join(" "), admissionNumber: named[6]!, classArmId: arm.id, classLabel: "JSS 2 · JSS 2A", termId: term.id, status: "ACTIVE", match: "exact" as const })),
+      }),
+      permissions: async () => new Set(["*"]),
+    };
+    const state = new TurnState(
+      await deps.structure(fx.owner),
+      [{ handle: "t1", workflow: "reminders", status: "done", campaignId: campaign.id }],
+      [{ handle: "s1", studentId: "00000000-0000-4000-8000-000000000009", selected: true, classLabel: "JSS 2 · JSS 2A" }],
+      new Map([["P1", named[3]!]]),
+    );
+    const registry = orchestratorToolRegistry(deps, state);
+    expect(registry.names()).toEqual([...ORCHESTRATOR_TOOL_NAMES]);
+    const result = await runGate(registry, fx.owner, fx.scan, ["prepare_invoices"]);
+    expect(result).toEqual(Object.fromEntries(ORCHESTRATOR_TOOL_NAMES.map((n) => [n, []])));
   });
 
   it("the fixture really holds what the scan looks for, so an empty table cannot pass", async () => {

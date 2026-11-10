@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, BookOpen, Eraser, Minus, Sparkles } from "lucide-react";
+import { ArrowUp, BookOpen, Eraser, Loader2, Minus, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
@@ -14,11 +14,12 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { assistantApi } from "@/lib/assistant/api";
-import type { AssistantMessage } from "@/lib/assistant/store";
+import { looksPasted, type AssistantMessage } from "@/lib/assistant/store";
 import { stripBasePath } from "@/lib/base-path";
 import { cn } from "@/lib/utils";
 
 import { useAssistant } from "./assistant-provider";
+import { StudentMatchesCard, StudentRecordCard, StudentSearchCard } from "./cards/student-cards";
 import { TaskCard } from "./cards/task-card";
 
 // The SchoolKit Assistant: one launcher and one panel in the staff shell
@@ -166,9 +167,17 @@ function Welcome({ caps }: { caps: AssistantCapabilitiesDto }) {
           ? "Describe the task in your own words, or pick one below. I’ll gather what’s needed, show you exactly what will change, and only act when you approve it."
           : "Your account can search the Getting started guide here. Ask a question about using SchoolKit."}
       </p>
-      <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-        Your requests are understood on this device and aren’t sent to an AI model. Don’t type passwords, PINs or bank details.
-      </p>
+      {caps.modelRouting.available ? (
+        <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+          What you type here is sent to SchoolKit’s AI model (provided by Anthropic) to work out the task. Don’t type names, phone numbers,
+          dates of birth, passwords, PINs or bank details: put personal details in the task forms, which the AI never sees. Nothing changes until
+          you approve it on a card.
+        </p>
+      ) : (
+        <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+          Your requests are understood on this device and aren’t sent to an AI model. Don’t type passwords, PINs or bank details.
+        </p>
+      )}
     </div>
   );
 }
@@ -187,7 +196,24 @@ function Message({ message: m, caps }: { message: AssistantMessage; caps: Assist
   const bubble = "max-w-full break-words rounded-2xl rounded-bl-md bg-muted px-3.5 py-2 text-sm";
   switch (m.kind) {
     case "text":
-      return <li><p className={bubble}><span className="sr-only">Assistant: </span>{m.text}</p></li>;
+      return (
+        <li>
+          <p className={bubble}>
+            <span className="sr-only">Assistant{m.model ? " (AI)" : ""}: </span>
+            {m.model && <span aria-hidden className="mr-1.5 rounded bg-background px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">AI</span>}
+            {m.text}
+          </p>
+        </li>
+      );
+    case "pending":
+      return (
+        <li>
+          <p className={cn(bubble, "inline-flex items-center gap-2 text-muted-foreground")} role="status">
+            <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden />
+            {m.text}
+          </p>
+        </li>
+      );
     case "refusal":
       return (
         <li className="space-y-2">
@@ -211,6 +237,12 @@ function Message({ message: m, caps }: { message: AssistantMessage; caps: Assist
       );
     case "help":
       return <li><HelpAnswer id={m.id} query={m.query} hits={m.hits} /></li>;
+    case "students":
+      return <li><StudentMatchesCard asked={m.asked} status={m.status} studentIds={m.studentIds} /></li>;
+    case "student-record":
+      return <li><StudentRecordCard studentId={m.studentId} section={m.section} /></li>;
+    case "lookup":
+      return <li><StudentSearchCard query={m.query} classHints={m.classHints} /></li>;
     case "task":
       return (
         <li className="space-y-2">
@@ -272,13 +304,19 @@ function Suggestions({ caps }: { caps: AssistantCapabilitiesDto }) {
 }
 
 function Composer({ caps, inputRef }: { caps: AssistantCapabilitiesDto; inputRef: React.RefObject<HTMLTextAreaElement | null> }) {
-  const { store } = useAssistant();
+  const { store, state } = useAssistant();
   // The draft lives in this component’s memory only (never storage).
   const [text, setText] = useState("");
+  const [tooLong, setTooLong] = useState(false);
   const id = useId();
+  const thinking = state.messages.some((m) => m.role === "assistant" && m.kind === "pending");
   function submit() {
-    if (!text.trim()) return;
-    store.send(text, caps);
+    if (!text.trim() || thinking) return;
+    // A request is short; rows to paste are the one long input, and they never reach the model.
+    if (text.length > ASSISTANT_MAX_REQUEST_CHARS && !looksPasted(text)) { setTooLong(true); return; }
+    setTooLong(false);
+    if (caps.modelRouting.available) void store.sendModel(text, caps, assistantApi);
+    else store.send(text, caps);
     setText("");
   }
   return (
@@ -294,14 +332,16 @@ function Composer({ caps, inputRef }: { caps: AssistantCapabilitiesDto; inputRef
         data-sentry-mask
         autoComplete="off"
         rows={2}
-        maxLength={ASSISTANT_MAX_REQUEST_CHARS}
+        maxLength={20_000}
+        aria-describedby={tooLong ? `${id}-long` : undefined}
         value={text}
         onChange={(e) => { setText(e.target.value); store.touch(); }}
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
         placeholder="e.g. Remind parents with overdue fees in JSS 1"
         className="max-h-40 min-h-[2.75rem] flex-1 resize-none rounded-xl border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-sm"
       />
-      <Button type="submit" size="sm" className={cn("h-11 w-11 rounded-full p-0")} disabled={!text.trim()} aria-label="Send request">
+      {tooLong && <p id={`${id}-long`} className="sr-only" role="alert">Keep requests under {ASSISTANT_MAX_REQUEST_CHARS} characters. Put student details in the task forms.</p>}
+      <Button type="submit" size="sm" className={cn("h-11 w-11 rounded-full p-0")} disabled={!text.trim() || thinking} aria-label="Send request">
         <ArrowUp className="h-5 w-5" aria-hidden />
       </Button>
     </form>

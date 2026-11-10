@@ -13,7 +13,7 @@ import { DurableCampaignSession } from "@/lib/reminder-campaigns/durable-session
 import type { CampaignRequest } from "@/lib/reminder-campaigns/session";
 
 export const SEND_LABELS: Record<ReminderSendOutcome, string> = { PENDING: "Waiting", SENDING: "In progress", ACCEPTED: "Accepted by provider", SKIPPED: "Skipped", FAILED: "Refused by provider", UNKNOWN: "May have been sent", NOT_REQUESTED: "Not requested" };
-const eligibility: Record<string, string> = { ELIGIBLE: "Will be reminded", NOT_FOUND: "Student unavailable", NO_BALANCE: "No outstanding balance", ON_PAYMENT_PLAN: "Excluded: payment plan", NOT_OVERDUE: "Not overdue", NO_GUARDIAN: "No linked guardian", NO_CONTACT: "No reachable contact" };
+const eligibility: Record<string, string> = { ELIGIBLE: "Will be reminded", NOT_FOUND: "Student unavailable", NO_BALANCE: "No outstanding balance", ON_PAYMENT_PLAN: "Excluded: payment plan", NOT_OVERDUE: "Not overdue", NO_GUARDIAN: "No linked guardian", NO_CONTACT: "No reachable contact", OUT_OF_SCOPE: "Not in the chosen class" };
 function reason(code: string | null) { return code ? code.toLowerCase().replaceAll("_", " ") : ""; }
 type Props = { request?: CampaignRequest; proposalId?: string; campaignId?: string; onClose?: () => void };
 export function DurableCampaignPanel(props: Props) {

@@ -199,3 +199,11 @@ export {
 export { plainText, renderGuideIndexModule, splitGuide, type GuideSection } from "./help-guide/guide-sections.js";
 
 export { BILLING_RUN_PROMPT, BILLING_RUN_SYSTEM, BILLING_RUN_TASK } from "./prompts/billing-run.js";
+export {
+  ASSISTANT_ORCHESTRATOR_APPROVAL,
+  ASSISTANT_ORCHESTRATOR_PROMPT,
+  ASSISTANT_ORCHESTRATOR_SYSTEM,
+  ASSISTANT_ORCHESTRATOR_TOOLS,
+  orchestratorToolSpec,
+  type OrchestratorToolSpec,
+} from "./prompts/assistant-orchestrator.js";

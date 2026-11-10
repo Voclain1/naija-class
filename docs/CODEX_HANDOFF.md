@@ -190,6 +190,22 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-09)
 
+- **SchoolKit Assistant model orchestration (November 9):** branch
+  `agentic/assistant-orchestration`, one PR.
+  - Prompt `assistant-orchestrator@1`, behind `assistant-model-routing` (off
+    everywhere) and `ASSISTANT_ORCHESTRATOR_APPROVAL = "pending"` (refused in
+    production).
+  - Real tool calling through `AiGenerationService.runConversationTurn` and
+    `ToolRegistry`. Tools return labels and counts. There is no approval
+    tool; approval stays the card's control.
+  - The proposed allowlist row is in `docs/modules/assistant-workspace.md`,
+    NOT approved.
+  - Live evals were skipped (no key here). Not merged, deployed or enabled.
+  - Review fixes pushed to the same PR (#523): revisions invalidate open
+    previews in all four cards, blocked text never re-enters model history,
+    reminders are scoped by class ID on the server (`options.classArmIds`),
+    and named student lookup is added (names become markers; the server
+    resolves them; records show in cards only). Prompt is now `@2`.
 - **SchoolKit Assistant, unified workspace (November 9):** branch
   `agentic/unified-assistant`, one PR. One staff panel (launcher bottom-right
   in both shells, Alt+Shift+A) driving the four reviewed workflows end to end

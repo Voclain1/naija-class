@@ -133,6 +133,17 @@ describe("ToolRegistry — registration refuses an unsafe tool", () => {
     expect(() => r.register(base)).toThrow(/already registered/);
   });
 
+  it("no tool may be named like an approval or an execution; prepare (a reviewable preview) is accepted", () => {
+    for (const name of ["approve_invoices", "confirm_campaign", "issue_invoices", "send_reminders", "resume_campaign", "halt", "delete_student", "save_students", "apply_corrections", "pay_invoice", "run_billing", "enrol_students"]) {
+      refused({ name }, /may not approve or execute/);
+    }
+    // Words that merely contain those letters stay allowed.
+    for (const name of ["payments_summary", "issued_count", "school_setup_progress", "prepare_invoices", "plan_reminders"]) {
+      expect(() => new ToolRegistry().register({ ...base, name } as ReadToolDefinition<z.AnyZodObject>)).not.toThrow();
+    }
+    expect(() => new ToolRegistry().register({ ...base, effect: "prepare" } as ReadToolDefinition<z.AnyZodObject>)).not.toThrow();
+  });
+
   it("non-strict args, id-like or tenant-like argument names, and a JSON schema that disagrees with args", () => {
     refused({ args: z.object({ verbose: z.boolean().optional() }) }, /strict\(\)/);
     for (const key of ["studentId", "id", "class_id", "schoolId", "tenant"]) {

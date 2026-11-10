@@ -171,6 +171,41 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     expect(overdue.students.find((s) => s.studentId === A.bo.id)!.eligibility).toBe("NOT_OVERDUE");
   });
 
+  it("scopes by class IDENTITY on the server: two levels both with an arm called \"A\", only the requested one is reminded", async () => {
+    const twin = await withTenant(A.schoolId, async (db) => {
+      const year = await db.term.findUniqueOrThrow({ where: { id: A.termId }, select: { academicYearId: true } });
+      const mk = async (levelName: string, code: string, first: string) => {
+        const level = await db.classLevel.create({ data: { schoolId: A.schoolId, name: levelName, code, orderIndex: 5, stage: "JSS" } });
+        const arm = await db.classArm.create({ data: { schoolId: A.schoolId, classLevelId: level.id, name: "A", code: `${code}a` } });
+        const s = await db.student.create({ data: { schoolId: A.schoolId, firstName: first, lastName: "Twin", admissionNumber: `T-${code}`, dateOfBirth: new Date("2014-01-01"), gender: "MALE" } });
+        await db.enrollment.create({ data: { schoolId: A.schoolId, studentId: s.id, termId: A.termId, academicYearId: year.academicYearId, classArmId: arm.id, status: "ENROLLED" } });
+        await db.invoice.create({ data: { schoolId: A.schoolId, studentId: s.id, termId: A.termId, academicYearId: year.academicYearId, classArmId: arm.id, status: "OVERDUE", sequence: 1, items: [], totalAmount: 1_000_00, totalDiscount: 0, totalDue: 1_000_00, totalPaid: 0, dueDate: new Date("2026-10-01"), issuedAt: new Date(), issuedBy: A.bursar.auth.userId } });
+        await db.studentGuardian.create({ data: { schoolId: A.schoolId, studentId: s.id, guardianId: A.mum.id, isPrimary: true } });
+        return { arm, s };
+      };
+      return { j1: await mk("JSS 7", "j7", "Seven"), j2: await mk("JSS 8", "j8", "Eight") };
+    });
+    // The browser selected both (a name filter cannot tell two "A" arms apart); the server enforces the ID scope.
+    const p = await service.prepare(A.bursar.auth, {
+      clientRequestId: randomUUID(), termId: A.termId, studentIds: [twin.j1.s.id, twin.j2.s.id],
+      options: { includePaymentPlans: false, overdueOnly: false, classArmIds: [twin.j2.arm.id] },
+    }, null);
+    const by = Object.fromEntries(p.students.map((x) => [x.studentId, x.eligibility]));
+    expect(by).toEqual({ [twin.j1.s.id]: "OUT_OF_SCOPE", [twin.j2.s.id]: "ELIGIBLE" });
+    expect(p.counts).toMatchObject({ eligible: 1, excluded: { OUT_OF_SCOPE: 1 } });
+    // Confirming recomputes under the same scope: only the JSS 8 child is planned and sent.
+    const c = await confirm(p);
+    expect(await run(c.id)).toBe("DONE");
+    expect([...new Set((await sendsOf(c.id)).map((x) => x.studentId))]).toEqual([twin.j2.s.id]);
+    // A scope naming another school's class matches nobody here.
+    const forged = await service.prepare(A.bursar.auth, {
+      clientRequestId: randomUUID(), termId: A.termId, studentIds: [twin.j2.s.id],
+      options: { includePaymentPlans: false, overdueOnly: false, classArmIds: [randomUUID()] },
+    }, null);
+    expect(forged.students[0]!.eligibility).toBe("OUT_OF_SCOPE");
+    expect(forged.canConfirm).toBe(false);
+  });
+
   it("confirms once into a journal, sends each planned slot once, and reports per-send outcomes", async () => {
     const p = await prepare(all());
     const c = await confirm(p);

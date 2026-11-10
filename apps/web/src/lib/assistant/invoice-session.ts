@@ -63,6 +63,17 @@ export class InvoiceRunSession {
     try { this.accept(await this.api.get(id)); }
     catch { this.set("unknown", this.state.run, "Whether these invoices were issued is not confirmed. Check this original run; do not prepare another."); }
   }
+  /**
+   * Shows a run the server already prepared (from the assistant's model turn),
+   * replacing an unapproved preview. Never while an approval is in flight or
+   * its outcome is open. The person still approves it with its own hash.
+   */
+  async adopt(id: string, input: BillingRunInput) {
+    if (this.disposed || this.working || ["approving", "checking", "unknown", "done"].includes(this.state.phase)) return;
+    this.input = structuredClone(input);
+    this.working = true; this.set("preparing", null);
+    try { await this.read(id); } finally { this.working = false; }
+  }
   /** Re-reads the original run (after a lost response, or from a reference). */
   async check(id = this.state.run?.id) {
     if (this.disposed || this.working || !id) return;

@@ -1,4 +1,8 @@
 import type {
+  StudentLookupQuery,
+  StudentLookupResultDto,
+  AssistantTurnDto,
+  AssistantTurnInput,
   AssistantCapabilitiesDto,
   AssistantHelpHitDto,
   BillingContextDto,
@@ -9,11 +13,15 @@ import type {
 } from "@school-kit/types";
 import { apiFetch } from "@/lib/api-client";
 
-// The assistant's own two endpoints, and the existing workflow APIs it drives.
-// Request text goes only to /help, in a POST body (never a URL).
+// The assistant's own endpoints, and the existing workflow APIs it drives.
+// Request text goes only to /help and /turn, in a POST body (never a URL).
 export const assistantApi = {
   capabilities: () => apiFetch<AssistantCapabilitiesDto>("/assistant/workspace/capabilities"),
   help: (question: string) => apiFetch<{ hits: AssistantHelpHitDto[] }>("/assistant/workspace/help", { method: "POST", body: { question } }),
+  /** Named student lookup without the model (POST: a name never travels in a URL). */
+  findStudents: (input: StudentLookupQuery) => apiFetch<StudentLookupResultDto>("/assistant/workspace/students/find", { method: "POST", body: input }),
+  /** One model-backed turn (docs/modules/assistant-workspace.md, "Model orchestration"). POST body only. */
+  turn: (input: AssistantTurnInput) => apiFetch<AssistantTurnDto>("/assistant/workspace/turn", { method: "POST", body: input }),
 };
 
 const billing = "/assistant/billing";

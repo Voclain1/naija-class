@@ -27,6 +27,7 @@ import { renderReportCardCommentPrompt } from "../../src/prompts/report-card-com
 import { renderReportCardFormCommentPrompt } from "../../src/prompts/report-card-form-comment.js";
 import { renderStudentListExtractionPrompt } from "../../src/prompts/student-list-extraction.js";
 import { PROMPTS } from "../../src/prompts/registry.js";
+import { ASSISTANT_ORCHESTRATOR_APPROVAL } from "../../src/prompts/assistant-orchestrator.js";
 import { check, type EvalCase } from "../harness.js";
 
 // ---------------------------------------------------------------------------
@@ -62,6 +63,16 @@ const PII_BEARING_PROMPT_ALLOWLIST = ["student-list-extraction", "assignment-fee
 // the change that registers `help-assistant` has to remove it from here, and
 // from then on the "still exists" check below covers it like the others.
 const PII_ALLOWLIST_PENDING_REGISTRATION: readonly string[] = ["help-assistant"];
+
+// PROPOSED, NOT APPROVED (2026-11-09): `assistant-orchestrator`, the SchoolKit
+// Assistant's operational chat. Built and registered behind a disabled switch;
+// staff-typed text can carry personal data the detectors miss, so it needs its
+// own allowlist row and the owner's sign-off (proposed wording:
+// docs/modules/assistant-workspace.md). It is NOT on the list above, and the
+// API refuses it in production until ASSISTANT_ORCHESTRATOR_APPROVAL is
+// "approved". Approving it moves it from here into the list above, in the same
+// change as the CLAUDE.md row.
+const PII_ALLOWLIST_PROPOSED_NOT_APPROVED: readonly string[] = ["assistant-orchestrator"];
 
 // Field names that must never appear in a rendered prompt. If a template ever
 // interpolates a labelled PII field, the label itself usually travels with it.
@@ -567,6 +578,16 @@ export const piiSafetyCase: EvalCase = {
           (name) => (PII_BEARING_PROMPT_ALLOWLIST as readonly string[]).includes(name) && !registryNames.includes(name),
         ),
         "the prompt is now registered: remove it from PII_ALLOWLIST_PENDING_REGISTRATION in the same change",
+      ),
+    );
+
+    results.push(
+      check(
+        "allowlist: a proposed prompt is registered but NOT allowlisted, and its approval flag is still pending",
+        PII_ALLOWLIST_PROPOSED_NOT_APPROVED.every(
+          (name) => registryNames.includes(name) && !(PII_BEARING_PROMPT_ALLOWLIST as readonly string[]).includes(name),
+        ) && ASSISTANT_ORCHESTRATOR_APPROVAL === "pending",
+        "assistant-orchestrator is only a proposal: it must not join the allowlist, or be marked approved, without the owner's sign-off",
       ),
     );
 
