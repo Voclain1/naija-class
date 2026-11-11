@@ -58,6 +58,7 @@ import {
   type PlatformAdminSetSmartImportInput,
   type PlatformAdminSetSmartImportResponse,
   type PlatformAdminSetFeatureInput,
+  type PlatformAdminAssistantStatusDto,
   type PlatformAdminSetFeatureResponse,
   type PlatformAdminDecideSmsSenderInput,
   type PlatformAdminDecideSmsSenderResponse,
@@ -75,6 +76,7 @@ import { CurrentPlatformAdmin } from "../../common/auth/current-platform-admin.d
 import type { PlatformAdminContext } from "../../common/auth/platform-admin-context";
 import { PlatformAdminGuard } from "../../common/auth/platform-admin.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
+import { AssistantActivationService } from "./assistant-activation.service";
 import { PlatformAdminService } from "./platform-admin.service";
 
 // Genuinely separate top-level surface — see CLAUDE.md's "Platform
@@ -83,7 +85,10 @@ import { PlatformAdminService } from "./platform-admin.service";
 // itself" precedent); every other route requires PlatformAdminGuard.
 @Controller("platform-admin")
 export class PlatformAdminController {
-  constructor(private readonly platformAdminService: PlatformAdminService) {}
+  constructor(
+    private readonly platformAdminService: PlatformAdminService,
+    private readonly assistantActivation: AssistantActivationService,
+  ) {}
 
   // POST /platform-admin/login — same tighter-than-global throttle as
   // staff/guardian login.
@@ -283,6 +288,17 @@ export class PlatformAdminController {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });
+  }
+
+  // GET /platform-admin/schools/:schoolId/assistant — the SchoolKit Assistant
+  // for one school: each switch as stored, whether it is actually working, and
+  // every reason it is not (2026-11-10, docs/modules/assistant-workspace.md,
+  // "Controlled activation"). Read-only; the switches themselves are still set
+  // one at a time through PATCH .../features above, so every change is audited.
+  @Get("schools/:schoolId/assistant")
+  @UseGuards(PlatformAdminGuard)
+  async assistantStatus(@Param("schoolId") schoolId: string): Promise<PlatformAdminAssistantStatusDto> {
+    return this.assistantActivation.status(schoolId);
   }
 
   // PATCH /platform-admin/schools/:schoolId/sms-sender — records the
