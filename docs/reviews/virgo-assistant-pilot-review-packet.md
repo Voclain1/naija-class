@@ -43,6 +43,28 @@ Collect without exposing the API key:
 
 The public provider baseline described in `docs/reviews/agentic-f16-f17-approval-brief.md` is **not** sufficient evidence for SchoolKit's organisation.
 
+## 5a. Owner-provided Anthropic Console evidence (2026-11-11)
+
+Source: screenshots supplied by the SchoolKit owner from `platform.claude.com/settings/privacy` and `platform.claude.com/settings/organization`. These are **observations of the displayed account**, not an independent API-key-to-organisation match, a contract acceptance record or a guarantee of future settings. Screenshots are not committed to the repository because they include account and business details.
+
+| Field | Evidence | Status |
+|---|---|---|
+| Displayed organisation | Arinzechukwu's Individual Org | Observed in Console |
+| Organisation identifier | Displayed in Console; deliberately not copied into this review document | Observed; production-key association unverified |
+| Organisation country | United States (business address field) | Observed; **not** proof of processing/storage residency |
+| Retention | Organisation default **On — 30 days** | Observed; zero-data-retention **not** enabled |
+| Development Partner Program | Join button visible | Appears not enrolled; independently confirm if needed |
+| Allow user feedback | Toggle off | Observed |
+| Claude Code metrics logging | Toggle on | Observed; separate from API prompt training and retention |
+| Production API key belongs to this organisation | Not established by screenshots | **Open** |
+| Commercial Terms / DPA acceptance and dates | Not shown | **Open** |
+| Regional processing, storage, model-specific exceptions | Not shown | **Open** |
+| Training opt-in and historical feedback | UI suggests no sharing, but not full historical evidence | **Open** |
+
+The owner supplied links to the provider's general Privacy Policy, Acceptable Use Policy and Commercial Terms. These are useful contractual references but do not themselves establish which agreement version and amendments govern the deployed organisation. Counsel should verify applicable versions, cross-border transfer protections and children's-data requirements.
+
+**Security note:** The Console page also displayed a low account balance. Before a supervised pilot, confirm sufficient credit or automatic reload so the assistant does not fail mid-turn. Never record billing instruments or secrets in this packet.
+
 ## 6. Questions for the Nigerian data-protection reviewer
 
 - Is the controller/processor classification correct for staff prompts, student record lookup and prepared financial actions?
