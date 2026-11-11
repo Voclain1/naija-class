@@ -52,6 +52,10 @@ export const assistantOrchestratorCase: EvalCase = {
     check("behaviour, health, contacts and unreleased results are not lookup sections", /Behaviour, health,\s+contact details and unreleased results are not available here/i.test(S)),
     check("the live eval has scenarios for paraphrase, refinement, switching, ambiguity, refusal, approval wording and injection", SCENARIOS.length >= 10),
     check(
+      "the live eval covers each activation area: paraphrase, follow-up revision, named lookup, ambiguity, permissions, injection",
+      ["paraphrased", "revision", "named lookup", "ambiguous", "permissions:", "injection"].every((area) => SCENARIOS.filter((sc) => sc.name.includes(area)).length >= (area === "ambiguous" ? 1 : 2)),
+    ),
+    check(
       "scenario requests carry no personal data (the detectors would block them before the model)",
       SCENARIOS.every((s) => ![s.user, ...s.history].some((t) => /@|\+?234\d|\b0[789][01]\d{8}\b|\d{1,2}[/.-]\d{1,2}[/.-](19|20)\d{2}/.test(t))),
     ),

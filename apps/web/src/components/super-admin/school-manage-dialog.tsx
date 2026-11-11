@@ -31,6 +31,7 @@ import { OwnerContact } from "./owner-contact";
 import { PlatformActivity } from "./platform-activity";
 import { SchoolAddressSection } from "./school-address-section";
 import { WebsiteReviewPanel } from "./website-review";
+import { AssistantActivationSection } from "./assistant-activation-section";
 import { FeatureSwitchesSection, PlanSection, SmartImportSection, SmsSenderSection } from "./school-features-section";
 import { DeleteSchoolSection, SchoolAccessSection } from "./school-lifecycle-sections";
 import { SchoolSwitchesSection } from "./school-switches-section";
@@ -270,6 +271,7 @@ export function SchoolManageDialog({ school, onClose, onChanged, onDeleted }: Pr
 
         <PlanSection school={school} onChanged={onChanged} />
         <SmartImportSection school={school} onChanged={onChanged} />
+        <AssistantActivationSection school={school} onChanged={onChanged} />
         <FeatureSwitchesSection school={school} onChanged={onChanged} />
         <SmsSenderSection school={school} onChanged={onChanged} />
         <SchoolAddressSection school={school} onChanged={onChanged} />
