@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
-import { withTenant } from "@school-kit/db";
+import { withTenant, type PrismaClient } from "@school-kit/db";
 import type { PortalStorePriceListDto, StoreSettingsDto, UpdateStoreSettingsInput } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
@@ -9,6 +9,9 @@ import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 import { stockByVariant } from "./store.service.js";
 import { assertAnyOf, type RequestContext } from "./store.shared.js";
 
+// Store settings: the parents' price list, and (2026-11-11, store-orders.md)
+// how students' store orders are billed — both the school's call (owner, admin).
+//
 // The store's price list for parents (2026-10-19, id-cards-and-store.md §4b):
 // what the school sells and for how much, read-only. A parent sees an item
 // only when it is stocked and has a selling price; each size says "available"
@@ -20,8 +23,7 @@ export class StorePricesService {
   async settings(authCtx: AuthContext): Promise<StoreSettingsDto> {
     await assertAnyOf(authCtx, "store.read");
     return withTenant(authCtx.schoolId, async (db) => {
-      const school = await db.school.findUniqueOrThrow({ where: { id: authCtx.schoolId }, select: { storePricesForParents: true } });
-      return { pricesForParents: school.storePricesForParents };
+      return readSettings(db, authCtx.schoolId);
     });
   }
 
@@ -29,7 +31,14 @@ export class StorePricesService {
   async updateSettings(authCtx: AuthContext, input: UpdateStoreSettingsInput, reqCtx: RequestContext): Promise<StoreSettingsDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
     return withTenant(authCtx.schoolId, async (db) => {
-      await db.school.update({ where: { id: authCtx.schoolId }, data: { storePricesForParents: input.pricesForParents } });
+      await db.school.update({
+        where: { id: authCtx.schoolId },
+        data: {
+          ...(input.pricesForParents !== undefined ? { storePricesForParents: input.pricesForParents } : {}),
+          ...(input.billingDefault !== undefined ? { storeBillingDefault: input.billingDefault } : {}),
+          ...(input.sellerMayChooseBilling !== undefined ? { storeBillingSellerChoice: input.sellerMayChooseBilling } : {}),
+        },
+      });
       await db.auditLog.create({
         data: {
           schoolId: authCtx.schoolId,
@@ -38,10 +47,10 @@ export class StorePricesService {
           entityType: "school",
           entityId: authCtx.schoolId,
           ipAddress: reqCtx.ipAddress,
-          metadata: { pricesForParents: input.pricesForParents },
+          metadata: { ...input },
         },
       });
-      return { pricesForParents: input.pricesForParents };
+      return readSettings(db, authCtx.schoolId);
     });
   }
 
@@ -80,4 +89,17 @@ export class StorePricesService {
       };
     });
   }
+}
+
+async function readSettings(db: PrismaClient, schoolId: string): Promise<StoreSettingsDto> {
+  const school = await db.school.findUniqueOrThrow({
+    where: { id: schoolId },
+    select: { storePricesForParents: true, storeBillingDefault: true, storeBillingSellerChoice: true },
+  });
+  return {
+    pricesForParents: school.storePricesForParents,
+    // The column's CHECK keeps COUNTER out; it is for staff and walk-in buyers only.
+    billingDefault: school.storeBillingDefault === "STORE_INVOICE" ? "STORE_INVOICE" : "FEES_INVOICE",
+    sellerMayChooseBilling: school.storeBillingSellerChoice,
+  };
 }

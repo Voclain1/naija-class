@@ -5,6 +5,7 @@ import { Injectable, Optional } from "@nestjs/common";
 import { Prisma, withTenant, type PrismaClient } from "@school-kit/db";
 import {
   ConflictError,
+  formatStoreOrderNumber,
   lagosTodayIso,
   MAX_STUDENT_CHARGE_KOBO,
   NotFoundError,
@@ -85,6 +86,18 @@ export async function stockByVariant(db: PrismaClient, variantIds?: string[]): P
 
 const NO_STOCK: Stock = { onHand: 0, averageCost: null };
 
+/** Sold on active orders but not yet handed over, per variant (store-orders.md). */
+export async function toCollectByVariant(db: PrismaClient, variantIds: string[]): Promise<Map<string, number>> {
+  if (variantIds.length === 0) return new Map();
+  const rows = await db.$queryRaw<{ variant_id: string; n: number }[]>`
+    SELECT l.variant_id, COALESCE(SUM(l.quantity - l.collected), 0)::int AS n
+      FROM store_order_lines l
+      JOIN store_orders o ON o.id = l.order_id
+     WHERE o.status = 'ACTIVE' AND l.variant_id = ANY(${variantIds}::text[])
+     GROUP BY l.variant_id`;
+  return new Map(rows.map((r) => [r.variant_id, Number(r.n)]));
+}
+
 /** Items at or below their reorder level, for the dashboard. */
 export async function lowStockItemCount(db: PrismaClient): Promise<number> {
   const rows = await db.$queryRaw<{ n: number }[]>`
@@ -99,7 +112,7 @@ export async function lowStockItemCount(db: PrismaClient): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-function variantName(item: { name: string }, label: string | null): string {
+export function variantName(item: { name: string }, label: string | null): string {
   return label ? `${item.name} (${label})` : item.name;
 }
 
@@ -151,6 +164,7 @@ export class StoreService {
     });
     if (!item) throw new NotFoundError("Item not found.");
     const stock = await stockByVariant(db, item.variants.map((v) => v.id));
+    const owed = await toCollectByVariant(db, item.variants.map((v) => v.id));
     const variants: StoreVariantDto[] = item.variants.map((v) => {
       const s = stock.get(v.id) ?? NO_STOCK;
       return {
@@ -160,6 +174,7 @@ export class StoreService {
         effectivePrice: v.sellPrice ?? item.sellPrice,
         onHand: s.onHand,
         averageCost: s.averageCost,
+        toCollect: owed.get(v.id) ?? 0,
         isActive: v.isActive,
       };
     });
@@ -442,7 +457,11 @@ export class StoreService {
             }
           : {}),
       },
-      include: { item: { select: { name: true } }, variant: { select: { label: true } } },
+      include: {
+        item: { select: { name: true } },
+        variant: { select: { label: true } },
+        orderLine: { select: { order: { select: { id: true, number: true, buyer: true, buyerName: true } } } },
+      },
       orderBy: { createdAt: "desc" },
       take,
     });
@@ -465,11 +484,15 @@ export class StoreService {
         ? (studentById.get(r.studentId) ?? null)
         : r.userId
           ? (names.get(r.userId) ?? null)
-          : r.department,
+          : r.orderLine?.order.buyer === "WALK_IN"
+            ? (r.orderLine.order.buyerName ?? "Walk-in buyer")
+            : r.department,
       supplier: r.supplier,
       reference: r.reference,
       reason: r.reason,
-      billed: r.studentChargeId !== null,
+      billed: r.studentChargeId !== null || r.orderLine !== null,
+      orderNumber: r.orderLine ? formatStoreOrderNumber(r.orderLine.order.number) : null,
+      orderId: r.orderLine?.order.id ?? null,
       createdByName: names.get(r.createdBy) ?? "—",
       createdAt: r.createdAt,
     }));
@@ -883,7 +906,7 @@ export function lagosDayStart(iso: string, addDays = 0): Date {
   return d;
 }
 
-async function audit(
+export async function audit(
   db: PrismaClient,
   authCtx: AuthContext,
   action: string,

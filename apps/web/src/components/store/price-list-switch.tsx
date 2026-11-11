@@ -31,7 +31,7 @@ export function PriceListSwitch() {
     setSaving(true);
     setError(null);
     try {
-      setOn((await updateStoreSettings(next)).pricesForParents);
+      setOn((await updateStoreSettings({ pricesForParents: next })).pricesForParents);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not save.");
     } finally {

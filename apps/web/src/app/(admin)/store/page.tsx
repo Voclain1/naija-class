@@ -10,6 +10,7 @@ import { STORE_CATEGORY_LABELS, storeCategoryValues, type StoreCategory, type St
 import { EmptyState, PageHeader } from "@/components/layout/page-primitives";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { ListExportMenu } from "@/components/shared/list-export-menu";
+import { BillingSettings } from "@/components/store/billing-settings";
 import { ItemFormDialog } from "@/components/store/item-form-dialog";
 import { PriceListSwitch } from "@/components/store/price-list-switch";
 import { StoreNav } from "@/components/store/store-nav";
@@ -132,7 +133,10 @@ function StorePageInner() {
         </Button>
       </div>
 
-      <PriceListSwitch />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <BillingSettings />
+        <PriceListSwitch />
+      </div>
 
       {error && <InlineAlert>{error}</InlineAlert>}
 

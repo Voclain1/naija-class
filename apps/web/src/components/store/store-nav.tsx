@@ -8,6 +8,9 @@ import { useAuth } from "@/lib/auth/use-auth";
 // only to someone holding its permission.
 const TABS: Array<SectionTabItem & { permission: string }> = [
   { href: "/store", label: "Items", exact: true, permission: "store.read" },
+  { href: "/store/sell", label: "Sell", permission: "store.sell" },
+  { href: "/store/orders", label: "Orders", permission: "store.read" },
+  { href: "/store/packs", label: "Packs", permission: "store.read" },
   { href: "/store/stock-takes", label: "Stock takes", permission: "store.read" },
   { href: "/store/reports", label: "Reports", permission: "store.read" },
   { href: "/store/assets", label: "Assets", permission: "asset.read" },

@@ -54,7 +54,7 @@ model School {
   // either existed: the portals hid position, the PDF printed it. Defaults
   // reproduce exactly that, so nothing changes until a school chooses.
   positionVisibleToFamilies Boolean      @default(false) @map("position_visible_to_families")
-  reportCardDesign Json? @map("report_card_design")
+  reportCardDesign          Json?        @map("report_card_design")
   positionOnReportCardPdf   Boolean      @default(true) @map("position_on_report_card_pdf")
   // Phase 9 / CP1.2 — the attendance rate (whole percent) below which a
   // student is listed as chronically absent on the Attendance report
@@ -112,13 +112,13 @@ model School {
   // wrong or partial account number to parents the moment someone saves.
   // Display requires the toggle AND all three fields present — see
   // schoolBankDetails() in packages/types.
-  bankName                    String?         @map("bank_name")
-  bankAccountName             String?         @map("bank_account_name")
-  bankAccountNumber           String?         @map("bank_account_number")
-  bankDetailsEnabled          Boolean         @default(false) @map("bank_details_enabled")
+  bankName                     String?         @map("bank_name")
+  bankAccountName              String?         @map("bank_account_name")
+  bankAccountNumber            String?         @map("bank_account_number")
+  bankDetailsEnabled           Boolean         @default(false) @map("bank_details_enabled")
   // Staff mobile is deliberately enabled one school at a time. Shipping the
   // binary or API must never silently expose a new staff credential surface.
-  staffMobileEnabled          Boolean         @default(false) @map("staff_mobile_enabled")
+  staffMobileEnabled           Boolean         @default(false) @map("staff_mobile_enabled")
   // Onboarding-nudge email (2026-08-08): stamped once, the first (and only,
   // v1) time OnboardingNudgeService emails a school's owner that finished
   // the 5-step wizard but never came back to add an academic year or
@@ -127,7 +127,7 @@ model School {
   // User.tourCompletedAt: set unconditionally after the send attempt
   // (success or logged failure) so a Resend outage doesn't cause a resend
   // storm once it clears.
-  onboardingNudgeSentAt       DateTime?       @map("onboarding_nudge_sent_at")
+  onboardingNudgeSentAt        DateTime?       @map("onboarding_nudge_sent_at")
   // Early-access marker (2026-08-09). Nullable stamp, NO enforcement logic
   // anywhere — deliberately just the flag, set by hand from the platform-admin
   // school list. Exists now because the platform has no concept of a plan,
@@ -143,7 +143,7 @@ model School {
   // Shape matches onboardingNudgeSentAt / ndprConsentAt: a timestamp, not a
   // boolean (the extra information is free) and not an enum (naming the tiers
   // before they are decided just buys a migration later).
-  earlyAccessGrantedAt        DateTime?       @map("early_access_granted_at")
+  earlyAccessGrantedAt         DateTime?       @map("early_access_granted_at")
   // Phase 5 / Slice 1 CP2 — AI cost controls. Two deliberately separate knobs:
   //
   //   aiEnabled              per-school kill switch. Flipping it false stops
@@ -194,8 +194,8 @@ model School {
   // concept — none exists anywhere in the product code (see
   // earlyAccessGrantedAt's note directly above), and inventing one to hold an
   // AI budget would be the tail wagging the dog.
-  aiEnabled                   Boolean         @default(true) @map("ai_enabled")
-  aiMonthlyTokenBudget        Int?            @map("ai_monthly_token_budget")
+  aiEnabled                    Boolean         @default(true) @map("ai_enabled")
+  aiMonthlyTokenBudget         Int?            @map("ai_monthly_token_budget")
   //   smartImportEnabled     Smart Student Import (photograph a register,
   //                          the model transcribes it) for this school
   //                          (2026-10-11). Off by default, switched on by the
@@ -209,14 +209,14 @@ model School {
   //                          tick (docs/modules/smart-student-import.md §9).
   //                          The platform operator can still switch it off
   //                          per school.
-  smartImportEnabled          Boolean         @default(true) @map("smart_import_enabled")
+  smartImportEnabled           Boolean         @default(true) @map("smart_import_enabled")
   //   smartImportConsent*    Smart Student Import beta (2026-10-24): who at
   //                          the school accepted, before its first scan, that
   //                          register photos are sent to the AI reading
   //                          service and then discarded. Null: not yet; the
   //                          scan refuses until it is given.
-  smartImportConsentAt        DateTime?       @map("smart_import_consent_at")
-  smartImportConsentBy        String?         @map("smart_import_consent_by")
+  smartImportConsentAt         DateTime?       @map("smart_import_consent_at")
+  smartImportConsentBy         String?         @map("smart_import_consent_by")
   //   onboardingCallPrompt*  The "book a setup call" page shown once after
   //                          the setup wizard (2026-10-26,
   //                          docs/modules/onboarding-call.md). ClosedAt is
@@ -224,16 +224,16 @@ model School {
   //                          page never shows again; BookedAt only when they
   //                          book, so the platform admin knows which schools
   //                          hold bookings without reading every school's.
-  onboardingCallPromptClosedAt DateTime?      @map("onboarding_call_prompt_closed_at")
-  onboardingCallBookedAt      DateTime?       @map("onboarding_call_booked_at")
+  onboardingCallPromptClosedAt DateTime?       @map("onboarding_call_prompt_closed_at")
+  onboardingCallBookedAt       DateTime?       @map("onboarding_call_booked_at")
   // Getting started (2026-10-30, docs/modules/activation.md): the owner pressed
   // "Stop these emails" in a setup reminder.
-  setupEmailsStoppedAt        DateTime?       @map("setup_emails_stopped_at")
+  setupEmailsStoppedAt         DateTime?       @map("setup_emails_stopped_at")
   //   assignmentFeedbackAiEnabled  Phase 9 / CP4b. The school's own opt-in to
   //                          AI drafts of marking feedback. OFF by default,
   //                          set by owner/admin; aiEnabled must be on too, and
   //                          a teacher still has to press the button.
-  assignmentFeedbackAiEnabled Boolean         @default(false) @map("assignment_feedback_ai_enabled")
+  assignmentFeedbackAiEnabled  Boolean         @default(false) @map("assignment_feedback_ai_enabled")
   //   plan / studentCapOverride   the school's plan and, for a deal, its own
   //                          student cap (2026-10-11, docs/modules/plans.md).
   //                          Set by the platform operator only. Null override
@@ -242,8 +242,8 @@ model School {
   //                          prices are not stored: the caps only block when
   //                          PLAN_ENFORCEMENT=enforce, which early access does
   //                          not run.
-  plan                        SchoolPlan      @default(FREE) @map("plan")
-  studentCapOverride          Int?            @map("student_cap_override")
+  plan                         SchoolPlan      @default(FREE) @map("plan")
+  studentCapOverride           Int?            @map("student_cap_override")
   //   smsSender*           the school's own SMS sender name (2026-10-11,
   //                          docs/modules/school-identity.md slice 2). The
   //                          school asks; the platform operator submits it to
@@ -251,10 +251,10 @@ model School {
   //                          CAC registration) and records the outcome. Only
   //                          APPROVED is ever sent; anything else uses the
   //                          platform's TERMII_SENDER_ID.
-  smsSenderId                 String?         @map("sms_sender_id")
-  smsSenderStatus             SmsSenderStatus @default(NONE) @map("sms_sender_status")
-  smsSenderRequestedAt        DateTime?       @map("sms_sender_requested_at")
-  smsSenderDecidedAt          DateTime?       @map("sms_sender_decided_at")
+  smsSenderId                  String?         @map("sms_sender_id")
+  smsSenderStatus              SmsSenderStatus @default(NONE) @map("sms_sender_status")
+  smsSenderRequestedAt         DateTime?       @map("sms_sender_requested_at")
+  smsSenderDecidedAt           DateTime?       @map("sms_sender_decided_at")
   //   featureSwitches        per-school feature switches (2026-11-06,
   //                          docs/modules/feature-switches.md). A JSON object
   //                          of known keys (FEATURE_KEYS in @school-kit/types)
@@ -264,7 +264,7 @@ model School {
   //                          FEATURES_DISABLED variable overrides any `true`.
   //                          Always read through parseFeatureSwitches, never
   //                          trusted as typed.
-  featureSwitches             Json            @default("{}") @map("feature_switches")
+  featureSwitches              Json            @default("{}") @map("feature_switches")
 
   //   admissionNumber*       admission numbers assigned by SchoolKit
   //                          (2026-10-12, docs/modules/admission-numbers.md).
@@ -316,17 +316,22 @@ model School {
   //                          for a school does NOT start sending parent
   //                          summaries. That still needs this second, separate
   //                          opt-in, by the school itself.
-  parentSummaryEnabled Boolean  @default(false) @map("parent_summary_enabled")
+  parentSummaryEnabled     Boolean           @default(false) @map("parent_summary_enabled")
   // The school store's price list for parents (2026-10-19). On by default;
   // owner and admin switch it off on the Store page.
-  storePricesForParents Boolean @default(true) @map("store_prices_for_parents")
+  storePricesForParents    Boolean           @default(true) @map("store_prices_for_parents")
+  // Store orders (2026-11-11, docs/modules/store-orders.md): how a student's
+  // store order is billed by default (FEES_INVOICE or STORE_INVOICE, CHECKed),
+  // and whether the seller may choose differently on a sale.
+  storeBillingDefault      StoreOrderBilling @default(FEES_INVOICE) @map("store_billing_default")
+  storeBillingSellerChoice Boolean           @default(false) @map("store_billing_seller_choice")
   // The school's public website (2026-10-22, docs/modules/school-website.md):
   // reports from the public page that SchoolKit has not yet looked at. Kept
   // here (schools has no RLS) so the operator's queue can list the schools
   // with reports without reading every school's reports table.
-  websiteOpenReports   Int      @default(0) @map("website_open_reports")
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
+  websiteOpenReports       Int               @default(0) @map("website_open_reports")
+  createdAt                DateTime          @default(now()) @map("created_at")
+  updatedAt                DateTime          @updatedAt @map("updated_at")
 
   branches            Branch[]
   users               User[]
@@ -528,21 +533,21 @@ enum SessionClientType {
 }
 
 model Invitation {
-  id         String    @id @default(uuid())
-  schoolId   String    @map("school_id")
-  email      String?
-  phone      String?
-  firstName  String?   @map("first_name")
-  lastName   String?   @map("last_name")
-  roleKey    String    @map("role_key")
-  tokenHash  String    @unique @map("token_hash")
-  invitedBy  String    @map("invited_by")
-  expiresAt  DateTime  @map("expires_at")
-  acceptedAt DateTime? @map("accepted_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id                  String    @id @default(uuid())
+  schoolId            String    @map("school_id")
+  email               String?
+  phone               String?
+  firstName           String?   @map("first_name")
+  lastName            String?   @map("last_name")
+  roleKey             String    @map("role_key")
+  tokenHash           String    @unique @map("token_hash")
+  invitedBy           String    @map("invited_by")
+  expiresAt           DateTime  @map("expires_at")
+  acceptedAt          DateTime? @map("accepted_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
   // Kobo. A monthly salary typed on the invite form, moved into
   // staff_salaries when the person accepts (migration 20261112120000).
-  pendingMonthlyGross Int? @map("pending_monthly_gross")
+  pendingMonthlyGross Int?      @map("pending_monthly_gross")
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
@@ -648,13 +653,13 @@ model Term {
   timetables            Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
   timetablePublications TimetablePublication[] // Phase 8 / CP4 — published snapshots (D45).
   examPapers            ExamPaper[] // Phase 8c / CP5c back-relation.
+  subjectHides          SubjectHide[] // 2026-11-02
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([academicYearId, sequence])
   @@index([schoolId])
   @@index([schoolId, isCurrent])
   @@map("terms")
-  subjectHides SubjectHide[] // 2026-11-02
 }
 
 // ---------- Phase 1 / Slice 2 — Class levels ----------
@@ -1098,17 +1103,17 @@ model Guardian {
   // User already blends profile + auth in one row. All four nullable except
   // emailVerified — every pre-Phase-4 guardian was never invited, never
   // logged in, which NULL/false both represent correctly with no backfill.
-  passwordHash     String?   @map("password_hash")
-  emailVerified    Boolean   @default(false) @map("email_verified")
-  lastLoginAt      DateTime? @map("last_login_at")
-  portalInvitedAt  DateTime? @map("portal_invited_at")
+  passwordHash         String?   @map("password_hash")
+  emailVerified        Boolean   @default(false) @map("email_verified")
+  lastLoginAt          DateTime? @map("last_login_at")
+  portalInvitedAt      DateTime? @map("portal_invited_at")
   // 2026-10-02 — the school's lever to switch a parent's portal access off.
   // NULL = enabled. A timestamp scoped to PORTAL access, not an is_active on
   // the guardian: the guardian stays a contact (absence SMS still goes to
   // them). passwordHash is left alone, so reactivating needs no re-invite.
   // Read by auth_resolve_guardian_session (portal_enabled) and excluded by the
   // login and password-reset lookups — see the migration header.
-  portalDisabledAt DateTime? @map("portal_disabled_at")
+  portalDisabledAt     DateTime? @map("portal_disabled_at")
   // The parent's agreement to the privacy policy and terms, with the wording
   // version, when they accept the portal invitation or, for parents who
   // joined before 2026-10-25, the next time they sign in
@@ -2321,7 +2326,7 @@ model Assessment {
 // every card in the arm (slice 6). Carries its own school_id → flat
 // direct-column RLS, like every Phase 1/2 table.
 model ReportCard {
-  reportProfile Json? @map("report_profile")
+  reportProfile        Json?               @map("report_profile")
   id                   String              @id @default(uuid())
   schoolId             String              @map("school_id")
   studentId            String              @map("student_id")
@@ -5298,8 +5303,10 @@ model StoreItem {
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
-  variants  StoreItemVariant[]
-  movements StoreMovement[]
+  variants   StoreItemVariant[]
+  movements  StoreMovement[]
+  packItems  StorePackItem[]
+  orderLines StoreOrderLine[]
 
   @@unique([schoolId, id])
   @@map("store_items")
@@ -5315,9 +5322,10 @@ model StoreItemVariant {
   sortOrder Int      @default(0) @map("sort_order")
   createdAt DateTime @default(now()) @map("created_at")
 
-  item          StoreItem             @relation(fields: [schoolId, itemId], references: [schoolId, id], onDelete: Cascade)
+  item          StoreItem            @relation(fields: [schoolId, itemId], references: [schoolId, id], onDelete: Cascade)
   movements     StoreMovement[]
   stockTakeRows StoreStockTakeLine[]
+  orderLines    StoreOrderLine[]
 
   @@unique([schoolId, id])
   @@map("store_item_variants")
@@ -5341,13 +5349,17 @@ model StoreMovement {
   reason          String?
   studentChargeId String?           @map("student_charge_id")
   stockTakeId     String?           @map("stock_take_id")
+  // Store orders (2026-11-11): the order line this hand-over belongs to.
+  orderLineId     String?           @map("order_line_id")
   createdBy       String            @map("created_by")
   createdAt       DateTime          @default(now()) @map("created_at")
 
-  variant StoreItemVariant @relation(fields: [schoolId, variantId], references: [schoolId, id])
-  item    StoreItem        @relation(fields: [schoolId, itemId], references: [schoolId, id])
+  variant   StoreItemVariant @relation(fields: [schoolId, variantId], references: [schoolId, id])
+  item      StoreItem        @relation(fields: [schoolId, itemId], references: [schoolId, id])
+  orderLine StoreOrderLine?  @relation(fields: [schoolId, orderLineId], references: [schoolId, id])
 
   @@index([variantId])
+  @@index([orderLineId])
   @@index([schoolId, createdAt])
   @@index([studentId])
   @@map("store_movements")
@@ -5504,18 +5516,18 @@ enum WebsitePhotoKind {
 // uploader's "This photo shows no pupils" tick is recorded with who gave it
 // (W4: no pupils on public pages); there is no photo without one.
 model SchoolWebsitePhoto {
-  id                 String           @id @default(uuid())
-  schoolId           String           @map("school_id")
-  kind               WebsitePhotoKind
-  postId             String?          @map("post_id")
-  albumId            String?          @map("album_id")
-  caption            String?
-  position           Int              @default(0)
-  noPupilsConfirmedBy String          @map("no_pupils_confirmed_by")
-  createdAt          DateTime         @default(now()) @map("created_at")
-  takenDownAt        DateTime?        @map("taken_down_at")
-  takenDownBy        String?          @map("taken_down_by")
-  takeDownReason     String?          @map("take_down_reason")
+  id                  String           @id @default(uuid())
+  schoolId            String           @map("school_id")
+  kind                WebsitePhotoKind
+  postId              String?          @map("post_id")
+  albumId             String?          @map("album_id")
+  caption             String?
+  position            Int              @default(0)
+  noPupilsConfirmedBy String           @map("no_pupils_confirmed_by")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  takenDownAt         DateTime?        @map("taken_down_at")
+  takenDownBy         String?          @map("taken_down_by")
+  takeDownReason      String?          @map("take_down_reason")
 
   post  SchoolWebsitePost?  @relation(fields: [postId], references: [id], onDelete: Cascade)
   album SchoolWebsiteAlbum? @relation(fields: [albumId], references: [id], onDelete: SetNull)
@@ -5638,16 +5650,16 @@ model SubjectHide {
 // Operational invoice proposals. No conversation transcript or model text.
 // Plain school/user references follow Invoice's immutable audit convention.
 model AssistantBillingRun {
-  id          String   @id @default(uuid())
-  schoolId    String   @map("school_id")
-  requestedBy String   @map("requested_by")
-  approvedBy  String?  @map("approved_by")
-  status      String   @default("PENDING")
+  id          String    @id @default(uuid())
+  schoolId    String    @map("school_id")
+  requestedBy String    @map("requested_by")
+  approvedBy  String?   @map("approved_by")
+  status      String    @default("PENDING")
   payload     Json
-  previewHash String   @map("preview_hash")
+  previewHash String    @map("preview_hash")
   result      Json?
-  expiresAt   DateTime @map("expires_at")
-  createdAt   DateTime @default(now()) @map("created_at")
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
   approvedAt  DateTime? @map("approved_at")
 
   @@index([schoolId, createdAt(sort: Desc)])
@@ -5728,4 +5740,117 @@ model ReminderCampaignSend {
   @@unique([campaignId, studentId, channel, guardianId], map: "reminder_campaign_sends_slot_key")
   @@index([schoolId, campaignId, status])
   @@map("reminder_campaign_sends")
+}
+
+// ---------- Store orders (2026-11-11, docs/modules/store-orders.md) ----------
+//
+// One buyer, many lines, one total. Students are billed on the fees invoice
+// (charges) or on a store invoice of their own; staff and walk-in buyers pay at
+// the counter. Stock leaves at hand-over, as a SELL movement tied to the line.
+
+enum StoreOrderBuyer {
+  STUDENT
+  STAFF
+  WALK_IN
+}
+
+enum StoreOrderBilling {
+  FEES_INVOICE
+  STORE_INVOICE
+  COUNTER
+}
+
+enum StoreOrderStatus {
+  ACTIVE
+  CANCELLED
+}
+
+model StorePack {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  name      String
+  note      String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items  StorePackItem[]
+  orders StoreOrder[]
+
+  @@unique([schoolId, id])
+  @@map("store_packs")
+}
+
+model StorePackItem {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  packId   String @map("pack_id")
+  itemId   String @map("item_id")
+  quantity Int
+
+  pack StorePack @relation(fields: [schoolId, packId], references: [schoolId, id], onDelete: Cascade)
+  item StoreItem @relation(fields: [schoolId, itemId], references: [schoolId, id], onDelete: Cascade)
+
+  @@map("store_pack_items")
+}
+
+model StoreOrder {
+  id               String            @id @default(uuid())
+  schoolId         String            @map("school_id")
+  number           Int
+  buyer            StoreOrderBuyer
+  studentId        String?           @map("student_id")
+  userId           String?           @map("user_id")
+  buyerName        String?           @map("buyer_name")
+  billing          StoreOrderBilling
+  status           StoreOrderStatus  @default(ACTIVE)
+  total            Int // kobo
+  termId           String?           @map("term_id")
+  invoiceId        String?           @map("invoice_id")
+  counterMethod    PaymentMethod?    @map("counter_method")
+  counterReference String?           @map("counter_reference")
+  packId           String?           @map("pack_id")
+  classSaleId      String?           @map("class_sale_id")
+  note             String?
+  idempotencyKey   String?           @map("idempotency_key")
+  createdBy        String            @map("created_by")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  cancelledBy      String?           @map("cancelled_by")
+  cancelledAt      DateTime?         @map("cancelled_at")
+  cancelReason     String?           @map("cancel_reason")
+
+  pack  StorePack?       @relation(fields: [schoolId, packId], references: [schoolId, id])
+  lines StoreOrderLine[]
+
+  @@unique([schoolId, id])
+  @@unique([schoolId, number])
+  @@index([schoolId, createdAt])
+  @@index([studentId])
+  @@index([classSaleId])
+  @@map("store_orders")
+}
+
+model StoreOrderLine {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  orderId   String   @map("order_id")
+  itemId    String   @map("item_id")
+  variantId String   @map("variant_id")
+  quantity  Int
+  unitPrice Int      @map("unit_price") // kobo
+  amount    Int // kobo
+  collected Int      @default(0)
+  chargeId  String?  @map("charge_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  order     StoreOrder       @relation(fields: [schoolId, orderId], references: [schoolId, id])
+  item      StoreItem        @relation(fields: [schoolId, itemId], references: [schoolId, id])
+  variant   StoreItemVariant @relation(fields: [schoolId, variantId], references: [schoolId, id])
+  movements StoreMovement[]
+
+  @@unique([schoolId, id])
+  @@index([orderId])
+  @@index([variantId])
+  @@map("store_order_lines")
 }

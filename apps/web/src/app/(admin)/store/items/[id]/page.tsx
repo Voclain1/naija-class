@@ -133,8 +133,8 @@ export default function StoreItemPage() {
             </Button>
           )}
           {canSell && (
-            <Button variant="outline" onClick={() => setMoving("SELL")}>
-              Sell to a student
+            <Button variant="outline" asChild>
+              <Link href={`/store/sell?item=${item.id}`}>Sell</Link>
             </Button>
           )}
           {canManage && (
@@ -160,6 +160,7 @@ export default function StoreItemPage() {
                   <tr>
                     <th className="px-3 py-2">Size</th>
                     <th className="px-3 py-2 text-right">In stock</th>
+                    <th className="px-3 py-2 text-right">To collect</th>
                     <th className="px-3 py-2 text-right">Price</th>
                     <th className="px-3 py-2 text-right">Average cost</th>
                   </tr>
@@ -169,6 +170,7 @@ export default function StoreItemPage() {
                     <tr key={v.id} className={cn(!v.isActive && "text-muted-foreground")}>
                       <td className="px-3 py-2">{v.label}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{v.onHand}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{v.toCollect || "—"}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{v.effectivePrice === null ? "—" : formatKobo(v.effectivePrice)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{v.averageCost === null ? "—" : formatKobo(v.averageCost)}</td>
                     </tr>
@@ -232,7 +234,14 @@ export default function StoreItemPage() {
                     <td className={cn("px-3 py-2 text-right tabular-nums", m.quantity < 0 ? "text-foreground" : "text-emerald-700 dark:text-emerald-400")}>
                       {m.quantity > 0 ? `+${m.quantity}` : m.quantity}
                     </td>
-                    <td className="px-3 py-2">{[m.party, m.supplier, m.reason, m.reference].filter(Boolean).join(" · ") || "—"}</td>
+                    <td className="px-3 py-2">
+                      {[m.party, m.supplier, m.reason, m.reference].filter(Boolean).join(" · ") || "—"}
+                      {m.orderId && m.orderNumber && (
+                        <Link href={`/store/orders/${m.orderId}`} className="ml-1 font-mono text-xs underline">
+                          {m.orderNumber}
+                        </Link>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-muted-foreground">{m.createdByName}</td>
                   </tr>
                 ))}

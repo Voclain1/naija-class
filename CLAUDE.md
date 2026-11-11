@@ -97,6 +97,13 @@ infra/      Terraform / Pulumi
 - Never use `Float` or `Number` for money in the DB or in TypeScript. Money is `Int` (kobo) in the DB and `bigint` in TS. Format to naira only at the display layer.
 - Never compute fees, discounts, or balances in the frontend. The frontend displays what the API returned, full stop.
 - Every payment-mutating action goes through `FinanceService` and writes to `audit_logs`. No exceptions, including admin overrides.
+- Store orders (2026-11-11, `docs/modules/store-orders.md`): a student's order is
+  billed through student charges, or a store invoice issued by
+  `InvoiceGenerationService.issueChargesInvoiceInTransaction`, and paid through
+  the ordinary payments path. Staff and walk-in counter takings are recorded on
+  the order (method, reference, audited), never as a payment row. That is D4 in
+  the module doc and **awaits the owner's confirmation**; do not add other money
+  paths to the Store.
 
 ### Auth
 
