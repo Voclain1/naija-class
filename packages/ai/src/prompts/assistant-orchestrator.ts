@@ -229,6 +229,15 @@ export const ASSISTANT_ORCHESTRATOR_TOOLS: readonly OrchestratorToolSpec[] = [
   },
 ];
 
+/**
+ * Sent with a refused student_record section, so the model gives the real
+ * reason. The live eval found that a bare "not_permitted" was explained to the
+ * person as "not released yet", which is a different thing and untrue. ONE
+ * definition, used by the API's tool and by the live eval's simulated tool.
+ */
+export const NOT_PERMITTED_SECTION_NOTE =
+  "This person's account does not have permission to see that section. Tell them so, and that the school's owner or admin can change it. Give no other reason, and do not say it is unreleased or missing.";
+
 /** The shown description and schema for one tool. Throws for an unknown name (a build error in practice). */
 export function orchestratorToolSpec(name: string): { description: string; inputSchema: Record<string, unknown> } {
   const spec = ASSISTANT_ORCHESTRATOR_TOOLS.find((t) => t.name === name);

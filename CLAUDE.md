@@ -271,6 +271,17 @@ What it may never do, approved or not:
 
 Do not reuse the help-assistant exception for it.
 
+**Controlled activation (owner, 2026-11-10).** The platform admin alone
+switches the Assistant on or off, per school, through the audited
+`PATCH …/features`; it is off by default, including for new schools, and a
+school cannot switch it on. This approves who holds the switch, not any
+data-processing term. `GET /platform-admin/schools/:schoolId/assistant`
+reports each switch and whether it is actually working, with every blocker;
+never show a switch as "AI enabled" while a blocker remains. In production,
+switching `assistant-model-routing` on is refused while the approval is
+pending. Do not add a school-side control, a default-on, or a bypass of the
+approval for a "test" school. Steps: `docs/runbooks/assistant-activation.md`.
+
 ### Git
 
 - Never commit to `main`. Every change goes through a PR (bundled — see Git conventions).

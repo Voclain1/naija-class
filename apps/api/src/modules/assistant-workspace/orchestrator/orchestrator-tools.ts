@@ -1,4 +1,4 @@
-import { orchestratorToolSpec } from "@school-kit/ai";
+import { NOT_PERMITTED_SECTION_NOTE, orchestratorToolSpec } from "@school-kit/ai";
 import { z } from "zod";
 
 import {
@@ -553,7 +553,7 @@ export function orchestratorTools(deps: OrchestratorDeps, state: TurnState): Def
       if (!st) return { status: "unknown_student", note: "Find the student first." };
       // Each section is read by the browser from its own permission-checked endpoint; refuse early when it would be refused there.
       const perms = await deps.permissions(authCtx);
-      if (!perms.has("*") && !perms.has(SECTION_PERMISSION[section])) return { status: "not_permitted", student, section };
+      if (!perms.has("*") && !perms.has(SECTION_PERMISSION[section])) return { status: "not_permitted", student, section, note: NOT_PERMITTED_SECTION_NOTE };
       state.act({ kind: "student-record", handle: st.handle, studentId: st.studentId, section });
       return { status: "shown", student, section, note: "Shown to the person in a card. You do not see the record; do not describe its contents." };
     },
