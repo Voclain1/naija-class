@@ -313,3 +313,34 @@
   .app-topbar.flex { height: auto; min-height: 4rem; flex-wrap: wrap; padding-top: .6rem; padding-bottom: .6rem; }
   .app-topbar .app-topbar-controls { flex-wrap: wrap; max-width: 100%; }
 }
+
+/* Inner-page polish — intentionally scoped away from the dashboard and print.
+ * Visual-only treatment; existing forms, tables, interactions and permissions remain unchanged. */
+@media screen {
+  .schoolkit-inner-page {
+    background: radial-gradient(ellipse 85% 330px at 50% -140px, hsl(var(--brand-accent) / .12), transparent 85%), hsl(var(--background));
+  }
+  .schoolkit-inner-page h1 {
+    font-weight: 750;
+    line-height: 1.15;
+    letter-spacing: -.045em;
+  }
+  .schoolkit-inner-page :is(h2, h3) { font-weight: 700; }
+  .schoolkit-inner-page :is(.rounded-lg.border.bg-card, .rounded-xl.border.bg-card, .rounded-2xl.border.bg-card) {
+    border-color: hsl(var(--border) / .78);
+    box-shadow: 0 4px 20px -12px hsl(var(--foreground) / .14);
+  }
+  .schoolkit-inner-page :is(input:not([type=checkbox]):not([type=radio]), select, textarea) {
+    transition: border-color .16s ease, box-shadow .16s ease;
+  }
+  .schoolkit-inner-page :is(input:not([type=checkbox]):not([type=radio]), select, textarea):focus-visible {
+    box-shadow: 0 0 0 3px hsl(var(--brand-accent) / .16);
+  }
+  .schoolkit-inner-page table thead { background: hsl(var(--accent) / .58); }
+  .schoolkit-inner-page table tbody tr { transition: background-color .16s ease; }
+  .schoolkit-inner-page table tbody tr:hover { background: hsl(var(--accent) / .32); }
+  .schoolkit-inner-page :is(button, a) { -webkit-tap-highlight-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .schoolkit-inner-page :is(input, select, textarea, table tbody tr) { transition: none; }
+}
