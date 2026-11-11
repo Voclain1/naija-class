@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 
 import { CalendarSetupPrompt } from "@/components/academic-calendar/calendar-setup-prompt";
 import { RequireAuth } from "@/components/auth/require-auth";
@@ -58,6 +59,8 @@ function AdminShell({
   children: ReactNode;
 }) {
   const { active: tourActive, skip: skipTour, startReplay } = useTour();
+  const pathname = usePathname();
+  const isDashboard = pathname === "/dashboard" || pathname === "/";
 
   // Every MobileNav-originated dismiss (Escape, backdrop click, route
   // change, the X button) calls this with `false`. While the tour is
@@ -85,7 +88,7 @@ function AdminShell({
             onReplayTour={startReplay}
           />
         </div>
-        <main className="min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6 print:p-0">
+        <main className={`min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6 print:p-0 ${isDashboard ? "" : "schoolkit-inner-page"}`}>
           {/* Renders nothing for a healthy school. Mounted here rather than
               per-page so a school with no academic year is told why the
               product is inert on whichever admin page it lands on — #198. */}
