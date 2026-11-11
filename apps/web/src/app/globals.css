@@ -345,15 +345,15 @@
   .schoolkit-inner-page :is(input, select, textarea, table tbody tr) { transition: none; }
 }
 
-/* Batch 1: consistent premium workspace surfaces across the six core admin routes.
+/* Batch 1: consistent premium workspace surfaces across the core admin routes.
    Scoping avoids changing modal portals, the main dashboard, or teacher views. */
 @media screen {
   .schoolkit-workspace {
     --workspace-line: hsl(var(--border) / .75);
     min-width: 0;
   }
-  .schoolkit-workspace > :is(header, div):has(> h1),
-  .schoolkit-workspace > :is(header, div):has(> div > h1) {
+  .schoolkit-workspace > header:has(h1),
+  .schoolkit-workspace > div:has(> h1) {
     border: 1px solid var(--workspace-line);
     border-radius: 1.5rem;
     padding: clamp(1.15rem, 2.5vw, 2rem);
@@ -401,16 +401,10 @@
   }
 }
 @media (max-width: 639.98px) {
-  .schoolkit-workspace > :is(header, div):has(> h1),
-  .schoolkit-workspace > :is(header, div):has(> div > h1) {
+  .schoolkit-workspace > header:has(h1),
+  .schoolkit-workspace > div:has(> h1) {
     border-radius: 1.15rem;
     padding: 1.1rem;
-  }
-  .schoolkit-workspace table[data-stack] tbody tr {
-    margin-block: .55rem;
-    border: 1px solid hsl(var(--border));
-    border-radius: .85rem;
-    background: hsl(var(--card));
   }
 }
 @media (prefers-reduced-motion: reduce) {
