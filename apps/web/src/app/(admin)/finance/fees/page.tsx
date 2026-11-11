@@ -369,7 +369,7 @@ export default function FeesPage() {
   const selectedCat = categories.find((c) => c.id === selectedCatId);
 
   return (
-    <div className="flex w-full flex-col gap-6">
+    <div className="schoolkit-workspace flex w-full flex-col gap-6">
       <header>
         <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Fee catalog</h1>
         <p className="text-sm text-muted-foreground">

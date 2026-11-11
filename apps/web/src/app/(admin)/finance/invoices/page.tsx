@@ -355,7 +355,7 @@ export default function InvoicesPage() {
   const selectedArm = arms.find((a) => a.id === armId);
 
   return (
-    <div className="max-w-6xl space-y-6 p-6">
+    <div className="schoolkit-workspace mx-auto max-w-7xl space-y-6 py-3 sm:py-5">
       <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Invoices</h1>
       <BillingAssistant onIssued={() => setListReloadKey((k) => k + 1)} />
 

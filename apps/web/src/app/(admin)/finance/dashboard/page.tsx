@@ -249,7 +249,7 @@ export default function FinanceDashboardPage() {
   }, [termId, loadTrajectory, loadByLevel]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
+    <div className="finance-refresh mx-auto max-w-7xl space-y-6 py-3 sm:py-5">
       {/* Eyebrow + title + card-payment status.
           The mockup paired this eyebrow with a Paystack subaccount NUMBER and
           bank name. The status is real and useful — a school needs to know at
@@ -263,10 +263,10 @@ export default function FinanceDashboardPage() {
           platform_admin_list_paystack_setup_requests (CLAUDE.md, SECURITY
           DEFINER inventory). resolvePaystackStatus carries the rule and is
           specced, including that its label can never contain a digit. */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="relative overflow-hidden rounded-3xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/70 to-white px-5 py-6 shadow-sm dark:border-emerald-900 dark:from-card dark:via-emerald-950/30 dark:to-card sm:px-8 sm:py-8">
         <div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">
               Bursary terminal
             </p>
             {/* Dot + label, never an identifier. Amber for "switched off" and
@@ -297,7 +297,7 @@ export default function FinanceDashboardPage() {
               )}
             </span>
           </div>
-          <h1 className="mt-1 font-serif text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
+          <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
             Finance dashboard
           </h1>
           {dashboard && (
@@ -320,8 +320,8 @@ export default function FinanceDashboardPage() {
           screen-reader-correct for free, and on a phone it opens the OS
           picker, which beats any custom listbox a bursar would meet on a
           budget Android device. Only the chrome changed. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex items-center gap-2 rounded-full border border-input bg-card px-3 py-1.5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/70 bg-card/90 p-3 shadow-sm sm:p-4">
+        <div className="inline-flex items-center gap-2 rounded-xl border border-input bg-background px-4 py-2.5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
           <label
             htmlFor="fin-dash-year"
             className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
@@ -343,7 +343,7 @@ export default function FinanceDashboardPage() {
           </select>
         </div>
 
-        <div className="inline-flex items-center gap-2 rounded-full border border-input bg-card px-3 py-1.5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 has-[select:disabled]:opacity-50">
+        <div className="inline-flex items-center gap-2 rounded-xl border border-input bg-background px-4 py-2.5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 has-[select:disabled]:opacity-50">
           <label
             htmlFor="fin-dash-term"
             className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
@@ -441,7 +441,7 @@ export default function FinanceDashboardPage() {
       )}
 
       {dashboard && !loading && (
-        <div className="space-y-6">
+        <div className="space-y-6 finance-refresh-content">
           {/* Collection rate meter — a single ratio against a limit. The term
               name moved into the page header, so it is stated once. */}
           <Card>

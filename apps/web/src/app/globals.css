@@ -313,3 +313,100 @@
   .app-topbar.flex { height: auto; min-height: 4rem; flex-wrap: wrap; padding-top: .6rem; padding-bottom: .6rem; }
   .app-topbar .app-topbar-controls { flex-wrap: wrap; max-width: 100%; }
 }
+
+/* Inner-page polish — intentionally scoped away from the dashboard and print.
+ * Visual-only treatment; existing forms, tables, interactions and permissions remain unchanged. */
+@media screen {
+  .schoolkit-inner-page {
+    background: radial-gradient(ellipse 85% 330px at 50% -140px, hsl(var(--brand-accent) / .12), transparent 85%), hsl(var(--background));
+  }
+  .schoolkit-inner-page h1 {
+    font-weight: 750;
+    line-height: 1.15;
+    letter-spacing: -.045em;
+  }
+  .schoolkit-inner-page :is(h2, h3) { font-weight: 700; }
+  .schoolkit-inner-page :is(.rounded-lg.border.bg-card, .rounded-xl.border.bg-card, .rounded-2xl.border.bg-card) {
+    border-color: hsl(var(--border) / .78);
+    box-shadow: 0 4px 20px -12px hsl(var(--foreground) / .14);
+  }
+  .schoolkit-inner-page :is(input:not([type=checkbox]):not([type=radio]), select, textarea) {
+    transition: border-color .16s ease, box-shadow .16s ease;
+  }
+  .schoolkit-inner-page :is(input:not([type=checkbox]):not([type=radio]), select, textarea):focus-visible {
+    box-shadow: 0 0 0 3px hsl(var(--brand-accent) / .16);
+  }
+  .schoolkit-inner-page table thead { background: hsl(var(--accent) / .58); }
+  .schoolkit-inner-page table tbody tr { transition: background-color .16s ease; }
+  .schoolkit-inner-page table tbody tr:hover { background: hsl(var(--accent) / .32); }
+  .schoolkit-inner-page :is(button, a) { -webkit-tap-highlight-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .schoolkit-inner-page :is(input, select, textarea, table tbody tr) { transition: none; }
+}
+
+/* Batch 1: consistent premium workspace surfaces across the core admin routes.
+   Scoping avoids changing modal portals, the main dashboard, or teacher views. */
+@media screen {
+  .schoolkit-workspace {
+    --workspace-line: hsl(var(--border) / .75);
+    min-width: 0;
+  }
+  .schoolkit-workspace > header:has(h1),
+  .schoolkit-workspace > div:has(> h1) {
+    border: 1px solid var(--workspace-line);
+    border-radius: 1.5rem;
+    padding: clamp(1.15rem, 2.5vw, 2rem);
+    background: linear-gradient(115deg, hsl(var(--card)), hsl(var(--brand-accent) / .08));
+    box-shadow: 0 8px 30px -22px hsl(var(--foreground) / .25);
+  }
+  .schoolkit-workspace h1 {
+    font-size: clamp(1.6rem, 2.5vw, 2.25rem);
+    font-weight: 800;
+    letter-spacing: -.045em;
+    line-height: 1.15;
+  }
+  .schoolkit-workspace :is(.rounded-md.border.bg-card, .rounded-lg.border.bg-card, .rounded-xl.border.bg-card, .rounded-md.border:not(.border-destructive\/40)) {
+    border-radius: 1rem;
+    border-color: var(--workspace-line);
+    box-shadow: 0 8px 28px -22px hsl(var(--foreground) / .24);
+  }
+  .schoolkit-workspace :is(table, [role="table"]) {
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+  }
+  .schoolkit-workspace table thead {
+    background: hsl(var(--brand-accent) / .09);
+  }
+  .schoolkit-workspace table th {
+    font-weight: 700;
+    color: hsl(var(--foreground));
+    letter-spacing: .005em;
+  }
+  .schoolkit-workspace :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+    border-radius: .7rem;
+    background-color: hsl(var(--card));
+  }
+  .schoolkit-workspace :is(input, select, textarea):focus-visible {
+    outline: 2px solid hsl(var(--brand-accent) / .7);
+    outline-offset: 2px;
+  }
+  .schoolkit-workspace button:not([role="switch"]) {
+    transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+  .schoolkit-workspace button:not(:disabled):focus-visible,
+  .schoolkit-workspace a:focus-visible {
+    outline: 2px solid hsl(var(--brand-accent));
+    outline-offset: 2px;
+  }
+}
+@media (max-width: 639.98px) {
+  .schoolkit-workspace > header:has(h1),
+  .schoolkit-workspace > div:has(> h1) {
+    border-radius: 1.15rem;
+    padding: 1.1rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .schoolkit-workspace button { transition: none !important; }
+}
