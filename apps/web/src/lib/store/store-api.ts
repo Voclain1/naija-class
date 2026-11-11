@@ -1,4 +1,19 @@
 import type {
+  ClassSalePreviewDto,
+  ClassSaleResultDto,
+  CollectStoreOrderInput,
+  CreateClassSaleInput,
+  CreateStoreOrderInput,
+  PreviewClassSaleInput,
+  PreviewStoreOrderInput,
+  StoreOrderPreviewDto,
+  SavePackInput,
+  StoreCheckoutContextDto,
+  StoreOrderDto,
+  StoreOrderSummaryDto,
+  StorePackDto,
+  StoreTakingsReportDto,
+  UpdateStoreSettingsInput,
   StoreSettingsDto,
   AddStoreVariantInput,
   CreateFixedAssetInput,
@@ -89,5 +104,38 @@ export const disposeAsset = (assetId: string, body: DisposeFixedAssetInput) =>
 
 // The price list for parents: whether it is shown (2026-10-19).
 export const getStoreSettings = () => apiFetch<StoreSettingsDto>("/store/settings", { method: "GET" });
-export const updateStoreSettings = (pricesForParents: boolean) =>
-  apiFetch<StoreSettingsDto>("/store/settings", { method: "PUT", body: { pricesForParents } });
+export const updateStoreSettings = (body: UpdateStoreSettingsInput) =>
+  apiFetch<StoreSettingsDto>("/store/settings", { method: "PUT", body });
+
+// Store orders (2026-11-11, docs/modules/store-orders.md).
+export const getCheckoutContext = () => apiFetch<StoreCheckoutContextDto>("/store/checkout", { method: "GET" });
+export const previewStoreOrder = (body: PreviewStoreOrderInput) =>
+  apiFetch<StoreOrderPreviewDto>("/store/orders/preview", { method: "POST", body });
+export const createStoreOrder = (body: CreateStoreOrderInput) =>
+  apiFetch<StoreOrderDto>("/store/orders", { method: "POST", body });
+export const listStoreOrders = (
+  params: { toCollect?: boolean; q?: string; from?: string; to?: string; studentId?: string; classSaleId?: string } = {},
+) =>
+  apiFetch<StoreOrderSummaryDto[]>(
+    `/store/orders${query({ ...params, toCollect: params.toCollect ? "true" : undefined })}`,
+    { method: "GET" },
+  );
+export const getStoreOrder = (orderId: string) => apiFetch<StoreOrderDto>(`/store/orders/${id(orderId)}`, { method: "GET" });
+export const collectStoreOrder = (orderId: string, body: CollectStoreOrderInput) =>
+  apiFetch<StoreOrderDto>(`/store/orders/${id(orderId)}/collect`, { method: "POST", body });
+export const cancelStoreOrder = (orderId: string, reason: string) =>
+  apiFetch<StoreOrderDto>(`/store/orders/${id(orderId)}/cancel`, { method: "POST", body: { reason } });
+
+export const listPacks = (includeInactive = false) =>
+  apiFetch<StorePackDto[]>(`/store/packs${query({ includeInactive: includeInactive ? "true" : undefined })}`, { method: "GET" });
+export const createPack = (body: SavePackInput) => apiFetch<StorePackDto>("/store/packs", { method: "POST", body });
+export const updatePack = (packId: string, body: SavePackInput) =>
+  apiFetch<StorePackDto>(`/store/packs/${id(packId)}`, { method: "PUT", body });
+
+export const previewClassSale = (body: PreviewClassSaleInput) =>
+  apiFetch<ClassSalePreviewDto>("/store/class-sales/preview", { method: "POST", body });
+export const createClassSale = (body: CreateClassSaleInput) =>
+  apiFetch<ClassSaleResultDto>("/store/class-sales", { method: "POST", body });
+
+export const getTakingsReport = (params: { from?: string; to?: string } = {}) =>
+  apiFetch<StoreTakingsReportDto>(`/store/reports/takings${query(params)}`, { method: "GET" });

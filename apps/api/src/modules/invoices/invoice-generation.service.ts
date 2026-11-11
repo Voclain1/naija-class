@@ -24,7 +24,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
-import { StudentChargeService } from "../finance/student-charge.service.js";
+import { StudentChargeService, type OpenCharge } from "../finance/student-charge.service.js";
 import {
   buildSnapshot,
   type DiscountRuleForSnapshot,
@@ -354,58 +354,93 @@ export class InvoiceGenerationService {
 
       for (const [studentId, list] of toBill) {
         const termInvoice = termInvoices.get(studentId)!;
-        const last = await db.invoice.aggregate({
-          where: { schoolId: authCtx.schoolId, studentId, termId: dto.termId },
-          _max: { sequence: true },
+        const invoice = await this.issueChargesInvoiceInTransaction(db, actor, {
+          studentId,
+          termId: dto.termId,
+          academicYearId: term.academicYearId,
+          classArmId: termInvoice.classArmId,
+          charges: list,
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+          issuedAt,
         });
-        const sequence = (last._max.sequence ?? 0) + 1;
-        const snapshot = buildSnapshot([], [], list);
-        const invoice = await db.invoice.create({
-          data: {
-            schoolId: authCtx.schoolId,
-            studentId,
-            termId: dto.termId,
-            academicYearId: term.academicYearId,
-            classArmId: termInvoice.classArmId,
-            sequence,
-            status: "ISSUED",
-            items: snapshot.items as object[],
-            totalAmount: snapshot.totalAmount,
-            totalDiscount: snapshot.totalDiscount,
-            totalDue: snapshot.totalDue,
-            dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
-            issuedAt,
-            issuedBy: authCtx.userId,
-          },
-        });
-        await db.auditLog.create({
-          data: {
-            schoolId: authCtx.schoolId,
-            userId: authCtx.userId,
-            action: AUDIT.issue,
-            entityType: "invoice",
-            entityId: invoice.id,
-            ipAddress: reqCtx.ipAddress,
-            metadata: {
-              studentId,
-              termId: dto.termId,
-              sequence,
-              supplementary: true,
-              chargeCount: list.length,
-              totalAmount: snapshot.totalAmount,
-              totalDiscount: snapshot.totalDiscount,
-              totalDue: snapshot.totalDue,
-            },
-          },
-        });
-        await this.charges.markBilled(db, actor, list.map((c) => c.id), invoice.id);
         created += 1;
         chargesBilled += list.length;
-        total += snapshot.totalDue;
+        total += invoice.totalDue;
       }
 
       return { created, chargesBilled, total };
     });
+  }
+
+  /**
+   * One supplementary invoice carrying exactly these OPEN charges, issued now,
+   * with its audit row, and the charges marked BILLED on it — all on the
+   * caller's transaction. Used by "bill waiting charges" and by the Store's
+   * store invoices (docs/modules/store-orders.md), so both issue invoices the
+   * same way. The sequence is the student's next for the term; a store invoice
+   * may come before the term invoice (sequence 0 stays the term invoice's).
+   */
+  async issueChargesInvoiceInTransaction(
+    db: PrismaClient,
+    actor: { schoolId: string; userId: string | null; ipAddress: string | null },
+    args: {
+      studentId: string;
+      termId: string;
+      academicYearId: string;
+      classArmId: string | null;
+      charges: Array<{ id: string; kind: OpenCharge["kind"]; description: string; amount: number }>;
+      dueDate: Date | null;
+      issuedAt?: Date;
+      source?: string;
+    },
+  ): Promise<{ id: string; sequence: number; totalDue: number }> {
+    const last = await db.invoice.aggregate({
+      where: { schoolId: actor.schoolId, studentId: args.studentId, termId: args.termId },
+      _max: { sequence: true },
+    });
+    const sequence = Math.max(last._max.sequence ?? 0, 0) + 1;
+    const snapshot = buildSnapshot([], [], args.charges);
+    const invoice = await db.invoice.create({
+      data: {
+        schoolId: actor.schoolId,
+        studentId: args.studentId,
+        termId: args.termId,
+        academicYearId: args.academicYearId,
+        classArmId: args.classArmId,
+        sequence,
+        status: "ISSUED",
+        items: snapshot.items as object[],
+        totalAmount: snapshot.totalAmount,
+        totalDiscount: snapshot.totalDiscount,
+        totalDue: snapshot.totalDue,
+        dueDate: args.dueDate,
+        issuedAt: args.issuedAt ?? new Date(),
+        issuedBy: actor.userId,
+      },
+    });
+    await db.auditLog.create({
+      data: {
+        schoolId: actor.schoolId,
+        userId: actor.userId,
+        action: AUDIT.issue,
+        entityType: "invoice",
+        entityId: invoice.id,
+        ipAddress: actor.ipAddress,
+        metadata: {
+          studentId: args.studentId,
+          termId: args.termId,
+          sequence,
+          supplementary: true,
+          ...(args.source ? { source: args.source } : {}),
+          chargeCount: args.charges.length,
+          totalAmount: snapshot.totalAmount,
+          totalDiscount: snapshot.totalDiscount,
+          totalDue: snapshot.totalDue,
+        },
+      },
+    });
+    await this.charges.markBilled(db, actor, args.charges.map((c) => c.id), invoice.id);
+    return { id: invoice.id, sequence, totalDue: snapshot.totalDue };
   }
 
   // The term's OPEN charges, split into those whose student has the term
@@ -538,48 +573,11 @@ export class InvoiceGenerationService {
 
   async cancel(authCtx: AuthContext, id: string, reqCtx: RequestContext): Promise<InvoiceDto> {
     const result = await withTenant(authCtx.schoolId, async (db) => {
-      const row = await db.invoice.findUnique({ where: { id } });
-      if (!row) throw new NotFoundError("Invoice not found.");
-
-      if (row.status === "PARTIALLY_PAID" || row.status === "PAID") {
-        throw new ConflictError(
-          "INVOICE_HAS_PAYMENTS",
-          "Cannot cancel an invoice that has recorded payments.",
-        );
-      }
-      if (row.status === "CANCELLED") {
-        throw new ConflictError("INVOICE_ALREADY_CANCELLED", "Invoice is already cancelled.");
-      }
-      if (row.status === "REFUNDED") {
-        throw new ConflictError("INVOICE_REFUNDED", "Cannot cancel a refunded invoice.");
-      }
-
-      const updated = await db.invoice.update({
-        where: { id },
-        data: { status: "CANCELLED" },
-      });
-
-      // audit_logs has FORCE RLS — basePrisma without the school GUC set would be
-      // blocked. All audit writes in this service must go through withTenant.
-      await db.auditLog.create({
-        data: {
-          schoolId: authCtx.schoolId,
-          userId: authCtx.userId,
-          action: AUDIT.cancel,
-          entityType: "invoice",
-          entityId: id,
-          ipAddress: reqCtx.ipAddress,
-          metadata: { previousStatus: row.status },
-        },
-      });
-      // Phase 9 / CP5.1 — its charges go back to OPEN, to be voided or billed
-      // again on a supplementary invoice (docs/modules/phase-9.md §13 CP5-D4).
-      await this.charges.releaseFromInvoice(
+      const updated = await this.cancelInTransaction(
         db,
         { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress },
         id,
       );
-      await this.paymentLinkInvalidation?.markForArchive(db, authCtx.schoolId, id);
 
       const issuerName = updated.issuedBy
         ? await this.resolveIssuerName(db, authCtx.schoolId, updated.issuedBy)
@@ -596,6 +594,62 @@ export class InvoiceGenerationService {
     });
     await this.paymentLinkInvalidation?.archivePending(authCtx.schoolId, id);
     return result;
+  }
+
+  /**
+   * Cancels an invoice with no payments, audits it and returns its charges to
+   * OPEN, on the caller's transaction. Pending payment links are marked for
+   * archiving; the caller archives them after commit (archivePendingLinks).
+   */
+  async cancelInTransaction(
+    db: PrismaClient,
+    actor: { schoolId: string; userId: string | null; ipAddress: string | null },
+    id: string,
+  ): Promise<Prisma.InvoiceGetPayload<object>> {
+    const row = await db.invoice.findUnique({ where: { id } });
+    if (!row) throw new NotFoundError("Invoice not found.");
+
+    if (row.status === "PARTIALLY_PAID" || row.status === "PAID") {
+      throw new ConflictError(
+        "INVOICE_HAS_PAYMENTS",
+        "Cannot cancel an invoice that has recorded payments.",
+      );
+    }
+    if (row.status === "CANCELLED") {
+      throw new ConflictError("INVOICE_ALREADY_CANCELLED", "Invoice is already cancelled.");
+    }
+    if (row.status === "REFUNDED") {
+      throw new ConflictError("INVOICE_REFUNDED", "Cannot cancel a refunded invoice.");
+    }
+
+    const updated = await db.invoice.update({
+      where: { id },
+      data: { status: "CANCELLED" },
+    });
+
+    // audit_logs has FORCE RLS — basePrisma without the school GUC set would be
+    // blocked. All audit writes in this service must go through withTenant.
+    await db.auditLog.create({
+      data: {
+        schoolId: actor.schoolId,
+        userId: actor.userId,
+        action: AUDIT.cancel,
+        entityType: "invoice",
+        entityId: id,
+        ipAddress: actor.ipAddress,
+        metadata: { previousStatus: row.status },
+      },
+    });
+    // Phase 9 / CP5.1 — its charges go back to OPEN, to be voided or billed
+    // again on a supplementary invoice (docs/modules/phase-9.md §13 CP5-D4).
+    await this.charges.releaseFromInvoice(db, actor, id);
+    await this.paymentLinkInvalidation?.markForArchive(db, actor.schoolId, id);
+    return updated;
+  }
+
+  /** After a cancel commits: archive the invoice's pending payment links. */
+  async archivePendingLinks(schoolId: string, invoiceId: string): Promise<void> {
+    await this.paymentLinkInvalidation?.archivePending(schoolId, invoiceId);
   }
 
   // ─── Private helpers ───────────────────────────────────────────────────────

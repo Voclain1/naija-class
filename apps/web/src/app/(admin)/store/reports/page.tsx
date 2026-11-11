@@ -5,8 +5,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   STORE_CATEGORY_LABELS,
+  STORE_COUNTER_METHOD_LABELS,
   STORE_MOVEMENT_LABELS,
+  STORE_ORDER_BILLING_LABELS,
   type StoreMovementDto,
+  type StoreTakingsReportDto,
+  type StoreTakingsRowDto,
   type StoreSalesReportDto,
   type StoreSalesReportRowDto,
   type StoreStockReportDto,
@@ -22,11 +26,12 @@ import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api-client";
 import type { CsvColumn } from "@/lib/csv-export";
 import { formatKobo } from "@/lib/finance/format";
-import { getSalesReport, getStockReport, listStoreMovements } from "@/lib/store/store-api";
+import { getSalesReport, getStockReport, getTakingsReport, listStoreMovements } from "@/lib/store/store-api";
 import { cn } from "@/lib/utils";
 
-// /store/reports — stock on hand and its value at cost, sales over a period
-// (what was billed to students), and every movement. Each exports to Excel,
+// /store/reports — stock on hand and its value at cost, orders over a period
+// by how they were paid (store-orders.md), what was handed over, and every
+// movement. Each exports to Excel,
 // CSV or PDF.
 
 const naira = (kobo: number | null) => (kobo === null ? "" : (kobo / 100).toFixed(2));
@@ -47,6 +52,18 @@ const SALES_COLUMNS: CsvColumn<StoreSalesReportRowDto>[] = [
   { header: "Size", accessor: (r) => r.variantLabel },
   { header: "Quantity sold", accessor: (r) => r.quantity },
   { header: "Amount billed (₦)", accessor: (r) => naira(r.amount) },
+];
+
+function takingsLabel(r: StoreTakingsRowDto): string {
+  return r.billing === "COUNTER" && r.counterMethod
+    ? `${STORE_ORDER_BILLING_LABELS.COUNTER} · ${STORE_COUNTER_METHOD_LABELS[r.counterMethod]}`
+    : STORE_ORDER_BILLING_LABELS[r.billing];
+}
+
+const TAKINGS_COLUMNS: CsvColumn<StoreTakingsRowDto>[] = [
+  { header: "How", accessor: (r) => takingsLabel(r) },
+  { header: "Orders", accessor: (r) => r.orders },
+  { header: "Amount (₦)", accessor: (r) => naira(r.amount) },
 ];
 
 const MOVEMENT_COLUMNS: CsvColumn<StoreMovementDto>[] = [
@@ -71,6 +88,7 @@ export default function StoreReportsPage() {
   const [stock, setStock] = useState<StoreStockReportDto | null>(null);
   const [sales, setSales] = useState<StoreSalesReportDto | null>(null);
   const [movements, setMovements] = useState<StoreMovementDto[] | null>(null);
+  const [takings, setTakings] = useState<StoreTakingsReportDto | null>(null);
   const [from, setFrom] = useState(firstOfMonth());
   const [to, setTo] = useState(today());
   const [error, setError] = useState<string | null>(null);
@@ -84,10 +102,12 @@ export default function StoreReportsPage() {
   const loadRange = useCallback(async () => {
     setSales(null);
     setMovements(null);
+    setTakings(null);
     try {
-      const [s, m] = await Promise.all([getSalesReport({ from, to }), listStoreMovements({ from, to })]);
+      const [s, m, t] = await Promise.all([getSalesReport({ from, to }), listStoreMovements({ from, to }), getTakingsReport({ from, to })]);
       setSales(s);
       setMovements(m);
+      setTakings(t);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not load the report.");
     }
@@ -177,7 +197,45 @@ export default function StoreReportsPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Sales{sales ? ` · ${sales.totalQuantity} sold · ${formatKobo(sales.totalAmount)} billed` : ""}
+            Orders by how they were paid{takings ? ` · ${takings.totalOrders} orders · ${formatKobo(takings.totalAmount)}` : ""}
+          </h3>
+          <ListExportMenu title="Store takings" subtitle={range} csvFilename="store-takings.csv" columns={TAKINGS_COLUMNS} getRows={() => takings?.rows ?? []} disabled={!takings?.rows.length} />
+        </div>
+        {takings === null ? (
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        ) : takings.rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No orders in this period.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">How</th>
+                  <th className="px-3 py-2 text-right">Orders</th>
+                  <th className="px-3 py-2 text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {takings.rows.map((r) => (
+                  <tr key={`${r.billing}-${r.counterMethod ?? ""}`}>
+                    <td className="px-3 py-2">{takingsLabel(r)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r.orders}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatKobo(r.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {takings.rows.some((r) => r.billing === "STORE_INVOICE") && (
+              <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+                {formatKobo(takings.storeInvoicesPaid)} paid so far on these store invoices.
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Handed over{sales ? ` · ${sales.totalQuantity} sold · ${formatKobo(sales.totalAmount)} billed` : ""}
           </h3>
           <ListExportMenu title="Store sales" subtitle={range} csvFilename="store-sales.csv" columns={SALES_COLUMNS} getRows={() => sales?.rows ?? []} disabled={!sales?.rows.length} />
         </div>

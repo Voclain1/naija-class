@@ -293,3 +293,11 @@ price; they buy at the school, and a sale goes on the child's bill as before.
 - **Screens:** the portal's **School store prices** page (`/store`, linked
   under the children list), and **School store prices** in the parent app's
   menu.
+
+## 5. Orders (2026-11-11)
+
+Selling moved to a till with orders, packs, class sales and collection, and a
+school can bill store orders on a separate store invoice or take payment at
+the counter: `docs/modules/store-orders.md`. The single sale above
+(`POST /store/movements`, kind SELL) still works; the item page's **Sell**
+button now opens the till.

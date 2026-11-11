@@ -1,6 +1,30 @@
 import { Body, Controller, Get, HttpCode, Ip, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import {
   updateStoreSettingsSchema,
+  cancelStoreOrderSchema,
+  collectStoreOrderSchema,
+  createClassSaleSchema,
+  createStoreOrderSchema,
+  listStoreOrdersQuerySchema,
+  previewClassSaleSchema,
+  previewStoreOrderSchema,
+  type PreviewStoreOrderInput,
+  type StoreOrderPreviewDto,
+  savePackSchema,
+  type CancelStoreOrderInput,
+  type ClassSalePreviewDto,
+  type ClassSaleResultDto,
+  type CollectStoreOrderInput,
+  type CreateClassSaleInput,
+  type CreateStoreOrderInput,
+  type ListStoreOrdersQuery,
+  type PreviewClassSaleInput,
+  type SavePackInput,
+  type StoreCheckoutContextDto,
+  type StoreOrderDto,
+  type StoreOrderSummaryDto,
+  type StorePackDto,
+  type StoreTakingsReportDto,
   type StoreSettingsDto,
   type UpdateStoreSettingsInput,
   addStoreVariantSchema,
@@ -52,6 +76,7 @@ import { Permissions } from "../../common/auth/permissions.decorator.js";
 import { PermissionsGuard } from "../../common/auth/permissions.guard.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
 import { AssetsService } from "./assets.service.js";
+import { StoreOrdersService } from "./store-orders.service.js";
 import { StorePricesService } from "./store-prices.service.js";
 import { StoreService } from "./store.service.js";
 
@@ -66,6 +91,7 @@ export class StoreController {
   constructor(
     private readonly store: StoreService,
     private readonly prices: StorePricesService,
+    private readonly orders: StoreOrdersService,
   ) {}
 
   // The price list for parents: whether it is shown (2026-10-19).
@@ -240,6 +266,137 @@ export class StoreController {
     @Query(new ZodValidationPipe(storeReportRangeQuerySchema)) query: StoreReportRangeQuery,
   ): Promise<StoreSalesReportDto> {
     return this.store.salesReport(authCtx, query);
+  }
+
+  // ---------------------------------------- orders (2026-11-11, store-orders.md)
+  // Reads and hand-over carry store.read here; the service checks the exact
+  // permission (store.read or store.sell; store.manage or store.sell).
+
+  @Get("reports/takings")
+  @Permissions("store.read")
+  takingsReport(
+    @CurrentUser() authCtx: AuthContext,
+    @Query(new ZodValidationPipe(storeReportRangeQuerySchema)) query: StoreReportRangeQuery,
+  ): Promise<StoreTakingsReportDto> {
+    return this.orders.takingsReport(authCtx, query);
+  }
+
+  @Get("checkout")
+  @Permissions("store.sell")
+  checkout(@CurrentUser() authCtx: AuthContext): Promise<StoreCheckoutContextDto> {
+    return this.orders.checkoutContext(authCtx);
+  }
+
+  @Post("orders/preview")
+  @HttpCode(200)
+  @Permissions("store.sell")
+  previewOrder(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(previewStoreOrderSchema)) body: PreviewStoreOrderInput,
+  ): Promise<StoreOrderPreviewDto> {
+    return this.orders.previewOrder(authCtx, body);
+  }
+
+  @Post("orders")
+  @Permissions("store.sell")
+  createOrder(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(createStoreOrderSchema)) body: CreateStoreOrderInput,
+    @Ip() ip: string,
+  ): Promise<StoreOrderDto> {
+    return this.orders.createOrder(authCtx, body, { ipAddress: ip });
+  }
+
+  @Get("orders")
+  @Permissions("store.read")
+  listOrders(
+    @CurrentUser() authCtx: AuthContext,
+    @Query(new ZodValidationPipe(listStoreOrdersQuerySchema)) query: ListStoreOrdersQuery,
+  ): Promise<StoreOrderSummaryDto[]> {
+    return this.orders.listOrders(authCtx, query);
+  }
+
+  @Get("orders/:id")
+  @Permissions("store.read")
+  getOrder(@CurrentUser() authCtx: AuthContext, @Param("id", ParseUUIDPipe) id: string): Promise<StoreOrderDto> {
+    return this.orders.getOrder(authCtx, id);
+  }
+
+  @Post("orders/:id/collect")
+  @HttpCode(200)
+  @Permissions("store.read")
+  collect(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(collectStoreOrderSchema)) body: CollectStoreOrderInput,
+    @Ip() ip: string,
+  ): Promise<StoreOrderDto> {
+    return this.orders.collect(authCtx, id, body, { ipAddress: ip });
+  }
+
+  @Post("orders/:id/cancel")
+  @HttpCode(200)
+  @Permissions("store.sell")
+  cancelOrder(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(cancelStoreOrderSchema)) body: CancelStoreOrderInput,
+    @Ip() ip: string,
+  ): Promise<StoreOrderDto> {
+    return this.orders.cancel(authCtx, id, body, { ipAddress: ip });
+  }
+
+  @Get("packs")
+  @Permissions("store.read")
+  listPacks(@CurrentUser() authCtx: AuthContext, @Query("includeInactive") includeInactive?: string): Promise<StorePackDto[]> {
+    return this.orders.listPacks(authCtx, includeInactive === "true");
+  }
+
+  @Get("packs/:id")
+  @Permissions("store.read")
+  getPack(@CurrentUser() authCtx: AuthContext, @Param("id", ParseUUIDPipe) id: string): Promise<StorePackDto> {
+    return this.orders.getPack(authCtx, id);
+  }
+
+  @Post("packs")
+  @Permissions("store.manage")
+  createPack(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(savePackSchema)) body: SavePackInput,
+    @Ip() ip: string,
+  ): Promise<StorePackDto> {
+    return this.orders.savePack(authCtx, null, body, { ipAddress: ip });
+  }
+
+  @Put("packs/:id")
+  @Permissions("store.manage")
+  updatePack(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(savePackSchema)) body: SavePackInput,
+    @Ip() ip: string,
+  ): Promise<StorePackDto> {
+    return this.orders.savePack(authCtx, id, body, { ipAddress: ip });
+  }
+
+  @Post("class-sales/preview")
+  @HttpCode(200)
+  @Permissions("store.sell")
+  previewClassSale(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(previewClassSaleSchema)) body: PreviewClassSaleInput,
+  ): Promise<ClassSalePreviewDto> {
+    return this.orders.previewClassSale(authCtx, body);
+  }
+
+  @Post("class-sales")
+  @Permissions("store.sell")
+  createClassSale(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(createClassSaleSchema)) body: CreateClassSaleInput,
+    @Ip() ip: string,
+  ): Promise<ClassSaleResultDto> {
+    return this.orders.createClassSale(authCtx, body, { ipAddress: ip });
   }
 }
 

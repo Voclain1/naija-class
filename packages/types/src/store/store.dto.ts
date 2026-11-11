@@ -126,6 +126,8 @@ export interface StoreVariantDto {
   onHand: number;
   /** Weighted average of what was paid for it (kobo), null if never costed. */
   averageCost: number | null;
+  /** Sold on orders but not yet handed over. */
+  toCollect: number;
   isActive: boolean;
 }
 
@@ -237,6 +239,9 @@ export interface StoreMovementDto {
   reason: string | null;
   /** The bill a sale raised. */
   billed: boolean;
+  /** The store order a hand-over belongs to, e.g. "SO-000042". */
+  orderNumber: string | null;
+  orderId: string | null;
   createdByName: string;
   createdAt: string | Date;
 }
@@ -370,11 +375,26 @@ export type StorePeopleQuery = z.infer<typeof storePeopleQuerySchema>;
 // sizes with a selling price; "available" rather than a count, because stock
 // levels are the school's business.
 
+/** How a student's store order is billed (2026-11-11, store-orders.md). */
+export const storeStudentBillingValues = ["FEES_INVOICE", "STORE_INVOICE"] as const;
+export type StoreStudentBilling = (typeof storeStudentBillingValues)[number];
+
 /** GET/PUT /store/settings */
 export interface StoreSettingsDto {
   pricesForParents: boolean;
+  /** How students' orders are billed unless the seller is allowed to choose. */
+  billingDefault: StoreStudentBilling;
+  /** Whether the seller may choose the other way on a sale. */
+  sellerMayChooseBilling: boolean;
 }
-export const updateStoreSettingsSchema = z.object({ pricesForParents: z.boolean() }).strict();
+export const updateStoreSettingsSchema = z
+  .object({
+    pricesForParents: z.boolean().optional(),
+    billingDefault: z.enum(storeStudentBillingValues).optional(),
+    sellerMayChooseBilling: z.boolean().optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, "Nothing to change.");
 export type UpdateStoreSettingsInput = z.infer<typeof updateStoreSettingsSchema>;
 
 export interface PortalStorePriceDto {

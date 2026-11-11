@@ -266,7 +266,7 @@ describe("StoreService (integration)", () => {
     it("owner and admin switch it off; the storekeeper and bursar cannot; parents then see nothing", async () => {
       await expect(prices.updateSettings(ctx(A.schoolId, A.keeperId), { pricesForParents: false }, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
       await expect(prices.updateSettings(ctx(A.schoolId, A.bursarId), { pricesForParents: false }, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
-      expect(await prices.settings(ctx(A.schoolId, A.keeperId))).toEqual({ pricesForParents: true });
+      expect(await prices.settings(ctx(A.schoolId, A.keeperId))).toEqual({ pricesForParents: true, billingDefault: "FEES_INVOICE", sellerMayChooseBilling: false });
       await prices.updateSettings(ctx(A.schoolId, A.adminId), { pricesForParents: false }, reqCtx);
       expect(await prices.forParent(parent(A.schoolId))).toEqual({ shown: false, items: [] });
       await prices.updateSettings(ctx(A.schoolId, A.ownerId), { pricesForParents: true }, reqCtx);
