@@ -5,8 +5,8 @@ import { apiCreateEnrollment, apiCreateStudent } from "../fixtures/finance.js";
 
 // The school store (2026-10-19, docs/modules/id-cards-and-store.md §4), in a
 // real browser against a throwaway school: an item with sizes is added from
-// the menu, stock is received, one size is sold to a child and lands on the
-// child's charges, a stock take is counted, submitted and approved, and an
+// the menu, stock is received, one size is sold to a child at the till
+// (docs/modules/store-orders.md) and lands on the child's charges, a stock take is counted, submitted and approved, and an
 // asset goes on the register.
 
 test("add an item, receive and sell stock, approve a stock take, and register an asset", async ({ browser }) => {
@@ -54,16 +54,25 @@ test("add an item, receive and sell stock, approve a stock take, and register an
   await expect(dialog).toBeHidden({ timeout: 30_000 });
   await expect(page.getByRole("row", { name: /Size 10\s+20/ })).toBeVisible();
 
-  // 3. Two sold to Emeka: the amount goes on his bill.
-  await page.getByRole("button", { name: "Sell to a student" }).click();
-  dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Size").selectOption({ label: "Size 10 (20 in stock)" });
-  await dialog.getByLabel(/How many/).fill("2");
-  await dialog.getByLabel("Student").fill(`STO/${suffix}`);
-  await dialog.getByRole("option", { name: new RegExp(`Emeka Store${suffix}`) }).click();
-  await dialog.getByRole("button", { name: "Sell and bill" }).click();
-  await expect(dialog).toBeHidden({ timeout: 30_000 });
-  await expect(page.getByRole("row", { name: /Size 10\s+18/ })).toBeVisible();
+  // 3. Two sold to Emeka at the till (store-orders.md): the amount goes on his
+  // bill, as the school's default (the fees invoice), and both are handed over.
+  const itemPage = page.url();
+  await page.getByRole("link", { name: "Sell", exact: true }).click();
+  await expect(page).toHaveURL(/\/store\/sell\?item=/, { timeout: 30_000 });
+  await page.getByLabel("Student", { exact: true }).fill(`STO/${suffix}`);
+  await page.getByRole("option", { name: new RegExp(`Emeka Store${suffix}`) }).click();
+  await page.getByLabel(`Size of ${itemName}`).selectOption({ label: "Size 10 · 20 in stock" });
+  await page.getByLabel(`How many ${itemName}`).fill("2");
+  await expect(page.getByRole("button", { name: "Confirm sale · ₦9,000.00" })).toBeEnabled({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Confirm sale · ₦9,000.00" }).click();
+  await expect(page.getByRole("heading", { name: "Sale recorded" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("It will show on the child's next fees invoice.")).toBeVisible();
+  await page.getByRole("link", { name: "Open the order" }).click();
+  await expect(page).toHaveURL(/\/store\/orders\/[0-9a-f-]+$/, { timeout: 30_000 });
+  await expect(page.getByRole("cell", { name: "2 of 2" })).toBeVisible();
+  const orderUrl = page.url();
+  await page.goto(itemPage);
+  await expect(page.getByRole("row", { name: /Size 10\s+18/ })).toBeVisible({ timeout: 30_000 });
   // At 18 it is down to the reorder level: low.
   await page.goto("/store?low=true");
   await expect(page.getByRole("row", { name: new RegExp(itemName) }).getByText("Low")).toBeVisible({ timeout: 30_000 });
@@ -71,7 +80,13 @@ test("add an item, receive and sell stock, approve a stock take, and register an
   const charges = await admin.api.get(`student-charges?studentId=${student.id}`);
   expect(charges.ok()).toBe(true);
   const rows = (await charges.json()) as { kind: string; amount: number; description: string }[];
-  expect(rows).toEqual([expect.objectContaining({ kind: "STORE", amount: 900_000, description: `${itemName} (Size 10) × 2` })]);
+  expect(rows).toEqual([
+    expect.objectContaining({
+      kind: "STORE",
+      amount: 900_000,
+      description: expect.stringMatching(new RegExp(`^${itemName} \\(Size 10\\) × 2 \\(SO-\\d{6}\\)$`)),
+    }),
+  ]);
 
   // 4. A stock take finds one sweater missing; approving adjusts the stock.
   await page.goto("/store/stock-takes");
@@ -112,7 +127,19 @@ test("add an item, receive and sell stock, approve a stock take, and register an
     return page.url();
   })();
   await page.setViewportSize({ width: 360, height: 800 });
-  for (const url of ["/store", itemUrl, "/store/stock-takes", "/store/reports", "/store/assets", assetUrl]) {
+  for (const url of [
+    "/store",
+    itemUrl,
+    "/store/sell",
+    "/store/orders",
+    orderUrl,
+    "/store/packs",
+    "/store/class-sale",
+    "/store/stock-takes",
+    "/store/reports",
+    "/store/assets",
+    assetUrl,
+  ]) {
     await page.goto(url);
     await expect(page.locator("main h1").first()).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(500);

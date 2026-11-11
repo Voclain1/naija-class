@@ -3,7 +3,7 @@
 import { CheckCircle2, Loader2, Minus, Package, Plus, Printer, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   STORE_COUNTER_METHOD_LABELS,
@@ -123,10 +123,16 @@ function SellPageInner() {
     }
   }, []);
 
-  // ?item=<id> or ?variant=<id>&item=<id> from an item's page.
+  // ?item=<id> or ?variant=<id>&item=<id> from an item's page, added once per
+  // address (an effect can run twice: React's development double-run, or a
+  // re-render that hands back a new params object).
+  const addedFromUrl = useRef<string | null>(null);
   useEffect(() => {
     const itemId = params.get("item");
-    if (itemId) void addItem(itemId, params.get("variant") ?? undefined);
+    const key = itemId ? `${itemId}:${params.get("variant") ?? ""}` : null;
+    if (!itemId || addedFromUrl.current === key) return;
+    addedFromUrl.current = key;
+    void addItem(itemId, params.get("variant") ?? undefined);
   }, [params, addItem]);
 
   function addPack(pack: StorePackDto) {
