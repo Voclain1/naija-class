@@ -118,7 +118,12 @@ tests prove with a scripted model. Neither replaces the other.
 | Date | Commit | Run | Result |
 |---|---|---|---|
 | 2026-11-10 | `e277f568`+ (main) | [42925059216](https://github.com/Voclain1/naija-class/actions/runs/42925059216) | 56 passed, 0 failed or skipped (14 scenarios) |
-| 2026-11-11 | activation branch | see the pull request | 19 scenarios, adding permissions, a reminder paraphrase and revision, and injection in a tool result |
+| 2026-11-11 | `acd5dfde` (activation branch) | [43106974613](https://github.com/Voclain1/naija-class/actions/runs/43106974613) | 81 passed, 1 failed (19 scenarios). The failure was real: told only `not_permitted`, the model said results were "not released yet". Fixed in the tool's answer. |
+| 2026-11-11 | `607d03b8` (activation branch) | [43107770936](https://github.com/Voclain1/naija-class/actions/runs/43107770936) | 83 passed, 0 failed or skipped (19 scenarios) |
+
+One passing run is one sample of a model that does not answer the same way
+every time. It is evidence the prompt and tools behave as intended on these
+scenarios, not a guarantee for every phrasing staff will use.
 
 Re-run on the final release commit before any school's AI understanding is
 switched on.
