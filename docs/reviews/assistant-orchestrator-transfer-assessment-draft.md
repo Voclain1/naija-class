@@ -1,11 +1,16 @@
-# Transfer assessment: SchoolKit Assistant to Anthropic (United States)
+# Transfer assessment: pupils' data to Anthropic (United States)
 
 **Status: ENGINEERING DRAFT for counsel. Not legal advice and not approval.**
 Drafted 2026-11-12. It accompanies `assistant-orchestrator-dpia-draft.md`.
 
-- **What it covers:** the transfer of staff-typed text, possibly containing
-  pupils' and parents' personal data, from Nigeria to Anthropic PBC in the
-  United States, for the `assistant-orchestrator` prompt only.
+- **What it covers:** two transfers from Nigeria to Anthropic PBC in the
+  United States:
+  - **A.** Staff-typed text that may incidentally hold pupils' and parents'
+    personal data (`assistant-orchestrator`; off for every school).
+  - **B.** Photos of class registers, deliberately holding pupils' names,
+    dates of birth and guardians' names and phone numbers
+    (`student-list-extraction`, Smart Import; **live for every school since
+    2026-10-25**). See §8.
 - **Gap in this draft:** commentary on GAID 2025 says a transfer impact
   assessment is required where transfer safeguards such as standard
   contractual clauses are used, and that the NDPC must approve those. The
@@ -93,3 +98,37 @@ conditions; review date.
 |---|---|---|---|
 | Counsel | | | |
 | SchoolKit owner | | | |
+
+---
+
+## 8. Transfer B: Smart Student Import
+
+| Item | Detail |
+|---|---|
+| Data | One photo of a register page per request. Model output: names, gender, date of birth, admission number, class, guardian's name and phone. |
+| Personal data | **Intended. It is the payload.** Children's identity and their guardians' contact details. |
+| Status | **Happening now**, at every school whose owner or admin has accepted the first-use notice |
+| Volume so far | **[FILL from Super-admin → Smart Import beta results]** |
+| Retention at importer | As §1: 30-day organisation default observed |
+| Retention at exporter | Photo: none. Extracted rows: kept in `import_jobs.preview_snapshot` until the job is deleted (DPIA Part B, F1). |
+
+### How the routes in §3 fit Transfer B
+
+- **A. Consent:** stronger than for the assistant, because the data is known
+  in advance. But the agreement collected is the **school's**, not the
+  parents'. It names neither the provider nor the country. Counsel to decide
+  whether it can be explicit and informed, and whose consent is needed.
+- **B. Contractual safeguards with NDPC approval:** the same fit as for the
+  assistant, and one agreement could cover both transfers.
+- **D. Avoiding the transfer:** CSV import and typing already exist.
+  Reading registers inside Nigeria would need a provider or model hosted
+  there; not assessed.
+
+### Question specific to Transfer B
+
+The transfer is already running. Counsel should say whether it may continue
+while the assessment and any NDPC approval are pending, or should pause.
+Owner's options:
+- leave it as is;
+- pause for schools that have not yet scanned;
+- pause for every school, using each school's switch or `AI_ENABLED`.

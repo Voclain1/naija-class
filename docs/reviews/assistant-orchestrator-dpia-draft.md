@@ -1,4 +1,13 @@
-# DPIA: SchoolKit Assistant, AI understanding (`assistant-orchestrator`)
+# DPIA: SchoolKit's AI processing of pupils' data
+
+Two processing operations, assessed together because they share a provider,
+a transfer and the same open legal questions:
+
+- **Part A:** SchoolKit Assistant, AI understanding (`assistant-orchestrator`).
+  Built; **off for every school**; refused in production until approved.
+- **Part B:** Smart Student Import (`student-list-extraction`). **Live for
+  every school since 2026-10-25** (owner's decision). Part B carries more
+  risk, because pupils' personal data is its payload rather than an accident.
 
 **Status: ENGINEERING DRAFT for counsel and a certified DPO. Not a completed
 assessment, not legal advice, and not approval of anything.** Drafted
@@ -22,6 +31,8 @@ Related:
 Items marked **[FILL]** need a fact this draft does not have.
 
 ---
+
+# Part A: SchoolKit Assistant, AI understanding
 
 ## 1. Why a DPIA is required
 
@@ -209,3 +220,158 @@ the measures above.
 
 **Review date:** before any school other than the pilot is switched on, and on
 any change to what the model receives.
+
+---
+
+# Part B: Smart Student Import (`student-list-extraction`)
+
+**Status: in production for every school since 2026-10-25.** Migration
+`20261125120000_ai_and_smart_import_on_for_all_schools` set `smart_import_enabled`
+and `ai_enabled` true for every existing school and made both the default for
+new ones. The owner's decision is recorded in
+`docs/modules/smart-student-import.md` §9 ("the beta"). A school can scan only
+after its owner or an admin accepts a first-use notice. This is a DPIA for
+processing that has already started. Counsel should say whether that changes
+what must happen now.
+
+## B1. Why a DPIA is required
+
+The same three GAID triggers apply as in Part A, more directly:
+- educational records of pupils;
+- a cross-border transfer;
+- new technology (a vision model reading handwriting).
+
+Unlike Part A, children's identity is the payload, not an accident.
+
+## B2. Description of the processing
+
+### Purpose
+
+An admin photographs a paper class register. The model reads each row into
+the fields of a student registration. The admin checks every row against the
+paper, ticks "I have checked these rows against the register", and saves.
+Nothing is written to student records without that.
+
+### Data subjects
+
+Pupils (children) and their parents or guardians, as written on the register.
+Volume: **[FILL from Super-admin → Smart Import beta results: schools that
+agreed, pages read, rows read since 2026-10-25]**.
+
+### What is sent to the provider, per scan
+
+| Item | Personal data? |
+|---|---|
+| The photo of one register page, sent once as image data | **Yes:** everything written on the page |
+| Fixed instructions to read the page | No |
+| The class level | No |
+
+### What the model returns
+
+Per row: first, middle and last names, gender, date of birth, admission
+number, class, guardian's name, guardian's phone number, and the fields it
+could not read.
+
+### Storage and retention
+
+| Where | What | How long |
+|---|---|---|
+| SchoolKit, the photo | Not stored. Sent once, held only in memory for the request (D3, "never persisted"). | Request only |
+| **SchoolKit, `import_jobs.preview_snapshot`** | **Every row the model read, with all fields above, including rows the admin removed and guardian phone numbers** | **Until someone deletes the import job. No automatic clearing.** See finding F1. |
+| SchoolKit, student records | Only the rows the admin checked and saved | The school's normal records |
+| SchoolKit, `import_jobs.scan_review` | Counts only, no text; a test fails if a name appears | Kept |
+| SchoolKit, `ai_generations` | Metadata only, no content | **[FILL: retention policy]** |
+| Anthropic | The photo and the extracted rows | Organisation default observed: **30 days**. Zero retention not enabled. Production key's organisation not confirmed. |
+
+### Notice and agreement
+
+- **At sign-up**, the school's owner accepted wording that does not mention AI
+  providers (`docs/legal/ndpr-ai-review.md`, "What the school agreed to").
+- **Before the first scan**, an owner or admin presses "I agree for my school"
+  after this notice. The agreement is stored with a timestamp and audited, and
+  the API refuses scans without it:
+
+  > When you take a photo, SchoolKit sends it to the AI reading service it
+  > uses, to read the page. The photo is not kept: once the page has been
+  > read, it is thrown away, and nothing from it is saved except the rows you
+  > check and save.
+
+- **What the notice does not say:** it names no provider (owner's rule) and
+  does not say the photo leaves Nigeria. It is not versioned, so a change in
+  wording cannot ask schools again.
+- **Parents:** no notice or consent.
+
+## B3. Findings from preparing this draft
+
+**F1. The notice overstates what is deleted.** The photo is thrown away, but
+"nothing from it is saved except the rows you check and save" is not true as
+built:
+- Every row the model read stays in `import_jobs.preview_snapshot`, including
+  rows the admin removed as wrong or unwanted, with guardian phone numbers.
+- It stays until someone deletes the import job by hand.
+- It is protected by tenant isolation (row-level security) like other school
+  data, but it is kept indefinitely.
+
+Fix options for counsel and the owner:
+- clear the snapshot when the import is saved or abandoned, keeping only the
+  counts already in `scan_review` (about a day of engineering, plus cleaning
+  up existing jobs);
+- or change the notice wording, which, being unversioned, means deciding how
+  to re-ask schools.
+
+**F2. The school's agreement is not the parents'.** The first-use agreement is
+the controller's. Whether parents need notice or consent for their children's
+data going to a provider outside Nigeria is open (`ndpr-ai-review.md` Part 2,
+questions 8 to 10).
+
+**F3. The legal review said this would stay off.** `docs/legal/ndpr-ai-review.md`
+Part 1 (unsigned draft, 2026-10-11) said Smart Import stays off until the
+lawyer has answered. The owner's later decision of 2026-10-24 put it on for
+every school. That document now records both. Counsel will see the sequence.
+
+## B4. Necessity and proportionality
+
+| Question | Answer as built | For counsel |
+|---|---|---|
+| Is personal data needed? | Yes. Transcribing the register is the product; there is nothing to make opaque. | Accepted in the allowlist (2026-08-20), but not legally assessed. |
+| Could it be done without sending data abroad? | Only by typing or a CSV, which already exist. | Is the time saved proportionate? |
+| Minimisation | One page per request; photo not stored; guardian fields are optional on the page. | F1 undermines the storage half. |
+| Lawful basis | **Open.** The school's agreement; the basis for children's data and the transfer is unassessed. | Decide. |
+| Transparency | First-use notice to the school; nothing to parents; provider and country not named. | Adequate? |
+
+## B5. Risks
+
+| # | Risk | Likelihood | Severity | Notes |
+|---|---|---|---|---|
+| B-R1 | Children's names, dates of birth and guardians' phones go to a provider in the US without a settled lawful basis or transfer mechanism | **Certain** on every scan | High | The core of this part |
+| B-R2 | Extracted rows, including rejected rows, kept indefinitely in `preview_snapshot` | **Certain** today | Medium | F1 |
+| B-R3 | A misread wrong name or date of birth goes onto a permanent record | Possible | Medium | Mitigated by the required row-by-row check and the "unreadable" marking; measured in the beta results |
+| B-R4 | A notice that names no provider or country is judged insufficient | Possible | Medium | F2 and wording |
+| B-R5 | A register from another school, or a page with other details (health notes, fees), is photographed | Possible | Medium to high | The notice asks for own-school registers only. Nothing on the page is filtered before sending. |
+| B-R6 | Provider breach, lawful access or training use | Unlikely | High | As Part A, R3 and R4 |
+| B-R7 | Parents unaware | **Certain** | Medium | No parent notice |
+
+## B6. Measures
+
+**In place:**
+- the first-use agreement, enforced by the API;
+- the photo never stored;
+- the required row check before save;
+- unreadable fields marked;
+- a per-school switch, the monthly budget and `AI_ENABLED`;
+- the beta results, which hold counts only.
+
+**Proposed:**
+
+| For | Measure | Effort |
+|---|---|---|
+| B-R2, F1 | Clear `preview_snapshot` on save or abandon; clear existing jobs | About 1 day |
+| B-R4, F2 | A versioned notice that names the provider and the country, re-asked of schools that already agreed | Wording plus a small change |
+| B-R1, B-R7 | Parent notice, or consent, as counsel decides | School's timing |
+| B-R1 | Pause for schools that have not yet scanned until counsel answers question 10 | Owner's decision; per-school switch |
+| B-R6 | As Part A: confirm the key's organisation and terms; ask about zero retention | Owner |
+
+## B7. Residual risk and conclusion
+
+**Counsel's conclusion: [FILL]**, including whether processing should continue
+while the assessment is completed.

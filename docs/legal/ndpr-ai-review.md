@@ -7,7 +7,10 @@ Two parts:
 2. A brief for that lawyer: what the product sends, to whom, and the questions
    it needs answered.
 
-Status: **DRAFT, 2026-10-11. Not yet signed.** Until it is signed, the item in
+Status: **DRAFT, 2026-10-11. Not yet signed.** **Overtaken in part on
+2026-10-25:** AI and Smart Student Import were switched on for every school
+by the owner's decision (see condition 2 and the "Why proceed" note below).
+Updated 2026-11-12 to match production. Until it is signed, the item in
 `docs/deferred.md` §3 stays open. Background: `docs/deferred-archive.md`,
 "NDPR compliance posture for third-party AI / embeddings vendors".
 
@@ -23,13 +26,25 @@ carried out, on these conditions:
    stays in force: derived features (comments, summaries, insights, lesson
    plans, exam questions) send opaque ids and class-level context only, never
    a student's name, address, date of birth or contact details.
-2. **Smart Student Import stays off for every school** (`School.smartImportEnabled`,
-   off by default since 2026-10-11). It is the one feature that sends
-   children's names to the AI provider. It stays off until the lawyer has
+2. ~~**Smart Student Import stays off for every school** until the lawyer has
    answered the questions in Part 2 that concern it, and its accuracy check
-   has passed.
-3. **AI is switched on one school at a time**, by the platform operator, with
-   the school's agreement. No school gets AI by default.
+   has passed.~~ **Superseded 2026-10-25 by the owner's decision**
+   (`docs/modules/smart-student-import.md` §9; migration
+   `20261125120000_ai_and_smart_import_on_for_all_schools`):
+   - Smart Import is on for every school, as a beta, and is the default for
+     new schools.
+   - A school can scan only after its owner or an admin accepts a first-use
+     notice, which the API enforces.
+   - The lawyer's questions about it (8 to 10 below) are **still
+     unanswered**, so this processing runs without the review this
+     condition required.
+   - Draft DPIA and transfer assessment, Part B:
+     `docs/reviews/assistant-orchestrator-dpia-draft.md` and
+     `docs/reviews/assistant-orchestrator-transfer-assessment-draft.md`.
+3. ~~**AI is switched on one school at a time**, by the platform operator, with
+   the school's agreement. No school gets AI by default.~~ **Superseded
+   2026-10-25:** AI is on for every school and is the default for new
+   schools. The platform operator can still switch it off for one school.
 4. **Parent summaries stay a school's own opt-in** (`parentSummaryEnabled`),
    never switched on by SchoolKit.
 5. **The student AI tutor (Phase 8b) is not covered by this decision.** It
@@ -45,7 +60,8 @@ carried out, on these conditions:
 7. **If the lawyer finds a problem**, AI is switched off for every school
    (`AI_ENABLED=false` on `school-kit-api`) until it is fixed.
 
-**Why proceed rather than pause.** The volume is small (one school switched
+**Why proceed rather than pause.** (As drafted on 2026-10-11, when one school
+had AI. Since 2026-10-25 every school has it.) The volume is small (one school switched
 on at the last count, on a capped monthly budget), the engineering rules already keep student
 identity out of every derived feature, and pausing would take away report
 comment and lesson-plan drafts that teachers are using. The risk being
@@ -84,7 +100,7 @@ or correct that.
 | Exam question drafts | Teachers | Subject, topic, class level | No |
 | School insights ("ask a question about your school") | Owners, admins | Aggregate figures (attendance rates, fee totals) | No |
 | Weekly parent summaries | Sent to parents, if the school opts in | One child's week of scores and attendance, and class level | No identifying details are sent, but the data is about one child, and the summary goes to that child's parent |
-| Smart Student Import | Admins | **A photo of a class register: children's names, dates of birth, guardians' names and phone numbers** | **Yes. Switched off for every school.** |
+| Smart Student Import | Admins | **A photo of a class register: children's names, dates of birth, guardians' names and phone numbers** | **Yes. On for every school since 2026-10-25, as a beta**, after the school's owner or an admin accepts a first-use notice. The photo is not kept. The rows read are kept in the import job until it is deleted (DPIA Part B, finding F1). |
 | Help assistant (built, not switched on; added 2026-11-08) | Staff | A question a member of staff types about using SchoolKit, earlier questions in the same conversation (resent by their browser), parts of the help guide, and some of the school's settings (grading bands, term dates, plan, notification channels) | **Not intended, but possible.** Staff are asked not to include personal details, and questions naming someone on the school's roster, or containing a phone number, email, ID-like number, full date or pasted list, are blocked before sending. What the checks miss is sent. Each request also carries the earlier messages of the conversation. SchoolKit stores no question or answer text; it records usage, security and execution metadata without them. The assistant cannot modify school operational records. |
 
 Every AI draft is reviewed by a teacher before anyone else sees it, except the
