@@ -221,6 +221,10 @@ export const baseConfig = [
       // ONLY the school id list; every read and delete of
       // assignment_submission_files goes through withTenant per school.
       "**/modules/assignments/staged-files-sweeper.service.ts",
+      // scan-rows-sweeper.service.ts (2026-11-12). Same category: an hourly
+      // cron listing schools (no RLS); each school's Smart Import rows are
+      // cleared under withTenant.
+      "**/modules/student-scan/scan-rows-sweeper.service.ts",
       // workflow-proposals-sweeper.service.ts (2026-11-09). Same category: an
       // hourly system cron reading the schools list (no RLS); each school's
       // workflow_proposals go through withTenant.
