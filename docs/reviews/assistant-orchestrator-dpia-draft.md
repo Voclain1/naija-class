@@ -277,7 +277,7 @@ could not read.
 | Where | What | How long |
 |---|---|---|
 | SchoolKit, the photo | Not stored. Sent once, held only in memory for the request (D3, "never persisted"). | Request only |
-| **SchoolKit, `import_jobs.preview_snapshot`** | **Every row the model read, with all fields above, including rows the admin removed and guardian phone numbers** | **Until someone deletes the import job. No automatic clearing.** See finding F1. |
+| **SchoolKit, `import_jobs.preview_snapshot`** | Every row the model read, with all fields above, including rows the admin removed and guardian phone numbers | **Before #543:** until someone deleted the import job. **With #543:** deleted when the import is saved, or 24 hours after the scan if never saved. See finding F1. |
 | SchoolKit, student records | Only the rows the admin checked and saved | The school's normal records |
 | SchoolKit, `import_jobs.scan_review` | Counts only, no text; a test fails if a name appears | Kept |
 | SchoolKit, `ai_generations` | Metadata only, no content | **[FILL: retention policy]** |
@@ -303,7 +303,7 @@ could not read.
 
 ## B3. Findings from preparing this draft
 
-**F1. The notice overstates what is deleted.** The photo is thrown away, but
+**F1. The notice overstated what is deleted. FIX IN PROGRESS, #543 (owner, 2026-11-12): rows are deleted when the import is saved, unsaved scans after 24 hours, and existing scans on the first hourly run after deploy.** The photo is thrown away, but
 "nothing from it is saved except the rows you check and save" is not true as
 built:
 - Every row the model read stays in `import_jobs.preview_snapshot`, including
@@ -344,7 +344,7 @@ every school. That document now records both. Counsel will see the sequence.
 | # | Risk | Likelihood | Severity | Notes |
 |---|---|---|---|---|
 | B-R1 | Children's names, dates of birth and guardians' phones go to a provider in the US without a settled lawful basis or transfer mechanism | **Certain** on every scan | High | The core of this part |
-| B-R2 | Extracted rows, including rejected rows, kept indefinitely in `preview_snapshot` | **Certain** today | Medium | F1 |
+| B-R2 | Extracted rows, including rejected rows, kept indefinitely in `preview_snapshot` | Certain before #543; after it, held at most until save or 24 hours | Medium, then low | F1 |
 | B-R3 | A misread wrong name or date of birth goes onto a permanent record | Possible | Medium | Mitigated by the required row-by-row check and the "unreadable" marking; measured in the beta results |
 | B-R4 | A notice that names no provider or country is judged insufficient | Possible | Medium | F2 and wording |
 | B-R5 | A register from another school, or a page with other details (health notes, fees), is photographed | Possible | Medium to high | The notice asks for own-school registers only. Nothing on the page is filtered before sending. |
@@ -365,7 +365,7 @@ every school. That document now records both. Counsel will see the sequence.
 
 | For | Measure | Effort |
 |---|---|---|
-| B-R2, F1 | Clear `preview_snapshot` on save or abandon; clear existing jobs | About 1 day |
+| B-R2, F1 | Clear `preview_snapshot` on save or abandon; clear existing jobs | **Done in #543** once merged and deployed |
 | B-R4, F2 | A versioned notice that names the provider and the country, re-asked of schools that already agreed | Wording plus a small change |
 | B-R1, B-R7 | Parent notice, or consent, as counsel decides | School's timing |
 | B-R1 | Pause for schools that have not yet scanned until counsel answers question 10 | Owner's decision; per-school switch |
