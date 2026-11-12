@@ -21,7 +21,7 @@ describe("disabled carry-over route", () => {
       vi.stubGlobal("React", React);
       const html = renderToStaticMarkup(React.createElement(BulkEnrollmentWizardPage));
 
-      expect(html).toContain("Carry over is temporarily unavailable");
+      expect(html).toContain("Carry over has moved");
       expect(html).toContain("Add students to a class");
       expect(html).toContain("Find an existing student");
       expect(html).not.toContain("Missing armId");
