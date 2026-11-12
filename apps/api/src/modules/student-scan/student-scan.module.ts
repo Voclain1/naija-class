@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { AiModule } from "../../common/ai/ai.module.js";
+import { ScanRowsSweeperService } from "./scan-rows-sweeper.service.js";
 import { SmartImportBetaService } from "./smart-import-beta.service.js";
 import { SmartImportBetaController, StudentScanController } from "./student-scan.controller.js";
 import { StudentScanService } from "./student-scan.service.js";
@@ -20,7 +21,7 @@ import { StudentScanService } from "./student-scan.service.js";
 @Module({
   imports: [AiModule],
   controllers: [StudentScanController, SmartImportBetaController],
-  providers: [StudentScanService, SmartImportBetaService],
+  providers: [StudentScanService, SmartImportBetaService, ScanRowsSweeperService],
   exports: [StudentScanService],
 })
 export class StudentScanModule {}
