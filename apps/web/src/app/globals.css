@@ -410,3 +410,68 @@
 @media (prefers-reduced-motion: reduce) {
   .schoolkit-workspace button { transition: none !important; }
 }
+
+
+/* Core admin workspace refinement — bounded to opted-in pages, no data or permission changes. */
+@media screen {
+  .schoolkit-workspace {
+    width: 100%;
+    min-width: 0;
+  }
+  .schoolkit-workspace .workspace-hero {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid hsl(var(--border) / .85);
+    border-radius: 1.5rem;
+    padding: clamp(1.25rem, 2.8vw, 2rem);
+    background: linear-gradient(125deg, hsl(var(--card)) 35%, hsl(var(--primary) / .075));
+    box-shadow: 0 14px 36px -30px hsl(var(--foreground) / .4);
+  }
+  .schoolkit-workspace .workspace-hero h1 {
+    font-family: inherit;
+    font-size: clamp(1.65rem, 2.6vw, 2.35rem);
+    font-weight: 800;
+    letter-spacing: -.045em;
+  }
+  .schoolkit-workspace .workspace-hero p {
+    max-width: 68ch;
+    line-height: 1.65;
+  }
+  .schoolkit-workspace :is(.overflow-x-auto, [data-slot="table-container"]) {
+    max-width: 100%;
+    scrollbar-width: thin;
+  }
+  .schoolkit-workspace :is(table, [role="table"]) {
+    min-width: 0;
+  }
+  .schoolkit-workspace table th,
+  .schoolkit-workspace table td {
+    vertical-align: middle;
+  }
+  .schoolkit-workspace table tbody tr:focus-within {
+    background: hsl(var(--accent) / .45);
+  }
+  .schoolkit-workspace :is(button, a, input, select, textarea):focus-visible {
+    outline-offset: 3px;
+  }
+}
+@media screen and (max-width: 639.98px) {
+  .schoolkit-workspace .workspace-hero {
+    border-radius: 1.125rem;
+    padding: 1.15rem;
+  }
+  .schoolkit-workspace .workspace-hero h1 {
+    font-size: 1.75rem;
+  }
+  .schoolkit-workspace .workspace-hero :is(button, a) {
+    max-width: 100%;
+  }
+}
+@media print {
+  .schoolkit-workspace .workspace-hero {
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+}
