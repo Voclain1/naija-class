@@ -286,7 +286,7 @@ export default function EnrollmentsPage() {
 
   if (loadingShell) {
     return (
-      <div className="schoolkit-workspace mx-auto flex w-full max-w-7xl flex-col gap-6">
+      <div className="schoolkit-workspace workspace-enrolments mx-auto flex w-full max-w-7xl flex-col gap-6">
         <PageSkeleton rows={5} />
       </div>
     );
