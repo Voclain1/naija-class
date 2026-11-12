@@ -109,7 +109,13 @@ is on. Import `FeatureSwitchesModule` explicitly; it is not global.
 ## Operator UI
 
 The school's Manage dialog has a **Pilot features** section with one row per
-key. Turning a key on asks for confirmation; turning it off does not. The
+key, except the SchoolKit Assistant's six keys. Those have their own
+**SchoolKit Assistant** section, which also shows whether each one is
+actually working and why not (`docs/modules/assistant-workspace.md`,
+"Controlled activation"; `GET /platform-admin/schools/:schoolId/assistant`).
+One write is refused: in production, `assistant-model-routing` cannot be
+switched on while its prompt's approval is pending (409
+`ASSISTANT_MODEL_NOT_APPROVED`). Turning a key on asks for confirmation; turning it off does not. The
 platform audit page shows "Turned Help assistant on/off".
 
 ## Tests

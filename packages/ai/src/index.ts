@@ -206,4 +206,5 @@ export {
   ASSISTANT_ORCHESTRATOR_TOOLS,
   orchestratorToolSpec,
   type OrchestratorToolSpec,
+  NOT_PERMITTED_SECTION_NOTE,
 } from "./prompts/assistant-orchestrator.js";

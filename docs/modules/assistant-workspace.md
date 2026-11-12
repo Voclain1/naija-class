@@ -353,7 +353,10 @@ The owner approved **preparing** a narrowly scoped model-routing pilot for Virgo
 ### Proposed allowlist row (for owner review; NOT APPROVED)
 
 Proposed as a fourth row of CLAUDE.md's PII-bearing prompt allowlist. **Not
-added to CLAUDE.md; not approved.**
+added to CLAUDE.md; not approved.** The final wording put to the owner, with
+the residual risk it accepts, is decision **AO-1** under
+[Controlled activation](#controlled-activation-2026-11-10); the row below is
+the earlier draft, kept for the record.
 
 > | `assistant-orchestrator` | SchoolKit Assistant model orchestration (`docs/modules/assistant-workspace.md`, "Model orchestration") | **Not the payload — incidental, and accepted as a residual.** The assistant prepares invoices, reminder campaigns, intake and corrections through their existing reviewed workflows and needs no personal data: students are found and edited in structured forms the model never sees, and tools return labels and counts only. A staff member may still type some. Mitigated, not exempted: roster names are replaced by opaque markers (the server resolves them; named records go to the browser only), and per-school detectors block admission numbers, emails, phones, long ID-like numbers, full dates and pasted rows, in every message, every turn; pasted rows are kept on the device; a standing notice asks for none; nothing the model does can approve a write (no approval tool, approval is the person's control on the server's preview). What the detectors miss reaches the model: this row accepts that residual for this prompt only. Optional at every level: the code-level approval flag, the platform's switch, the school's own `assistant-model-routing` switch (off by default), and the staff member's choice to type. Rule 1 applies as for `help-assistant`: the conversation is held only in browser memory, resent with each request, and stored nowhere on the server. |
 
@@ -527,7 +530,11 @@ caller of them.
 
 ## Activation gates
 
-To let a real school use the assistant, an operator turns on, for that school:
+Who may do this, the console and its status report are under
+[Controlled activation](#controlled-activation-2026-11-10); the steps are in
+`docs/runbooks/assistant-activation.md`.
+
+To let a real school use the assistant, the platform admin turns on, for that school:
 
 1. `assistant-workspace`, for the panel;
 2. each task's own switch: `assistant-billing`, `reminder-campaigns`,
@@ -556,6 +563,144 @@ The open items:
 - **Separation of duties** (a second approver): undecided. Today the requester
   confirms.
 - **Provider idempotency** for reminders: not verified, so it is not relied on.
+
+## Controlled activation (2026-11-10)
+
+**Owner's decision, recorded 2026-11-10.** For now the platform admin (Super
+Admin) alone controls the Assistant, school by school:
+
+- it is **off for every school by default**, including every newly registered
+  or newly provisioned school;
+- a school's owner or admin **cannot** switch it on, and has no screen or
+  endpoint that could;
+- no existing school is switched on by this change, by a migration or by a
+  seed;
+- each staff member's own permissions, and the explicit approval of every
+  operational write, are unchanged.
+
+**What this decision is not.** It approves *who holds the switch*. It does
+not approve any data-processing term: not the `assistant-orchestrator`
+allowlist row, not provider terms, not privacy-policy or consent wording, and
+not any school's activation of AI understanding. Those stay with the owner
+and counsel (`docs/reviews/virgo-assistant-pilot-signoff-register.md`).
+
+### The controls
+
+The school's **Manage** dialog in the super-admin console has a **SchoolKit
+Assistant** section (`assistant-activation-section.tsx`) with six rows:
+
+| Row | Switch (`FEATURE_KEYS`) | Model involved |
+|---|---|---|
+| Assistant panel | `assistant-workspace` | No |
+| Prepare invoices | `assistant-billing` | No (the planner sees counts only) |
+| Fee reminder campaigns | `reminder-campaigns` | No |
+| Add and enrol students | `student-intake` | No |
+| Correct student records | `student-corrections` | No |
+| AI understanding | `assistant-model-routing` | **Yes**: staff text goes to the provider |
+
+Each switch is still written one at a time through the existing
+`PATCH /platform-admin/schools/:schoolId/features`, so **every change is one
+audit row** (`platform_admin.schools.set-feature`, with key, from and to).
+Nothing new can write a switch.
+
+### Switch on is not the same as working
+
+`GET /platform-admin/schools/:schoolId/assistant` (platform admin only,
+read-only; `AssistantActivationService`) returns, for each row, `switchOn`
+(the stored value, read from the row now, not the 30-second cache), `working`
+(nothing blocks it) and `blockers` (every reason it is not working, most
+fundamental first). The console shows two badges per row, "Switch on/off" and
+"Working / Not working", and prints each blocker in words. A row is never
+shown as working, and AI is never described as enabled, while any blocker
+remains.
+
+| Blocker | Applies to | Exact words shown |
+|---|---|---|
+| `SWITCH_OFF` | every row | Its switch is off for this school. |
+| `PLATFORM_DISABLED` | every row | Switched off for every school on the server (FEATURES_DISABLED). |
+| `WORKSPACE_OFF` | tasks, AI understanding | The Assistant panel is not working for this school, so staff cannot reach it. |
+| `APPROVAL_PENDING` | AI understanding | The owner's approval of the assistant-orchestrator prompt is not recorded in code yet. Production refuses it for every school until it is. |
+| `AI_PLATFORM_OFF` | AI understanding | AI is switched off for the whole platform (AI_ENABLED). |
+| `AI_NOT_CONFIGURED` | AI understanding | No AI provider key is configured on the server. |
+| `SCHOOL_AI_OFF` | AI understanding | AI is off for this school. |
+| `BUDGET_EXHAUSTED` | AI understanding | This school has used its AI token budget for the month. |
+
+The blockers are computed by the same functions the request path uses
+(`modelRoutingBlockers`, `orchestratorApproval`, `isPlatformDisabled`), so
+the report cannot drift from what staff get. It cannot see one person's
+permissions: "working" means working for staff who hold them.
+
+### The approval gate is kept, and tightened
+
+`ASSISTANT_ORCHESTRATOR_APPROVAL` is still `"pending"`, and production still
+refuses the prompt for every school. One rule was added: in production, while
+the approval is pending, **switching `assistant-model-routing` ON is refused**
+(409 `ASSISTANT_MODEL_NOT_APPROVED`, nothing stored, no audit row), so the
+stored switch can never read "on" for something that is not approved.
+Switching it off is always allowed.
+
+### Tests
+
+- `apps/api/src/__tests__/assistant-activation.spec.ts` (PostgreSQL, the real
+  guard): off by default with each row's blockers; a signed-up school and a
+  provisioned school start all off; 403 for the school's own owner and admin
+  on the status and on every switch, 401 with no session, 404 for an unknown
+  school; panel and tasks on, staff get them at once and by their own
+  permissions (a teacher gets none of the four); every change audited; an AI
+  switch that is on reports each blocker (provider, school AI off, budget
+  used, panel off) and matches what staff are told; production refuses the
+  prompt and refuses switching it on; the platform kill for one key and for
+  `*`; rollback, with another school untouched.
+- `e2e/tests/assistant-activation.spec.ts`: the same journey through the real
+  console and a real staff session of a synthetic school. Screenshot:
+  `docs/reviews/assistant-activation/console-status.png`.
+- Live-model scenarios: see `docs/runbooks/assistant-activation.md`,
+  "Evidence".
+
+### The one owner decision that remains: AO-1
+
+Everything above is built and tested without it. AI understanding for any
+real school needs this decision, in these words. It is a decision for the
+owner, after counsel's review; **nothing in this repository takes it.**
+
+> **AO-1. I approve adding the following fourth row to the PII-bearing prompt
+> allowlist in `CLAUDE.md`, for the named prompt `assistant-orchestrator`
+> only, and setting `ASSISTANT_ORCHESTRATOR_APPROVAL` to `"approved"` in the
+> same reviewed change.**
+>
+> | `assistant-orchestrator` | SchoolKit Assistant model orchestration (`docs/modules/assistant-workspace.md`, "Model orchestration") | **Not the payload — incidental, and accepted as a residual.** The assistant prepares invoices, reminder campaigns, intake and corrections through their existing reviewed workflows and needs no personal data: students are found and edited in structured forms the model never sees, and its tools return labels and counts only. A staff member may still type some. Mitigated, not exempted: names on the school's own roster are replaced by opaque markers before the model (the server resolves them; names and records go to the browser only); per-school detectors block phone numbers, email addresses, admission numbers, long ID-like numbers, full dates and pasted rows, in every message, on every turn; a standing notice asks for none; nothing the model does can approve a write (there is no approval tool; approval is the person's control on the server's preview). What the name replacement and the detectors miss reaches the model: this row accepts that residual for this prompt only. Optional at every level: the code-level approval, the platform's switch, the school's own `assistant-model-routing` switch (off by default, set only by the platform admin), and the staff member's choice to type. Rule 1 applies as for `help-assistant`: the conversation is held only in the staff member's browser memory, resent with each request, and stored nowhere on the server. **Narrowly scoped:** for a pilot at schools the owner names, one at a time; no school may have it switched on until the provider, privacy, legal and consent work in `docs/reviews/virgo-assistant-pilot-signoff-register.md` is complete for that school and the live evaluations pass on the release commit. |
+
+**The residual risk AO-1 accepts, stated plainly.** Name replacement only
+knows the names on the school's own roster, and the detectors only know
+patterns. Personal information can still reach the provider when a member of
+staff types, for example:
+
+- a name that is not on the roster (a parent, a sibling, a visitor, a new
+  child not yet added), a nickname, or a misspelling far enough from the
+  roster spelling;
+- a description that identifies someone without naming them ("the boy in JSS
+  2A whose father died last week");
+- health, family, disciplinary or financial detail written as ordinary
+  sentences;
+- a short or partial number, an address, or a date written in words.
+
+Such text is sent to the provider with that request and is subject to the
+provider's retention (observed for the owner's account: 30 days, not zero;
+`docs/reviews/virgo-assistant-pilot-review-packet.md` §5a). It is not stored
+by SchoolKit. The tools cannot return names, contacts, money or record
+contents to the model, so the exposure is limited to what staff type.
+
+**What AO-1 does not decide,** and what must be complete first for any school
+(tracked in the sign-off register, drafted in
+`docs/reviews/virgo-assistant-consent-release-spec.md`):
+
+1. counsel's written conclusion (lawful basis, roles, transfer, DPIA);
+2. the provider facts for the production key's organisation;
+3. the published privacy-policy wording;
+4. the school consent wording and whether `SCHOOL_CONSENT_VERSION` is
+   bumped, and the parent notice or consent decision. **No consent version
+   was changed here.**
+5. that school's own acceptance.
 
 ## Tests
 

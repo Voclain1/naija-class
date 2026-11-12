@@ -223,6 +223,14 @@ export class AiGenerationService {
     return this.platformEnabled && this.port !== null;
   }
 
+  /**
+   * The two halves of isConfigured(), for an operator's status screen that
+   * must say WHICH one is missing. Booleans only; never the key.
+   */
+  availability(): { platformEnabled: boolean; providerConfigured: boolean } {
+    return { platformEnabled: this.platformEnabled, providerConfigured: this.port !== null };
+  }
+
   async generate(params: GenerateParams): Promise<AiCallResult> {
     if (!this.platformEnabled) {
       throw new ForbiddenError(AI_ERROR_CODES.DISABLED_PLATFORM, "AI features are disabled platform-wide.");

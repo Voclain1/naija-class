@@ -57,6 +57,7 @@ import * as password from "../../common/auth/password";
 import { createSession } from "../../common/auth/sessions";
 import { EmailService } from "../../common/email/email.service";
 import { FeatureSwitchesService } from "../../common/features/feature-switches.service";
+import { orchestratorApproval } from "../assistant-workspace/orchestrator/model-routing-gate";
 import { PaystackService } from "../../common/paystack/paystack.service";
 import { redactEmail } from "../../common/redact";
 import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
@@ -789,6 +790,17 @@ export class PlatformAdminService {
     adminCtx: PlatformAdminContext,
     reqCtx: RequestContext,
   ): Promise<PlatformAdminSetFeatureResponse> {
+    // AI understanding cannot be switched ON for any school while production
+    // still refuses its prompt (the owner's approval is not recorded in code).
+    // The gate would refuse every turn anyway; refusing the write as well means
+    // the stored switch can never read "on" for something that is not approved.
+    // Switching it OFF is always allowed.
+    if (input.key === "assistant-model-routing" && input.enabled && orchestratorApproval().blocking) {
+      throw new ConflictError(
+        "ASSISTANT_MODEL_NOT_APPROVED",
+        "AI understanding cannot be switched on yet: the owner's approval of the assistant-orchestrator prompt is not recorded in code.",
+      );
+    }
     const after = await basePrisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<{ feature_switches: unknown }[]>`
         SELECT feature_switches FROM schools WHERE id = ${schoolId} FOR UPDATE

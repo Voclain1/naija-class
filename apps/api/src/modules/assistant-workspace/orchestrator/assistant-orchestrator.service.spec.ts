@@ -377,6 +377,8 @@ describe("SchoolKit Assistant model orchestration (PostgreSQL, scripted model)",
     const seen2 = port2.seen();
     expect(seen2).toContain("s2: found; class JSS 2 · JSS 2B");
     expect(seen2).toContain('"status":"not_permitted","student":"s2","section":"results"'); // no report-card.read
+    // And the model is told the real reason, so it does not invent "not released yet".
+    expect(seen2).toContain("does not have permission to see that section");
     for (const s of fx.students) expect(seen2).not.toContain(s.firstName);
   });
 

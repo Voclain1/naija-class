@@ -65,7 +65,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   "reminder-campaigns": "Fee reminder campaigns",
   "student-corrections": "Reviewed student corrections",
   "assistant-workspace": "SchoolKit Assistant",
-  "assistant-model-routing": "SchoolKit Assistant: AI understanding (pending approval)",
+  "assistant-model-routing": "SchoolKit Assistant: AI understanding",
 };
 
 /** Narrows an arbitrary string (an audit row, an env entry) to a known key. */

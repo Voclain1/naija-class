@@ -188,8 +188,27 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-09)
+## Latest state (updated 2026-11-11)
 
+- **SchoolKit Assistant controlled activation (November 11):** branch
+  `agentic/assistant-activation`, one PR. Orchestration (#523) and its
+  follow-ups (#525 to #531) are merged; the prompt is `assistant-orchestrator@2`.
+  - Owner's decision (2026-11-10): the platform admin alone switches the
+    Assistant on or off per school; off by default, including new schools; a
+    school cannot switch it on. This approves who holds the switch, not any
+    data-processing term.
+  - New: `GET /platform-admin/schools/:schoolId/assistant` (each switch,
+    whether it is working, every blocker) and a **SchoolKit Assistant**
+    section in the school's Manage dialog. Switches are still written through
+    the audited `PATCH …/features`.
+  - In production, switching `assistant-model-routing` on is refused while
+    `ASSISTANT_ORCHESTRATOR_APPROVAL` is `"pending"`. It is still pending; the
+    CLAUDE.md allowlist still has three rows.
+  - The one remaining owner decision is **AO-1**, worded in
+    `docs/modules/assistant-workspace.md`, "Controlled activation". Legal,
+    provider and consent gates: `docs/reviews/virgo-assistant-pilot-signoff-register.md`.
+  - Steps, kill switches and rollback: `docs/runbooks/assistant-activation.md`.
+  - No school was switched on. No consent version changed.
 - **SchoolKit Assistant model orchestration (November 9):** branch
   `agentic/assistant-orchestration`, one PR.
   - Prompt `assistant-orchestrator@1`, behind `assistant-model-routing` (off

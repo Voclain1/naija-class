@@ -31,6 +31,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, proxyFetch } from "@/lib/api-client";
 
+import { ASSISTANT_SECTION_KEYS } from "./assistant-activation-section";
+
 // Two sections of the school's Manage dialog (2026-10-11).
 //
 // Smart Student Import's own switch, in the school's Manage
@@ -110,6 +112,10 @@ export function SmartImportSection({
 // owner approves each pilot. Turning one off does not ask. The API's
 // FEATURES_DISABLED variable can still keep a switched-on feature off; this
 // section does not show it, as the AI section does not show AI_ENABLED.
+//
+// The SchoolKit Assistant's six switches are not listed here: they have their
+// own section (assistant-activation-section.tsx), which also shows whether
+// each one is actually working.
 export function FeatureSwitchesSection({
   school,
   onChanged,
@@ -154,7 +160,7 @@ export function FeatureSwitchesSection({
         Features being piloted with a few schools. Each is off until you turn it on here.
       </p>
       <ul className="flex flex-col gap-2">
-        {FEATURE_KEYS.map((key) => {
+        {FEATURE_KEYS.filter((key) => !ASSISTANT_SECTION_KEYS.includes(key)).map((key) => {
           const on = school.featureSwitches[key];
           return (
             <li key={key} className="flex flex-wrap items-center gap-2">

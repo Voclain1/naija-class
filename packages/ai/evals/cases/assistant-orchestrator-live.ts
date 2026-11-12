@@ -29,7 +29,16 @@ export async function play(client: NonNullable<ReturnType<typeof createAnthropic
     if (r.stopReason !== "tool_use") return { calls, reply: r.text, stop: r.stopReason };
     calls.push(...r.toolCalls);
     messages.push({ role: "assistant", turn: r.assistantTurn });
-    messages.push({ role: "user", toolResults: r.toolCalls.map((c) => ({ toolUseId: c.id, content: JSON.stringify(simulateTool(c)) })) });
+    messages.push({
+      role: "user",
+      toolResults: r.toolCalls.map((c) => {
+        const out = sc.simulate?.(c) ?? simulateTool(c);
+        // A refusal reaches the model as the registry sends it: plain text, marked as an error.
+        return typeof out.refusal === "string" && Object.keys(out).length === 1
+          ? { toolUseId: c.id, content: out.refusal, isError: true }
+          : { toolUseId: c.id, content: JSON.stringify(out) };
+      }),
+    });
   }
   return { calls, reply: "", stop: "step_limit" };
 }
