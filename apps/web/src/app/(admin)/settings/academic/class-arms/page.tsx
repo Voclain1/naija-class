@@ -1,6 +1,7 @@
 "use client";
 
-import { ListPlus, Loader2 } from "lucide-react";
+import { ListPlus, Loader2, UsersRound, GraduationCap, UserCheck } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -104,10 +105,10 @@ export default function ClassArmsPage() {
   }, []);
 
   return (
-    <div className="flex w-full flex-col gap-8">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="schoolkit-workspace academic-workspace flex w-full flex-col gap-6">
+      <header className="academic-hero flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Class arms</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Class arms</h1>
           <p className="text-sm text-muted-foreground">
             Each class level can have multiple arms (e.g. JSS 1A, JSS 1B).
             Assign a class teacher and an optional capacity per arm.
@@ -126,6 +127,8 @@ export default function ClassArmsPage() {
         </Button>
       </header>
 
+      <nav aria-label="Academic management" className="flex flex-wrap gap-2 text-sm font-semibold"><Link className="academic-tab" href="/settings/academic/class-levels">Class levels</Link><span className="academic-tab academic-tab-active" aria-current="page">Class arms</span><Link className="academic-tab" href="/teacher/attendance">Attendance</Link></nav>
+      {!loading && !error && <div className="academic-stats grid gap-3 sm:grid-cols-3"><div className="academic-stat academic-stat-mint"><GraduationCap className="h-5 w-5" /><span>Class levels</span><strong>{levels.length}</strong></div><div className="academic-stat academic-stat-gold"><UsersRound className="h-5 w-5" /><span>Class arms</span><strong>{arms.length}</strong></div><div className="academic-stat academic-stat-blue"><UserCheck className="h-5 w-5" /><span>With class teacher</span><strong>{arms.filter((a) => a.classTeacherId).length}</strong></div></div>}
       <div className="flex items-center gap-2 text-sm">
         <input
           id="show-inactive-arms"

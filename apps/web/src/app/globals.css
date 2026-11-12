@@ -410,3 +410,117 @@
 @media (prefers-reduced-motion: reduce) {
   .schoolkit-workspace button { transition: none !important; }
 }
+
+
+/* Core admin workspace refinement — bounded to opted-in pages, no data or permission changes. */
+@media screen {
+  .schoolkit-workspace {
+    width: 100%;
+    min-width: 0;
+  }
+  .schoolkit-workspace .workspace-hero {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid hsl(var(--border) / .85);
+    border-radius: 1.5rem;
+    padding: clamp(1.25rem, 2.8vw, 2rem);
+    background: linear-gradient(125deg, hsl(var(--card)) 35%, hsl(var(--primary) / .075));
+    box-shadow: 0 14px 36px -30px hsl(var(--foreground) / .4);
+  }
+  .schoolkit-workspace .workspace-hero h1 {
+    font-family: inherit;
+    font-size: clamp(1.65rem, 2.6vw, 2.35rem);
+    font-weight: 800;
+    letter-spacing: -.045em;
+  }
+  .schoolkit-workspace .workspace-hero p {
+    max-width: 68ch;
+    line-height: 1.65;
+  }
+  .schoolkit-workspace :is(.overflow-x-auto, [data-slot="table-container"]) {
+    max-width: 100%;
+    scrollbar-width: thin;
+  }
+  .schoolkit-workspace :is(table, [role="table"]) {
+    min-width: 0;
+  }
+  .schoolkit-workspace table th,
+  .schoolkit-workspace table td {
+    vertical-align: middle;
+  }
+  .schoolkit-workspace table tbody tr:focus-within {
+    background: hsl(var(--accent) / .45);
+  }
+  .schoolkit-workspace :is(button, a, input, select, textarea):focus-visible {
+    outline-offset: 3px;
+  }
+}
+@media screen and (max-width: 639.98px) {
+  .schoolkit-workspace .workspace-hero {
+    border-radius: 1.125rem;
+    padding: 1.15rem;
+  }
+  .schoolkit-workspace .workspace-hero h1 {
+    font-size: 1.75rem;
+  }
+  .schoolkit-workspace .workspace-hero :is(button, a) {
+    max-width: 100%;
+  }
+}
+@media print {
+  .schoolkit-workspace .workspace-hero {
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+}
+
+
+/* Attendance and academic management: colour is informational, not a status substitute. */
+@media screen {
+  .academic-workspace, .attendance-workspace { min-width: 0; width: 100%; }
+  .academic-hero {
+    border: 1px solid hsl(var(--primary) / .16);
+    border-radius: 1.5rem;
+    padding: clamp(1.25rem, 3vw, 2.1rem);
+    background: linear-gradient(118deg, hsl(var(--primary) / .12), hsl(var(--card)) 55%, hsl(var(--brand-accent) / .1));
+    box-shadow: 0 15px 38px -31px hsl(var(--foreground) / .35);
+  }
+  .academic-hero h1 { font-family: inherit; line-height: 1.16; letter-spacing: -.045em; }
+  .academic-hero p { max-width: 68ch; line-height: 1.6; }
+  .academic-tab {
+    display: inline-flex; align-items: center; min-height: 2.5rem;
+    border: 1px solid hsl(var(--border)); border-radius: .75rem;
+    padding: .55rem .9rem; color: hsl(var(--muted-foreground));
+    background: hsl(var(--card)); transition: border-color .15s, background-color .15s;
+  }
+  .academic-tab:hover { border-color: hsl(var(--primary) / .45); color: hsl(var(--foreground)); }
+  .academic-tab-active { color: hsl(var(--primary)); border-color: hsl(var(--primary) / .35); background: hsl(var(--primary) / .1); }
+  .academic-stat {
+    display: flex; flex-direction: column; align-items: flex-start; gap: .55rem;
+    border: 1px solid hsl(var(--border) / .65); border-radius: 1.15rem;
+    padding: 1.2rem; min-width: 0;
+  }
+  .academic-stat > span { font-size: .8rem; font-weight: 650; }
+  .academic-stat > strong { font-size: clamp(1.5rem, 2.5vw, 2rem); font-weight: 800; line-height: 1.1; letter-spacing: -.04em; }
+  .academic-stat-mint { background: #e3f4eb; color: #155b42; }
+  .academic-stat-gold { background: #fff1cd; color: #80531b; }
+  .academic-stat-blue { background: #e3f0ff; color: #234e83; }
+  .academic-class-tile { border: 1px solid hsl(var(--border)); border-radius: 1.1rem; background: hsl(var(--card)); box-shadow: 0 8px 24px -22px hsl(var(--foreground) / .3); }
+  .attendance-filter { border: 1px solid hsl(var(--border)); border-radius: 1.1rem; background: hsl(var(--card)); padding: 1rem; }
+  .attendance-filter label { flex: 1 1 180px; min-width: 0; }
+  .attendance-filter :is(input,select) { width: 100%; min-width: 0; min-height: 2.7rem; border-radius: .75rem; }
+  .academic-workspace :is(button, a, input):focus-visible, .attendance-workspace :is(button,a,input,select):focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 3px; }
+  .dark .academic-stat-mint { background: #193c30; color: #c0f1d8; }
+  .dark .academic-stat-gold { background: #3d321d; color: #ffe0a0; }
+  .dark .academic-stat-blue { background: #1c334d; color: #c6e2ff; }
+}
+@media screen and (max-width: 639.98px) {
+  .academic-hero { padding: 1.15rem; border-radius: 1.1rem; }
+  .academic-hero h1 { font-size: 1.75rem; }
+  .academic-stat { padding: 1rem; }
+  .attendance-filter { padding: .85rem; }
+}
+@media (prefers-reduced-motion: reduce) { .academic-tab { transition: none; } }
+@media print { .academic-hero, .academic-stat { background: transparent; box-shadow: none; } }

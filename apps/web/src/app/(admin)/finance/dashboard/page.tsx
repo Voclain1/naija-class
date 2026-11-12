@@ -249,7 +249,7 @@ export default function FinanceDashboardPage() {
   }, [termId, loadTrajectory, loadByLevel]);
 
   return (
-    <div className="finance-refresh mx-auto max-w-7xl space-y-6 py-3 sm:py-5">
+    <div className="schoolkit-workspace finance-refresh mx-auto max-w-7xl space-y-6 py-3 sm:py-5">
       {/* Eyebrow + title + card-payment status.
           The mockup paired this eyebrow with a Paystack subaccount NUMBER and
           bank name. The status is real and useful — a school needs to know at

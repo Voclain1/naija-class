@@ -181,9 +181,9 @@ export default function StaffRosterPage() {
 
   return (
     <div className="schoolkit-workspace mx-auto flex w-full max-w-7xl flex-col gap-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <header className="workspace-hero flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Staff</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Staff</h1>
           <p className="text-sm text-muted-foreground print:hidden">
             Teachers and administrators in your school. Invite one person
             directly, or bulk-invite teachers from a CSV.
