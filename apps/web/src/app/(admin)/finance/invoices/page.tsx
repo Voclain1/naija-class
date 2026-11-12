@@ -356,7 +356,7 @@ export default function InvoicesPage() {
 
   return (
     <div className="schoolkit-workspace mx-auto max-w-7xl space-y-6 py-3 sm:py-5">
-      <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Invoices</h1>
+      <header className="workspace-hero space-y-2"><h1 className="text-3xl font-extrabold tracking-tight text-foreground">Invoices</h1><p className="text-sm text-muted-foreground">Generate, review and manage school invoices and payment status.</p></header>
       <BillingAssistant onIssued={() => setListReloadKey((k) => k + 1)} />
 
       {/* The two ways a fee run here silently produces nothing. With no fees
