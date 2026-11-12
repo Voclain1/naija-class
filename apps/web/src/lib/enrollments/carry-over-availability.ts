@@ -30,7 +30,13 @@
 // default-selection fix has been confirmed working in production.
 export const CARRY_OVER_ENABLED = false;
 
-export const CARRY_OVER_DISABLED_TITLE = "Carry over is temporarily unavailable";
+// 2026-11-12: the wording no longer says "temporarily unavailable". The fault
+// was fixed in August, and the per-class wizard is not coming back: the
+// promotion engine (/enrollments/promote, docs/modules/promotion-engine.md)
+// does the same job for every class at once, for a new term or a new session.
+// Saying "temporarily" and "a fault" on every empty class told schools the
+// product was broken when it is not.
+export const CARRY_OVER_DISABLED_TITLE = "Carry over has moved";
 
 export const CARRY_OVER_DISABLED_BODY =
-  "We found a fault that could move students into the wrong class, so this feature is switched off while it is corrected. Nothing you have already done is lost, and enrolling students individually still works normally.";
+  "Bringing students into a new term or a new session is now done for the whole school at once, under Bring students forward. Adding a student to a class one at a time still works as before.";

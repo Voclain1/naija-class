@@ -30,8 +30,6 @@ import {
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { listClassLevels } from "@/lib/class-levels/class-levels-api";
 import {
-  CARRY_OVER_DISABLED_BODY,
-  CARRY_OVER_DISABLED_TITLE,
   CARRY_OVER_ENABLED,
 } from "@/lib/enrollments/carry-over-availability";
 import {
@@ -498,11 +496,14 @@ function ArmCard({
               // Since 2026-09-17 the explanation also has somewhere to GO. The
               // per-arm carry-over this replaced is not coming back, so the
               // notice points at the promotion engine, which does the same job
-              // for every class in one approval.
+              // for every class in one approval. Since 2026-11-12 it says only
+              // that, with last term's count, and no longer calls the feature
+              // "temporarily unavailable" because of a fault (fixed in August).
               <div className="flex flex-col gap-2">
                 <p className="text-sm text-muted-foreground">
-                  <strong>{CARRY_OVER_DISABLED_TITLE}.</strong>{" "}
-                  {CARRY_OVER_DISABLED_BODY}
+                  {carryOverHint.count} student{carryOverHint.count === 1 ? " was" : "s were"} in this class in{" "}
+                  {carryOverHint.termLabel}. To bring them into this term, use Bring students forward. It
+                  does every class in one go.
                 </p>
                 <Button asChild size="sm" variant="outline" className="w-fit">
                   <Link href="/enrollments/promote">

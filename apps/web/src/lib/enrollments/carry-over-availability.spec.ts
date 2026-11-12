@@ -16,14 +16,15 @@ describe("carry-over kill switch", () => {
     expect(CARRY_OVER_ENABLED).toBe(false);
   });
 
-  it("explains itself to a school user without jargon or blame", () => {
-    // The person reading this is an administrator who just lost a feature
-    // mid-term. They need to know it is deliberate, that their data is safe,
-    // and what still works.
-    expect(CARRY_OVER_DISABLED_TITLE.length).toBeGreaterThan(10);
-    expect(CARRY_OVER_DISABLED_BODY).toContain("wrong class");
-    expect(CARRY_OVER_DISABLED_BODY).toContain("individually");
-    expect(CARRY_OVER_DISABLED_BODY.toLowerCase()).not.toContain("bug");
-    expect(CARRY_OVER_DISABLED_BODY.toLowerCase()).not.toContain("error");
+  it("points to where carry over went, without jargon, blame or alarm", () => {
+    // Since 2026-11-12: the fault was fixed in August and the job moved to
+    // Bring students forward. The notice shows on every empty class, so it
+    // must not tell a school its product is broken.
+    expect(CARRY_OVER_DISABLED_TITLE).toBe("Carry over has moved");
+    expect(CARRY_OVER_DISABLED_BODY).toContain("Bring students forward");
+    expect(CARRY_OVER_DISABLED_BODY).toContain("one at a time still works");
+    for (const word of ["bug", "error", "fault", "temporarily", "wrong class"]) {
+      expect(`${CARRY_OVER_DISABLED_TITLE} ${CARRY_OVER_DISABLED_BODY}`.toLowerCase()).not.toContain(word);
+    }
   });
 });

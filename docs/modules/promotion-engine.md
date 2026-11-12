@@ -33,6 +33,13 @@ re-enabled it.
 
 This engine covers both cases, so the old wizard does not need to come back.
 
+**2026-11-12:** the notice on an empty class no longer reads "Carry over is
+temporarily unavailable … we found a fault". A school read that as the product
+being broken. It now says how many students were in the class last term and
+points to Bring students forward; the old wizard's page says "Carry over has
+moved" (`apps/web/src/lib/enrollments/carry-over-availability.ts`).
+`CARRY_OVER_ENABLED` stays `false`.
+
 ## D1 — One operation, two modes, derived from the terms
 
 The admin picks a source term and a target term. The mode follows from them and

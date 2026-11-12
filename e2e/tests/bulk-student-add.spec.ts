@@ -113,7 +113,7 @@ test("old bulk-enrollment links show the carry-over restriction before loading c
     });
     for (const query of ["", `?armId=${structure.arms[0]!.id}&termId=${structure.termId}`]) {
       await admin.page.goto(`${WEB}/enrollments/bulk${query}`);
-      await expect(admin.page.getByRole("heading", { name: "Carry over is temporarily unavailable" })).toBeVisible();
+      await expect(admin.page.getByRole("heading", { name: "Carry over has moved" })).toBeVisible();
       await expect(admin.page.getByText(/Missing armId|Carry over button/)).toHaveCount(0);
       await expect(admin.page.getByRole("link", { name: "Add students to a class" })).toBeVisible();
       await expect(admin.page.getByRole("link", { name: "Find an existing student" })).toBeVisible();
