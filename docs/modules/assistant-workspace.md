@@ -237,6 +237,17 @@ in JSS 2" and get them. Built so that **names still never reach the model**.
   | Anyone else | Refused (`STUDENT_LOOKUP_NOT_PERMITTED`). |
 
   Another school's students never match.
+- **Every lookup is audited** (2026-11-13, DPIA measure R9). There is one
+  `assistant.student.lookup` row per search, from either path:
+  - **Recorded:** who searched; when; `via` (`panel` or `conversation`); the
+    result status; the match count; the matched students' ids; and whether a
+    class narrowed the search. A search that found nobody is recorded too.
+    `entityId` is the student when exactly one was found.
+  - **Never recorded:** the typed name, or any student's name or admission
+    number. The ids are enough to answer "who looked up this child?".
+  - **Not covered:** the record sections a card then shows come from the
+    ordinary student pages' endpoints, which are not audited per view,
+    anywhere in the app.
 - **Matching never guesses:**
   - One exact match: shown and selected.
   - Several: a choice. The person picks in the card, or says which class.
