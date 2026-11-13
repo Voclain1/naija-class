@@ -152,7 +152,7 @@ Likelihood and severity are engineering estimates for counsel to revise.
 | R6 | Prompt injection, from typed text or school-entered labels, makes the assistant act beyond the request. | Possible | Low | No approval or execution tool exists. Tools only read or prepare. Live evaluation covers injection in requests, history, task block and tool results. |
 | R7 | Cross-school exposure. | Rare | High | Tenant isolation at the database (row-level security), re-checked per tool call; tested. |
 | R8 | A conversation is seen on a shared or unattended computer. | Possible | Low to medium | Memory only; 15-minute clear; cleared on sign-out. |
-| R9 | Staff use named lookup to view pupils without need. | Possible | Medium | Limited by each person's permissions and, for teachers, their own classes. **Lookups are not individually audited.** Neither are views on the Students page. |
+| R9 | Staff use named lookup to view pupils without need. | Possible | Medium | Limited by each person's permissions and, for teachers, their own classes. **With #544, every lookup is audited by student id.** Views on the Students page are still not audited per view. |
 | R10 | Parents are unaware their children's data may reach an AI provider. | **Certain** until a notice goes out | Medium | Notice or consent decision pending. |
 | R11 | A data subject asks for access or erasure, and SchoolKit cannot recover what was sent. | Unlikely | Low to medium | No text stored by SchoolKit; provider holds it for 30 days. |
 
@@ -184,7 +184,7 @@ Likelihood and severity are engineering estimates for counsel to revise.
 | R1, R2, R10 | Staff notice in the panel before first use, and the published privacy text. Draft exists. | Small |
 | R1, R2 | A sensitive-topic warning (health, family, discipline words) that asks before sending. It reduces but does not remove R2. | 1–2 days |
 | R3, R4, R11 | Confirm the production key's organisation and its terms; ask Anthropic for zero data retention. | Owner; Anthropic's timing |
-| R9 | Audit each named lookup (who looked up which student, when), with no text. | 1 day |
+| R9 | Audit each named lookup (who looked up which student, when), with no text. | **Done in #544** once merged |
 | R10 | Parent notice, or consent if counsel requires it. | School's timing |
 | R11 | Explain the 30-day provider retention in the notice; refer requests to the provider route if counsel says so. | Wording |
 | All | A pilot limited to one school, a named monitoring owner, and the stop conditions in the sign-off register. | In place as process |
