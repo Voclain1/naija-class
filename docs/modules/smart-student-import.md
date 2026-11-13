@@ -719,3 +719,44 @@ and in `student-scan.service.spec.ts`: refused before agreement (the model is
 never called), consent recorded once and audited, the tick required, and the
 counts stored without text. The e2e checks the beta notice and the tips.
 
+## 10. What is kept, and for how long (owner, 2026-11-12)
+
+The first-use notice tells schools that the photo is thrown away once read,
+and that nothing from it is saved except the rows they check and save. Until
+2026-11-12 the second half was not true:
+- every row the model read stayed in `import_jobs.preview_snapshot`
+  indefinitely;
+- that included rows the admin removed and guardians' phone numbers;
+- it went only when someone deleted the import job by hand.
+
+The draft DPIA records this as finding F1
+(`docs/reviews/assistant-orchestrator-dpia-draft.md`, Part B).
+
+The owner decided that the read rows are deleted immediately after the
+import:
+
+| When | What happens | Where |
+|---|---|---|
+| The import is saved | `preview_snapshot` is set to NULL in the same write that marks the job COMPLETED. The counts in `scan_review` are worked out first and stay. | `StudentScanService.commitScan` |
+| A scan nobody saved, 24 hours after it was read | Its rows are cleared. The scan page keeps its rows in the browser and never reloads a scan from the server, so an older unsaved scan cannot be saved anyway. | `ScanRowsSweeperService`, hourly at :17, each school under its own GUC |
+| Any finished scan still holding rows | Cleared by the same sweep. This covers a save whose final write failed, and every scan saved before 2026-11-12: the first run after deploy clears them. | Same |
+
+**What remains:**
+- the job row and its counts (`scan_review`: counts only, tested to hold no
+  text);
+- its audit rows (counts only);
+- the students the admin saved, which are the school's own records.
+
+**Not affected:**
+- CSV imports keep their preview as before;
+- the notice's wording is unchanged and is now accurate.
+
+**Tests** (`student-scan.service.spec.ts`, "the rows the model read"):
+- **On save:** the rows are gone from the job, including the removed row and
+  the guardian's phone, and the counts are intact. The test fails with the
+  clearing line removed.
+- **The sweep:**
+  - clears an unsaved scan over a day old and a finished scan;
+  - leaves a fresh unsaved scan and a CSV import alone;
+  - does nothing on a second run.
+

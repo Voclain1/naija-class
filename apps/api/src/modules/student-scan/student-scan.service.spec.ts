@@ -7,6 +7,7 @@ import { commitScanSchema, scanReviewStatsSchema } from "@school-kit/types";
 
 import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
 import type { AuthContext } from "../../common/auth/auth-context.js";
+import { SCAN_ROWS_KEEP_HOURS, ScanRowsSweeperService } from "./scan-rows-sweeper.service.js";
 import { StudentScanService } from "./student-scan.service.js";
 
 // Integration suite against real Postgres, with the Anthropic side faked.
@@ -511,6 +512,80 @@ describe("StudentScanService", () => {
   // -------------------------------------------------------------------------
   // The beta (2026-10-24): first-use agreement, and counts at save.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // What is kept (owner, 2026-11-12): the rows the model read are deleted the
+  // moment the import is saved, and unsaved scans are cleared after a day.
+  // -------------------------------------------------------------------------
+  describe("the rows the model read", () => {
+    const READ = ["Okafo", "Ngozi", "08031234567", "Mrs Bello"];
+    const snapshot = (jobId: string) =>
+      withTenant(schoolId, (db) => db.importJob.findUnique({ where: { id: jobId }, select: { previewSnapshot: true, scanReview: true, status: true } }));
+    const scanTwo = async () => {
+      port.text = extraction([
+        row({ lastName: "Okafo", guardianName: "Mrs Bello", guardianPhone: "08031234567" }),
+        row({ admissionNumber: "SK/2026/078", firstName: "Ngozi" }),
+      ]);
+      return (await service.extractFromImage(authCtx, upload(), reqCtx)).jobId;
+    };
+
+    it("are held only until the import is saved, then deleted; the counts stay", async () => {
+      const jobId = await scanTwo();
+      // Held while the admin reviews: the counts at save are worked out from them.
+      expect(JSON.stringify((await snapshot(jobId))?.previewSnapshot)).toContain("Okafo");
+
+      await service.commitScan(
+        authCtx,
+        jobId,
+        { checked: true, rows: [{ rowNumber: 1, admissionNumber: "SK/2026/401", firstName: "Chukwuemeka", lastName: "Okafor", dateOfBirth: "2015-03-04", gender: "MALE" }] },
+        reqCtx,
+      );
+
+      const job = await snapshot(jobId);
+      expect(job?.status).toBe("COMPLETED");
+      expect(job?.previewSnapshot).toBeNull();
+      // Including the removed row and the guardian's phone, which no saved record holds.
+      const everything = JSON.stringify(await withTenant(schoolId, (db) => db.importJob.findUnique({ where: { id: jobId } })));
+      for (const value of READ) expect(everything).not.toContain(value);
+      // The counts were worked out before the rows went.
+      expect(scanReviewStatsSchema.parse(job?.scanReview).review).toMatchObject({ rowsKept: 1, rowsRemoved: 1 });
+      // The saved record is the admin's, untouched by the clearing.
+      const saved = await withTenant(schoolId, (db) => db.student.findMany({ where: { schoolId }, select: { lastName: true } }));
+      expect(saved).toEqual([{ lastName: "Okafor" }]);
+    });
+
+    it("are cleared from an unsaved scan after a day, not before; other schools' scans and CSV imports are left alone", async () => {
+      const sweeper = new ScanRowsSweeperService();
+      const fresh = await scanTwo();
+      const stale = await scanTwo();
+      const now = new Date();
+      await withTenant(schoolId, (db) =>
+        db.importJob.update({ where: { id: stale }, data: { createdAt: new Date(now.getTime() - (SCAN_ROWS_KEEP_HOURS * 60 + 1) * 60_000) } }),
+      );
+      // A saved scan whose rows are still there (saved before this change, or a final write that failed).
+      const finished = await scanTwo();
+      await withTenant(schoolId, (db) => db.importJob.update({ where: { id: finished }, data: { status: "COMPLETED" } }));
+      // A CSV import's preview is not a scan and is not touched.
+      const csv = await withTenant(schoolId, (db) =>
+        db.importJob.create({
+          data: { schoolId, type: "STUDENTS", status: "READY", sourceFileUrl: "x.csv", createdBy: userId, createdAt: new Date(now.getTime() - 48 * 3_600_000), previewSnapshot: { good: [{ rowNumber: 1, parsedRow: { firstName: "Csv" } }], bad: [] } },
+          select: { id: true },
+        }),
+      );
+
+      expect(await sweeper.sweep(now)).toBeGreaterThanOrEqual(2);
+
+      expect((await snapshot(stale))?.previewSnapshot).toBeNull();
+      expect((await snapshot(finished))?.previewSnapshot).toBeNull();
+      // Under a day old and not saved: the admin may still be checking it.
+      expect(JSON.stringify((await snapshot(fresh))?.previewSnapshot)).toContain("Okafo");
+      expect((await snapshot(stale))?.status).toBe("READY");
+      expect(JSON.stringify((await snapshot(csv.id))?.previewSnapshot)).toContain("Csv");
+      // Idempotent: nothing left to clear here.
+      await sweeper.sweep(now);
+      expect(JSON.stringify((await snapshot(fresh))?.previewSnapshot)).toContain("Okafo");
+    });
+  });
+
   describe("the beta", () => {
     const clearConsent = () =>
       basePrisma.school.update({ where: { id: schoolId }, data: { smartImportConsentAt: null, smartImportConsentBy: null } });

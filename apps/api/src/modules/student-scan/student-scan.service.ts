@@ -7,7 +7,7 @@ import {
   STUDENT_LIST_EXTRACTION_SYSTEM,
   renderStudentListExtractionPrompt,
 } from "@school-kit/ai";
-import { withTenant } from "@school-kit/db";
+import { Prisma, withTenant } from "@school-kit/db";
 import {
   ForbiddenError,
   InternalError,
@@ -483,6 +483,12 @@ export class StudentScanService {
         where: { id: jobId },
         data: {
           scanReview,
+          // The rows the model read are deleted the moment the import is
+          // saved (owner, 2026-11-12). They were kept only to work out the
+          // counts above; the school's own saved rows live in its student
+          // records. What stays on the job is counts, never text. Unsaved
+          // scans are cleared by ScanRowsSweeperService.
+          previewSnapshot: Prisma.DbNull,
           status: "COMPLETED",
           validRows: dto.rows.length - failedRows.length,
           invalidRows: failedRows.length,
