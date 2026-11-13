@@ -28,6 +28,10 @@ import { TeacherScopeService } from "../teacher-scope/teacher-scope.service";
 // matches (names, admission numbers) go to the browser only.
 
 const MAX_MATCHES = 10;
+
+export const STUDENT_LOOKUP_AUDIT_ACTION = "assistant.student.lookup";
+/** Where a lookup came from: the panel's own search box, or the model's find_student tool. */
+export type LookupVia = "panel" | "conversation";
 /** The Students list's own maximum page. */
 const PAGE_SIZE = 200;
 /** Pages read for one lookup before it is refused as too broad (20,000 students). */
@@ -57,7 +61,37 @@ export class StudentLookupService {
     });
   }
 
-  async find(auth: AuthContext, query: StudentLookupQuery): Promise<StudentLookupResultDto> {
+  async find(auth: AuthContext, query: StudentLookupQuery, via: LookupVia = "panel"): Promise<StudentLookupResultDto> {
+    const result = await this.search(auth, query);
+    await this.audit(auth, query, result, via);
+    return result;
+  }
+
+  /**
+   * One audit row per lookup (DPIA measure R9, 2026-11-13): who looked, when,
+   * from where, what came back, and WHICH students by id. Never the name that
+   * was typed, and never a student's name: the ids are enough to answer
+   * "who looked up this child", and the audit log is read by people who need
+   * not see the query. A search that found nobody is still recorded.
+   */
+  private async audit(auth: AuthContext, query: StudentLookupQuery, result: StudentLookupResultDto, via: LookupVia): Promise<void> {
+    const ids = result.matches.map((m) => m.studentId);
+    await withTenant(auth.schoolId, (db) =>
+      db.auditLog.create({
+        data: {
+          schoolId: auth.schoolId,
+          userId: auth.userId,
+          action: STUDENT_LOOKUP_AUDIT_ACTION,
+          entityType: "student",
+          // The one student shown, when there was exactly one.
+          entityId: result.status === "found" ? (ids[0] ?? null) : null,
+          metadata: { via, status: result.status, matchCount: ids.length, studentIds: ids, classScoped: Boolean(query.classArmIds?.length) },
+        },
+      }),
+    );
+  }
+
+  private async search(auth: AuthContext, query: StudentLookupQuery): Promise<StudentLookupResultDto> {
     const who = await this.access(auth);
     if (!who) throw new ForbiddenError("STUDENT_LOOKUP_NOT_PERMITTED", "Your account can't look up students.");
     const asked = nameParts(stripPossessive(query.name));

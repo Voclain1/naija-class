@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { deleteSchoolRows } from "../platform-admin/school-deletion";
 import { StudentsService } from "../students/students.service";
 import { TeacherScopeService } from "../teacher-scope/teacher-scope.service";
-import { StudentLookupService } from "./student-lookup.service";
+import { STUDENT_LOOKUP_AUDIT_ACTION, StudentLookupService } from "./student-lookup.service";
 
 // Named student lookup (docs/modules/assistant-workspace.md, "Named student
 // lookup") against real PostgreSQL: who may find whom, and how a name and a
@@ -87,6 +87,28 @@ describe("named student lookup against PostgreSQL", () => {
     expect(typo).toMatchObject({ status: "similar", matches: [{ studentId: A.p.chiamaka.id, match: "similar" }] });
     expect(await lookup.find(A.admin, { name: "Zebedee" })).toEqual({ status: "none", matches: [] });
     expect(await lookup.find(A.admin, { name: "Samuel", classArmIds: [randomUUID()] })).toEqual({ status: "none", matches: [] });
+  });
+
+  it("records every lookup in the audit log: who, which students by id, from where; never the typed name or a student's name", async () => {
+    const audits = (schoolId: string, userId: string) =>
+      withTenant(schoolId, (db) => db.auditLog.findMany({ where: { schoolId, userId, action: STUDENT_LOOKUP_AUDIT_ACTION }, orderBy: { createdAt: "asc" } }));
+    const before = (await audits(A.schoolId, A.admin.userId)).length;
+
+    await lookup.find(A.admin, { name: "Samuel", classArmIds: [A.arms.a2a.id] }); // found, from the panel
+    await lookup.find(A.admin, { name: "Samuel" }, "conversation"); // several, from the model's tool
+    await lookup.find(A.admin, { name: "Zebedee" }); // none: still a search
+
+    const rows = (await audits(A.schoolId, A.admin.userId)).slice(before);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({ entityType: "student", entityId: A.p.samuelOkoro.id, metadata: { via: "panel", status: "found", matchCount: 1, studentIds: [A.p.samuelOkoro.id], classScoped: true } });
+    expect(rows[1]).toMatchObject({ entityId: null, metadata: { via: "conversation", status: "several", matchCount: 3, classScoped: false } });
+    expect(((rows[1]!.metadata as { studentIds: string[] }).studentIds).sort()).toEqual([A.p.samuelOkoro.id, A.p.samuelBello.id, A.p.samuelMusa.id].sort());
+    expect(rows[2]).toMatchObject({ entityId: null, metadata: { status: "none", matchCount: 0, studentIds: [] } });
+    // No text that identifies anyone: not the query, not a name, not an admission number.
+    const text = JSON.stringify(rows);
+    for (const value of ["Samuel", "Zebedee", "Okoro", "Bello", "Musa", "A-1"]) expect(text).not.toContain(value);
+    // Recorded under the right school only.
+    expect(await audits(B.schoolId, A.admin.userId)).toHaveLength(0);
   });
 
   it("is tenant-bound: another school's matching names and forged ids are invisible", async () => {

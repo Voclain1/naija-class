@@ -88,7 +88,7 @@ export class AssistantOrchestratorService {
             select: { id: true },
           })).map((c) => c.id),
         ),
-      findStudents: (auth, query) => lookup.find(auth, query),
+      findStudents: (auth, query) => lookup.find(auth, query, "conversation"),
       permissions: (auth) => loadPermissions(auth),
       searchGuide: (question) =>
         searchGuide(question, { limit: 3, maxExcerptChars: 600 }).map((h) => ({ anchor: h.anchor, title: h.title, path: h.path, excerpt: h.excerpt })),
