@@ -500,14 +500,14 @@ export default function InvoiceDetailPage() {
   const hasSuccessPayment = payments.some((p) => p.status === "SUCCESS");
 
   return (
-    <div className="max-w-4xl space-y-6 p-6">
+    <div className="finance-invoice-page mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
       {relatedDataError && (
         <InlineAlert title="Some invoice details could not be loaded">
           {relatedDataError} Information already shown has not been changed.
         </InlineAlert>
       )}
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="finance-page-heading flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
             {invoice.kind === "SUPPLEMENTARY" ? "Supplementary invoice" : "Invoice"}
@@ -533,7 +533,7 @@ export default function InvoiceDetailPage() {
       )}
 
       {/* Meta */}
-      <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+      <dl className="finance-meta-grid grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 sm:gap-x-8">
         <div>
           <dt className="text-muted-foreground">Student</dt>
           <dd>{studentLabel}</dd>
@@ -610,7 +610,7 @@ export default function InvoiceDetailPage() {
       </div>
 
       {/* Payment summary */}
-      <dl className="flex gap-8 text-sm">
+      <dl className="finance-summary-grid grid grid-cols-1 gap-3 text-sm min-[420px]:grid-cols-3">
         <div>
           <dt className="text-muted-foreground">Total due</dt>
           <dd className="font-mono text-lg font-semibold tabular-nums">{formatKobo(invoice.totalDue)}</dd>
@@ -910,8 +910,8 @@ export default function InvoiceDetailPage() {
           </div>
         ) : plan === null && PLANNABLE.has(invoice.status) ? (
           /* No plan yet, invoice is plannable — show setup form */
-          <form onSubmit={handleCreatePlan} className="space-y-4 rounded-lg border p-4">
-            <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleCreatePlan} className="finance-plan-form space-y-5 rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="inv-plan-name" className="mb-1 block text-sm text-muted-foreground">Plan name</label>
                 <input id="inv-plan-name"
@@ -957,22 +957,26 @@ export default function InvoiceDetailPage() {
               </div>
             </div>
 
-            <div className="flex gap-3">
+            <div className="grid w-full grid-cols-2 rounded-xl border bg-muted/40 p-1" role="group" aria-label="Installment amount mode">
               <Button
                 type="button"
                 size="sm"
-                variant={planMode === "auto" ? "default" : "outline"}
+                aria-pressed={planMode === "auto"}
+                variant={planMode === "auto" ? "default" : "ghost"}
+                className="min-w-0 whitespace-normal rounded-lg px-2 text-center sm:px-3"
                 onClick={() => {
                   setPlanMode("auto");
                   setPlanRows(buildAutoSplit(planCount, invoice.totalDue));
                 }}
               >
-                Auto-split equally
+                Split equally
               </Button>
               <Button
                 type="button"
                 size="sm"
-                variant={planMode === "manual" ? "default" : "outline"}
+                aria-pressed={planMode === "manual"}
+                variant={planMode === "manual" ? "default" : "ghost"}
+                className="min-w-0 whitespace-normal rounded-lg px-2 text-center sm:px-3"
                 onClick={() => {
                   setPlanMode("manual");
                   if (planRows.length !== planCount) {
@@ -980,18 +984,18 @@ export default function InvoiceDetailPage() {
                   }
                 }}
               >
-                Set amounts manually
+                Custom amounts
               </Button>
             </div>
 
             {/* Installment rows */}
             <div className="space-y-2">
               {planRows.map((row, i) => (
-                <div key={i} className="grid grid-cols-[auto_1fr_1fr] items-center gap-3">
-                  <span className="w-6 text-sm text-muted-foreground">{i + 1}.</span>
+                <div key={i} className="finance-installment-row grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-xl border bg-background/80 p-3 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] sm:items-end">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary sm:mb-1">{i + 1}</span>
                   <div>
-                    <label htmlFor="inv-amount-naira" className="mb-0.5 block text-xs text-muted-foreground">Amount (₦)</label>
-                    <input id="inv-amount-naira"
+                    <label htmlFor={`inv-amount-naira-${i}`} className="mb-0.5 block text-xs text-muted-foreground">Amount (₦)</label>
+                    <input id={`inv-amount-naira-${i}`}
                       type="number"
                       step="0.01"
                       min="0.01"
@@ -1003,8 +1007,8 @@ export default function InvoiceDetailPage() {
                     />
                   </div>
                   <div>
-                    <label htmlFor="inv-due-date" className="mb-0.5 block text-xs text-muted-foreground">Due date</label>
-                    <input id="inv-due-date"
+                    <label htmlFor={`inv-due-date-${i}`} className="mb-0.5 block text-xs text-muted-foreground">Due date</label>
+                    <input id={`inv-due-date-${i}`}
                       type="date"
                       required
                       min={todayIso()}
@@ -1018,7 +1022,7 @@ export default function InvoiceDetailPage() {
             </div>
 
             {planError && <p className="text-sm text-destructive">{planError}</p>}
-            <Button type="submit" disabled={planSubmitting}>
+            <Button type="submit" disabled={planSubmitting} className="w-full sm:w-auto">
               {planSubmitting ? "Creating plan…" : "Set up payment plan"}
             </Button>
           </form>
@@ -1034,10 +1038,10 @@ export default function InvoiceDetailPage() {
 
       {/* Record payment form */}
       {PAYABLE.has(invoice.status) && (
-        <div className="space-y-4 rounded-lg border p-4">
+        <div className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
           <h2 className="text-base font-semibold text-foreground">Record payment</h2>
           <form onSubmit={handleRecordPayment} className="space-y-3">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="inv-amount-naira-2" className="mb-1 block text-sm text-muted-foreground">Amount (₦)</label>
                 <input id="inv-amount-naira-2"

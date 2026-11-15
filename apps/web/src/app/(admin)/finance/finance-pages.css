@@ -1,0 +1,133 @@
+/* Finance pages refresh — deliberately excluded from /finance/dashboard by
+ * the route-aware layout. Presentation only: no workflow, permission, money,
+ * table, or API behaviour changes. */
+@media screen {
+  .finance-pages {
+    --finance-line: hsl(var(--border) / 0.72);
+    min-width: 0;
+  }
+
+  .finance-pages > * {
+    width: 100%;
+    min-width: 0;
+    margin-inline: auto;
+  }
+
+  .finance-pages :is(h1, h2, h3) {
+    color: hsl(var(--foreground));
+  }
+
+  .finance-pages h1 {
+    font-size: clamp(1.65rem, 3vw, 2.3rem);
+    font-weight: 800;
+    line-height: 1.12;
+    letter-spacing: -0.045em;
+  }
+
+  .finance-pages h2 {
+    font-weight: 750;
+    letter-spacing: -0.025em;
+  }
+
+  .finance-pages :is(.rounded-md.border, .rounded-lg.border, .rounded-xl.border, .rounded-2xl.border) {
+    border-color: var(--finance-line);
+  }
+
+  .finance-pages :is(.rounded-lg.border, .rounded-xl.border, .rounded-2xl.border) {
+    box-shadow: 0 12px 32px -28px hsl(var(--foreground) / 0.42);
+  }
+
+  .finance-pages :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+    min-width: 0;
+    border-radius: 0.75rem;
+    background: hsl(var(--card));
+  }
+
+  .finance-pages table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .finance-pages table thead {
+    background: hsl(var(--accent) / 0.55);
+  }
+
+  .finance-pages table th {
+    font-weight: 700;
+    color: hsl(var(--foreground));
+  }
+
+  .finance-pages table tbody tr {
+    transition: background-color 150ms ease;
+  }
+
+  .finance-pages table tbody tr:hover {
+    background: hsl(var(--accent) / 0.28);
+  }
+
+  .finance-page-heading {
+    border-radius: 1.25rem;
+    background: hsl(var(--card));
+    padding: 1rem;
+    box-shadow: 0 12px 32px -28px hsl(var(--foreground) / 0.4);
+  }
+
+  .finance-meta-grid > div,
+  .finance-summary-grid > div {
+    min-width: 0;
+    border-radius: 1rem;
+    background: hsl(var(--accent) / 0.4);
+    padding: 0.875rem 1rem;
+  }
+
+  .finance-meta-grid dd,
+  .finance-summary-grid dd {
+    overflow-wrap: anywhere;
+  }
+
+  .finance-plan-form {
+    overflow: hidden;
+  }
+
+  .finance-plan-form [role="group"] > button {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .finance-installment-row > div {
+    min-width: 0;
+  }
+
+  .finance-installment-row input {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 639.98px) {
+  .finance-pages {
+    margin-inline: -0.5rem;
+    width: calc(100% + 1rem);
+  }
+
+  .finance-pages .finance-invoice-page {
+    overflow-x: clip;
+  }
+
+  .finance-page-heading {
+    border-radius: 1rem;
+  }
+
+  .finance-installment-row > div {
+    grid-column: 2;
+  }
+
+  .finance-pages :is(button, [role="button"]) {
+    max-width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .finance-pages table tbody tr {
+    transition: none;
+  }
+}
