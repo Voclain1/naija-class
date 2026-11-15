@@ -80,10 +80,10 @@ Every button name in **bold** in this guide is exactly what you will see on your
   - **Reports** — Reports, Insights;
   - **School setup** — Sessions & classes, Grading, Settings.
 
-  **Dashboard**, **Bursary** (fees, payments, expenses and payroll) and **My profile** sit on their own. Tap a section's name to open or close it. The section holding the page you are on is always open, and SchoolKit remembers which sections you left open. Someone who uses only a few pages, such as a bursar or a librarian, sees a short plain list instead. On a phone, tap the **three lines** at the top to open the same menu.
+  **Dashboard**, **Fees & payments** and **My profile** sit on their own. Tap a section's name to open or close it. Opening one closes the previous section so the menu stays short; the section holding the page you are on is always open. Someone who uses only a few pages, such as a bursar or a librarian, sees a short plain list instead. On a phone, tap the **three lines** at the top to open the same menu.
 - **Find a page** — the box at the top of the menu. Type a page's name, or an everyday word such as "fees", "parents", "salary" or "exeat", and press the page you want.
 - **The Dashboard** is your home page. Until your school is fully set up, it shows a **checklist** of what is left to do, with a button beside each item that takes you straight to the right page.
-- **The question mark (?)** at the top of the screen opens **Getting started guide** (this page), **Watch the demo**, and **Replay tour** (a one‑minute tour of the menu).
+- **The question mark (?)** at the top of the screen opens **Getting started guide** (this page), **Watch the demo**, and **Replay tour** (a short tour of Students, Attendance and Fees & payments).
 - **The search box** at the top ("Search or run a command") does the same from anywhere: type a page's name or an everyday word and press **Enter**. It only offers pages you are allowed to open.
 - **Settings** (at the bottom of the menu) is where you change your school's details, logo, school year, fees, grading and so on.
 
@@ -263,7 +263,7 @@ To see who is in each class, go to **Students → Class enrolment** in the menu,
 
 ## Step 6. Set your school fees
 
-Go to **Bursary**, then **Fee Catalog**.
+Go to **Fees & payments**, then **Fees**.
 
 The screen has two halves: **fee categories** on the left (for example *Tuition*, *PTA Levy*, *Uniform*) and the **fee items** in each category on the right.
 
@@ -273,7 +273,7 @@ The screen has two halves: **fee categories** on the left (for example *Tuition*
 4. If the fee only applies to some children, use the boxes under **Scope** — choose a **Class level**, a **Class arm**, an **Academic year** or a **Term**. Leave them all blank if every child pays it.
 5. Save. Repeat for each fee.
 
-**Scholarships and discounts:** to give one child a discount (a percentage, a fixed amount or a full waiver), go to **Bursary → Discounts**, choose the student, and press **Assign discount**.
+**Scholarships and discounts:** to give one child a discount (a percentage, a fixed amount or a full waiver), go to **Fees & payments → Discounts**, choose the student, and press **Assign discount**.
 
 Once your fees are set, you can [bill parents](#billing-parents-for-school-fees).
 
@@ -292,7 +292,7 @@ You can run SchoolKit on your own, but teachers need their own accounts before t
    - **Librarian** — keeps the library's books and lends them;
    - **Storekeeper** — runs the school store: stock, uniforms and books, stock takes and the asset register;
    - **House master** — looks after a hostel's boarders (choose their hostel on its page after they join).
-3. If you like, type their **Monthly salary in naira**, for example `150,000`. It is saved to their record when they accept, and filled in for you each month when you **Run payroll** under **Bursary → Payroll**. You can change it any time on their staff page, under **Monthly salary**. (Only people who run payroll see this box.)
+3. If you like, type their **Monthly salary in naira**, for example `150,000`. It is saved to their record when they accept, and filled in for you each month when you **Run payroll** under **Fees & payments → Payroll**. You can change it any time on their staff page, under **Monthly salary**. (Only people who run payroll see this box.)
 4. Press **Send invitation**.
 
 **Important — SchoolKit does not email staff invitations for you.** After you press **Send invitation**, the screen shows an **Accept link** with a **Copy** button. Copy it and send it to the person yourself — by WhatsApp, text message or email. When they open it, they choose their own password.
@@ -374,7 +374,7 @@ The **form teacher** normally takes the register each morning, from **Attendance
 2. Press **Mark all present**, then change the few who are **Absent**, **Late** or **Excused**.
 3. Press **Save**.
 
-**If you need to take a register yourself** (for example when a teacher is away), go to **Attendance** under **My classes** in the menu, or to your school's address followed by **/staff/teacher/attendance**. Owners and admins can mark any class there.
+**If you need to take a register yourself** (for example when a teacher is away), press **Take attendance** on the Dashboard, press the **Attendance today** card, or choose **Attendance** in the main menu. Searching for “attendance” or “class register” opens the same page. Owners and admins can mark any class there.
 
 Only the class's form teacher, you and your admins can mark a class register. If a teacher cannot see their class, check [Step 8](#step-8-choose-a-form-teacher-for-each-class).
 
@@ -382,7 +382,7 @@ Only the class's form teacher, you and your admins can mark a class register. If
 
 At the start of each term, create the term's invoices one class at a time.
 
-1. Go to **Bursary → Invoices**. You will be on the **Generate** tab.
+1. Go to **Fees & payments → Invoices**. You will be on the **Generate** tab.
 2. Choose the **Academic year**, the **Term** and the class.
 3. If you like, set a **Due date**.
 4. Press **Preview** to see what each child will be charged. Nothing is created yet.
@@ -413,7 +413,7 @@ request is not stored or sent to the model.
 
 For cash, POS or bank transfer paid to the school:
 
-1. Press **Record Fee** at the top of the Dashboard, or **Record payment** on any Bursary page.
+1. Press **Record payment** at the top of the Dashboard, or **Record payment** on any Fees & payments page.
 2. Type the child's name or admission number. Children with unpaid bills appear as you type, with what each owes.
 3. Choose the child. Their unpaid bills are listed, oldest first, and the oldest is already chosen. Choose another if they are paying that one.
 4. Type the **Amount (₦)**, or press **Paid in full** to fill in the whole balance. Choose how they paid (cash, POS or bank transfer), the **Date paid**, and a **Reference** if you have one (for example the teller or POS number).
@@ -421,7 +421,7 @@ For cash, POS or bank transfer paid to the school:
 
 The balance updates straight away, and the parent sees it too. You can also record a payment from inside the invoice itself, under **Record payment**.
 
-**No bill for the child?** The search only shows children with something left to pay. If the child has no bill yet, raise one under **Bursary → Invoices** first. A payment that covers two bills is recorded on each bill in turn.
+**No bill for the child?** The search only shows children with something left to pay. If the child has no bill yet, raise one under **Fees & payments → Invoices** first. A payment that covers two bills is recorded on each bill in turn.
 
 **Receipts:** every payment gets a numbered receipt with your school's logo. On the invoice, press **View receipt** or **View / print receipt** to print it or save it.
 
@@ -431,7 +431,7 @@ The balance updates straight away, and the parent sees it too. You can also reco
 
 ## Following up unpaid fees
 
-Go to **Bursary → Debtors**. Choose the year and term to see every child who still owes money.
+Go to **Fees & payments → Debtors**. Choose the year and term to see every child who still owes money.
 
 - Tick the students you want to remind and press **Review reminders**. Check the term and student list, then tick the approval and press **Confirm and send reminders**. SchoolKit emails the reminder to **every parent or guardian linked to the child** who has an email address, and sends one text or app alert to one of them. Afterwards a line tells you how many were sent and, for any that were not, why — for example "1 has no parent or guardian linked" or "1 has a guardian with no email, phone or app". If it says email, SMS and app alerts are all off, turn one on in **Settings → Notifications**.
 - Or press **WhatsApp** beside a family to send them a ready‑written reminder from your own WhatsApp. (WhatsApp opens without a contact chosen — pick the right parent before you send.)
@@ -730,7 +730,7 @@ You do not need any of these to get started. Use them when you are ready.
 - **Timetable** — first set your periods in **Settings → Bell schedule**, then build each class's timetable under **Timetable**. Teachers see their own lessons, and parents see their child's class timetable.
 - **Homework** — teachers set homework from **Homework** in their menu. The class and their parents can see it the same day.
 - **Behaviour records** — on a student's **Behaviour** tab, staff can record a **Commendation** or a **Concern**. These are for staff only; parents do not see them.
-- **Expenses** — record the school's spending under **Bursary → Expenses**, with receipts.
+- **Expenses** — record the school's spending under **Fees & payments → Expenses**, with receipts.
 - **ID cards** — under **Students → Student ID cards** and **Staff → Staff ID cards**. Tick the people, press **Issue cards** (one card each for the current session), then **Print cards**.
   - **Printing:** choose **A4 paper or card sheets** (ten cards a page; print double‑sided, flipping on the long edge, then cut and laminate) or **PVC card printer** (one card per page at bank‑card size). People without a photo are named before you print.
   - **What the card shows:** the photo, name, class or role, admission or staff number and session on the front, and where to return it on the back. Date of birth, home address, blood group and parents' phone numbers are never printed.
@@ -746,10 +746,10 @@ You do not need any of these to get started. Use them when you are ready.
   - **Paying now:** with a store invoice, tick **The parent is paying now** and choose cash, POS or transfer; the payment is recorded and the family gets a receipt. Staff and walk-in buyers always pay at the counter.
   - **You do not need fees set up to use the store.** A store invoice does not wait for the term's fees invoice, so a school can run its store in SchoolKit on its own. Your sessions and terms must be set up.
   - **Orders and collection:** **Orders** lists every sale. Press **To collect** to see what was paid for but not yet handed over. Open an order, type how many you are handing over, and press **Record hand-over**; stock leaves the store then.
-  - **Cancelling an order:** press **Cancel order** and say why. It works only before anything is handed over. A store invoice with no payment is cancelled with it; once it has a payment, reverse the payment under **Bursary** first. If the order is already on a fees invoice, the bursar cancels that invoice first. For a counter sale, give the buyer their money back.
+  - **Cancelling an order:** press **Cancel order** and say why. It works only before anything is handed over. A store invoice with no payment is cancelled with it; once it has a payment, reverse the payment under **Fees & payments** first. If the order is already on a fees invoice, the bursar cancels that invoice first. For a counter sale, give the buyer their money back.
   - **Packs:** under **Packs**, press **New pack** and list what goes in it, for example a *JSS1 starter pack* of two shirts, two pinafores, a textbook and exercise books. Sizes are chosen when it is sold.
   - **Selling a pack to a whole class:** press **Sell a pack to a class**, choose the class and the pack, set each child's sizes (or **Set every chosen child's … to** one size), and press **Sell to … children**. Each child gets their own order, billed the way your school chose, and everything waits under **To collect** until handed over. Children who already have that pack are left unticked.
-  - **Taking back a sold item** (**Take back a return** on the item's page) does not refund the parent; the bursar sorts out any money owed under **Bursary**.
+  - **Taking back a sold item** (**Take back a return** on the item's page) does not refund the parent; the bursar sorts out any money owed under **Fees & payments**.
   - **Stock takes:** under **Stock takes**, press **Start a stock take**, type what you count on the shelves, and press **Submit for approval**. The bursar, an admin or you then press **Approve and adjust stock**, and the stock changes to match the count.
   - **Reports:** stock on hand and its value at cost; orders between two dates by how they were paid (fees invoice, store invoice and how much of it is paid, and counter takings by cash, POS or transfer); and what was handed over. Each downloads as Excel, CSV or PDF.
   - **Asset register:** under **Assets**, record computers, projectors, furniture and laboratory equipment with a tag number, where each one is and who has it. Moves, condition changes and disposal are kept as history.
@@ -757,8 +757,8 @@ You do not need any of these to get started. Use them when you are ready.
   - **On phones:** the staff app shows stock on hand under **Store**, with a **Running low** filter.
   - **Prices for parents:** parents see what the store sells and the price, size by size, marked **Available** or **Out of stock** (never how many), under **School store prices** on the parent portal and in the parent app. Only items with a selling price appear. They cannot order; they buy at the school as before. You or an admin can turn this off with **Show parents the price list** on the Store page.
 - **Your own photo** — every member of staff can add their own photo under **My profile** (or the profile screen in the staff app). It goes on their staff ID card.
-- **Payroll** — run monthly salaries under **Bursary → Payroll**. Press **Run payroll** and choose a member of staff: their saved monthly salary fills in by itself, and you can change it for that month. Set or change a saved salary on the staff member's page, or when you invite them.
-- **Bursary dashboard** — **Bursary** in the menu shows how much has been billed and collected this term, class by class.
+- **Payroll** — run monthly salaries under **Fees & payments → Payroll**. Press **Run payroll** and choose a member of staff: their saved monthly salary fills in by itself, and you can change it for that month. Set or change a saved salary on the staff member's page, or when you invite them.
+- **Fees dashboard** — **Fees & payments** in the menu shows how much has been billed and collected this term, class by class.
 - **Reports** — shows which classes are behind on registers and score entry, so you know who to follow up.
 - **Insights** — answers questions such as "Which students are at risk of failing?" and "Where is attendance worst?".
 - **Weekly parent updates** — in **Settings → Weekly parent updates**, SchoolKit can send each parent a short note every Monday about their child's week (new results, absences, lateness). It is off until you switch it on, and needs AI to be switched on.

@@ -32,6 +32,13 @@ every new school with:
 A school therefore has classes and grading before its owner ever logs in.
 These are surfaced as **"already set up for you"**, never as chores.
 
+The seeded catalogue is now an editable starting point, not fourteen rows the
+owner must edit individually. **Settings → Academic setup → Class levels**
+shows one bulk selector for the levels the school actually runs; **Subjects**
+does the same for its catalogue. Saving deactivates unselected rows rather
+than deleting them, preserving history and allowing restoration later. At
+least one class level and one subject must remain selected.
+
 ### Collected by the wizard — normally already done
 
 Onboarding step 5 (`Step5Success`, not skippable since 2026-08-21) collects
@@ -46,6 +53,10 @@ onboarding before that step existed.
 | **School year + current term** | `EnrollmentsService.create` resolves `academicYearId` from a `Term`; `InvoiceGenerationService.fetchTerm` and `AttendanceService` both require a `termId`; `DashboardService.getAdminDashboard` 404s without one. |
 | **Students on the roster** | Nothing downstream has a subject without them. |
 | **Students enrolled in the current term** | The register (`AttendanceService`), the arm invoice run, `TeacherScopeService.getMyArmRoster` and the report-card build all read `Enrollment`, never `Student`. |
+
+After the required rows are complete, the checklist offers **Take your first
+attendance** as the first operational proof. It links to the existing daily
+register; it does not create a second attendance workflow.
 
 **Enrolment is the finding.** Creating a student does not place them in a
 class — `apiCreateStudent` and `apiCreateEnrollment` are separate calls, and
@@ -111,6 +122,30 @@ skippable. Everything after it is days-long, delegable work done from
 different screens and sometimes by CSV. A second wizard would have to be
 abandonable to be usable, and an abandonable wizard is a checklist with worse
 ergonomics.
+
+The dashboard does not render the separate logo reminder beside this card.
+Logo remains optional and editable in Settings. The first-login orientation is
+five cards at most (welcome, Students, Attendance, Fees & payments, finish),
+not a tour of every module.
+
+### Daily task discovery (2026-11-15)
+
+Attendance is the same `/teacher/attendance` workflow for owners, admins and
+teachers. It is reachable from the main menu, dashboard action bar, attendance
+metric, command palette and this checklist. Both “attendance” and “class
+register” are search terms. The other dashboard launchers are Record payment,
+Add student and Enter scores; early Insights is no longer a first-use shortcut.
+
+### A short menu for a new school (2026-11-15)
+
+New schools begin with five useful areas rather than the entire product
+catalogue: Students, Fees & payments, Attendance, Results & report cards, and
+Parent communication. **Settings → School modules** lets the owner reveal
+Homework, CBT, Health, Transport, Hostel, Library, Store and Insights later.
+This only changes navigation and shortcuts; it never deletes existing data or
+weakens permission checks. Schools created before this change retain their
+full menu until they save an explicit selection. See
+`docs/modules/school-module-preferences.md`.
 
 ### `PrerequisiteNotice` (workflow screens)
 

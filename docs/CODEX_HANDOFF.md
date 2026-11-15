@@ -190,6 +190,30 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-15)
 
+- **UX simplification sprint 1 is active on
+  `feat/ux-obvious-daily-core`.** Commit `2037b41` makes attendance and the
+  four daily tasks obvious, shortens the first-use tour and removes premature
+  navigation. The next worktree chunk adds safe progressive disclosure:
+  nullable school module preferences, five-area defaults for new schools,
+  Settings → School modules, and filtering across menu/search/dashboard. Null
+  preserves the full menu for existing schools; hiding never deletes data or
+  changes permissions. Class and subject pages now also provide bulk
+  one-save selectors that safely deactivate rather than delete unused rows.
+  Local types/API/web TypeScript, touched-file ESLint and 28 focused web tests
+  pass. Database-backed API specs cannot start without PostgreSQL in the
+  workspace; CI remains that integration gate. The branch is complete locally
+  but not pushed and no PR exists yet.
+
+- **UX simplification sprint 1 is in progress:** branch
+  `feat/ux-obvious-daily-core`. The first logical chunk makes the existing
+  daily register discoverable from navigation, search, dashboard and setup;
+  centralises the four daily task launchers; removes unavailable/ambiguous
+  menu noise; shortens first-login orientation; and consolidates the dashboard
+  setup surface. It is not a complete Sprint 1 implementation yet: school
+  module preferences and new-school class/subject selection remain on this
+  same branch before one substantial PR. No merge or deployment. See the
+  2026-11-15 journal.
+
 - **Finance operational-page refresh is in review:** branch
   `feat/finance-pages-refresh`. It leaves `/finance/dashboard` unchanged,
   adds a route-scoped minimal visual layer for the remaining Finance pages,

@@ -1,4 +1,5 @@
 import type { ReportCardDesign } from "../report-cards/report-profile.js";
+import type { SchoolModulePreferences } from "./school-modules.js";
 // Shape of the school returned by GET /schools/me and by every
 // POST /schools/me/onboarding/:step response. Wider than SignupOwnerSchoolDto
 // because the wizard needs to round-trip the basics + branding fields the
@@ -27,6 +28,8 @@ export interface SchoolMeDto {
   primaryColor: string | null;
   status: string;
   onboardingStep: number;
+  /** Null preserves the full menu for schools created before module choices. */
+  modulePreferences: SchoolModulePreferences | null;
   ndprConsent: boolean;
   ndprConsentAt: string | Date | null;
   // Opt-in to subject-period attendance (Phase 2 / Slice 8). The admin settings

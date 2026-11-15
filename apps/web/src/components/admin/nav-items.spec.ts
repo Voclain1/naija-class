@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LATER_PHASE_ITEMS, NAV_ITEMS } from "./nav-items";
+import { isSchoolModuleVisible, LATER_PHASE_ITEMS, NAV_ITEMS } from "./nav-items";
 
 // Guards on the admin nav.
 //
@@ -109,8 +109,27 @@ describe("admin nav items", () => {
     });
   });
 
-  it("leaves only genuinely unbuilt features under Coming soon", () => {
-    expect(LATER_PHASE_ITEMS.map((i) => i.label)).toEqual(["AI Tutor"]);
+  it("keeps unavailable products out of the daily navigation", () => {
+    expect(LATER_PHASE_ITEMS).toEqual([]);
+  });
+
+  it("preserves the full menu for existing schools until they save module choices", () => {
+    expect(isSchoolModuleVisible("hostel", undefined)).toBe(true);
+  });
+
+  it("hides an optional area only after the school leaves it unselected", () => {
+    expect(isSchoolModuleVisible("hostel", ["students", "fees"])).toBe(false);
+    expect(isSchoolModuleVisible("fees", ["students", "fees"])).toBe(true);
+    expect(isSchoolModuleVisible(undefined, ["students"])).toBe(true);
+  });
+
+  it("makes the class register discoverable through attendance and register language", () => {
+    expect(NAV_ITEMS.find((i) => i.id === "attendance")).toMatchObject({
+      label: "Attendance",
+      href: "/teacher/attendance",
+      requiredPermission: "attendance.read",
+    });
+    expect(NAV_ITEMS.find((i) => i.id === "attendance")?.keywords).toContain("class register");
   });
 
   it("lists Homework as a read-only lookup a bursar can reach", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ReceiptText, Sparkles, UserPlus } from "lucide-react";
+import { CalendarCheck, ClipboardPenLine, ReceiptText, UserPlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/use-auth";
@@ -16,14 +16,15 @@ import { resolveDashboardActions, type DashboardActionKey } from "./dashboard-ac
 // follows.
 
 const ICONS: Record<DashboardActionKey, typeof UserPlus> = {
-  "record-fee": ReceiptText,
-  insights: Sparkles,
+  "take-attendance": CalendarCheck,
+  "record-payment": ReceiptText,
   "add-student": UserPlus,
+  "enter-scores": ClipboardPenLine,
 };
 
 export function DashboardActionBar() {
-  const { permissions } = useAuth();
-  const actions = resolveDashboardActions(permissions);
+  const { permissions, school } = useAuth();
+  const actions = resolveDashboardActions(permissions, school?.modulePreferences?.selected);
 
   if (actions.length === 0) return null;
 

@@ -4,6 +4,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { applySchoolDefaults, basePrisma } from "@school-kit/db";
 import {
   ConflictError,
+  CORE_SCHOOL_MODULES,
   NotFoundError,
   UnauthorizedError,
   ValidationError,
@@ -1019,6 +1020,7 @@ export class PlatformAdminService {
           // silently switch AI on or off on schools it was only asked to fix.
           aiEnabled: true,
           smartImportEnabled: true,
+          modulePreferences: { selected: CORE_SCHOOL_MODULES },
         },
         select: { id: true, name: true, slug: true },
       });

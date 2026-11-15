@@ -24,6 +24,7 @@ export type SetupStepKey =
   | "academic-calendar"
   | "students"
   | "enrollments"
+  | "first-register"
   | "fee-catalog"
   | "staff"
   | "form-teachers"

@@ -6,7 +6,7 @@ import { PoweredBySchoolKit, SchoolBrand } from "@/components/school/school-bran
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
 
-import { LATER_PHASE_ITEMS, NAV_ITEMS, type NavItem } from "./nav-items";
+import { isSchoolModuleVisible, LATER_PHASE_ITEMS, NAV_ITEMS, type NavItem } from "./nav-items";
 import { NavList } from "./nav-list";
 
 // The (admin) shell is no longer owner/admin-exclusive — bursar reaches it
@@ -20,9 +20,11 @@ import { NavList } from "./nav-list";
 // visibility computation, two render targets, mirroring the teacher
 // portal's useTeacherNavItems() in components/teacher/sidebar.tsx.
 export function useVisibleAdminNavItems(): { items: NavItem[]; laterPhaseItems: NavItem[] } {
-  const { permissions, roles } = useAuth();
+  const { permissions, roles, school } = useAuth();
+  const selected = school?.modulePreferences?.selected;
   const items = NAV_ITEMS.filter(
     (item) =>
+      isSchoolModuleVisible(item.module, selected) &&
       (!item.requiredPermission || hasPermission(permissions, item.requiredPermission)) &&
       !(item.hiddenWithPermission && hasPermission(permissions, item.hiddenWithPermission)),
   );

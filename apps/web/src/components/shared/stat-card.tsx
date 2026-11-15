@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,9 @@ interface StatCardProps {
    * additive rule as `icon`.
    */
   footer?: ReactNode;
+  /** Makes the whole metric an obvious route into the work it summarises. */
+  href?: string;
+  actionLabel?: string;
 }
 
 export function StatCard({
@@ -62,8 +66,10 @@ export function StatCard({
   className,
   icon,
   footer,
+  href,
+  actionLabel,
 }: StatCardProps) {
-  return (
+  const card = (
     <Card className={cn("metric-card", `metric-${appearance}`, className)}>
       <CardContent className="metric-content pt-6">
         <div className="metric-label flex items-start justify-between gap-3">
@@ -97,7 +103,13 @@ export function StatCard({
             {footer}
           </div>
         )}
+        {actionLabel && <p className="mt-3 text-xs font-semibold text-primary">{actionLabel} →</p>}
       </CardContent>
     </Card>
   );
+  return href ? (
+    <Link href={href} className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${actionLabel ?? "Open"}: ${label}`}>
+      {card}
+    </Link>
+  ) : card;
 }

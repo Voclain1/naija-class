@@ -166,6 +166,31 @@ describe("SchoolsController (Slice 6)", () => {
     expect(res.body.motto).toBe("Patched motto.");
   });
 
+  it("PATCH /schools/me updates menu modules without deleting module data", async () => {
+    const selected = ["students", "attendance", "results"];
+    const res = await request(app.getHttpServer())
+      .patch("/api/v1/schools/me")
+      .set(withAuth(ownerToken))
+      .send({ modulePreferences: { selected } });
+    expect(res.status).toBe(200);
+    expect(res.body.modulePreferences).toEqual({ selected });
+
+    const persisted = await basePrisma.school.findUnique({
+      where: { id: ownerSchoolId },
+      select: { modulePreferences: true },
+    });
+    expect(persisted?.modulePreferences).toEqual({ selected });
+  });
+
+  it("PATCH /schools/me refuses an empty module selection", async () => {
+    const res = await request(app.getHttpServer())
+      .patch("/api/v1/schools/me")
+      .set(withAuth(ownerToken))
+      .send({ modulePreferences: { selected: [] } });
+    expect(res.status).toBe(400);
+    expect(res.body.error?.code).toBe("VALIDATION_ERROR");
+  });
+
   it("PATCH /schools/me with primaryColor: '' — 200, not a validation error (field left unchanged)", async () => {
     // patchSchoolSchema merges onboardingStep2Schema — same preprocess fix,
     // same regression this guards against (docs/deferred.md): pre-fix, this

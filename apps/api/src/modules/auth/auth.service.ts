@@ -32,6 +32,8 @@ import {
   type TotpSetupResponseDto,
   type TotpStatusDto,
   SCHOOL_CONSENT_VERSION,
+  CORE_SCHOOL_MODULES,
+  readSchoolModulePreferences,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
@@ -215,6 +217,7 @@ export class AuthService {
             // per-school kill switch is PATCH /platform-admin/schools/:id/ai.
             aiEnabled: true,
             smartImportEnabled: true,
+            modulePreferences: { selected: CORE_SCHOOL_MODULES },
           },
           select: SCHOOL_RESPONSE_SELECT,
         });
@@ -918,6 +921,7 @@ export class AuthService {
       user,
       school: {
         ...school,
+        modulePreferences: readSchoolModulePreferences(school.modulePreferences),
         paystackSubaccountBusinessName: null,
         // Server-derived, from the one shared helper. See SchoolMeDto.
         portalUrl: portalBaseUrl(),
@@ -1115,6 +1119,7 @@ const SCHOOL_RESPONSE_SELECT = {
   primaryColor: true,
   status: true,
   onboardingStep: true,
+  modulePreferences: true,
   ndprConsent: true,
   ndprConsentAt: true,
   subjectAttendanceEnabled: true,

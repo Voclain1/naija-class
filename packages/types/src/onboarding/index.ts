@@ -1,4 +1,5 @@
 export * from "./school.dto.js";
+export * from "./school-modules.js";
 export * from "./patch-school.dto.js";
 export * from "./step1-basics.dto.js";
 export * from "./step2-branding.dto.js";

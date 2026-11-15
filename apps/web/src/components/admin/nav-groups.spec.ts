@@ -8,7 +8,7 @@ import { NAV_ITEMS, type NavItem } from "./nav-items";
 // page you are on is lit exactly once.
 
 describe("admin menu families", () => {
-  it("puts every admin page in a family, except Dashboard, Bursary and My profile", () => {
+  it("puts every admin page in a family, except Dashboard, Fees & payments and My profile", () => {
     const alone = ["/dashboard", "/finance/dashboard", "/settings/profile"];
     for (const item of NAV_ITEMS) {
       if (alone.includes(item.href)) expect(item.group).toBeUndefined();
@@ -59,10 +59,10 @@ describe("admin menu families", () => {
 
   it("finds pages by everyday words as well as their names", () => {
     const find = (q: string) => NAV_ITEMS.filter((i) => matchesNavSearch(i, q)).map((i) => i.label);
-    expect(find("fees")).toContain("Bursary");
-    expect(find("finance")).toContain("Bursary");
+    expect(find("fees")).toContain("Fees & payments");
+    expect(find("finance")).toContain("Fees & payments");
     expect(find("parents")).toContain("Parents & guardians");
-    expect(find("salary")).toContain("Bursary");
+    expect(find("salary")).toContain("Fees & payments");
     expect(find("exeat")).toContain("Boarding");
     expect(find("STUDENT WELFARE")).toEqual(["Behaviour & discipline", "Health records", "Sickbay"]);
   });

@@ -16,11 +16,12 @@ describe("buildTourSteps", () => {
     }
   });
 
-  it("opens with a welcome, names the school, and closes with the way back in", () => {
+  it("opens with a welcome, names the school, and stays within one minute", () => {
     expect(steps[0]).toMatchObject({ kind: "intro", title: "Welcome to SchoolKit" });
     expect(steps[0]!.body).toContain("Virgo Fidelis Montessori School");
     expect(steps.at(-1)).toMatchObject({ kind: "outro" });
-    expect(steps.at(-1)!.body).toContain("Settings → School");
+    expect(steps.at(-1)!.body).toContain("Help");
+    expect(steps.length).toBeLessThanOrEqual(5);
   });
 
   it("reads sensibly before the school has loaded", () => {

@@ -183,7 +183,7 @@ export default function DashboardPage() {
             Once your school is set up, this is where the day-to-day will live.
           </p>
         </div>
-        <LogoReminder />
+        {setup.setupState?.status === "established" && <LogoReminder />}
         <SetupChecklist setup={setup} placeholder />
       </div>
     );
@@ -244,7 +244,7 @@ export default function DashboardPage() {
         <DashboardActionBar />
       </div>
 
-      <LogoReminder />
+      {setup.setupState?.status === "established" && <LogoReminder />}
 
       {/* A partly-configured school reaches this branch as soon as it has one
           enrolled student or one billed fee — well before setup is finished.
@@ -286,6 +286,8 @@ export default function DashboardPage() {
         <StatCard
           appearance="gold"
           label="Attendance today"
+          href="/teacher/attendance"
+          actionLabel="Take attendance"
           value={
             // 0 marked is NOT 0% present — the register simply has not been
             // taken yet. Same no-data-vs-zero distinction the trend chart and

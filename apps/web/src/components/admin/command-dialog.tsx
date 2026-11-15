@@ -6,9 +6,10 @@ import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { announceNavigation } from "@/lib/navigation-intent";
+import { hasPermission } from "@/lib/auth/has-permission";
 
 import { matchesNavSearch } from "./nav-groups";
-import type { NavItem } from "./nav-items";
+import { PRIMARY_TASKS, type NavItem } from "./nav-items";
 
 // Minimal, dependency-free command palette: filters the real nav (not a
 // general command system — see the dashboard rebuild plan-first, "the
@@ -24,10 +25,14 @@ export function CommandDialog({
   open,
   onOpenChange,
   items,
+  permissions = [],
+  selectedModules,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   items: NavItem[];
+  permissions?: string[];
+  selectedModules?: string[];
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -50,9 +55,16 @@ export function CommandDialog({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onOpenChange]);
 
-  const matches = useMemo(() => {
-    return items.filter((item) => matchesNavSearch(item, query));
-  }, [items, query]);
+  const taskMatches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return PRIMARY_TASKS.filter(
+      (task) =>
+        hasPermission(permissions, task.permission) &&
+        (!selectedModules || selectedModules.includes(task.key === "take-attendance" ? "attendance" : task.key === "record-payment" ? "fees" : task.key === "add-student" ? "students" : "results")) &&
+        (!q || [task.label, ...task.aliases].some((word) => word.toLowerCase().includes(q))),
+    );
+  }, [permissions, query, selectedModules]);
+  const matches = useMemo(() => items.filter((item) => matchesNavSearch(item, query)), [items, query]);
 
   if (!open || typeof document === "undefined") return null;
 
@@ -81,7 +93,10 @@ export function CommandDialog({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && matches[0]) go(matches[0].href);
+              if (e.key === "Enter") {
+                const destination = taskMatches[0]?.href ?? matches[0]?.href;
+                if (destination) go(destination);
+              }
             }}
             placeholder="Search or run a command…"
             className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
@@ -91,9 +106,22 @@ export function CommandDialog({
           </kbd>
         </div>
         <ul className="max-h-72 overflow-y-auto p-2">
-          {matches.length === 0 && (
+          {taskMatches.length === 0 && matches.length === 0 && (
             <li className="px-3 py-6 text-center text-sm text-muted-foreground">No matches.</li>
           )}
+          {taskMatches.map((task) => (
+            <li key={`task:${task.key}`}>
+              <button
+                type="button"
+                onClick={() => go(task.href)}
+                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground"
+              >
+                <Search className="h-4 w-4 text-primary" aria-hidden />
+                <span>{task.label}</span>
+                <span className="ml-auto text-xs text-muted-foreground">Task</span>
+              </button>
+            </li>
+          ))}
           {matches.map((item) => {
             const Icon = item.icon;
             return (

@@ -65,7 +65,7 @@ export function AdminTopbar({
   onMobileNavOpenChange?: (open: boolean) => void;
   onReplayTour?: () => void;
 } = {}) {
-  const { school, user, roles, logout } = useAuth();
+  const { school, user, roles, permissions, logout } = useAuth();
   const [commandOpen, setCommandOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -224,7 +224,7 @@ export function AdminTopbar({
         </DropdownMenu>
       </div>
 
-      <CommandDialog open={commandOpen} onOpenChange={setCommandOpen} items={effectiveNavItems} />
+      <CommandDialog open={commandOpen} onOpenChange={setCommandOpen} items={effectiveNavItems} permissions={permissions} selectedModules={school?.modulePreferences?.selected} />
     </header>
   );
 }
