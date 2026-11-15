@@ -157,7 +157,7 @@ export default function StudentsRosterPage() {
   // while the names and classes were squeezed. Data pages get the width they
   // need; prose pages keep the narrower measure.
   return (
-    <div className="schoolkit-workspace mx-auto flex w-full max-w-7xl flex-col gap-6">
+    <div className="schoolkit-workspace workspace-roster mx-auto flex w-full max-w-7xl flex-col gap-6">
       <PageHeader
         title="Students"
         subtitle={

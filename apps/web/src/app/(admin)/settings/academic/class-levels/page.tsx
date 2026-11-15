@@ -1,6 +1,7 @@
 "use client";
 
-import { ListPlus, Loader2 } from "lucide-react";
+import { ListPlus, Loader2, GraduationCap, CheckCircle2 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -82,10 +83,10 @@ export default function ClassLevelsPage() {
   }, []);
 
   return (
-    <div className="flex w-full flex-col gap-8">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="schoolkit-workspace academic-workspace flex w-full flex-col gap-6">
+      <header className="academic-hero flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Class levels</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Class levels</h1>
           <p className="text-sm text-muted-foreground">
             The 14 standard Nigerian levels (KG 1 through SSS 3) are seeded
             automatically. Add custom levels or rename the defaults to match
@@ -103,6 +104,8 @@ export default function ClassLevelsPage() {
         </Button>
       </header>
 
+      <nav aria-label="Academic management" className="flex flex-wrap gap-2 text-sm font-semibold"><span className="academic-tab academic-tab-active" aria-current="page">Class levels</span><Link className="academic-tab" href="/settings/academic/class-arms">Class arms</Link><Link className="academic-tab" href="/teacher/attendance">Attendance</Link></nav>
+      {!loading && !error && <div className="academic-stats grid gap-3 sm:grid-cols-2"><div className="academic-stat academic-stat-mint"><GraduationCap className="h-5 w-5" /><span>Total class levels</span><strong>{levels.length}</strong></div><div className="academic-stat academic-stat-gold"><CheckCircle2 className="h-5 w-5" /><span>Active levels</span><strong>{levels.filter((l) => l.isActive).length}</strong></div></div>}
       <div className="flex items-center gap-2 text-sm">
         <input
           id="show-inactive"

@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2, CalendarDays, ClipboardCheck, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -133,10 +133,10 @@ export default function AttendanceRegisterPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <header className="flex flex-col gap-1">
+    <div className="attendance-workspace mx-auto flex w-full max-w-6xl flex-col gap-6">
+      <header className="academic-hero flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Attendance</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Attendance</h1>
           <Link
             href="/teacher/attendance/summary"
             className="text-sm text-muted-foreground hover:text-foreground"
@@ -149,6 +149,7 @@ export default function AttendanceRegisterPage() {
         </p>
       </header>
 
+      {state.kind === "ready" && <div className="academic-stats grid gap-3 sm:grid-cols-3"><div className="academic-stat academic-stat-mint"><UsersRound className="h-5 w-5" /><span>Available classes</span><strong>{arms.length}</strong></div><div className="academic-stat academic-stat-gold"><CalendarDays className="h-5 w-5" /><span>Register date</span><strong className="text-base">{date}</strong></div><div className="academic-stat academic-stat-blue"><ClipboardCheck className="h-5 w-5" /><span>Unsaved changes</span><strong>{dirtyCount}</strong></div></div>}
       {state.kind === "loading" ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -176,7 +177,7 @@ export default function AttendanceRegisterPage() {
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap items-end gap-4">
+          <div className="attendance-filter flex flex-wrap items-end gap-4">
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="font-medium">Class</span>
               <select

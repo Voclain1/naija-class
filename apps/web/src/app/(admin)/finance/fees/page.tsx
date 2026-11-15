@@ -370,8 +370,8 @@ export default function FeesPage() {
 
   return (
     <div className="schoolkit-workspace flex w-full flex-col gap-6">
-      <header>
-        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Fee catalog</h1>
+      <header className="workspace-hero space-y-2">
+        <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Fee catalog</h1>
         <p className="text-sm text-muted-foreground">
           Define fee categories (e.g. Tuition, PTA Levy) and the items within
           each — with optional scope to a class level, arm, term, or academic year.
