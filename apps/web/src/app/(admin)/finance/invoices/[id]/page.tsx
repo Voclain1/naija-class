@@ -994,8 +994,8 @@ export default function InvoiceDetailPage() {
                 <div key={i} className="finance-installment-row grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-xl border bg-background/80 p-3 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] sm:items-end">
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary sm:mb-1">{i + 1}</span>
                   <div>
-                    <label htmlFor={`inv-amount-naira-${i}`} className="mb-0.5 block text-xs text-muted-foreground">Amount (₦)</label>
-                    <input id={`inv-amount-naira-${i}`}
+                    <label htmlFor={`inv-plan-amount-naira-${i}`} className="mb-0.5 block text-xs text-muted-foreground">Amount (₦)</label>
+                    <input id={`inv-plan-amount-naira-${i}`}
                       type="number"
                       step="0.01"
                       min="0.01"
