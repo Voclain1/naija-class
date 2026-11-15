@@ -188,7 +188,18 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-11)
+## Latest state (updated 2026-11-15)
+
+- **Finance operational-page refresh is in review:** branch
+  `feat/finance-pages-refresh`. It leaves `/finance/dashboard` unchanged,
+  adds a route-scoped minimal visual layer for the remaining Finance pages,
+  and fixes the individual-invoice installment form on narrow phones with a
+  contained two-option segmented control, stacked setup fields and
+  min-width-safe installment rows. It is presentation-only: no API, money,
+  permission, tenant, payment or invoice-calculation behaviour changed. The
+  app continues to use the real repository SchoolKit mark; no generated logo
+  asset was added. Await PR CI and visual review before merge/deploy.
+
 
 - **SchoolKit Assistant controlled activation (November 11):** branch
   `agentic/assistant-activation`, one PR. Orchestration (#523) and its
