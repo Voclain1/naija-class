@@ -1,4 +1,5 @@
-// School Kit — Prisma schema (Phase 0)
+���z��
+�)�֧u�ݢ�i��k�G��*^// School Kit — Prisma schema (Phase 0)
 //
 // Models below mirror docs/modules/phase-0.md verbatim. Tenancy is enforced at
 // the Postgres layer via RLS (see packages/db/prisma/policies/phase-0.sql) and
@@ -489,7 +490,8 @@ model Role {
   key         String // 'owner', 'admin', 'teacher', etc.
   name        String
   description String?
-  isSystem    Boolean  @default(false) @map("is_system")
+  isSystem    ���z��
+�)�֧u�ݢ�i��k�G��*^Boolean  @default(false) @map("is_system")
   permissions Json     @default("[]") // string[] of permission keys, or ["*"]
   createdAt   DateTime @default(now()) @map("created_at")
 
@@ -1136,7 +1138,8 @@ model Guardian {
 
   students           StudentGuardian[]
   sessions           GuardianSession[]
-  invitations        GuardianInvitation[]
+  invit���z��
+�)�֧u�ݢ�i��k�G��*^ations        GuardianInvitation[]
   passwordResets     GuardianPasswordResetToken[]
   deviceTokens       DeviceToken[] // Phase 6 / Slice 5.
   announcementEmails AnnouncementEmail[]
@@ -1591,4 +1594,1384 @@ model TeacherProfile {
 
 // ---------- Phase 1 / Slice 11 — TeacherAssignment ----------
 //
-// Records "teacher T teaches subject S in class arm A for ye
+// Records "teacher T teaches subject S in class arm A for year Y (optionally
+// term-specific)". This is the data behind the teacher-scope filter that
+// closes acceptance #9 — a teacher logging in sees only the arms + subjects
+// they are assigned to (cp2), plus the arms where they are the form teacher
+// (ClassArm.classTeacherId, slice 3/10) which the scope helper unions in.
+//
+// Shape (locked 2026-05-31): direct FKs to classArm + subject, NOT through
+// ClassSubject. ClassSubject is (classLevel × subject) — curriculum at the
+// LEVEL; a teacher teaches a specific ARM (JSS 1A, not "JSS 1" as a whole),
+// so the assignment must reference the arm. academicYearId scopes the
+// assignment to a year; termId is OPTIONAL — null means "the whole year",
+// a set value means "this term only" (e.g. a relief teacher covering one
+// term). Closest to candidate (c) in the plan, with year + optional-term
+// scoping added.
+//
+// Co-teaching is ALLOWED by design (Q2, 2026-05-31): teacherId is part of
+// the unique key, so two teachers can share the same (arm, subject, year,
+// term). Supports lab/team teaching and mid-term relief. The unique only
+// stops the SAME teacher being assigned twice to an identical tuple.
+//
+// CAVEAT — NULL term + the unique key: Postgres treats NULL as DISTINCT in a
+// unique index, so two identical whole-year rows (termId = NULL) do NOT
+// collide at the DB. The service therefore pre-checks for an existing
+// identical active assignment (matching null term explicitly) and returns a
+// clean 409 TEACHER_ALREADY_ASSIGNED; the P2002 catch is the backstop for
+// the non-null race. See teacher-assignments.service.ts.
+//
+// Direct school_id column for the same cheap direct-RLS filter every Phase 1
+// table uses — no join-through-parent EXISTS subquery. onDelete: Cascade on
+// teacher/arm/subject/year (deleting any drops the assignment); SetNull on
+// term so clearing a term-specific assignment's term degrades it to a
+// whole-year row rather than vanishing.
+//
+// SECURITY DEFINER count stays at 4 — every endpoint is post-authentication
+// and post-tenant; withTenant() covers all access.
+model TeacherAssignment {
+  id             String   @id @default(uuid())
+  schoolId       String   @map("school_id")
+  teacherId      String   @map("teacher_id") // FK → users.id
+  classArmId     String   @map("class_arm_id")
+  subjectId      String   @map("subject_id")
+  academicYearId String   @map("academic_year_id")
+  termId         String?  @map("term_id") // null = whole year; set = term-specific
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  teacher      User         @relation("TeacherSubjectAssignments", fields: [teacherId], references: [id], onDelete: Cascade)
+  classArm     ClassArm     @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  term         Term?        @relation(fields: [termId], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, teacherId, classArmId, subjectId, academicYearId, termId])
+  @@index([schoolId])
+  @@index([teacherId])
+  @@index([classArmId])
+  @@index([schoolId, academicYearId])
+  @@map("teacher_assignments")
+}
+
+// ---------- Phase 1 / Slice 12 — AI foundation (thin; semantics OWNED BY PHASE 5) ----------
+//
+// These two tables exist to lock in school_id + RLS + audit shape NOW so that
+// when Phase 5 fills out the AI features we are NOT doing a live-data
+// migration on a populated table. They sit EMPTY in Phase 1 — slice 12 is a
+// hard gate against premature Phase-5 work, not a feature. Do not build
+// against them in Phase 1.
+//
+// Deliberately omitted (Phase 5 owns these — adding them now pre-empts a
+// decision the spec intentionally punts):
+//   - MasteryRecord: NO score column (0-1 vs 0-100 vs letter is Phase 5), NO
+//     time-decay field beyond updatedAt, NO source/origin column (tutor vs
+//     assessment vs manual). status is free-text String now, an enum in
+//     Phase 5; topicRef is a loose string so the grain (subject/topic/
+//     objective) can be chosen later without a migration.
+//   - AIInteractionLog: payload is an OPAQUE Json envelope whose structure is
+//     Phase-5-owned. It MUST stay PII-free per CLAUDE.md AI hard rules (never
+//     send student PII to the LLM; log opaque ids + class-level context only).
+//     The inline-vs-R2 storage tradeoff (cost/PII/eval) is a Phase-5 decision
+//     made when there is a real payload — not pre-built here.
+//
+// NAMING (resolved 2026-07-26, see docs/deferred.md): ARCHITECTURE.md §5/§7
+// and CLAUDE.md's AI hard rules name the LLM-call log `AIGeneration`/
+// `ai_generations` — a separate table from this one, not a drift to
+// reconcile. This table (`AIInteractionLog`/`ai_interaction_logs`) is a
+// session/interaction content record; `AIGeneration` (not yet built) is the
+// per-call cost/compliance ledger the hard rule requires. Phase 5 builds
+// `AIGeneration` fresh per the draft schema in docs/deferred.md — no rename
+// or merge of this table.
+//
+// Both tables carry their OWN school_id (despite the studentId FK) → flat
+// direct-column RLS, same cheap pattern as student_guardians (see
+// docs/modules/phase-1.md "Note on student_guardians"). SECURITY DEFINER
+// count stays at 4 — no endpoints, no pre-tenant access; the tables are only
+// ever reached via withTenant once Phase 5 wires them up.
+
+model MasteryRecord {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  studentId String   @map("student_id")
+  topicRef  String   @map("topic_ref") // loose identifier; taxonomy owned by Phase 5
+  status    String // free-text in Phase 1; enum in Phase 5
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, studentId, topicRef])
+  @@index([schoolId])
+  @@index([studentId])
+  @@map("mastery_records")
+}
+
+model AIInteractionLog {
+  id         String   @id @default(uuid())
+  schoolId   String   @map("school_id")
+  studentId  String?  @map("student_id") // nullable: teacher-driven sessions exist too
+  sessionRef String   @map("session_ref") // loose grouping identifier; shape owned by Phase 5
+  payload    Json // raw envelope; structure owned by Phase 5; MUST stay PII-free
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  student     Student?       @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  generations AIGeneration[]
+
+  @@index([schoolId])
+  @@index([schoolId, createdAt])
+  @@index([studentId])
+  @@map("ai_interaction_logs")
+}
+
+// ---------- Phase 5 / Slice 1 CP2 — AI cost + compliance ledger ----------
+//
+// `ai_generations` is the per-call cost/compliance ledger CLAUDE.md's AI hard
+// rule mandates: "Every call to claudeClient.messages.create must log to the
+// ai_generations table: model, prompt name + version, input/output tokens,
+// latency, cost estimate, success/error."
+//
+// It is a DIFFERENT TABLE from AIInteractionLog, not a rename (resolved
+// 2026-07-26 — see CLAUDE.md's AI hard-rules section and docs/deferred.md).
+// AIInteractionLog is a session/interaction CONTENT record (loose `payload`
+// JSON, nullable studentId, sessionRef grouping). This is a flat, typed,
+// cheaply-aggregable row per underlying LLM call, shaped for the budget query.
+// One tutor session (one AIInteractionLog group) spans many rows here, which
+// is why interactionLogId is a nullable many-to-one back to it and not a 1:1.
+//
+// DELIBERATELY OMITTED: prompt text and completion text. They live in
+// AIInteractionLog.payload. ARCHITECTURE.md §5 currently describes this table
+// as logging "prompt, output" — that line is stale and is corrected as part of
+// this phase; a cost ledger that holds conversation content would both bloat
+// the aggregate query and duplicate the PII surface the AI hard rules exist to
+// keep narrow.
+//
+// COST UNIT — costMicroUsd is integer MICRO-US-DOLLARS, not kobo. This is a
+// deliberate, documented carve-out from CLAUDE.md's Money hard rule ("money is
+// Int kobo"), locked in docs/modules/phase-5.md D2. The Money rule exists so
+// that naira a school TRANSACTS never suffers float drift or display ambiguity
+// — fees, invoices, payments, refunds, payroll. This column is vendor-cost
+// telemetry: the school never sees it, no invoice references it, no
+// FinanceService path touches it, and no audit row depends on it. Converting
+// USD→kobo at write time would need an FX-rate source that does not exist in
+// this repo, plus a rounding policy, and would make the stored value
+// un-interpretable later (you cannot recover the USD figure without also
+// storing the rate — at which point you have stored USD with extra steps and a
+// permanent naira-devaluation artifact in the historical series). The rule's
+// actual intent — integers, never Float — is fully preserved. Int max is
+// ~2.1e9 µUSD ≈ $2,147 per row, three orders of magnitude above any single
+// generation. If AI cost is ever billed back to schools, FX conversion happens
+// at BILLING time with the rate recorded then, which is the only correct place
+// for it anyway.
+//
+// pricedAtVersion tags which price table produced costMicroUsd, so a pricing
+// change is re-derivable rather than silently mixing units across time.
+model AIGeneration {
+  id               String   @id @default(uuid())
+  schoolId         String   @map("school_id")
+  // Nullable: not every call is session-scoped (a one-shot lesson-plan
+  // generation has no conversation to group under). SetNull rather than
+  // Cascade — the cost ledger must survive content deletion, since it is the
+  // record that money was spent.
+  interactionLogId String?  @map("interaction_log_id")
+  // Nullable: system/cron-driven calls (weekly parent summaries) have no
+  // acting user. Populated for user-initiated calls so the per-user daily
+  // rate limit can count against it.
+  userId           String?  @map("user_id")
+  model            String
+  promptName       String   @map("prompt_name")
+  // Plain String, NOT an enum and NOT a FK to a prompt table. This is a
+  // historical record: it must be able to hold "report-card-subject-comment@3"
+  // forever, including after v3 is deleted from the registry in packages/ai.
+  // Enum-ing it would mean a migration per prompt version. Compile-time safety
+  // lives at the CALL SITE via the typed registry instead — see
+  // docs/modules/phase-5.md D8.
+  promptVersion    String   @map("prompt_version")
+  inputTokens      Int      @map("input_tokens")
+  outputTokens     Int      @map("output_tokens")
+  latencyMs        Int      @map("latency_ms")
+  costMicroUsd     Int      @map("cost_micro_usd")
+  pricedAtVersion  String   @map("priced_at_version")
+  success          Boolean
+  // Redacted before write — no secrets, no PII, no raw prompt echo.
+  errorMessage     String?  @map("error_message")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  interactionLog AIInteractionLog? @relation(fields: [interactionLogId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId])
+  @@index([schoolId, createdAt])
+  // Serves the per-user daily rate-limit count in the reserve transaction.
+  @@index([schoolId, userId, createdAt])
+  @@map("ai_generations")
+}
+
+// Per-school monthly budget counter.
+//
+// WHY A COUNTER TABLE AND NOT `SUM(input_tokens + output_tokens)` OVER
+// ai_generations — three independent reasons, any one of which is sufficient
+// (docs/modules/phase-5.md D4):
+//   1. It is a growing-table aggregate on the hot path of EVERY AI call, on a
+//      database where ~2s authenticated latency is already normal.
+//   2. It would couple the budget to retention: any future pruning of
+//      ai_generations would silently reset every school's spend to zero.
+//   3. It cannot express a RESERVATION, and a pre-call budget check is
+//      fundamentally a reservation — the hard rule says the budget is
+//      "enforced before the call, not after", but the true token count is only
+//      known after.
+//
+// tokensReserved is the enforcement column (pessimistic: input estimate +
+// max_tokens). tokensActual is the truth, written at settle. The two converge
+// as calls settle; tokensReserved is always >= tokensActual.
+//
+// Carries its own school_id → flat direct-column RLS, the same cheap pattern as
+// notification_preferences and the two Phase 1 AI tables. No SECURITY DEFINER
+// function is needed (no pre-tenant access, every touch is inside withTenant),
+// so the inventory count stays at 16.
+model AIBudgetPeriod {
+  id             String   @id @default(uuid())
+  schoolId       String   @map("school_id")
+  // First day of the UTC month this row counts. @db.Date, not DateTime: this
+  // is a calendar boundary, not a moment — same convention as academic-year /
+  // term dates (CLAUDE.md "Prisma column types in raw SQL").
+  periodStart    DateTime @map("period_start") @db.Date
+  tokensReserved Int      @default(0) @map("tokens_reserved")
+  tokensActual   Int      @default(0) @map("tokens_actual")
+  costMicroUsd   Int      @default(0) @map("cost_micro_usd")
+  callCount      Int      @default(0) @map("call_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, periodStart])
+  @@index([schoolId])
+  @@map("ai_budget_periods")
+}
+
+// ---------- Phase 7 / CP1 — Curriculum RAG ----------
+//
+// See docs/modules/phase-7.md. v1 grounds the EXISTING lesson-plan generator
+// in a school's own scheme of work; the student tutor is a later slice.
+//
+// Two content tables (document + chunk) and one ledger (embedding calls).
+// pgvector was enabled in the very first migration (20260514120000_init), so
+// no extension work is needed here.
+
+enum CurriculumDocumentStatus {
+  PENDING // uploaded, not yet processed
+  PROCESSING // chunking in flight
+  AWAITING_REVIEW // parsed and chunked; waiting for a teacher to confirm the structure (CP5 / D28)
+  EMBEDDING // teacher approved; vectors being generated
+  READY // embedded, retrievable, and human-confirmed
+  FAILED // see errorMessage
+}
+
+model CurriculumDocument {
+  id           String @id @default(uuid())
+  schoolId     String @map("school_id")
+  // Plain scoping columns, not declared relations — same convention as
+  // LessonPlan.classLevelId/subjectId, which these deliberately mirror since
+  // retrieval is scoped by exactly the pair a lesson plan is generated for.
+  subjectId    String @map("subject_id")
+  classLevelId String @map("class_level_id")
+
+  title      String
+  // Storage key for the original upload — the source of truth a teacher can
+  // re-download. Key kind: { kind: "curriculum-document"; documentId }.
+  storageKey String @map("storage_key")
+  // Content hash of the extracted text. Guards against re-embedding an
+  // identical re-upload, which is the common case when a teacher re-sends a
+  // file they already sent.
+  checksum   String
+
+  status       CurriculumDocumentStatus @default(PENDING)
+  // Redacted failure reason when status = FAILED. Never carries raw document
+  // text — a parse failure must not spill the document into an error column.
+  errorMessage String?                  @map("error_message")
+  chunkCount   Int                      @default(0) @map("chunk_count")
+
+  uploadedBy String @map("uploaded_by")
+
+  // The review gate (CP5 / D31). `reviewedAt` NULL is MEANINGFUL, not missing
+  // data: it distinguishes "a human confirmed this structure through the gate"
+  // from "this document predates the gate" (D34). Any analysis of chunker
+  // quality must exclude NULL-reviewed rows rather than counting them as
+  // zero-edit approvals, which would silently flatter the chunker.
+  reviewedBy String?   @map("reviewed_by")
+  reviewedAt DateTime? @map("reviewed_at")
+
+  // What the teacher CHANGED before approving — the first real measurement of
+  // chunking quality on documents nobody on this project has seen. A document
+  // approved with zero edits is evidence the chunker got it right; one with six
+  // heading corrections is evidence it did not.
+  headingEditCount    Int @default(0) @map("heading_edit_count")
+  discardedChunkCount Int @default(0) @map("discarded_chunk_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  chunks CurriculumChunk[]
+
+  // Backs the COMPOSITE foreign key from curriculum_chunks. Not a uniqueness
+  // rule anyone needs on its own — `id` is already the primary key — it exists
+  // solely so the child can reference (id, school_id) as a pair. See the
+  // relation on CurriculumChunk for why that matters.
+  @@unique([id, schoolId])
+  // The retrieval scope: chunks are searched within one school's subject +
+  // class level, never across the whole tenant.
+  @@index([schoolId, subjectId, classLevelId])
+  @@index([schoolId, status])
+  // Backs the duplicate-upload check: a re-sent file is refused with "already
+  // uploaded" rather than paying to embed identical content twice. NOT unique —
+  // the same scheme legitimately appears under two class levels, and a deleted
+  // document must be re-uploadable.
+  @@index([schoolId, checksum])
+  @@map("curriculum_documents")
+}
+
+model CurriculumChunk {
+  id         String @id @default(uuid())
+  // Denormalised for a flat RLS check, same pattern as StudentPortalInvitation
+  // and every other child table in this schema. A cross-tenant leak here would
+  // put another school's curriculum inside a teacher's lesson plan, so the
+  // policy is doing real work, not tidiness.
+  schoolId   String @map("school_id")
+  documentId String @map("document_id")
+
+  // Position in the source document — stable ordering for display.
+  ordinal    Int
+  // Detected heading path, e.g. "Term 1 > Week 5 > Photosynthesis". This is
+  // what makes a retrieved chunk CITABLE to a teacher (phase-7.md D7/D10);
+  // a naked paragraph is not a reference anyone recognises.
+  heading    String?
+  content    String
+  tokenCount Int     @map("token_count")
+
+  // voyage-4's default output dimension, confirmed 2026-09-02 against Voyage's
+  // model documentation (phase-7.md D2). Reducing this later is a truncation
+  // of vectors already held (Matryoshka), not a re-embed; increasing it is a
+  // re-embed.
+  //
+  // Prisma cannot express pgvector types, so this is Unsupported: it cannot be
+  // read or written through Prisma Client. Every insert and every similarity
+  // search is raw SQL inside withTenant(), with SET LOCAL app.current_school_id
+  // applied first — CLAUDE.md's raw-SQL rule applies directly here.
+  //
+  // NULLABLE since CP5 (D29): a chunk exists from the moment the document is
+  // parsed, but it is only embedded after a teacher has approved the structure.
+  // Embedding earlier would mean paying for a vector, discarding it the moment
+  // a heading is corrected (headings are embedded WITH content, D15), and
+  // holding a window where a document's vectors disagree with its own headings.
+  //
+  // The "a chunk is retrievable" invariant moves to the DOCUMENT level: a
+  // document only reaches READY once every chunk has a vector, and retrieval
+  // filters on that status AND on `embedding IS NOT NULL` as a second guard.
+  // HNSW does not index NULL rows, so the index is unaffected.
+  embedding Unsupported("vector(1024)")?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // COMPOSITE foreign key on (document_id, school_id), not on document_id
+  // alone. Found by curriculum-rls.spec.ts on 2026-09-02: Postgres evaluates
+  // referential-integrity checks with RLS BYPASSED, so a plain FK let a chunk
+  // in school A reference a document in school B. RLS still stopped A reading
+  // B's document, so it was not a read leak — but it let the denormalised
+  // school_id disagree with its parent's, which is precisely the invariant
+  // that denormalisation exists to make cheap to check.
+  //
+  // With the pair referenced together, the disagreement is rejected by the
+  // database rather than prevented by service discipline. Same instinct as
+  // every other structural-over-conventional choice in this schema.
+  document CurriculumDocument @relation(fields: [documentId, schoolId], references: [id, schoolId], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([documentId, ordinal])
+  @@map("curriculum_chunks")
+}
+
+// Per-call ledger for embedding-vendor calls. Deliberately NOT ai_generations
+// (phase-7.md D3): that table requires promptName, promptVersion and
+// outputTokens, none of which exist for an embedding, and the cost/compliance
+// ledger must not carry invented values.
+//
+// Budget interaction (D4): embedding spend is added to
+// ai_budget_periods.costMicroUsd — money is money — but NOT to
+// tokensReserved/tokensActual, which stay denominated in Claude tokens.
+// Voyage tokens are 50-250x cheaper, so folding them into the same counter
+// would silently dilute the cap rather than tighten it.
+model EmbeddingGeneration {
+  id         String  @id @default(uuid())
+  schoolId   String  @map("school_id")
+  // Null for query embeddings; set for ingestion. Deliberately NOT a declared
+  // relation with Cascade: like AIGeneration, this is evidence that money was
+  // spent and must survive deletion of the content it was spent on.
+  documentId String? @map("document_id")
+
+  model   String
+  // "ingest" | "query". Plain String for the same reason AIGeneration.promptName
+  // is: this is a historical record and must hold values a future enum drops.
+  purpose String
+
+  // No outputTokens: an embedding call has input only.
+  inputTokens  Int     @map("input_tokens")
+  latencyMs    Int     @map("latency_ms")
+  costMicroUsd Int     @map("cost_micro_usd")
+  success      Boolean
+  // Redacted before write — no keys, no PII, no raw document text.
+  errorMessage String? @map("error_message")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([schoolId, createdAt])
+  @@index([schoolId, documentId])
+  @@map("embedding_generations")
+}
+
+// ---------- Phase 5 / Slice 2 — Lesson plan generator ----------
+//
+// The first AI FEATURE, and deliberately the first one: it is the only one of
+// ARCHITECTURE.md §7's five that has ZERO dependency on data a school has
+// already entered. A school can use it on its first day, before a single
+// assessment score exists — which is why it leads (phase-5.md slice order).
+//
+// TOPIC IS FREE TEXT. There is no Topic table, no syllabus tree, no taxonomy
+// (phase-5.md D13). A teacher types "Photosynthesis" the same way they type it
+// into Word today. Inventing a canonical Nigerian curriculum topic tree is a
+// data model PLUS a content-sourcing problem PLUS an admin UI, and it would
+// retroactively define the meaning of MasteryRecord.topicRef — which carries a
+// live @@unique constraint. That work happens only when something needs stable
+// topic IDENTITY: RAG, mastery tracking, or a question bank. All deferred.
+//
+// The five content columns mirror ARCHITECTURE.md §7's specified output shape
+// ("intro, main content, activities, assessment, homework"). They are separate
+// columns rather than one JSON blob for two reasons: the teacher edits and
+// regenerates them INDIVIDUALLY (a JSON blob makes a per-section update a
+// read-modify-write race between two open tabs), and a per-section NOT NULL
+// story is clearer than validating blob shape at the service layer.
+//
+// quiz is nullable and separate: quiz mode is an optional second generation
+// against the same lesson plan, and its output is structured TEXT, not a
+// Question bank. A real question bank with per-option rows is CBT territory
+// (see docs/deferred.md's CBT capability assessment) and is not this slice.
+enum LessonPlanStatus {
+  // Generated (or hand-started) and still the teacher's working copy.
+  DRAFT
+  // Teacher has accepted it. Not an approval GATE in the report-card sense —
+  // a lesson plan is the teacher's own working document, not a student-facing
+  // record, so CLAUDE.md's teacher-approval hard rule (grades, report
+  // comments, behaviour) does not apply. This is a "done editing" marker.
+  ACCEPTED
+}
+
+model LessonPlan {
+  id           String @id @default(uuid())
+  schoolId     String @map("school_id")
+  // The authoring teacher. Plain scoping column, not a declared relation —
+  // same convention as AIGeneration.userId; a lesson plan outlives a staff
+  // member's account for record-keeping.
+  createdBy    String @map("created_by")
+  classLevelId String @map("class_level_id")
+  subjectId    String @map("subject_id")
+
+  // Free text. Deliberately NOT a FK — see the header note above.
+  topic           String
+  objectives      String?
+  durationMinutes Int?    @map("duration_minutes")
+
+  status LessonPlanStatus @default(DRAFT)
+
+  // Phase 7 / CP3 (D20) — what the generation was grounded in: chunk ids,
+  // heading paths, document titles and cosine distances, plus the retrieval
+  // reason when nothing was used.
+  //
+  // A COLUMN, not a join to curriculum_chunks. A lesson plan is a HISTORICAL
+  // RECORD: it must keep showing what grounded it after the document is deleted
+  // and its chunks cascade away. Same instinct that keeps embedding_generations
+  // from cascading — evidence about a past event outlives the thing it
+  // describes.
+  //
+  // Nullable because every plan generated before CP3 has no grounding, and
+  // because an ungrounded generation is a first-class outcome (D18), not a
+  // failure to be back-filled.
+  //
+  // Distances are stored, not merely displayed: CP4 tunes RETRIEVAL_MAX_DISTANCE
+  // from real retrievals, and without them that tuning would start from another
+  // guess.
+  groundedOn Json? @map("grounded_on")
+
+  // Generated content. All nullable: a row exists from the moment generation
+  // is requested, so a failed generation leaves an inspectable record rather
+  // than vanishing.
+  //
+  // Section set follows the standard Nigerian lesson note (prompt v2,
+  // 2026-08-17). The generated order is: behaviouralObjectives,
+  // instructionalMaterials, previousKnowledge, referenceMaterials,
+  // mainContent (Presentation, as numbered Steps), assessment (Evaluation),
+  // homework (Assignment), conclusion. That order lives in
+  // LESSON_PLAN_SECTION_ORDER in packages/ai, derived from the output schema;
+  // this table is storage and deliberately does not re-encode it.
+  //
+  // `mainContent`/`assessment`/`homework` carry the Presentation/Evaluation/
+  // Assignment sections under their original column names — generic enough to
+  // stay accurate, and reusing them kept the v2 restructure free of a data
+  // migration or column rename.
+  behaviouralObjectives  String? @map("behavioural_objectives")
+  instructionalMaterials String? @map("instructional_materials")
+  previousKnowledge      String? @map("previous_knowledge")
+  referenceMaterials     String? @map("reference_materials")
+  mainContent            String? @map("main_content")
+  assessment             String?
+  homework               String?
+  conclusion             String?
+  quiz                   String?
+
+  // LEGACY, pre-v2 (generic international format). No longer generated or
+  // edited; retained so lesson notes written before 2026-08-17 stay readable
+  // rather than losing content to the restructure. `introduction` was replaced
+  // by previousKnowledge + behaviouralObjectives; `activities` was folded into
+  // the Presentation steps, where the Nigerian format puts pupil activity.
+  introduction String?
+  activities   String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Cascade matches ClassSubject's convention directly above: deleting a
+  // subject or class level already cascades class_subjects, and a lesson plan
+  // scoped to a level/subject that no longer exists is not recoverable
+  // content — it has no valid curriculum context to be read in.
+  classLevel ClassLevel @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+  subject    Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([schoolId, createdBy])
+  @@index([schoolId, classLevelId, subjectId])
+  @@map("lesson_plans")
+}
+
+// ---------- Phase 2 / Slice 1 — Grading configuration ----------
+//
+// Three per-school config tables, all seeded with sensible WAEC-style defaults
+// at school creation (signupOwner, same tx as the class-level seed) and fully
+// editable thereafter. They carry their own school_id → flat direct-column RLS,
+// the same cheap pattern as every Phase 1 table. See docs/modules/phase-2.md
+// (Data model → Grading configuration) for the locked design.
+//
+// Exactly one scheme per school (the @@unique on school_id enforces it). Most
+// Nigerian schools run a single CA1+CA2+Exam scheme across every subject;
+// per-level / per-subject schemes are explicitly deferred (phase-2.md "What's
+// deferred"). Defaults: CA1=20, CA2=20, Exam=60 (Σ=100) — see
+// packages/db/src/seeds/grading.ts.
+model GradingScheme {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  name      String // "WAEC-style (default)"
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  components GradingComponent[]
+
+  @@unique([schoolId]) // one scheme per school
+  @@map("grading_schemes")
+}
+
+// N rows per scheme (CA1, CA2, Project, Exam, Practical…). weight is an integer
+// percent; the set of components for a school MUST sum to exactly 100. That
+// invariant is enforced ATOMICALLY OVER THE WHOLE SET at the service layer
+// (and the bulk-PUT Zod refine), NOT by a DB constraint — same call as Phase 1
+// made for the enrollment academicYearId-consistency invariant. See
+// grading.service.ts and docs/modules/phase-2.md "Hard rules → Weights sum to 100".
+//
+// The `scores AssessmentScore[]` back-relation landed in Phase 2 / Slice 2
+// (alongside the AssessmentScore table). onDelete: Restrict on the score side
+// blocks deleting a component that still has scores — a guard against orphaning
+// entered marks (the freeze invariant in grading.service.ts is the friendlier,
+// earlier gate; this FK is the DB backstop).
+model GradingComponent {
+  id         String   @id @default(uuid())
+  schoolId   String   @map("school_id")
+  schemeId   String   @map("scheme_id")
+  key        String // "ca1","ca2","project","exam","practical" — stable per school
+  label      String // "First CA", "Project"
+  weight     Int // integer percent; Σ weight per scheme = 100
+  orderIndex Int      @map("order_index") // display order, left→right in the gradebook grid
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  scheme     GradingScheme     @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  scores     AssessmentScore[]
+  examPapers ExamPaper[] // Phase 8c / CP5c — the gradebook column a paper is for.
+
+  @@unique([schoolId, schemeId, key])
+  @@index([schoolId])
+  @@map("grading_components")
+}
+
+// Per-school letter ↔ score-range map. WAEC scale pre-populated at school
+// creation; fully editable. Ranges are inclusive on both ends and must tile
+// 0..100 without gaps or overlaps — a service-layer invariant (+ bulk-PUT Zod
+// refine), not a DB constraint. Default bands A1..F9 — see
+// packages/db/src/seeds/grading.ts.
+model GradeBoundary {
+  id         String   @id @default(uuid())
+  schoolId   String   @map("school_id")
+  letter     String // "A1","B2","B3","C4","C5","C6","D7","E8","F9"
+  minScore   Int      @map("min_score") // inclusive, 0..100
+  maxScore   Int      @map("max_score") // inclusive, 0..100
+  remark     String? // "Excellent","Very Good",...
+  orderIndex Int      @map("order_index")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, letter])
+  @@index([schoolId])
+  @@map("grade_boundaries")
+}
+
+// ---------- Phase 2 / Slice 2 — Assessment + AssessmentScore ----------
+//
+// The academic record's source of truth (AssessmentScore) and its denormalized
+// per-(student × subject × term) summary (Assessment). See docs/modules/
+// phase-2.md (Data model → Assessment) for the locked design. Both carry their
+// own school_id → flat direct-column RLS, like every Phase 1/2 table.
+//
+// AssessmentScore is the raw mark a teacher types. score ∈ [0, component.weight]
+// (STRICT — validated at the DTO and re-validated against the LIVE component row
+// in the service; the component's weight is the ceiling). The summary below is
+// DERIVED from these rows and materialized in the SAME tx as the score write
+// (phase-2.md Hard rules "Grades are computed server-side"). There is no FK
+// between the two tables — they are joined by the composite
+// (student, subject, term); the score's only enforced relation is to the
+// grading component (we need its live weight to validate).
+model AssessmentScore {
+  id          String   @id @default(uuid())
+  schoolId    String   @map("school_id")
+  studentId   String   @map("student_id")
+  subjectId   String   @map("subject_id")
+  termId      String   @map("term_id")
+  componentId String   @map("component_id")
+  score       Int // 0..component.weight (strict; already-weighted units)
+  // Phase 8c / CP5a (phase-8.md §22.1, D60) — a mark entered "out of" some
+  // other total, kept beside the scaled `score` it produced. Both NULL for a
+  // score entered directly in weight units. `score` stays what everything
+  // else reads; these are the record of what the teacher actually typed.
+  rawScore    Int?     @map("raw_score")
+  rawOutOf    Int?     @map("raw_out_of")
+  enteredBy   String   @map("entered_by") // users.id (plain FK; mirrors ImportJob.createdBy — captures admin overrides)
+  enteredAt   DateTime @default(now()) @map("entered_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  component GradingComponent @relation(fields: [componentId], references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, studentId, subjectId, termId, componentId])
+  @@index([schoolId])
+  @@index([schoolId, termId, subjectId])
+  @@map("assessment_scores")
+}
+
+// Denormalized summary: one row per (student × subject × term). Materialized on
+// score entry (and re-materialized on the slice-4 aggregation pass) — NOT
+// live-rendered — so the gradebook and report card read one row per cell.
+//   totalScore      = EXACT Σ (AssessmentScore.score) over the entered
+//                     components, 0..100 (no averaging/rounding/extrapolation —
+//                     the load-bearing invariant slice 4 ranks against)
+//   letterGrade     = resolved from GradeBoundary at compute time (nullable: a
+//                     pathological boundary gap would leave it null)
+//   classArmId      = denormalized from the student's Enrollment for the term
+//                     (score entry rejects a student with no enrollment)
+//   subjectPosition / classPosition  = LEFT NULL by slice 2; slice 4 computes
+//                     them in the explicit aggregation pass (positions depend on
+//                     every other student's total, so they are not a per-write
+//                     side effect).
+//   subjectSignedOffAt/By  = the subject teacher's per-(student × subject)
+//                     sign-off. In slice 2 a score POST/PATCH CLEARS this (the
+//                     implicit unlock); slice 6 owns the arm-state workflow gate.
+model Assessment {
+  id                  String    @id @default(uuid())
+  schoolId            String    @map("school_id")
+  studentId           String    @map("student_id")
+  subjectId           String    @map("subject_id")
+  termId              String    @map("term_id")
+  academicYearId      String    @map("academic_year_id") // denormalized from term
+  classArmId          String    @map("class_arm_id") // denormalized from enrollment for position scans
+  totalScore          Int       @map("total_score") // 0..100
+  letterGrade         String?   @map("letter_grade")
+  remark              String?
+  subjectPosition     Int?      @map("subject_position")
+  classPosition       Int?      @map("class_position")
+  subjectComment      String?   @map("subject_comment") // per-subject; AI-hook-ready (Phase 5), plain text
+  subjectSignedOffAt  DateTime? @map("subject_signed_off_at")
+  subjectSignedOffBy  String?   @map("subject_signed_off_by") // users.id
+  computedAt          DateTime  @map("computed_at") // MATERIALIZATION stamp (set on score entry)
+  // POSITIONS stamp (Phase 2 / Slice 4) — set by the aggregation pass when it
+  // writes subjectPosition/classPosition. Distinct from computedAt (which is the
+  // score-materialization moment); the status endpoint sources max() of this.
+  positionsComputedAt DateTime? @map("positions_computed_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  @@unique([schoolId, studentId, subjectId, termId])
+  @@index([schoolId])
+  @@index([schoolId, termId, subjectId, classArmId]) // position scans
+  @@index([schoolId, classArmId, termId])
+  @@map("assessments")
+}
+
+// ---------- Phase 2 / Slice 5 — Report card ----------
+//
+// Materialized artifact, NOT live-rendered. One row per (student × term). The
+// build pass (POST /report-cards/arm/build) runs the slice-4 full aggregation
+// in-tx, then snapshots the term's rollup onto this row so the PDF reads a
+// FROZEN rollup (not a live recompute). Carries the workflow state (slice 6
+// drives the state machine; slice 5 only ever creates DRAFT)���z��
+�)�֧u�ݢ�i��k�G��*^���z��
+�)�֧u�ݢ�i��k�G��*^, the three
+// free-text comment grains, and the R2 pointer to the rendered PDF (slice 5 cp2
+// renders; pdfStatus tracks it).
+//
+// overallAverage is an Int in hundredths (7350 = 73.50%) — the money/kobo rule
+// applied to averages, no Float in grade math. overallPosition mirrors the
+// student's Assessment.classPosition (denormalized here for the PDF footer).
+// principalNote is per-arm-term, written once and denormalized identically onto
+// every card in the arm (slice 6). Carries its own school_id → flat
+// direct-column RLS, like every Phase 1/2 table.
+model ReportCard {
+  reportProfile        Json?               @map("report_profile")
+  id                   String              @id @default(uuid())
+  schoolId             String              @map("school_id")
+  studentId            String              @map("student_id")
+  termId               String              @map("term_id")
+  academicYearId       String              @map("academic_year_id")
+  classArmId           String              @map("class_arm_id")
+  status               ReportCardStatus    @default(DRAFT)
+  overallTotal         Int?                @map("overall_total") // Σ subject totals
+  overallAverage       Int?                @map("overall_average") // avg × 100 (hundredths), no Float
+  overallPosition      Int?                @map("overall_position") // = student's Assessment.classPosition
+  subjectsCount        Int?                @map("subjects_count")
+  formTeacherComment   String?             @map("form_teacher_comment") // per student-term; AI-hook-ready (Phase 5)
+  principalNote        String?             @map("principal_note") // per arm-term; AI-hook-ready (Phase 5)
+  // Phase 8c / CP6a (phase-8.md §20.2) — term attendance, SNAPSHOTTED at build
+  // like the rest of the rollup, with the /attendance/summary rule: PRESENT +
+  // LATE attended; ABSENT + EXCUSED not. NULL on cards built before CP6a, and
+  // NULL renders as no attendance line — never as zero.
+  attendanceDaysOpened Int?                @map("attendance_days_opened") // arm's distinct marked dates
+  attendancePresent    Int?                @map("attendance_present")
+  attendanceAbsent     Int?                @map("attendance_absent")
+  // Phase 8c / CP6a (§20.3, D12/D52/D53) — display only, final term of the
+  // year only, set at principal approval. Never reads or writes Enrollment.
+  promotionStatus      PromotionStatus?    @map("promotion_status")
+  // Phase 8c / CP6b (§21.1, D48/D18) — FREE or PIN, chosen at release for the
+  // whole arm × term, cleared by reopen. NULL before release.
+  accessMode           ResultAccessMode?   @map("access_mode")
+  // Phase 8c / CP5a (§22.1, D61) — the year so far, snapshotted on the FINAL
+  // term's card only, averaging the terms the student has. NULL on every
+  // other term. cumulativeSubjects is [{ subjectId, average, terms }], with
+  // average in hundredths like overallAverage.
+  cumulativeAverage    Int?                @map("cumulative_average")
+  cumulativeTerms      Int?                @map("cumulative_terms")
+  cumulativePosition   Int?                @map("cumulative_position")
+  cumulativeSubjects   Json?               @map("cumulative_subjects")
+  formReviewedAt       DateTime?           @map("form_reviewed_at")
+  formReviewedBy       String?             @map("form_reviewed_by") // users.id
+  principalApprovedAt  DateTime?           @map("principal_approved_at")
+  principalApprovedBy  String?             @map("principal_approved_by") // users.id
+  releasedAt           DateTime?           @map("released_at")
+  pdfStatus            ReportCardPdfStatus @default(PENDING) @map("pdf_status")
+  artifactUrl          String?             @map("artifact_url") // R2: schools/<id>/report-cards/<termId>/<studentId>.pdf
+  generatedAt          DateTime?           @map("generated_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  @@unique([schoolId, studentId, termId])
+  @@index([schoolId])
+  @@index([schoolId, classArmId, termId, status])
+  @@map("report_cards")
+}
+
+enum ReportCardStatus {
+  DRAFT // created; scores may still be changing
+  SUBJECT_REVIEWED // every subject for the arm signed off by its subject teacher
+  FORM_REVIEWED // form teacher reviewed the arm + wrote form comments
+  PRINCIPAL_APPROVED // principal approved the arm
+  RELEASED // parent-visible; PDF materialized
+}
+
+// Phase 8c / CP6a (D52). GRADUATED is for a school's final class, where
+// "promoted" names no next class.
+enum PromotionStatus {
+  PROMOTED
+  PROMOTED_ON_TRIAL
+  REPEAT
+  GRADUATED
+
+  @@map("promotion_status")
+}
+
+enum ReportCardPdfStatus {
+  PENDING // not yet enqueued / awaiting render
+  GENERATING // BullMQ job running Puppeteer
+  GENERATED // artifactUrl populated
+  FAILED // render failed; retryable
+}
+
+// ---------- Attendance (Phase 2 / Slice 7 — daily, universal) ----------
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+// Daily attendance. UNIVERSAL — every school, no opt-in. One row per
+// (student × date). Re-marking updates the existing row (upsert on the unique
+// key), never inserts a duplicate. Flat plain-FK convention (no Prisma
+// relations): studentId / classArmId / termId / markedBy are plain TEXT
+// referencing the relevant table — same choice as the assessment tables.
+model AttendanceRecord {
+  id         String           @id @default(uuid())
+  schoolId   String           @map("school_id")
+  studentId  String           @map("student_id")
+  classArmId String           @map("class_arm_id") // arm context at marking time
+  termId     String           @map("term_id") // term containing `date`
+  date       DateTime         @db.Date
+  status     AttendanceStatus
+  note       String?
+  markedBy   String           @map("marked_by") // users.id
+  markedAt   DateTime         @default(now()) @map("marked_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  @@unique([schoolId, studentId, date]) // one record per student per date
+  @@index([schoolId])
+  @@index([schoolId, classArmId, date]) // register query
+  @@index([schoolId, termId]) // summary query
+  @@index([schoolId, date]) // whole-school date range (dashboard trend + today)
+  @@map("attendance_records")
+}
+
+// ---------- Phase 3 / Slice 4 — Fee catalog ----------
+//
+// FeeCategory: school-defined taxonomy (Tuition, Hostel, Sports, PTA Levy…).
+// FeeItem: a single fee with optional scope; NULL scope field = "applies to all".
+// Invoice generation (slice 6) matches a FeeItem when every non-null scope field
+// equals the student's value. Scope rule: classArmId must not be set without
+// classLevelId — enforced in the service layer (Zod refine + merge-check).
+//
+// Only the FeeItem→FeeCategory relation is enforced; the four scope FKs
+// (classLevelId, classArmId, termId, academicYearId) follow the project's
+// plain-FK convention: stored as TEXT?, existence validated in the service via
+// withTenant, not enforced at the DB layer (keeps the schema lean, avoids
+// cross-module FK fragility). See CLAUDE.md "Coding patterns → Plain-FK".
+
+model FeeCategory {
+  id          String   @id @default(uuid())
+  schoolId    String   @map("school_id")
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  createdBy   String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  feeItems FeeItem[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@map("fee_categories")
+}
+
+model FeeItem {
+  id             String   @id @default(uuid())
+  schoolId       String   @map("school_id")
+  categoryId     String   @map("category_id")
+  name           String
+  amount         Int // kobo — never Float (CLAUDE.md money hard rule)
+  classLevelId   String?  @map("class_level_id") // null = all levels
+  classArmId     String?  @map("class_arm_id") // null = all arms; requires classLevelId when set
+  termId         String?  @map("term_id") // null = all terms
+  academicYearId String?  @map("academic_year_id") // null = all years
+  active         Boolean  @default(true)
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  category FeeCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId])
+  // Non-unique scan index for invoice generation (slice 6): matches student's
+  // (level, term, year) against fee items. Non-unique because a school can have
+  // many items with the same scope combination (e.g. two hostel fees for JSS1 T1).
+  @@index([schoolId, classLevelId, termId, academicYearId], map: "fee_items_school_id_level_term_year_idx")
+  @@map("fee_items")
+}
+
+// ---------- Phase 3 / Slice 5 — Discount rules ----------
+//
+// A discount rule is a manual per-student assignment created by a
+// bursar/owner/admin. No rule engine, no auto-triggering, no eligibility
+// conditions. Each rule targets exactly one student and either one FeeItem
+// (feeItemId set) or one FeeCategory (feeCategoryId set) — never both, never
+// neither (Zod refine in DTO + service re-check for defence-in-depth).
+//
+// Duration:
+//   TERM      — applies for a single term; termId required
+//   SESSION   — applies for a full academic year; academicYearId required
+//   LIFETIME  — no date bound; no term/year fields needed
+//
+// Discount type:
+//   PERCENTAGE   → value is basis points (Int, 1–9999; 1000 = 10%, 9999 = 99.99%)
+//   FIXED_AMOUNT → value is kobo (Int, positive)
+//   FULL_WAIVER  → value is NULL (entire fee waived)
+//
+// Stacking is allowed. Total cannot go below zero — enforced at invoice
+// generation (slice 6), not here. All FK columns (studentId, feeItemId,
+// feeCategoryId, termId, academicYearId) follow the plain-FK convention:
+// validated in the service via withTenant, not enforced at the DB layer.
+
+enum DiscountDuration {
+  TERM
+  SESSION
+  LIFETIME
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FULL_WAIVER
+}
+
+model DiscountRule {
+  id             String           @id @default(uuid())
+  schoolId       String           @map("school_id")
+  studentId      String           @map("student_id") // plain-FK — validated in service
+  name           String
+  // Exactly one of feeItemId / feeCategoryId must be set (Zod refine + service re-check)
+  feeItemId      String?          @map("fee_item_id")
+  feeCategoryId  String?          @map("fee_category_id")
+  duration       DiscountDuration
+  termId         String?          @map("term_id") // required when duration = TERM
+  academicYearId String?          @map("academic_year_id") // required when duration = SESSION
+  discountType   DiscountType     @map("discount_type")
+  // basis points 1–9999 (PERCENTAGE) | kobo (FIXED_AMOUNT) | NULL (FULL_WAIVER)
+  value          Int?
+  active         Boolean          @default(true)
+  createdBy      String           @map("created_by")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  @@index([schoolId])
+  @@index([schoolId, studentId])
+  @@map("discount_rules")
+}
+
+// ---------- Phase 3 / Slice 6 — Invoices (snapshot-on-issue) ----------
+//
+// SNAPSHOT-ON-ISSUE: the `items` JSONB column freezes the fee + discount state
+// at the moment the invoice is issued. FeeItem amounts and DiscountRule values
+// can be edited freely afterwards; issued invoices are unaffected because they
+// carry the frozen snapshot. (Mirrors the released-report-card snapshot pattern.)
+//
+// The @@unique([schoolId, studentId, termId, sequence]) constraint enforces one
+// TERM invoice (sequence 0) per student per term. CANCELLED invoices hold the
+// slot — re-generation after cancel is not supported. Phase 9 / CP5.1 (F2):
+// sequence 1, 2, … are SUPPLEMENTARY invoices, issued only when the bursar bills
+// student charges raised after the term invoice went out
+// (docs/modules/phase-9.md §13 CP5-D3).
+//
+// `totalPaid` starts at 0 and is updated by the payment service (slice 7).
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+}
+
+model Invoice {
+  id             String          @id @default(uuid())
+  schoolId       String          @map("school_id")
+  studentId      String          @map("student_id") // plain-FK — validated in service
+  termId         String          @map("term_id") // plain-FK
+  academicYearId String          @map("academic_year_id") // denormalised from term at issue time
+  // Immutable issuance-time arm snapshot. Deliberately a plain FK: deleting or
+  // renaming an academic arm must not rewrite historical finance attribution.
+  classArmId     String?         @map("class_arm_id")
+  status         InvoiceStatus   @default(ISSUED)
+  // Frozen snapshot of fee line items and applied discounts at issue time.
+  // Shape: [{ feeItemId, categoryName, feeName, amount, discountsApplied: [{ ruleId, ruleName, discountAmount }], netAmount }]
+  items          Json
+  totalAmount    Int             @map("total_amount") // Σ item.amount (kobo)
+  totalDiscount  Int             @map("total_discount") // Σ capped item discount (kobo)
+  totalDue       Int             @map("total_due") // totalAmount − totalDiscount (kobo)
+  totalPaid      Int             @default(0) @map("total_paid") // updated by slice 7 payment service
+  dueDate        DateTime?       @map("due_date") @db.Date
+  issuedAt       DateTime?       @map("issued_at")
+  issuedBy       String?         @map("issued_by")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  payments       Payment[]
+  paymentPlans   PaymentPlan[]
+  paymentLinks   PaymentLink[]
+  // Phase 9 / CP5.1 — 0 = the term invoice; 1, 2, … = supplementary invoices.
+  sequence       Int             @default(0)
+  charges        StudentCharge[]
+
+  @@unique([schoolId, studentId, termId, sequence])
+  @@index([schoolId, status])
+  @@index([schoolId, termId, classArmId])
+  @@map("invoices")
+}
+
+// ---------- Phase 9 / CP5.1 — Student charges (F2) ----------
+//
+// One amount owed by one student for one term, raised by a module (transport,
+// later library and hostel) or by hand (OTHER). OPEN until an invoice carries
+// it (BILLED, invoice_id set, in the same transaction), or VOID with a reason.
+// Written ONLY by StudentChargeService (apps/api/src/modules/finance); a spec
+// fails on any other write. docs/modules/phase-9.md §13.
+
+enum StudentChargeKind {
+  TRANSPORT
+  LIBRARY_FINE
+  HOSTEL
+  OTHER
+  STORE
+}
+
+enum StudentChargeStatus {
+  OPEN
+  BILLED
+  VOID
+}
+
+model StudentCharge {
+  id           String              @id @default(uuid())
+  schoolId     String              @map("school_id")
+  studentId    String              @map("student_id") // plain FK — validated in service
+  termId       String              @map("term_id") // plain FK
+  kind         StudentChargeKind
+  description  String
+  amount       Int // kobo, > 0
+  status       StudentChargeStatus @default(OPEN)
+  // Where it came from: both set (e.g. "transport" + the assignment id) or both
+  // null (added by hand). At most one live charge per source (partial unique).
+  sourceModule String?             @map("source_module")
+  sourceId     String?             @map("source_id")
+  invoiceId    String?             @map("invoice_id")
+  voidReason   String?             @map("void_reason")
+  voidedBy     String?             @map("voided_by")
+  voidedAt     DateTime?           @map("voided_at")
+  createdBy    String?             @map("created_by")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, termId, status])
+  @@index([schoolId, studentId, termId])
+  @@index([invoiceId])
+  @@map("student_charges")
+}
+
+enum PaymentLinkStatus {
+  CREATING
+  LIVE
+  PAID
+  ARCHIVE_PENDING
+  ARCHIVED
+  CREATE_FAILED
+}
+
+model PaymentLink {
+  id                   String            @id @default(uuid())
+  schoolId             String            @map("school_id")
+  invoiceId            String            @map("invoice_id")
+  requestId            BigInt?           @map("request_id")
+  requestCode          String?           @unique @map("request_code")
+  hostedUrl            String?           @map("hosted_url")
+  paystackCustomerCode String?           @map("paystack_customer_code")
+  amount               Int
+  currency             String            @default("NGN")
+  status               PaymentLinkStatus @default(CREATING)
+  createdBy            String            @map("created_by")
+  failureCode          String?           @map("failure_code")
+  retryCount           Int               @default(0) @map("retry_count")
+  lastAttemptAt        DateTime          @default(now()) @map("last_attempt_at")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+  archivedAt           DateTime?         @map("archived_at")
+  paidAt               DateTime?         @map("paid_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, invoiceId, status])
+  @@map("payment_links")
+}
+
+// ---------- Phase 3 / Slice 7 — Payments (manual recording + receipts) ----------
+//
+// Manual payments (CASH, POS, BANK_TRANSFER) are created with status = SUCCESS;
+// PENDING is reserved for the Paystack async path (slice 8).
+//
+// totalPaid on Invoice is recomputed via SUM(amount) WHERE status = 'SUCCESS'
+// after each payment write — idempotent, safe for future reversals (slice 11).
+//
+// @@unique([schoolId, paystackReference]) is implemented as a partial unique index
+// in the migration (WHERE paystack_reference IS NOT NULL) so manual rows (null)
+// coexist without violating the constraint. Prisma doesn't know about the WHERE
+// clause — it sees the unique as declared here, which is sufficient for the client.
+
+enum PaymentMethod {
+  PAYSTACK
+  CASH
+  POS
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REVERSED
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  schoolId          String        @map("school_id")
+  invoiceId         String        @map("invoice_id")
+  studentId         String        @map("student_id") // denormalised from invoice at record time
+  amount            Int // kobo — always > 0
+  method            PaymentMethod
+  status            PaymentStatus @default(SUCCESS) // manual = SUCCESS; Paystack = PENDING (slice 8)
+  paystackReference String?       @map("paystack_reference") // null for manual; slice 8 sets this
+  paystackData      Json?         @map("paystack_data")
+  reference         String? // bank transfer ref, POS txn ID, cheque no.
+  receiptNumber     String?       @map("receipt_number") // "RCP-<id-first-8-upper>"
+  receiptUrl        String?       @map("receipt_url") // R2 canonical path; signed on demand
+  recordedBy        String?       @map("recorded_by") // userId; null for Paystack webhook (slice 8)
+  paidAt            DateTime?     @map("paid_at")
+  // D37 (staff-mobile-companion.md): a client-generated key, one per payment
+  // FORM, so a retry after a lost response returns the first payment instead
+  // of recording the cash twice. Nullable — web callers and every existing row
+  // carry none, and Postgres unique indexes allow any number of NULLs.
+  idempotencyKey    String?       @map("idempotency_key")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  refunds Refund[]
+
+  @@unique([schoolId, paystackReference])
+  @@unique([schoolId, idempotencyKey])
+  @@index([schoolId, invoiceId])
+  @@index([schoolId, studentId])
+  @@map("payments")
+}
+
+// ---------- Phase 3 / Slice 11 — Refunds ----------
+//
+// A Refund represents money returned to a parent (Paystack path) or an
+// administrative reversal of a manual payment (no money movement). Creating a
+// Refund always marks the linked Payment as REVERSED and recomputes the invoice
+// totalPaid + status. Full reversals only in slice 11 (amount === payment.amount).
+//
+// status: PROCESSED for manual payments (immediate); PROCESSED or FAILED for
+// Paystack payments (result of the Paystack refund API call). REQUESTED is
+// reserved for a future async refund queue.
+//
+// processedBy: the userId of the admin/owner who initiated the refund.
+
+enum RefundStatus {
+  REQUESTED
+  PROCESSED
+  FAILED
+}
+
+model Refund {
+  id                String       @id @default(uuid())
+  schoolId          String       @map("school_id")
+  paymentId         String       @map("payment_id")
+  amount            Int // kobo — equals payment.amount (full reversal only)
+  reason            String
+  status            RefundStatus
+  paystackRefundRef String?      @map("paystack_refund_ref") // Paystack refund ID; null for manual reversals
+  processedBy       String       @map("processed_by") // userId of the admin/owner
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, paymentId])
+  @@map("refunds")
+}
+
+// ---------- Phase 3 / Slice 9 — Installment plans ----------
+//
+// A PaymentPlan is a named schedule of expected payment dates + amounts.
+// It does NOT move money — payments still flow through recordManual / Paystack.
+// Constraint: Σ installment.amount === invoice.totalDue (enforced in service).
+// One plan per invoice; only allowed when invoice.status ∈ {ISSUED, PARTIALLY_PAID}.
+//
+// After every successful payment, PaymentPlanService.recomputeInstallmentsPaid()
+// walks installments ordered by dueDate and marks paid = true for every installment
+// whose cumulative amount is covered by invoice.totalPaid. Allocation is purely
+// threshold-based — no payment-to-installment link is stored.
+
+model PaymentPlan {
+  id           String                   @id @default(uuid())
+  schoolId     String                   @map("school_id")
+  invoiceId    String                   @map("invoice_id")
+  name         String
+  createdBy    String                   @map("created_by")
+  createdAt    DateTime                 @default(now()) @map("created_at")
+  invoice      Invoice                  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  installments PaymentPlanInstallment[]
+
+  @@unique([schoolId, invoiceId])
+  @@index([schoolId, invoiceId])
+  @@map("payment_plans")
+}
+
+model PaymentPlanInstallment {
+  id       String      @id @default(uuid())
+  schoolId String      @map("school_id")
+  planId   String      @map("plan_id")
+  amount   Int // kobo — always > 0
+  dueDate  DateTime    @map("due_date") @db.Date
+  paid     Boolean     @default(false)
+  plan     PaymentPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, planId])
+  @@map("payment_plan_installments")
+}
+
+// ---------- Expense tracking (Phase 3 / Slice 13) ----------
+//
+// ExpenseCategory mirrors FeeCategory exactly (school-defined taxonomy,
+// name unique per school, soft-deactivate via `active`).
+//
+// Expense.categoryId is a PLAIN FK — no enforced Prisma relation, no DB-level
+// FOREIGN KEY constraint. Same convention as FeeItem's scope columns
+// (classLevelId/classArmId/termId/academicYearId), NOT the FeeItem.category
+// exception (which DOES get an enforced relation with onDelete: Restrict).
+// Consequences, load-bearing for the service layer:
+//   - ExpenseCategoryService.delete cannot use a Prisma `_count` relation
+//     shorthand (there's no relation to count through) — it runs an explicit
+//     `db.expense.count({ where: { categoryId } })` guard instead.
+//   - ExpensesService.create/update must validate categoryId exists AND
+//     belongs to the caller's school before writing (no DB FK to catch a
+//     dangling reference).
+//   - The web UI resolves categoryId -> name client-side against an
+//     already-fetched category list, same pattern as teacher-assignments-
+//     section.tsx's armName()/subjectName() helpers — no server-side include.
+//
+// No snapshot/freeze semantics (unlike Invoice/Payment): an Expense doesn't
+// feed any derived, stored total elsewhere — the finance dashboard (slice 14)
+// sums expenses at read time. Amount/date/description/category are freely
+// editable after creation.
+model ExpenseCategory {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@map("expense_categories")
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  schoolId    String   @map("school_id")
+  categoryId  String   @map("category_id") // plain FK -> expense_categories.id — see header comment
+  amount      Int // kobo — never Float (CLAUDE.md money hard rule)
+  description String?
+  incurredAt  DateTime @map("incurred_at") @db.Date
+  receiptUrl  String?  @map("receipt_url") // R2 canonical path — signed on demand; see storage.types.ts "expense-receipt"
+  recordedBy  String   @map("recorded_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([schoolId, incurredAt])
+  @@index([schoolId, categoryId])
+  @@map("expenses")
+}
+
+// ---------- Payroll (Phase 3 / Slice 12 CP3+CP4) ----------------------------
+//
+// CP3 (this migration): DRAFT -> APPROVED, no money movement. PAID is set by
+// CP4 once Paystack transfers land — paystackTransferCode stays null until
+// then. FAILED covers a CP4 transfer rejection; CP3 never produces it.
+// PROCESSING is set synchronously by CP4's transfer() right before calling
+// Paystack, and left in place until the transfer.success/failed/reversed
+// webhook resolves it to PAID or FAILED — there is no PAID/FAILED transition
+// that doesn't pass through PROCESSING first (see PayrollService.transfer).
+//
+// grossSalary/deductions are entered per period. Since 2026-10-19 the gross
+// is prefilled from the staff member's saved StaffSalary (the D2 prefill,
+// asked for by the owner), and stays editable on each month's row. deductions is a flat line-item list
+// ([{ name, amount }] kobo), NOT a Nigerian PAYE tax-bracket engine (D3) —
+// the bursar computes/enters PAYE externally as one of the line items.
+// netSalary is computed server-side (grossSalary - sum(deductions)) and
+// stored, same "compute once, store the result" discipline as Invoice's
+// totalDue snapshot.
+//
+// userId is a plain FK (no relation) — same convention as Expense.categoryId
+// and FeeItem's scope columns; the service validates existence + same-school
+// before writing.
+enum PayrollStatus {
+  DRAFT
+  APPROVED
+  PROCESSING
+  PAID
+  FAILED
+}
+
+model PayrollItem {
+  id                   String        @id @default(uuid())
+  schoolId             String        @map("school_id")
+  userId               String        @map("user_id") // plain FK -> users.id — the staff member being paid
+  period               String // e.g. "2026-07" — free-text, not a Term/AcademicYear FK (payroll runs monthly, terms don't)
+  grossSalary          Int           @map("gross_salary") // kobo — never Float (CLAUDE.md money hard rule)
+  deductions           Json // [{ name: string, amount: Int }] kobo — flat line items, not a tax engine (see header)
+  netSalary            Int           @map("net_salary") // computed: grossSalary - sum(deductions), stored
+  status               PayrollStatus @default(DRAFT)
+  payslipUrl           String?       @map("payslip_url") // R2 canonical path — signed on demand; see storage.types.ts "payroll-payslip"
+  approvedBy           String?       @map("approved_by") // userId of the admin/owner/bursar who approved
+  approvedAt           DateTime?     @map("approved_at")
+  paystackTransferCode String?       @map("paystack_transfer_code") // null until CP4
+  createdBy            String        @map("created_by")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  @@unique([schoolId, userId, period]) // one payroll item per staff member per period
+  @@index([schoolId, period])
+  @@index([schoolId, userId])
+  @@map("payroll_items")
+}
+
+// Current bank details for a staff member — NOT a history table. One row per
+// (schoolId, userId); changing banks updates the row in place, same mutable-
+// fields convention as TeacherProfile. Reused across every monthly payroll
+// run, which is why this isn't a column on PayrollItem (would mean
+// re-entering bank details every period) or on User (would push a Phase-3
+// finance concern onto a Phase-0 foundational table shared by every future
+// user type). userId is a plain FK (no relation) — same convention as
+// Expense.categoryId and PayrollItem.userId; the service validates
+// existence + same-school before writing.
+//
+// accountName is Paystack's OWN resolved name from the /bank/resolve call,
+// never a user-typed value — the operator sees it and confirms before
+// saving (Payroll CP4 plan-first D1's "verify" UX step), and the server
+// independently re-resolves and compares at create time rather than
+// trusting the client's echoed value.
+//
+// paystackRecipientCode is created EAGERLY at save time (plan-first D2), not
+// lazily at first transfer — a bad account number surfaces during this
+// low-stakes "add bank details" step, not during a time-pressured payroll
+/
