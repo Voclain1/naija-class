@@ -190,6 +190,15 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-16)
 
+- **UX simplification Sprint 3 is implemented on `feat/ux-results-report-cards`**
+  (2026-11-16), pending PR/CI. Gradebook selection now follows the product
+  rule that every active subject appears by default and owner/admin class
+  disabling—not teacher assignment or score presence—controls exclusion.
+  Score entry is faster on keyboard/tablet, alternate totals are progressive,
+  positions refresh at sign-off, report-card ownership/warnings are clearer,
+  and schools can choose Simple or Controlled results approval without losing
+  validation, permissions or audit history. See the 2026-11-16 journal.
+
 - **PR #549 Playwright timeout is fixed on its existing branch.** The new
   admission-number presets intentionally hide the raw input behind **Custom
   format**, while two E2E scenarios still tried to fill it immediately. Each

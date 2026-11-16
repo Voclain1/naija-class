@@ -139,6 +139,7 @@ export function GradebookGrid({
   const [signingOff, setSigningOff] = useState(false);
   const [aggregating, setAggregating] = useState(false);
   const [positionsAt, setPositionsAt] = useState<string | Date | null>(null);
+  const [positionsStale, setPositionsStale] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [reopened, setReopened] = useState(false);
@@ -162,6 +163,9 @@ export function GradebookGrid({
   const [outOfError, setOutOfError] = useState<Record<string, string | undefined>>({});
   // CP5c — the FINAL exam paper (if any) that set each column's "Out of".
   const [outOfSource, setOutOfSource] = useState<Record<string, string>>({});
+  const [showDifferentTotals, setShowDifferentTotals] = useState(
+    () => Object.values(outOf).some((value) => value !== undefined),
+  );
   // The confirmation step: what the SERVER will store for each converted cell.
   const [pending, setPending] = useState<{
     rows: SaveRow[];
@@ -350,6 +354,7 @@ export function GradebookGrid({
       const refreshed = await getGradebookFeed(termId, classArmId, subjectId);
       applyFeed(refreshed); // positions now visible in the read-only column
       await loadPositionsStatus();
+      setPositionsStale(false);
       toast.success("Positions recomputed.");
     } catch (e) {
       setBanner(
@@ -393,6 +398,7 @@ export function GradebookGrid({
       applyFeed(refreshed);
       if (draftScope) clearScoreDraft(draftScope);
       setReopened(false);
+      setPositionsStale(true);
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), 2500);
     } catch (e) {
@@ -438,6 +444,13 @@ export function GradebookGrid({
     const s = feed.data.find((r) => r.student.id === id)?.student;
     return s ? `${s.lastName}, ${s.firstName}` : "Student";
   };
+  const focusNextStudent = (rowIndex: number, componentId: string) => {
+    const next = document.querySelector<HTMLInputElement>(
+      `[data-score-cell="${rowIndex + 1}:${componentId}"]`,
+    );
+    next?.focus();
+    next?.select();
+  };
   const componentById = new Map(components.map((c) => [c.id, c]));
 
   async function onSignOff(): Promise<void> {
@@ -445,10 +458,15 @@ export function GradebookGrid({
     setBanner(null);
     try {
       await signOffColumn({ termId, classArmId, subjectId });
+      if (canAggregate) await aggregateScores({ termId, classArmId, subjectId });
       const refreshed = await getGradebookFeed(termId, classArmId, subjectId);
       applyFeed(refreshed);
       setReopened(false);
-      toast.success("Column signed off.");
+      if (canAggregate) {
+        await loadPositionsStatus();
+        setPositionsStale(false);
+      }
+      toast.success(canAggregate ? "Column signed off and positions updated." : "Column signed off.");
     } catch (e) {
       setBanner(
         e instanceof ApiError && e.status === 400
@@ -489,9 +507,13 @@ export function GradebookGrid({
               Saved
             </span>
           )}
-          <span className="text-xs text-muted-foreground">
+          <span className={positionsStale ? "text-xs font-medium text-amber-700" : "text-xs text-muted-foreground"}>
             Positions:{" "}
-            {positionsAt ? `computed ${formatDateTime(positionsAt)}` : "never computed"}
+            {positionsStale
+              ? "need updating after these score changes"
+              : positionsAt
+                ? `updated ${formatDateTime(positionsAt)}`
+                : "not calculated yet"}
           </span>
         </div>
 
@@ -548,6 +570,16 @@ export function GradebookGrid({
           </Button>
         </div>
       </div>
+
+      <label className="flex w-fit items-center gap-2 text-sm text-muted-foreground print:hidden">
+        <input
+          type="checkbox"
+          checked={showDifferentTotals}
+          disabled={busy || isDirty}
+          onChange={(event) => setShowDifferentTotals(event.target.checked)}
+        />
+        Scores are out of a different total
+      </label>
 
       {draftOffer && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100 print:hidden">
@@ -612,8 +644,8 @@ export function GradebookGrid({
         </table>
       </div>
 
-      <div className="overflow-hidden rounded-md border print:hidden">
-        <Table>
+      <div className="overflow-x-auto rounded-md border print:hidden">
+        <Table className="min-w-[760px]">
           <TableHeader className="[&_tr]:bg-muted/40">
             <TableRow>
               <TableHead className="sticky left-0 z-10 bg-muted/40">Student</TableHead>
@@ -621,7 +653,7 @@ export function GradebookGrid({
                 <TableHead key={c.id} className="align-top">
                   {c.label}
                   <span className="ml-1 font-normal normal-case text-muted-foreground/70">/{c.weight}</span>
-                  <label className="mt-1 flex items-center gap-1 text-xs font-normal normal-case text-muted-foreground">
+                  {showDifferentTotals && <label className="mt-1 flex items-center gap-1 text-xs font-normal normal-case text-muted-foreground">
                     Out of
                     <Input
                       aria-label={`${c.label} out of`}
@@ -637,8 +669,8 @@ export function GradebookGrid({
                         if (e.key === "Enter") commitOutOf(c.id, c.weight);
                       }}
                     />
-                  </label>
-                  {outOfError[c.id] && <p className="mt-1 text-xs font-normal normal-case text-destructive">{outOfError[c.id]}</p>}
+                  </label>}
+                  {showDifferentTotals && outOfError[c.id] && <p className="mt-1 text-xs font-normal normal-case text-destructive">{outOfError[c.id]}</p>}
                   {outOfSource[c.id] && outOf[c.id] !== undefined ? (
                     <p className="mt-1 max-w-36 text-xs font-normal normal-case text-muted-foreground">From the paper &ldquo;{outOfSource[c.id]}&rdquo;</p>
                   ) : null}
@@ -670,6 +702,7 @@ export function GradebookGrid({
                       <TableCell key={c.id} className="align-top">
                         <Input
                           aria-label={`${row.student.lastName} ${c.label}`}
+                          data-score-cell={`${i}:${c.id}`}
                           inputMode="numeric"
                           disabled={locked || busy}
                           className={cn(
@@ -677,6 +710,11 @@ export function GradebookGrid({
                             cellErr && "border-destructive focus-visible:ring-destructive",
                           )}
                           aria-invalid={Boolean(cellErr)}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter") return;
+                            event.preventDefault();
+                            focusNextStudent(i, c.id);
+                          }}
                           {...form.register(`rows.${i}.scores.${c.id}`)}
                         />
                         {cellErr && <p className="mt-1 text-xs text-destructive">{cellErr.message}</p>}

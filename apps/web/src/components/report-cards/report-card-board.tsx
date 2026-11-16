@@ -43,6 +43,7 @@ import {
 import { formatAverage, formatInt, formatOrdinal, formatStamp, fullStudentName } from "@/lib/report-cards/format";
 import { openInNewTab } from "@/lib/report-cards/open-in-new-tab";
 import { getMyScope } from "@/lib/teacher/teacher-scope-api";
+import { getSchoolMe } from "@/lib/onboarding/schools-api";
 
 type Status =
   | { kind: "loading" }
@@ -81,6 +82,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
   // student, and its approval waits for all of them (D53).
   const [isFinalTerm, setIsFinalTerm] = useState(false);
   const [savingPromotion, setSavingPromotion] = useState<string | null>(null);
+  const [workflowMode, setWorkflowMode] = useState<"SIMPLE" | "CONTROLLED">("CONTROLLED");
 
   // Resolve the arm name + term (manager: arms/terms APIs; form teacher: scope),
   // then load the board feed.
@@ -93,6 +95,8 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
       let termName = "";
 
       if (canManage) {
+        const school = await getSchoolMe();
+        setWorkflowMode(school.resultWorkflowMode);
         const arms = await listClassArms();
         const arm = arms.find((a) => a.id === armId);
         armName = arm?.name ?? null;
@@ -191,6 +195,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
   const failedCount = rows.filter((r) => r.reportCard.pdfStatus === "FAILED").length;
   const promotionMissing = isFinalTerm ? rows.filter((r) => r.reportCard.promotionStatus === null).length : 0;
   const promotionEditable = isFinalTerm && canManage && armStatus === "FORM_REVIEWED";
+  const missingAttendance = rows.filter((row) => row.reportCard.attendanceDaysOpened === null).length;
   // Drives the polling loop, the "Rendering…" banner, and the workflow-button
   // disable. True the instant release flips cards to GENERATING (optimistic).
   const shouldPoll = renderingCount > 0;
@@ -308,6 +313,20 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
     });
   }, [ready, armId, runWorkflow]);
 
+  const onPrepareForRelease = useCallback(() => {
+    if (!ready) return;
+    const termId = ready.termId;
+    void runWorkflow(async () => {
+      await formReviewArm(termId, armId);
+      if (!isFinalTerm) {
+        await approveArm(termId, armId);
+        toast.success("Report cards checked and approved. Release them when you are ready.");
+      } else {
+        toast.success("Report cards checked. Set every promotion status, then approve them for release.");
+      }
+    });
+  }, [ready, armId, isFinalTerm, runWorkflow]);
+
   // One student's promotion status. Updates the row in place from the server's
   // reply rather than refetching the whole board on every choice.
   const onPromotionChange = useCallback(async (reportCardId: string, value: PromotionStatusDto | null) => {
@@ -405,9 +424,17 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                 {/* Form-review — DRAFT / SUBJECT_REVIEWED. owner/admin OR form
                     teacher (anyone who can open this board), gated server-side. */}
                 {(armStatus === "DRAFT" || armStatus === "SUBJECT_REVIEWED") && (
-                  <Button type="button" onClick={onFormReview} disabled={workflowBusy || building || shouldPoll}>
+                  <Button
+                    type="button"
+                    onClick={workflowMode === "SIMPLE" && canManage ? onPrepareForRelease : onFormReview}
+                    disabled={workflowBusy || building || shouldPoll}
+                  >
                     {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    Send for approval
+                    {workflowMode === "SIMPLE" && canManage
+                      ? isFinalTerm
+                        ? "Check report cards"
+                        : "Prepare for release"
+                      : "Send for approval"}
                   </Button>
                 )}
 
@@ -516,6 +543,16 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                 ? `This is the last term of the year. Set a promotion status for every student before approving — ${promotionMissing} still to set.`
                 : "Every student has a promotion status. The arm can be approved."}
             </p>
+          ) : null}
+
+          {missingAttendance > 0 ? (
+            <div className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Attendance is missing for {missingAttendance} report card{missingAttendance === 1 ? "" : "s"}.
+                This is missing data—not zero attendance. Complete the class register before release if attendance should appear on the cards.
+              </span>
+            </div>
           ) : null}
 
           {renderingCount > 0 ? (

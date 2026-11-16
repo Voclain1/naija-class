@@ -348,6 +348,22 @@ describe("SchoolsService (Slice 6)", () => {
       });
     });
 
+    it("patchMe — result workflow is controlled by default and switching to simple is audited", async () => {
+      const { authCtx, schoolId } = await createOwnedSchool("patch-result-workflow");
+
+      const before = await schoolsService.findMe(authCtx);
+      expect(before.resultWorkflowMode).toBe("CONTROLLED");
+
+      const updated = await schoolsService.patchMe(authCtx, { resultWorkflowMode: "SIMPLE" }, ctx);
+      expect(updated.resultWorkflowMode).toBe("SIMPLE");
+
+      await withTenant(schoolId, async (db) => {
+        const audits = await db.auditLog.findMany({ where: { schoolId, action: "school.update" } });
+        const changed = audits.flatMap((a) => (a.metadata as { changed?: string[] }).changed ?? []);
+        expect(changed).toContain("resultWorkflowMode");
+      });
+    });
+
     it("patchMe as admin — succeeds (owner+admin policy)", async () => {
       const { schoolId } = await createOwnedSchool("patch-admin");
       const { authCtx: adminCtx } = await createAdminUser(schoolId, "patch-admin");

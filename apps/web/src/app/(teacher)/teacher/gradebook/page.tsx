@@ -1,12 +1,13 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import type { TeacherScopeDto } from "@school-kit/types";
 
 import { TeacherPrerequisiteNotice } from "@/components/teacher/teacher-prerequisite-notice";
+import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api-client";
 import { getMyScope } from "@/lib/teacher/teacher-scope-api";
 
@@ -19,6 +20,7 @@ export default function GradebookPickerPage() {
   const [scope, setScope] = useState<TeacherScopeDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [subjectQuery, setSubjectQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,7 +93,18 @@ export default function GradebookPickerPage() {
               detail="Your school administrator assigns each teacher their subjects and classes. Ask them to assign yours; they appear here as soon as they do."
             />
           ) : (
-            <ul className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4">
+              <label className="relative block w-full sm:max-w-sm">
+                <span className="sr-only">Find a subject</span>
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={subjectQuery}
+                  onChange={(event) => setSubjectQuery(event.target.value)}
+                  placeholder="Find a subject…"
+                  className="pl-9"
+                />
+              </label>
+              <ul className="flex flex-col gap-4">
               {gradeableArms.map((arm) => (
                 <li key={arm.id} className="rounded-md border">
                   <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-4 py-2 text-sm font-medium">
@@ -105,7 +118,9 @@ export default function GradebookPickerPage() {
                     ) : null}
                   </div>
                   <ul className="flex flex-col divide-y">
-                    {(scope.subjectsByArm[arm.id] ?? []).map((subject) => (
+                    {(scope.subjectsByArm[arm.id] ?? [])
+                      .filter((subject) => subject.name.toLocaleLowerCase().includes(subjectQuery.trim().toLocaleLowerCase()))
+                      .map((subject) => (
                       <li key={subject.id}>
                         <Link
                           href={`/teacher/gradebook/${arm.id}/${subject.id}`}
@@ -119,7 +134,8 @@ export default function GradebookPickerPage() {
                   </ul>
                 </li>
               ))}
-            </ul>
+              </ul>
+            </div>
           )}
         </>
       )}

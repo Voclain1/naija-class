@@ -34,6 +34,7 @@ const schoolSettingsSchema = z.object({
   // carries. The first defaults OFF, the second ON.
   positionVisibleToFamilies: z.boolean(),
   positionOnReportCardPdf: z.boolean(),
+  resultWorkflowMode: z.enum(["SIMPLE", "CONTROLLED"]),
   // Phase 9 / CP1.2 — the chronic-absence line on the Attendance report, as a
   // whole percent (docs/modules/phase-9.md §8 CP1-D5). Mirrors the column's
   // CHECK (50–100).

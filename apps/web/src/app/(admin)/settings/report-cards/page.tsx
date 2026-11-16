@@ -19,9 +19,15 @@ import { cn } from "@/lib/utils";
 interface PositionSettings {
   positionOnReportCardPdf: boolean;
   positionVisibleToFamilies: boolean;
+  resultWorkflowMode: "SIMPLE" | "CONTROLLED";
 }
 
-const SWITCHES: { key: keyof PositionSettings; label: string; on: string; off: string }[] = [
+const SWITCHES: {
+  key: "positionOnReportCardPdf" | "positionVisibleToFamilies";
+  label: string;
+  on: string;
+  off: string;
+}[] = [
   {
     key: "positionOnReportCardPdf",
     label: "Show class position on printed report cards",
@@ -38,7 +44,7 @@ const SWITCHES: { key: keyof PositionSettings; label: string; on: string; off: s
 
 export default function ReportCardSettingsPage() {
   const [saved, setSaved] = useState<PositionSettings | null>(null);
-  const [draft, setDraft] = useState<PositionSettings>({ positionOnReportCardPdf: true, positionVisibleToFamilies: false });
+  const [draft, setDraft] = useState<PositionSettings>({ positionOnReportCardPdf: true, positionVisibleToFamilies: false, resultWorkflowMode: "CONTROLLED" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +56,7 @@ export default function ReportCardSettingsPage() {
       const value = {
         positionOnReportCardPdf: school.positionOnReportCardPdf,
         positionVisibleToFamilies: school.positionVisibleToFamilies,
+        resultWorkflowMode: school.resultWorkflowMode,
       };
       setSaved(value);
       setDraft(value);
@@ -67,7 +74,8 @@ export default function ReportCardSettingsPage() {
   const dirty =
     saved !== null &&
     (draft.positionOnReportCardPdf !== saved.positionOnReportCardPdf ||
-      draft.positionVisibleToFamilies !== saved.positionVisibleToFamilies);
+      draft.positionVisibleToFamilies !== saved.positionVisibleToFamilies ||
+      draft.resultWorkflowMode !== saved.resultWorkflowMode);
 
   async function onSave(): Promise<void> {
     setSaving(true);
@@ -76,6 +84,7 @@ export default function ReportCardSettingsPage() {
       const value = {
         positionOnReportCardPdf: updated.positionOnReportCardPdf,
         positionVisibleToFamilies: updated.positionVisibleToFamilies,
+        resultWorkflowMode: updated.resultWorkflowMode,
       };
       setSaved(value);
       setDraft(value);
@@ -111,6 +120,35 @@ export default function ReportCardSettingsPage() {
       ) : (
         <div className="flex flex-col gap-6">
           <div className="flex flex-col gap-3">
+            <div className="rounded-md border bg-card p-4">
+              <p className="text-sm font-medium">Result approval workflow</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Both options keep the same validation, audit history and release confirmation.
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {([
+                  ["SIMPLE", "Simple", "An owner or admin reviews and approves in one step, then releases results."],
+                  ["CONTROLLED", "Controlled", "Form review, principal approval and release remain separate steps."],
+                ] as const).map(([value, label, body]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={draft.resultWorkflowMode === value}
+                    disabled={saving}
+                    onClick={() => setDraft((d) => ({ ...d, resultWorkflowMode: value }))}
+                    className={cn(
+                      "rounded-md border p-3 text-left transition-colors",
+                      draft.resultWorkflowMode === value
+                        ? "border-emerald-600 bg-emerald-50"
+                        : "hover:bg-muted/50",
+                    )}
+                  >
+                    <span className="block text-sm font-medium">{label}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">{body}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             {SWITCHES.map((s) => {
               const value = draft[s.key];
               return (
