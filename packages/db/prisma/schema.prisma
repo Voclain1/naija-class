@@ -1,5 +1,4 @@
-���z��
-�)�֧u�ݢ�i��k�G��*^// School Kit — Prisma schema (Phase 0)
+// School Kit — Prisma schema (Phase 0)
 //
 // Models below mirror docs/modules/phase-0.md verbatim. Tenancy is enforced at
 // the Postgres layer via RLS (see packages/db/prisma/policies/phase-0.sql) and
@@ -490,8 +489,7 @@ model Role {
   key         String // 'owner', 'admin', 'teacher', etc.
   name        String
   description String?
-  isSystem    ���z��
-�)�֧u�ݢ�i��k�G��*^Boolean  @default(false) @map("is_system")
+  isSystem    Boolean  @default(false) @map("is_system")
   permissions Json     @default("[]") // string[] of permission keys, or ["*"]
   createdAt   DateTime @default(now()) @map("created_at")
 
@@ -1138,8 +1136,7 @@ model Guardian {
 
   students           StudentGuardian[]
   sessions           GuardianSession[]
-  invit���z��
-�)�֧u�ݢ�i��k�G��*^ations        GuardianInvitation[]
+  invitations        GuardianInvitation[]
   passwordResets     GuardianPasswordResetToken[]
   deviceTokens       DeviceToken[] // Phase 6 / Slice 5.
   announcementEmails AnnouncementEmail[]
@@ -2324,9 +2321,7 @@ model Assessment {
 // build pass (POST /report-cards/arm/build) runs the slice-4 full aggregation
 // in-tx, then snapshots the term's rollup onto this row so the PDF reads a
 // FROZEN rollup (not a live recompute). Carries the workflow state (slice 6
-// drives the state machine; slice 5 only ever creates DRAFT)���z��
-�)�֧u�ݢ�i��k�G��*^���z��
-�)�֧u�ݢ�i��k�G��*^, the three
+// drives the state machine; slice 5 only ever creates DRAFT), the three
 // free-text comment grains, and the R2 pointer to the rendered PDF (slice 5 cp2
 // renders; pdfStatus tracks it).
 //
@@ -2974,4 +2969,2894 @@ model PayrollItem {
 // paystackRecipientCode is created EAGERLY at save time (plan-first D2), not
 // lazily at first transfer — a bad account number surfaces during this
 // low-stakes "add bank details" step, not during a time-pressured payroll
-/
+// run. `active` soft-disables an account (staff left, account compromised)
+// without losing the history of what was on file.
+model StaffBankAccount {
+  id                    String   @id @default(uuid())
+  schoolId              String   @map("school_id")
+  userId                String   @map("user_id") // plain FK -> users.id — the staff member
+  bankCode              String   @map("bank_code")
+  accountNumber         String   @map("account_number")
+  accountName           String   @map("account_name") // Paystack-resolved, never user-typed
+  paystackRecipientCode String   @map("paystack_recipient_code")
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, userId]) // one current bank account per staff member per school
+  @@map("staff_bank_accounts")
+}
+
+// A staff member's current monthly salary (2026-10-19, migration
+// 20261112120000_staff_salaries) — the prefill PayrollItem's D2 deferred. Set
+// on the invite form or the staff page, read by "Run payroll". Each
+// PayrollItem keeps its own grossSalary, so a change here never rewrites a
+// month already run. Gated by payroll.process; every change is audited as
+// staff-salary.set.
+model StaffSalary {
+  id           String   @id @default(uuid())
+  schoolId     String   @map("school_id")
+  userId       String   @map("user_id") // plain FK -> users.id, as StaffBankAccount
+  monthlyGross Int      @map("monthly_gross") // kobo
+  updatedBy    String   @map("updated_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, userId])
+  @@map("staff_salaries")
+}
+
+// ---------- Subject-period attendance (Phase 2 / Slice 8 — opt-in) ----------
+
+// Subject-period attendance. SEPARATE table from daily — period-level semantics,
+// per-subject query patterns, and OPT-IN per school via
+// School.subjectAttendanceEnabled (the endpoints 404 until a school enables it).
+// Senior classes that run a period timetable use it; primary classes don't. One
+// row per (student × subject × date × period). Reuses the AttendanceStatus enum.
+// Flat plain-FK convention (no Prisma relations) — same as the daily table.
+model SubjectAttendanceRecord {
+  id         String           @id @default(uuid())
+  schoolId   String           @map("school_id")
+  studentId  String           @map("student_id")
+  classArmId String           @map("class_arm_id") // arm context at marking time
+  subjectId  String           @map("subject_id")
+  termId     String           @map("term_id") // term containing `date`
+  date       DateTime         @db.Date
+  period     Int // period number within the day (≥1, no upper bound)
+  status     AttendanceStatus
+  note       String?
+  markedBy   String           @map("marked_by") // users.id
+  markedAt   DateTime         @default(now()) @map("marked_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  @@unique([schoolId, studentId, subjectId, date, period]) // one record per student per subject per period per date
+  @@index([schoolId])
+  // Explicit index names: the auto-generated names for these two would both
+  // truncate to the same 63-char Postgres identifier and collide.
+  @@index([schoolId, classArmId, subjectId, date], map: "subject_attendance_arm_subject_date_idx") // register query
+  @@index([schoolId, classArmId, subjectId, termId], map: "subject_attendance_arm_subject_term_idx") // summary query (arm-keyed, mirrors slice 7's term index)
+  @@map("subject_attendance_records")
+}
+
+// ---------- Phase 5 / Slice 5 — Weekly parent progress summary ----------
+//
+// One row per (student, week). The row IS the delivery record: the portal
+// reads it, the email send stamps it, and a re-run of the sweep finds it and
+// skips. There is no separate outbox table — one guardian-facing artifact per
+// child per week does not need one, and the @@unique below is what makes the
+// weekly cron idempotent (a retried or double-scheduled sweep cannot bill the
+// school twice for the same child's week).
+//
+// NO APPROVAL GATE, BY DECISION (phase-5.md D16) — and this table is where
+// that decision is most visible, because it is the ONE piece of AI output in
+// the product that has no accepted/suggested split. Slices 3 and 4 write a
+// suggestion to ai_interaction_logs and require a separate permissioned write
+// to reach a student's record; this row is written once and is immediately
+// readable by the parent. The control is School.parentSummaryEnabled
+// (default FALSE), not a human reviewer. If that ever feels too thin against
+// real output, the migration path is additive: a `releasedAt` column, null
+// until a form teacher releases the week, with the portal filtering on it.
+//
+// WHY A TABLE AND NOT ai_interaction_logs (which slices 3-4 reuse): those hold
+// SUGGESTIONS a teacher may never accept — loose payload, no uniqueness, no
+// delivery semantics. This is a delivered artifact a parent can re-read weeks
+// later, needs a stable per-week identity to be idempotent, and is queried by
+// the portal on a hot path (guardian opens a child's page). A typed table with
+// a real unique constraint is the right shape; a JSON payload keyed by a
+// loose sessionRef is not.
+//
+// weekStart is @db.Date and always a MONDAY (UTC), per CLAUDE.md's DATE
+// convention — a summary covers a calendar week, not a moment, and storing a
+// timestamp would reintroduce exactly the "midnight in which zone?" question
+// the convention exists to close.
+model ParentSummary {
+  id        String @id @default(uuid())
+  schoolId  String @map("school_id")
+  studentId String @map("student_id")
+
+  // Monday of the covered week, UTC. The week covered is [weekStart,
+  // weekStart + 7 days).
+  weekStart DateTime @map("week_start") @db.Date
+
+  // The generated note. NOT nullable, unlike lesson_plans' content columns:
+  // there is no user-visible draft state here, so a row only exists once
+  // there is something to show. A failed generation writes no row and the
+  // next sweep retries the week.
+  summary String
+
+  // Which prompt revision wrote it. Same reasoning as ai_generations'
+  // promptVersion — a quality complaint about a specific week's note must be
+  // traceable to the prompt that produced it, and prompt versions bump often.
+  promptVersion String @map("prompt_version")
+
+  // Email delivery stamp. Null = generated but not emailed (either the
+  // school has email notifications off, no guardian has an email address, or
+  // the send failed — all three are ordinary states, not errors). The portal
+  // does not care: it reads the row regardless. This column exists so a
+  // re-run does not re-send, and so "did the parent actually get it?" is
+  // answerable.
+  emailedAt DateTime? @map("emailed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Cascade on the student: a deleted student's weekly notes are not
+  // recoverable content and have no reader once the child is gone. Contrast
+  // with ai_generations, which deliberately survives content deletion because
+  // it is the record that money was spent.
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, studentId, weekStart])
+  @@index([schoolId])
+  // The portal's read: one child's notes, newest first.
+  @@index([schoolId, studentId, weekStart])
+  @@map("parent_summaries")
+}
+
+// ---------- Paystack assisted setup (2026-08-15) ----------------------------
+//
+// See docs/modules/paystack-assisted-setup.md for the full plan-first.
+//
+// Why this table exists: School.paystackSubaccountCode (2026-07-31) gave a
+// school somewhere to PUT a subaccount code, but no way to OBTAIN one.
+// Paystack subaccounts belong to the integration that created them, and the
+// API holds a single platform-wide PAYSTACK_SECRET_KEY (phase-4.md §8 D4) —
+// so a code a school creates in its own dashboard is invisible to our
+// GET /subaccount/:code check and can never be saved. Setup is therefore
+// assisted: the school submits its banking details here, the platform
+// operator creates the subaccount on SchoolKit's integration, and returns
+// the ACCT_ code for the school to paste into Settings -> Payments.
+//
+// D1: these fields are DATA-ONLY. The notification email to
+// PAYSTACK_SETUP_EMAIL carries school name + request id + a link, never any
+// field below. The platform-admin dashboard is the real review surface.
+//
+// D2: accountNumber is plaintext, matching StaffBankAccount.accountNumber
+// (Phase 3 / Slice 12 payroll) which already stores staff members' PERSONAL
+// account numbers in the clear. BVN is encrypted because it is a national
+// identifier; a business account number plus bank name enables paying money
+// IN, not taking it out. Encrypting here while payroll stays plaintext would
+// be inconsistent. Logs redact it and audit metadata stores last 4 only.
+// If pgcrypto is ever wanted, it applies to BOTH tables in one PR.
+//
+// A request has a lifecycle and can legitimately recur (typo, bank change,
+// re-submission after rejection), which is why this is its own table rather
+// than flat columns on School — same reasoning as NotificationPreference
+// (phase-4.md §8 D3). No school_id FK, same convention as
+// grading_schemes/guardians/notification_preferences.
+
+enum PaystackSetupStatus {
+  PENDING
+  FULFILLED
+  REJECTED
+}
+
+model PaystackSetupRequest {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+
+  // What the school typed. businessName is what parents see on the Paystack
+  // checkout page and on settlement statements — prefilled from School.name
+  // in the form, but editable, because a school's trading name and its
+  // registered banking name are not always the same string.
+  businessName  String @map("business_name")
+  bankName      String @map("bank_name")
+  // NUBAN — 10 digits, validated at the DTO. Paystack independently resolves
+  // this against the bank at subaccount-creation time and fails on mismatch,
+  // which is the real check; this column is what the operator keys in.
+  accountNumber String @map("account_number")
+  accountName   String @map("account_name")
+
+  contactName  String @map("contact_name")
+  contactEmail String @map("contact_email")
+  contactPhone String @map("contact_phone")
+
+  status PaystackSetupStatus @default(PENDING)
+
+  // Set at fulfilment: WHICH code was issued against WHICH request. This is
+  // the audit trail of how School.paystackSubaccountCode came to hold what it
+  // holds — that column stays the operational value the payment path reads.
+  // Nothing reads this one to make a decision.
+  subaccountCode String? @map("subaccount_code")
+
+  // Operator's free text — why a request was rejected, or anything worth
+  // recording about a fulfilment. Never parsed.
+  notes String?
+
+  submittedBy String    @map("submitted_by") // userId — owner/admin who submitted
+  submittedAt DateTime  @default(now()) @map("submitted_at")
+  // Null until the operator acts. fulfilledBy is a platform-admin userId,
+  // which is deliberately NOT in this school's users table.
+  fulfilledBy String?   @map("fulfilled_by")
+  fulfilledAt DateTime? @map("fulfilled_at")
+
+  // The one query the school side makes ("my latest request") and the one the
+  // operator makes ("everything still pending") both key off this pair.
+  @@index([schoolId, status])
+  @@map("paystack_setup_requests")
+}
+
+// ---------- Phase 8 / CP1 — Event Calendar ----------
+//
+// Plan-first: docs/modules/phase-8.md §15 (D21–D30). Three tables, and the
+// split between them is the point:
+//
+//   national_events                — PLATFORM data. No school_id. The first
+//                                    content table in this schema that is not
+//                                    tenant-scoped.
+//   school_events                  — tenant data, FORCE RLS.
+//   school_hidden_national_events  — tenant data, FORCE RLS (D19/D26).
+//
+// A single table with a nullable school_id was rejected (D21): one bug in a
+// write path would publish a school's event to every school. With separate
+// tables that is structurally impossible rather than prevented by care.
+//
+// national_events is READ-ONLY to the runtime role, enforced twice in the
+// database (D22): FORCE RLS with a SELECT-only policy and no write policy,
+// plus REVOKE INSERT/UPDATE/DELETE FROM app_user. The ONLY write path is a
+// migration. See migration 20260913120000_phase_8_cp1_calendar and
+// policies/phase-8.sql. No SECURITY DEFINER function — count stays 22.
+
+enum NationalEventKind {
+  PUBLIC_HOLIDAY // a holiday under the Public Holidays Act
+  SPECIAL_HOLIDAY // a special day appointed by public notice
+}
+
+enum SchoolEventCategory {
+  HOLIDAY
+  BREAK
+  EXAM_PERIOD
+  MEETING
+  EVENT
+  RESUMPTION
+  OTHER
+}
+
+model NationalEvent {
+  id            String            @id @default(uuid())
+  // Stable, human-readable identifier (e.g. "eid-el-fitr-2027"). Correction
+  // migrations UPDATE ... WHERE key = ..., so they stay idempotent and
+  // reviewable (D23).
+  key           String            @unique
+  name          String
+  startDate     DateTime          @map("start_date") @db.Date // inclusive — calendar dates, see CLAUDE.md
+  endDate       DateTime          @map("end_date") @db.Date // inclusive; CHECK end_date >= start_date in raw SQL
+  kind          NationalEventKind
+  // false = an estimate awaiting the Ministry of Interior's announcement.
+  // Rendered as "expected", never as a fact (D23/D24).
+  dateConfirmed Boolean           @map("date_confirmed")
+  // Where the date came from — a Ministry press-release URL, or the Act for
+  // fixed dates. Required: an unsourced holiday is not allowed in (D24).
+  source        String
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  hiddenBySchools SchoolHiddenNationalEvent[]
+
+  @@index([startDate, endDate])
+  @@map("national_events")
+}
+
+model SchoolEvent {
+  id              String              @id @default(uuid())
+  schoolId        String              @map("school_id")
+  title           String
+  description     String?
+  category        SchoolEventCategory
+  startDate       DateTime            @map("start_date") @db.Date // inclusive, all-day only
+  endDate         DateTime            @map("end_date") @db.Date // inclusive; CHECK end_date >= start_date in raw SQL
+  createdBy       String              @map("created_by") // users.id — plain FK convention
+  updatedBy       String              @map("updated_by") // users.id
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+  // Phase 9 / CP10.1 — ask families to reply (phase-9.md §19.2).
+  rsvpOpen        Boolean             @default(false) @map("rsvp_open")
+  rsvpDeadline    DateTime?           @map("rsvp_deadline") @db.Date
+  rsvpAskCount    Boolean             @default(false) @map("rsvp_ask_count")
+  // Empty: the whole school.
+  rsvpClassArmIds String[]            @default([]) @map("rsvp_class_arm_ids")
+  rsvpRemindedAt  DateTime?           @map("rsvp_reminded_at")
+  rsvps           EventRsvp[]
+  // 2026-10-22: shown on the school's public website (school-website.md).
+  showOnWebsite   Boolean             @default(false) @map("show_on_website")
+
+  @@index([schoolId])
+  @@index([schoolId, startDate, endDate])
+  @@map("school_events")
+}
+
+// One row per (school, national event) the school has hidden. Presence of the
+// row IS the hide; unhide deletes it. The FK to national_events is a real
+// constraint (a hide for a nonexistent holiday is meaningless), cascading so a
+// migration that removes a wrongly-seeded holiday cleans up its hides.
+model SchoolHiddenNationalEvent {
+  id              String   @id @default(uuid())
+  schoolId        String   @map("school_id")
+  nationalEventId String   @map("national_event_id")
+  hiddenBy        String   @map("hidden_by") // users.id
+  hiddenAt        DateTime @default(now()) @map("hidden_at")
+
+  nationalEvent NationalEvent @relation(fields: [nationalEventId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, nationalEventId])
+  @@index([schoolId])
+  @@map("school_hidden_national_events")
+}
+
+// ---------- Phase 8 / CP3 — Timetable builder ----------
+//
+// Plan-first: docs/modules/phase-8.md §17 (D24–D36), approved 2026-09-14.
+//
+//   bell_slots                — the school's ONE bell schedule (D26). No
+//                               bell_schedules table in v1: per-class schedules
+//                               are deferred, not designed around (§17.2).
+//   timetables                — a header per class, per academic year, with an
+//                               optional term (null = in force for the whole
+//                               year; D3). A term timetable replaces the year one
+//                               for that term entirely (D13).
+//   timetable_entries         — one lesson per (timetable, weekday, slot).
+//   timetable_entry_teachers  — co-teaching.
+//
+// CROSS-TENANT SAFETY (D29). Postgres foreign-key checks BYPASS row-level
+// security, so a plain FK would accept another school's slot/subject/class/
+// teacher id. Every reference here is COMPOSITE on (school_id, id), against a
+// @@unique([schoolId, id]) on the target — a row naming another school's id
+// cannot exist.
+//
+// TIME OF DAY (D27): integer minutes since midnight, school wall-clock time. Not
+// @db.Time, which Prisma surfaces as a 1970-01-01 Date with a zone.
+
+enum BellSlotKind {
+  LESSON
+  BREAK
+  ASSEMBLY
+  OTHER
+}
+
+model BellSlot {
+  id          String       @id @default(uuid())
+  schoolId    String       @map("school_id")
+  position    Int // 1-based order within the day
+  label       String // "Period 1", "Break", "Assembly"
+  kind        BellSlotKind
+  startMinute Int          @map("start_minute") // minutes since midnight; CHECK 0 <= start < end <= 1440
+  endMinute   Int          @map("end_minute")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  // A lesson can never outlive its slot (§17.4): RESTRICT.
+  entries TimetableEntry[]
+
+  @@unique([schoolId, id])
+  @@unique([schoolId, position])
+  @@index([schoolId])
+  @@map("bell_slots")
+}
+
+model Timetable {
+  id             String   @id @default(uuid())
+  schoolId       String   @map("school_id")
+  classArmId     String   @map("class_arm_id")
+  academicYearId String   @map("academic_year_id")
+  termId         String?  @map("term_id") // null = in force for the whole academic year
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  classArm     ClassArm         @relation(fields: [schoolId, classArmId], references: [schoolId, id], onDelete: Cascade)
+  academicYear AcademicYear     @relation(fields: [schoolId, academicYearId], references: [schoolId, id], onDelete: Cascade)
+  term         Term?            @relation(fields: [schoolId, termId], references: [schoolId, id], onDelete: Cascade)
+  entries      TimetableEntry[]
+
+  // Partial unique indexes (one year-wide per class+year; one per class+term)
+  // live in the migration's raw SQL — Prisma cannot express WHERE clauses.
+  @@unique([schoolId, id])
+  @@index([schoolId])
+  @@index([schoolId, academicYearId])
+  @@map("timetables")
+}
+
+// Phase 8 / CP4 — what FAMILIES see (docs/modules/phase-8.md §18 D45).
+//
+// One row per (class, term): a self-contained, frozen snapshot of the grid as it
+// was when an owner/admin pressed Publish. The student and guardian readers read
+// ONLY this table — never timetables / timetable_entries — so editing a live
+// timetable can never change what a family sees until it is republished.
+// Withdraw DELETES the row: there is no "hidden" flag that a reader could forget
+// to respect.
+model TimetablePublication {
+  id          String   @id @default(uuid())
+  schoolId    String   @map("school_id")
+  classArmId  String   @map("class_arm_id")
+  termId      String   @map("term_id")
+  // The snapshot: periods (label, kind, times), school days, lessons (day,
+  // period position, subject name, teacher display names). JSON on purpose —
+  // it is a frozen document, not relational data anything joins against.
+  grid        Json
+  contentHash String   @map("content_hash") // sha256 of the canonical grid; "unpublished changes" compares against it
+  publishedBy String   @map("published_by")
+  publishedAt DateTime @map("published_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  classArm ClassArm @relation(fields: [schoolId, classArmId], references: [schoolId, id], onDelete: Cascade)
+  term     Term     @relation(fields: [schoolId, termId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([schoolId, classArmId, termId])
+  @@index([schoolId])
+  @@map("timetable_publications")
+}
+
+model TimetableEntry {
+  id          String   @id @default(uuid())
+  schoolId    String   @map("school_id")
+  timetableId String   @map("timetable_id")
+  dayOfWeek   Int      @map("day_of_week") @db.SmallInt // ISO: 1 = Monday … 7 = Sunday
+  bellSlotId  String   @map("bell_slot_id")
+  subjectId   String   @map("subject_id")
+  updatedBy   String   @map("updated_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  timetable Timetable               @relation(fields: [schoolId, timetableId], references: [schoolId, id], onDelete: Cascade)
+  bellSlot  BellSlot                @relation(fields: [schoolId, bellSlotId], references: [schoolId, id], onDelete: Restrict)
+  subject   Subject                 @relation(fields: [schoolId, subjectId], references: [schoolId, id], onDelete: Cascade)
+  teachers  TimetableEntryTeacher[]
+
+  @@unique([schoolId, id])
+  @@unique([timetableId, dayOfWeek, bellSlotId]) // one lesson per cell
+  @@index([schoolId])
+  @@index([schoolId, bellSlotId])
+  @@map("timetable_entries")
+}
+
+model TimetableEntryTeacher {
+  id        String @id @default(uuid())
+  schoolId  String @map("school_id")
+  entryId   String @map("entry_id")
+  teacherId String @map("teacher_id")
+
+  entry   TimetableEntry @relation(fields: [schoolId, entryId], references: [schoolId, id], onDelete: Cascade)
+  teacher User           @relation(fields: [schoolId, teacherId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([entryId, teacherId])
+  @@index([schoolId])
+  @@index([schoolId, teacherId])
+  @@map("timetable_entry_teachers")
+}
+
+// Branded receipts (docs/modules/branded-receipts.md D3): one running receipt
+// number per school per calendar year — RCP/2026/000123. Incremented by a
+// single atomic upsert inside the payment's own transaction, so a payment that
+// rolls back takes its number with it and a failed payment never burns one.
+model ReceiptSequence {
+  schoolId   String   @map("school_id")
+  year       Int
+  lastNumber Int      @map("last_number")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@id([schoolId, year])
+  @@map("receipt_sequences")
+}
+
+// Notifications v1 (N6) — one row per (event, person), which is what makes
+// "one notification per person per event" a property rather than a hope: the
+// unique constraint refuses the second attempt, so a sibling fan-out, a retry
+// and a double-fired cron all collapse to one message.
+//
+// It is also the answer to a school asking "did you tell this parent?".
+model NotificationDelivery {
+  id            String        @id @default(uuid())
+  schoolId      String        @map("school_id")
+  eventType     String        @map("event_type") // "results.released", "payment.recorded", …
+  eventId       String        @map("event_id") // the term/payment/arm this was about
+  principalType PrincipalType @map("principal_type")
+  principalId   String        @map("principal_id") // guardian, student or user id
+  channel       String // PUSH | SMS | EMAIL | NONE — what the rail chose
+  sentAt        DateTime      @default(now()) @map("sent_at")
+
+  @@unique([schoolId, eventType, eventId, principalType, principalId])
+  @@index([schoolId, sentAt])
+  @@map("notification_deliveries")
+}
+
+// Announcements (docs/modules/announcements.md). Deferred three times as its
+// own feature (phase-4 D2, phase-8 D20/Q4) and built as one here.
+enum AnnouncementAudience {
+  EVERYONE
+  PARENTS
+  STAFF
+  CLASS
+
+  @@map("announcement_audience")
+}
+
+// ---------- Homework (docs/modules/the-school-day.md Part B) ----------
+//
+// B7: INFORMATION, not workflow. What to do and by when. Nothing is submitted,
+// uploaded or marked here — submissions need per-student storage, a marking
+// queue, late/resubmit states and an offline story for a child on one bar of
+// signal, and each is a real design. Posting alone is what makes a student
+// open the app on a Tuesday, which results (three times a year) never will.
+//
+// If submissions are ever built they are their own plan-first and their own
+// table. This model must not quietly grow a `submittedAt`. (Phase 9 / CP4 did
+// exactly that: AssignmentCollection and AssignmentSubmission below. This
+// model gained only the relation field, no column.)
+model Assignment {
+  id         String @id @default(uuid())
+  schoolId   String @map("school_id")
+  classArmId String @map("class_arm_id")
+  subjectId  String @map("subject_id")
+  // The authoring teacher. Plain scoping column, not a declared relation —
+  // same convention as LessonPlan.createdBy: homework outlives a staff
+  // member's account as a record of what a class was set.
+  createdBy  String @map("created_by")
+
+  title        String
+  instructions String?
+  // @db.Date, not DateTime: "due Friday" is a calendar date with no
+  // time-of-day, and a timestamp would reintroduce the "midnight in which
+  // zone?" trap the DATE convention exists to avoid.
+  dueDate      DateTime @map("due_date") @db.Date
+
+  postedAt    DateTime  @default(now()) @map("posted_at")
+  // B10: withdrawn, not deleted — a child who wrote it down deserves a record
+  // that it existed and was cancelled. Same treatment as an announcement.
+  withdrawnAt DateTime? @map("withdrawn_at")
+  withdrawnBy String?   @map("withdrawn_by")
+
+  // Phase 9 / CP4 — set when the teacher switches on "collect work".
+  collection AssignmentCollection?
+
+  // The family read is "this class, due on or after today", and the staff read
+  // is "what I set, newest first".
+  @@index([schoolId, classArmId, dueDate])
+  @@index([schoolId, createdBy, postedAt])
+  @@map("assignments")
+}
+
+// ---------- Behaviour records (docs/modules/the-school-day.md Part C) ----------
+//
+// C14: INTERNAL in v1. A form teacher and an admin write and read these; a
+// parent does not see them. A behaviour note a parent can read changes what a
+// teacher is willing to write, and "my child did not do that" needs a right of
+// reply, a retention rule and an amendment path — none of which exist. Making
+// it parent-visible later is a decision with a design; making it parent-visible
+// by default now is how a school ends up in an argument it cannot win.
+//
+// C15: no AI anywhere near this. The hard rule bars auto-finalising; this goes
+// further and keeps the model out entirely, because a machine-written judgement
+// about a child's conduct is not something a teacher can meaningfully approve.
+//
+// C16: COMMENDATION as well as CONCERN. A system that records only what a child
+// did wrong is one teachers stop using and parents rightly resent.
+enum BehaviourKind {
+  COMMENDATION
+  CONCERN
+
+  @@map("behaviour_kind")
+}
+
+model BehaviourRecord {
+  id         String        @id @default(uuid())
+  schoolId   String        @map("school_id")
+  studentId  String        @map("student_id")
+  kind       BehaviourKind
+  note       String
+  // The day it happened, which is not always the day it was written up: a
+  // teacher records Friday's incident on Monday. @db.Date for the usual
+  // reason — a calendar day has no time of day and no timezone.
+  occurredOn DateTime      @map("occurred_on") @db.Date
+
+  recordedBy  String    @map("recorded_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  // Withdrawn, never deleted: a record that was wrong should read as withdrawn
+  // rather than vanish, because "it was removed" is itself part of the history
+  // when a parent meeting turns on what was written.
+  withdrawnAt DateTime? @map("withdrawn_at")
+  withdrawnBy String?   @map("withdrawn_by")
+
+  // Phase 9 / CP2.1 (CP2-D1). Both null unless the school has points on and
+  // the writer chose a category. `points` is COPIED from the category at the
+  // time of writing, so changing a category's value later never rewrites a
+  // past term.
+  categoryId String?            @map("category_id")
+  category   BehaviourCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  points     Int?
+
+  // Phase 9 / CP2.2 (CP2-D2). Set when the record is one student's part of an
+  // incident; the incident's own description is shared, the note is theirs.
+  incidentId String?            @map("incident_id")
+  incident   BehaviourIncident? @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, studentId, occurredOn])
+  @@index([incidentId])
+  @@map("behaviour_records")
+}
+
+// Phase 9 / CP2.2 — an incident groups the CONCERN records of several
+// students (docs/modules/phase-9.md §9 CP2-D2). Withdrawn, never deleted;
+// withdrawing it withdraws its records.
+model BehaviourIncident {
+  id          String    @id @default(uuid())
+  schoolId    String    @map("school_id")
+  // DATE, as on the record: the day it happened.
+  occurredOn  DateTime  @map("occurred_on") @db.Date
+  place       String
+  description String
+  recordedBy  String    @map("recorded_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  withdrawnAt DateTime? @map("withdrawn_at")
+  withdrawnBy String?   @map("withdrawn_by")
+
+  records   BehaviourRecord[]
+  witnesses BehaviourIncidentWitness[]
+
+  @@index([schoolId, occurredOn])
+  @@map("behaviour_incidents")
+}
+
+// A member of staff who saw it. Chosen from the staff list, never typed.
+model BehaviourIncidentWitness {
+  incidentId String            @map("incident_id")
+  userId     String            @map("user_id")
+  schoolId   String            @map("school_id")
+  incident   BehaviourIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@id([incidentId, userId])
+  @@map("behaviour_incident_witnesses")
+}
+
+// Phase 9 / CP2.1 — a school's behaviour categories (docs/modules/phase-9.md
+// §9 CP2-D1), for example "Helping others +2" or "Late to class −1".
+// Deactivated, never deleted: records point at them.
+model BehaviourCategory {
+  id        String        @id @default(uuid())
+  schoolId  String        @map("school_id")
+  name      String
+  kind      BehaviourKind
+  // −10…−1 for a concern, 1…10 for a commendation (CHECK in the migration).
+  points    Int
+  active    Boolean       @default(true)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  records BehaviourRecord[]
+
+  @@unique([schoolId, name])
+  @@map("behaviour_categories")
+}
+
+// ---------- Phase 9 / CP2.3 — discipline (docs/modules/phase-9.md §9 CP2-D3) ----------
+//
+// A teacher PROPOSES, an owner or admin DECIDES, and anyone with the right may
+// WITHDRAW. Never deleted. The reason is internal text: it never reaches a
+// parent, the audit log, a push or an SMS (CP2-D4, CP2-D6).
+enum DisciplineActionType {
+  WARNING
+  DETENTION
+  SUSPENSION
+  EXCLUSION
+
+  @@map("discipline_action_type")
+}
+
+enum DisciplineActionStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+  WITHDRAWN
+
+  @@map("discipline_action_status")
+}
+
+model DisciplineAction {
+  id         String                 @id @default(uuid())
+  schoolId   String                 @map("school_id")
+  studentId  String                 @map("student_id")
+  // Optional links to what it is about.
+  recordId   String?                @map("record_id")
+  incidentId String?                @map("incident_id")
+  type       DisciplineActionType
+  // DATE: a detention's day; a suspension's first and last day; an
+  // exclusion's first day. CHECKs in the migration keep them consistent with
+  // the type. A warning has neither.
+  startOn    DateTime?              @map("start_on") @db.Date
+  endOn      DateTime?              @map("end_on") @db.Date
+  reason     String
+  status     DisciplineActionStatus @default(PROPOSED)
+
+  proposedBy     String    @map("proposed_by")
+  proposedAt     DateTime  @default(now()) @map("proposed_at")
+  decidedBy      String?   @map("decided_by")
+  decidedAt      DateTime? @map("decided_at")
+  decisionReason String?   @map("decision_reason")
+  withdrawnBy    String?   @map("withdrawn_by")
+  withdrawnAt    DateTime? @map("withdrawn_at")
+
+  notices DisciplineNotice[]
+
+  @@index([schoolId, studentId])
+  @@index([schoolId, status])
+  @@map("discipline_actions")
+}
+
+enum DisciplineNoticeKind {
+  SENT
+  WITHDRAWN
+
+  @@map("discipline_notice_kind")
+}
+
+// One row per guardian per action per kind, UNIQUE, so a retry or a second
+// click can never notify a parent twice (CP2-D4).
+model DisciplineNotice {
+  id         String               @id @default(uuid())
+  schoolId   String               @map("school_id")
+  actionId   String               @map("action_id")
+  guardianId String               @map("guardian_id")
+  kind       DisciplineNoticeKind
+  // "PUSH", "SMS" or "NONE" (no live app and no usable phone).
+  channel    String
+  sentAt     DateTime             @default(now()) @map("sent_at")
+  action     DisciplineAction     @relation(fields: [actionId], references: [id], onDelete: Restrict)
+
+  @@unique([actionId, guardianId, kind])
+  @@map("discipline_notices")
+}
+
+model Announcement {
+  id             String               @id @default(uuid())
+  schoolId       String               @map("school_id")
+  title          String
+  body           String
+  audience       AnnouncementAudience
+  classArmId     String?              @map("class_arm_id") // set only when audience = CLASS
+  // A4: skips quiet hours and wakes phones. Audited on every send.
+  urgent         Boolean              @default(false)
+  createdBy      String               @map("created_by")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  // A2: an announcement is sent once and never silently reworded. It can be
+  // withdrawn — it stops appearing and says so — and a correction is a new
+  // announcement. There is deliberately no updatedAt and no edit path.
+  withdrawnAt    DateTime?            @map("withdrawn_at")
+  withdrawnBy    String?              @map("withdrawn_by")
+  // Phase 9 / CP8.3: also emailed to the families (not for STAFF).
+  emailFamilies  Boolean              @default(false) @map("email_families")
+  // Families in the audience with no address when the email was prepared.
+  emailNoAddress Int                  @default(0) @map("email_no_address")
+  // 2026-10-22: also shown on the school's public website (Everyone or
+  // Parents only; CHECK in SQL). Withdrawn ones never show.
+  showOnWebsite  Boolean              @default(false) @map("show_on_website")
+
+  reads  AnnouncementRead[]
+  emails AnnouncementEmail[]
+
+  @@index([schoolId, createdAt])
+  @@map("announcements")
+}
+
+// A5: read state is per person and stays in the app. No read receipts go back
+// to the school — "37 parents have not read this" turns into chasing parents
+// over a notification setting, which is a support burden, not a feature.
+model AnnouncementRead {
+  announcementId String        @map("announcement_id")
+  principalType  PrincipalType @map("principal_type")
+  principalId    String        @map("principal_id") // guardian, student or user id
+  readAt         DateTime      @default(now()) @map("read_at")
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, principalType, principalId])
+  @@map("announcement_reads")
+}
+
+// Opening the website from the app, already signed in
+// (docs/modules/web-handoff-signin.md).
+//
+// A separate table from password_reset_tokens on purpose (H-data): separate
+// tables make cross-purpose token confusion structurally impossible, which is
+// the same rule CLAUDE.md's SECURITY DEFINER review applied to the session
+// resolvers and guardian password reset already followed. A reset token
+// presented to the handoff exchange resolves to nothing, because this
+// resolver reads only this table.
+model WebHandoffToken {
+  id        String    @id @default(uuid())
+  schoolId  String    @map("school_id")
+  userId    String    @map("user_id")
+  // The session that asked for it (H1): if that session is gone by the time
+  // the browser exchanges, so is this token.
+  sessionId String    @map("session_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdIp String?   @map("created_ip")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([schoolId])
+  @@index([userId])
+  @@map("web_handoff_tokens")
+}
+
+// Phase 8c / CP6b — Result Checker (docs/modules/phase-8.md §21).
+
+enum ResultAccessMode {
+  FREE // families read the released card in the portal and app
+  PIN // the card opens only after a result PIN is redeemed (D11, D17)
+
+  @@map("result_access_mode")
+}
+
+enum ResultUnlockVia {
+  CHECKER
+  GUARDIAN
+  STUDENT
+
+  @@map("result_unlock_via")
+}
+
+// A batch of PINs, generated together for one term (D15) and sold offline by
+// the school (D9, D10). The plaintext PINs leave the server once, in the
+// response that creates them (D16).
+model ResultPinBatch {
+  id             String    @id @default(uuid())
+  schoolId       String    @map("school_id")
+  academicYearId String    @map("academic_year_id")
+  termId         String    @map("term_id")
+  // Per-school running number; serials are "B<number>-<index>".
+  number         Int
+  size           Int
+  maxUses        Int       @map("max_uses")
+  createdBy      String    @map("created_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  voidedAt       DateTime? @map("voided_at")
+  voidedBy       String?   @map("voided_by")
+
+  pins ResultPin[]
+
+  @@unique([schoolId, number])
+  @@index([schoolId, termId])
+  @@map("result_pin_batches")
+}
+
+// One card. Stored only as an HMAC (D56); unbound until its first successful
+// redemption (D10), after which it opens only that student's result.
+model ResultPin {
+  id             String    @id @default(uuid())
+  schoolId       String    @map("school_id")
+  batchId        String    @map("batch_id")
+  serial         String
+  pinHash        String    @map("pin_hash")
+  uses           Int       @default(0)
+  boundStudentId String?   @map("bound_student_id")
+  boundAt        DateTime? @map("bound_at")
+  voidedAt       DateTime? @map("voided_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  batch ResultPinBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, pinHash])
+  @@unique([schoolId, serial])
+  @@index([batchId])
+  @@map("result_pins")
+}
+
+// The record D17's "everywhere" reads: once a student's term is unlocked by
+// any route, every surface shows it.
+model ResultUnlock {
+  id        String          @id @default(uuid())
+  schoolId  String          @map("school_id")
+  studentId String          @map("student_id")
+  termId    String          @map("term_id")
+  pinId     String          @map("pin_id")
+  via       ResultUnlockVia
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  @@unique([schoolId, studentId, termId])
+  @@map("result_unlocks")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8c / CP5b — the question bank (docs/modules/phase-8.md §22.2).
+//
+// A school's own exam questions, per subject and class level, written by hand
+// or drafted by AI. CP5c composes exam papers from APPROVED questions.
+//
+// THE LIFECYCLE IS THE POINT:
+//   DRAFT    — editable in place, discardable (hard delete). Every AI-drafted
+//              question starts here (D62 + the AI hard rule: no AI output is
+//              final without a person approving it).
+//   APPROVED — the subject teacher or an admin signed it off. NEVER edited in
+//              place: an edit makes a new DRAFT that `supersedes` it, and the
+//              old one is retired only when that revision is approved. So a
+//              paper set from a question keeps the exact wording it was set
+//              with, and the bank never has a gap while a revision is pending.
+//   RETIRED  — terminal. Kept, never deleted, because a paper may cite it.
+//
+// `topic` is free text, as lesson plans' is (phase-5.md D13): no syllabus tree.
+// ---------------------------------------------------------------------------
+enum QuestionType {
+  MULTIPLE_CHOICE
+  SHORT_ANSWER
+  THEORY
+}
+
+enum QuestionStatus {
+  DRAFT
+  APPROVED
+  RETIRED
+}
+
+enum QuestionSource {
+  MANUAL
+  AI
+}
+
+enum QuestionDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model Question {
+  id           String             @id @default(uuid())
+  schoolId     String             @map("school_id")
+  subjectId    String             @map("subject_id")
+  classLevelId String             @map("class_level_id")
+  topic        String
+  type         QuestionType
+  difficulty   QuestionDifficulty @default(MEDIUM)
+  text         String
+  marks        Int
+  // The expected answer / marking guide. Required for short-answer and theory
+  // (enforced in the service, where the message can say why); for multiple
+  // choice it is an optional note on why the key is right.
+  answerGuide  String?            @map("answer_guide")
+  status       QuestionStatus     @default(DRAFT)
+  source       QuestionSource     @default(MANUAL)
+  // Plain scoping columns, not relations — the LessonPlan.createdBy convention:
+  // a question outlives a staff member's account.
+  createdBy    String             @map("created_by")
+  approvedBy   String?            @map("approved_by")
+  approvedAt   DateTime?          @map("approved_at")
+  retiredAt    DateTime?          @map("retired_at")
+  // The approved question this draft revises. Retired when this is approved.
+  supersedesId String?            @map("supersedes_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  subject    Subject          @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  classLevel ClassLevel       @relation(fields: [classLevelId], references: [id], onDelete: Restrict)
+  supersedes Question?        @relation("QuestionRevision", fields: [supersedesId], references: [id], onDelete: SetNull)
+  revisions  Question[]       @relation("QuestionRevision")
+  paperItems ExamPaperItem[] // Phase 8c / CP5c — papers that set this question.
+  options    QuestionOption[]
+
+  @@index([schoolId])
+  @@index([schoolId, subjectId, classLevelId, status])
+  @@map("questions")
+}
+
+// The choices of a multiple-choice question, in display order (A, B, C, D).
+// Carries school_id so its RLS policy is the cheap direct-column check.
+model QuestionOption {
+  id         String  @id @default(uuid())
+  schoolId   String  @map("school_id")
+  questionId String  @map("question_id")
+  orderIndex Int     @map("order_index")
+  text       String
+  isCorrect  Boolean @default(false) @map("is_correct")
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, orderIndex])
+  @@index([schoolId])
+  @@map("question_options")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8c / CP5c — exam papers (docs/modules/phase-8.md §22.3).
+//
+// A paper is sections of APPROVED questions from the bank. A DRAFT is edited
+// freely; FINAL is frozen for good, so what was printed and what is stored
+// never disagree. A FINAL paper is changed only by duplicating it.
+//
+// Items POINT at questions rather than copying them, and that is safe because
+// of CP5b's rule: an approved question is never edited in place (an edit makes
+// a new row) and is retired, never deleted. The wording a FINAL paper
+// references is the wording it was set with, for as long as the paper exists.
+//
+// Total marks are not stored: they are the sum of the questions' marks.
+// ---------------------------------------------------------------------------
+enum ExamPaperStatus {
+  DRAFT
+  FINAL
+}
+
+model ExamPaper {
+  id               String          @id @default(uuid())
+  schoolId         String          @map("school_id")
+  subjectId        String          @map("subject_id")
+  classLevelId     String          @map("class_level_id")
+  termId           String          @map("term_id")
+  // Optional: the gradebook column this paper's marks go into (usually
+  // "Exam"). A FINAL paper's total then pre-fills that column's "Out of".
+  componentId      String?         @map("component_id")
+  title            String
+  durationMinutes  Int             @map("duration_minutes")
+  instructions     String?
+  // Versions A–D to print, each with its own option order and marking scheme.
+  versionCount     Int             @default(1) @map("version_count")
+  status           ExamPaperStatus @default(DRAFT)
+  createdBy        String          @map("created_by")
+  finalisedBy      String?         @map("finalised_by")
+  finalisedAt      DateTime?       @map("finalised_at")
+  duplicatedFromId String?         @map("duplicated_from_id")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  subject     Subject            @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  classLevel  ClassLevel         @relation(fields: [classLevelId], references: [id], onDelete: Restrict)
+  term        Term               @relation(fields: [termId], references: [id], onDelete: Restrict)
+  component   GradingComponent?  @relation(fields: [componentId], references: [id], onDelete: SetNull)
+  sections    ExamPaperSection[]
+  items       ExamPaperItem[]
+  cbtSittings CbtSitting[] // Online exams (CBT1) — sittings of this paper.
+
+  @@index([schoolId])
+  @@index([schoolId, subjectId, classLevelId, termId])
+  @@map("exam_papers")
+}
+
+model ExamPaperSection {
+  id           String  @id @default(uuid())
+  schoolId     String  @map("school_id")
+  paperId      String  @map("paper_id")
+  orderIndex   Int     @map("order_index")
+  title        String
+  instructions String?
+
+  paper ExamPaper       @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  items ExamPaperItem[]
+
+  @@unique([paperId, orderIndex])
+  @@index([schoolId])
+  @@map("exam_paper_sections")
+}
+
+model ExamPaperItem {
+  id         String @id @default(uuid())
+  schoolId   String @map("school_id")
+  paperId    String @map("paper_id")
+  sectionId  String @map("section_id")
+  questionId String @map("question_id")
+  orderIndex Int    @map("order_index")
+
+  paper    ExamPaper        @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  section  ExamPaperSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  question Question         @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  // A question appears once per paper.
+  @@unique([paperId, questionId])
+  @@unique([sectionId, orderIndex])
+  @@index([schoolId])
+  @@index([questionId])
+  @@map("exam_paper_items")
+}
+
+// ---------------------------------------------------------------------------
+// Online exams (CBT) — docs/modules/cbt.md. CBT1: sittings, their arms, and
+// the candidate list frozen at publish.
+//
+// A SITTING schedules one FINAL exam paper for one or more class arms (D1).
+// Publishing snapshots the candidates and builds the encrypted exam pack
+// (D2, D3). Two codes: `accessCode` lets a lab machine download the pack;
+// `unlockCode` decrypts it at the start. Neither the pack nor any code ever
+// carries the answer key (D4) — marking happens on the server.
+// ---------------------------------------------------------------------------
+
+enum CbtSittingStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+model CbtSitting {
+  id              String           @id @default(uuid())
+  schoolId        String           @map("school_id")
+  paperId         String           @map("paper_id")
+  title           String
+  // The moment the exam may start, and the latest moment a student may begin.
+  startsAt        DateTime         @map("starts_at")
+  windowEndsAt    DateTime         @map("window_ends_at")
+  durationMinutes Int              @map("duration_minutes")
+  status          CbtSittingStatus @default(DRAFT)
+  // 6 characters, unique within the school; with the school's slug it
+  // downloads the pack. Reveals nothing on its own — the pack is encrypted.
+  accessCode      String           @map("access_code")
+  // 12 characters. The pack's key is derived from it (PBKDF2). Shown only to
+  // cbt.manage holders, on the invigilator sheet; every view is audited.
+  unlockCode      String           @map("unlock_code")
+  // The encrypted pack envelope (JSON: KDF params, IV, ciphertext), built at
+  // publish; NULL while DRAFT.
+  pack            Json?
+  packBuiltAt     DateTime?        @map("pack_built_at")
+  createdBy       String           @map("created_by")
+  publishedBy     String?          @map("published_by")
+  publishedAt     DateTime?        @map("published_at")
+  closedBy        String?          @map("closed_by")
+  closedAt        DateTime?        @map("closed_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  paper      ExamPaper       @relation(fields: [paperId], references: [id], onDelete: Restrict)
+  arms       CbtSittingArm[]
+  candidates CbtCandidate[]
+  attempts   CbtAttempt[]
+
+  @@unique([schoolId, accessCode])
+  @@index([schoolId])
+  @@index([paperId])
+  @@map("cbt_sittings")
+}
+
+model CbtSittingArm {
+  sittingId  String @map("sitting_id")
+  classArmId String @map("class_arm_id")
+  schoolId   String @map("school_id")
+
+  sitting  CbtSitting @relation(fields: [sittingId], references: [id], onDelete: Cascade)
+  classArm ClassArm   @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+
+  @@id([sittingId, classArmId])
+  @@index([schoolId])
+  @@map("cbt_sitting_arms")
+}
+
+// Frozen at publish (D2): who may sit, in which arm, and which version.
+model CbtCandidate {
+  id         String @id @default(uuid())
+  schoolId   String @map("school_id")
+  sittingId  String @map("sitting_id")
+  studentId  String @map("student_id")
+  classArmId String @map("class_arm_id")
+  version    String // "A" | "B" | "C" | "D"
+  // CBT3: the mark for the questions sat on paper, typed in by the teacher.
+  theoryMark Int?   @map("theory_mark")
+
+  sitting  CbtSitting   @relation(fields: [sittingId], references: [id], onDelete: Cascade)
+  student  Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classArm ClassArm     @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  attempts CbtAttempt[]
+
+  @@unique([sittingId, studentId])
+  @@index([schoolId])
+  @@map("cbt_candidates")
+}
+
+// Online exams (CBT2) — one row per (candidate, lab machine). The machine sends
+// a snapshot of the whole attempt each time; the highest `seq` wins, so repeats
+// and late batches change nothing (docs/modules/cbt.md D5, D6).
+model CbtAttempt {
+  id              String    @id @default(uuid())
+  schoolId        String    @map("school_id")
+  sittingId       String    @map("sitting_id")
+  candidateId     String    @map("candidate_id")
+  // A random id the machine makes for itself the first time it opens the app.
+  deviceId        String    @map("device_id")
+  seq             Int
+  // { examPaperItemId: questionOptionId } — checked against the frozen paper.
+  answers         Json      @default("{}")
+  answeredCount   Int       @default(0) @map("answered_count")
+  // The MACHINE's clock: what the student lived.
+  startedAt       DateTime  @map("started_at")
+  submittedAt     DateTime? @map("submitted_at")
+  extraMinutes    Int       @default(0) @map("extra_minutes")
+  focusLosses     Int       @default(0) @map("focus_losses")
+  // CBT3: the attempt that counts, when a student sat on more than one
+  // computer (D5). At most one per candidate (partial unique index).
+  chosen          Boolean   @default(false)
+  // The SERVER's clock: when it reached us.
+  firstReceivedAt DateTime  @default(now()) @map("first_received_at")
+  lastReceivedAt  DateTime  @default(now()) @map("last_received_at")
+
+  sitting   CbtSitting   @relation(fields: [sittingId], references: [id], onDelete: Cascade)
+  candidate CbtCandidate @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+
+  @@unique([candidateId, deviceId])
+  @@index([sittingId])
+  @@index([schoolId])
+  @@map("cbt_attempts")
+}
+
+// Admission numbers assigned by SchoolKit (docs/modules/admission-numbers.md).
+enum AdmissionNumberMode {
+  MANUAL
+  AUTO
+}
+
+enum AdmissionNumberOrder {
+  SCHOOL
+  CLASS
+  RANDOM
+}
+
+// One running count per scope: the year and/or class code the format shows,
+// or "" for one count for ever. Taken with an upsert in the same transaction
+// as the student insert. FORCE RLS on school_id.
+model AdmissionNumberCounter {
+  schoolId  String   @map("school_id")
+  scope     String
+  lastValue Int      @map("last_value")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@id([schoolId, scope])
+  @@map("admission_number_counters")
+}
+
+// Phase 9 / CP1 — a PDF copy of a report, made by the render worker
+// (docs/modules/phase-9.md §8 CP1-D3). The API writes the finished HTML here,
+// the worker prints it to PDF, stores the file and clears `html`, so the
+// report's rows sit in this table only for the seconds between the two. A
+// daily clean-up deletes rows and files older than 24 hours.
+model ReportExport {
+  id          String             @id @default(uuid())
+  schoolId    String             @map("school_id")
+  requestedBy String             @map("requested_by")
+  report      String
+  termId      String?            @map("term_id")
+  status      ReportExportStatus @default(PENDING)
+  filename    String
+  html        String?
+  storagePath String?            @map("storage_path")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  finishedAt  DateTime?          @map("finished_at")
+  school      School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
+  @@map("report_exports")
+}
+
+enum ReportExportStatus {
+  PENDING
+  GENERATED
+  FAILED
+}
+
+// ---------- Phase 9 / CP3.1 — health profile (docs/modules/phase-9.md §10) ----------
+//
+// One per student. Read by owner, admin, the health officer and the child's
+// guardians; every read is audited and the text never goes into the audit log.
+// A teacher of the child sees ONLY `teacherNote`, which the health officer
+// writes for that purpose (CP3-D2). No AI anywhere near it.
+model HealthProfile {
+  id             String   @id @default(uuid())
+  schoolId       String   @map("school_id")
+  studentId      String   @unique @map("student_id")
+  student        Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  allergies      String?
+  conditions     String?
+  medication     String?
+  gpClinic       String?  @map("gp_clinic")
+  emergencyNotes String?  @map("emergency_notes")
+  bloodGroup     String?  @map("blood_group")
+  // The ONE field a teacher of the child sees ("For teachers").
+  teacherNote    String?  @map("teacher_note")
+  updatedBy      String?  @map("updated_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([schoolId])
+  @@map("health_profiles")
+}
+
+// ---------- Phase 9 / CP3.2 — vaccinations (docs/modules/phase-9.md §10) ----------
+//
+// Read by the same people as the profile. The optional document (a card photo
+// or a PDF) is a private object at schools/<school>/health/<id>.<ext>, read
+// only through a short-lived signed URL. Withdrawn, never deleted.
+model HealthVaccination {
+  id           String    @id @default(uuid())
+  schoolId     String    @map("school_id")
+  studentId    String    @map("student_id")
+  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  name         String
+  // DATE: the day it was given, a calendar day with no time of day.
+  givenOn      DateTime  @map("given_on") @db.Date
+  // Set when a document is attached: its real type, read from its bytes.
+  documentExt  String?   @map("document_ext")
+  documentSize Int?      @map("document_size")
+  recordedBy   String    @map("recorded_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  withdrawnAt  DateTime? @map("withdrawn_at")
+  withdrawnBy  String?   @map("withdrawn_by")
+
+  @@index([schoolId, studentId])
+  @@map("health_vaccinations")
+}
+
+// Phase 9 / CP3.3 — the sickbay log (docs/modules/phase-9.md §10 CP3-D5).
+// Read and written by owner, admin and the Health officer (sickbay.manage);
+// never by a teacher. Withdrawn, never deleted.
+model SickbayVisit {
+  id              String              @id @default(uuid())
+  schoolId        String              @map("school_id")
+  studentId       String              @map("student_id")
+  student         Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  visitedAt       DateTime            @map("visited_at")
+  complaint       String
+  actionTaken     String?             @map("action_taken")
+  sentHome        Boolean             @default(false) @map("sent_home")
+  // The parent sees the complaint, action and medicine only when this is set.
+  shareWithParent Boolean             @default(false) @map("share_with_parent")
+  recordedBy      String              @map("recorded_by")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  withdrawnAt     DateTime?           @map("withdrawn_at")
+  withdrawnBy     String?             @map("withdrawn_by")
+  medications     SickbayMedication[]
+  notices         SickbayNotice[]
+
+  @@index([schoolId, visitedAt])
+  @@index([schoolId, studentId])
+  @@map("sickbay_visits")
+}
+
+model SickbayMedication {
+  id        String       @id @default(uuid())
+  schoolId  String       @map("school_id")
+  visitId   String       @map("visit_id")
+  visit     SickbayVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  name      String
+  dose      String
+  givenAt   DateTime     @map("given_at")
+  givenBy   String       @map("given_by")
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  @@index([visitId])
+  @@map("sickbay_medications")
+}
+
+// Once per guardian per visit (CP3-D6).
+model SickbayNotice {
+  id         String       @id @default(uuid())
+  schoolId   String       @map("school_id")
+  visitId    String       @map("visit_id")
+  visit      SickbayVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  guardianId String       @map("guardian_id")
+  // "PUSH", "SMS" or "NONE".
+  channel    String
+  sentAt     DateTime     @default(now()) @map("sent_at")
+
+  @@unique([visitId, guardianId])
+  @@map("sickbay_notices")
+}
+
+// Phase 9 / CP4 — assignments: submitted work and marking
+// (docs/modules/phase-9.md §11). "Collect work" switched on for one homework
+// item. Read and marked by owner, admin and the class's teachers
+// (assignment.read / assignment.mark); never the bursar.
+model AssignmentCollection {
+  id           String                     @id @default(uuid())
+  schoolId     String                     @map("school_id")
+  assignmentId String                     @unique @map("assignment_id")
+  assignment   Assignment                 @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  totalMarks   Int                        @map("total_marks")
+  // Off once the teacher clicks "Stop accepting work".
+  accepting    Boolean                    @default(true)
+  // CP4b: what a good answer includes. Staff only; sent to the AI drafter.
+  markingGuide String?                    @map("marking_guide")
+  createdBy    String                     @map("created_by")
+  createdAt    DateTime                   @default(now()) @map("created_at")
+  updatedAt    DateTime                   @default(now()) @updatedAt @map("updated_at")
+  submissions  AssignmentSubmission[]
+  files        AssignmentSubmissionFile[]
+  questions    AssignmentQuestion[]
+
+  @@map("assignment_collections")
+}
+
+// One row per student per attempt. A submitted attempt is final; a return
+// opens the next attempt and this one is kept as it was.
+model AssignmentSubmission {
+  id                String                     @id @default(uuid())
+  schoolId          String                     @map("school_id")
+  collectionId      String                     @map("collection_id")
+  collection        AssignmentCollection       @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  studentId         String                     @map("student_id")
+  student           Student                    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  attempt           Int
+  // Null when the attempt is files alone (CP4.2).
+  body              String?
+  // Q7's paste indicator, as reported by the student's own device. Shown to
+  // the teacher only; never to the student or parents, never in a mark.
+  typedChars        Int                        @default(0) @map("typed_chars")
+  pastedChars       Int                        @default(0) @map("pasted_chars")
+  submittedAt       DateTime                   @default(now()) @map("submitted_at")
+  // After the due date's school day (Lagos), worked out by the server.
+  late              Boolean                    @default(false)
+  mark              Int?
+  feedback          String?
+  markedBy          String?                    @map("marked_by")
+  markedAt          DateTime?                  @map("marked_at")
+  // The student and parents see the mark and feedback only once released.
+  releasedAt        DateTime?                  @map("released_at")
+  returnedBy        String?                    @map("returned_by")
+  returnedAt        DateTime?                  @map("returned_at")
+  returnNote        String?                    @map("return_note")
+  files             AssignmentSubmissionFile[]
+  // CP4.3: the answers to the questions, keyed by question id (multiple
+  // choice: the option's index; fill-in: the text), and the mark the server
+  // worked out from them. The teacher gives the real mark.
+  answers           Json?
+  autoMark          Int?                       @map("auto_mark")
+  // CP4b: the saved mark started from an AI draft (the teacher saved it).
+  feedbackAiDrafted Boolean                    @default(false) @map("feedback_ai_drafted")
+  feedbackDraft     AssignmentFeedbackDraft?
+
+  @@unique([collectionId, studentId, attempt])
+  @@index([schoolId, studentId])
+  @@map("assignment_submissions")
+}
+
+// Phase 9 / CP4.2 — a photo or PDF answer (Q8). STAGED while submissionId is
+// null (the student is getting ready to hand in); attached, and final, once
+// the attempt is handed in. Type from the file's own bytes (F1).
+model AssignmentSubmissionFile {
+  id           String                @id @default(uuid())
+  schoolId     String                @map("school_id")
+  collectionId String                @map("collection_id")
+  collection   AssignmentCollection  @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  studentId    String                @map("student_id")
+  student      Student               @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  submissionId String?               @map("submission_id")
+  submission   AssignmentSubmission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  ext          String
+  size         Int
+  createdAt    DateTime              @default(now()) @map("created_at")
+
+  @@index([collectionId, studentId])
+  @@index([submissionId])
+  @@map("assignment_submission_files")
+}
+
+// Phase 9 / CP4.3 — a question on collected work, marked automatically
+// (CP4-D6). Fixed once anyone has handed in.
+enum AssignmentQuestionType {
+  MULTIPLE_CHOICE
+  FILL_IN
+}
+
+model AssignmentQuestion {
+  id               String                 @id @default(uuid())
+  schoolId         String                 @map("school_id")
+  collectionId     String                 @map("collection_id")
+  collection       AssignmentCollection   @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  orderIndex       Int                    @map("order_index")
+  type             AssignmentQuestionType
+  text             String
+  marks            Int
+  // Multiple choice: the options' text in order, and which one is right.
+  options          Json?
+  correctIndex     Int?                   @map("correct_index")
+  // Fill-in: every accepted answer, as the teacher typed them.
+  acceptedAnswers  Json?                  @map("accepted_answers")
+  // The question-bank question this was copied from. A plain column: the copy
+  // stands on its own and the bank question may later be retired.
+  sourceQuestionId String?                @map("source_question_id")
+  createdAt        DateTime               @default(now()) @map("created_at")
+
+  @@unique([collectionId, orderIndex])
+  @@map("assignment_questions")
+}
+
+// Phase 9 / CP4b — an AI draft of a mark and feedback, for staff only. Never a
+// mark: the teacher's own "Save mark" writes that (docs/modules/phase-9.md §12).
+enum AssignmentFeedbackDraftStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+model AssignmentFeedbackDraft {
+  id            String                        @id @default(uuid())
+  schoolId      String                        @map("school_id")
+  submissionId  String                        @unique @map("submission_id")
+  submission    AssignmentSubmission          @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  status        AssignmentFeedbackDraftStatus @default(PENDING)
+  mark          Int?
+  feedback      String?
+  // One line for the teacher on why that mark; the student never sees it.
+  reason        String?
+  // Why it failed, in words a teacher can read.
+  failure       String?
+  promptVersion String                        @map("prompt_version")
+  requestedBy   String                        @map("requested_by")
+  createdAt     DateTime                      @default(now()) @map("created_at")
+  updatedAt     DateTime                      @default(now()) @updatedAt @map("updated_at")
+
+  @@map("assignment_feedback_drafts")
+}
+
+// ---------- Phase 9 / CP5.2 — Transport ----------
+//
+// docs/modules/phase-9.md §13 CP5-D7/D8. Vehicles, drivers, routes with ordered
+// stops, and each student's place on one route and stop per term. A place
+// raises a TRANSPORT student charge at the route's fee, through
+// StudentChargeService only (source "transport", the assignment's id). A
+// route takes no more children in a term than its vehicle has seats.
+
+model TransportVehicle {
+  id          String           @id @default(uuid())
+  schoolId    String           @map("school_id")
+  plate       String // normalised upper case, unique per school
+  description String?
+  seats       Int
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  routes      TransportRoute[]
+
+  @@unique([schoolId, plate])
+  @@map("transport_vehicles")
+}
+
+model TransportDriver {
+  id            String           @id @default(uuid())
+  schoolId      String           @map("school_id")
+  name          String
+  phone         String
+  licenceNumber String?          @map("licence_number")
+  licenceExpiry DateTime?        @map("licence_expiry") @db.Date
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+  routes        TransportRoute[]
+
+  @@index([schoolId])
+  @@map("transport_drivers")
+}
+
+model TransportRoute {
+  id          String                @id @default(uuid())
+  schoolId    String                @map("school_id")
+  name        String
+  vehicleId   String?               @map("vehicle_id")
+  driverId    String?               @map("driver_id")
+  // Per term, in kobo. 0 = free: no charge is raised.
+  fee         Int                   @default(0)
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  vehicle     TransportVehicle?     @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  driver      TransportDriver?      @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  stops       TransportStop[]
+  assignments TransportAssignment[]
+
+  @@unique([schoolId, name])
+  @@map("transport_routes")
+}
+
+model TransportStop {
+  id           String                @id @default(uuid())
+  schoolId     String                @map("school_id")
+  routeId      String                @map("route_id")
+  name         String
+  position     Int
+  // Minutes since midnight, school wall-clock time (CLAUDE.md time-of-day rule).
+  pickupMinute Int?                  @map("pickup_minute")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+  route        TransportRoute        @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  assignments  TransportAssignment[]
+
+  @@index([routeId, position])
+  @@map("transport_stops")
+}
+
+model TransportAssignment {
+  id        String         @id @default(uuid())
+  schoolId  String         @map("school_id")
+  studentId String         @map("student_id")
+  termId    String         @map("term_id")
+  routeId   String         @map("route_id")
+  stopId    String         @map("stop_id")
+  createdBy String?        @map("created_by")
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+  student   Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  route     TransportRoute @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  stop      TransportStop  @relation(fields: [stopId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, termId])
+  @@index([schoolId, routeId, termId])
+  @@map("transport_assignments")
+}
+
+// ─── Phase 9 / CP6 — the library ────────────────────────────────────────────
+// A book, its physical copies (accession number unique in the school) and
+// loans to a student OR a member of staff. One open loan per copy, by a partial
+// unique index in the migration (library_loans_open_copy_key). Fines are
+// student charges (F2), never written here. docs/modules/phase-9.md §14.
+
+enum LibraryCopyStatus {
+  AVAILABLE
+  ON_LOAN
+  LOST
+  WITHDRAWN
+}
+
+model LibrarySettings {
+  id            String   @id @default(uuid())
+  schoolId      String   @unique @map("school_id")
+  loanDays      Int      @default(14) @map("loan_days")
+  studentLimit  Int      @default(2) @map("student_limit")
+  staffLimit    Int      @default(5) @map("staff_limit")
+  renewalLimit  Int      @default(2) @map("renewal_limit")
+  nextAccession Int      @default(1) @map("next_accession")
+  finesEnabled  Boolean  @default(false) @map("fines_enabled") // CP6.2
+  finePerDay    Int      @default(0) @map("fine_per_day") // kobo
+  fineGraceDays Int      @default(0) @map("fine_grace_days")
+  fineCap       Int?     @map("fine_cap") // kobo; null: no cap
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("library_settings")
+}
+
+model LibraryBook {
+  id               String             @id @default(uuid())
+  schoolId         String             @map("school_id")
+  title            String
+  authors          String?
+  isbn             String?
+  publisher        String?
+  publishedYear    Int?               @map("published_year")
+  subjectId        String?            @map("subject_id")
+  shelfLocation    String?            @map("shelf_location")
+  replacementPrice Int?               @map("replacement_price") // kobo
+  referenceOnly    Boolean            @default(false) @map("reference_only")
+  createdBy        String?            @map("created_by")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  subject          Subject?           @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  levels           LibraryBookLevel[]
+  copies           LibraryCopy[]
+
+  @@index([schoolId, title])
+  @@map("library_books")
+}
+
+model LibraryBookLevel {
+  schoolId     String      @map("school_id")
+  bookId       String      @map("book_id")
+  classLevelId String      @map("class_level_id")
+  book         LibraryBook @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  classLevel   ClassLevel  @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+
+  @@id([bookId, classLevelId])
+  @@index([schoolId])
+  @@map("library_book_levels")
+}
+
+model LibraryCopy {
+  id              String            @id @default(uuid())
+  schoolId        String            @map("school_id")
+  bookId          String            @map("book_id")
+  accessionNumber String            @map("accession_number") // upper case
+  status          LibraryCopyStatus @default(AVAILABLE)
+  note            String?
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  book            LibraryBook       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  loans           LibraryLoan[]
+
+  @@unique([schoolId, accessionNumber])
+  @@index([bookId])
+  @@map("library_copies")
+}
+
+model LibraryLoan {
+  id               String      @id @default(uuid())
+  schoolId         String      @map("school_id")
+  copyId           String      @map("copy_id")
+  studentId        String?     @map("student_id") // exactly one of studentId, userId
+  userId           String?     @map("user_id")
+  issuedAt         DateTime    @default(now()) @map("issued_at")
+  dueOn            DateTime    @map("due_on") @db.Date
+  renewals         Int         @default(0)
+  returnedAt       DateTime?   @map("returned_at")
+  lostAt           DateTime?   @map("lost_at") // CP6.2; a lost loan is closed
+  foundAt          DateTime?   @map("found_at")
+  fineAmount       Int?        @map("fine_amount") // kobo: the fine, or the replacement price
+  fineWaivedReason String?     @map("fine_waived_reason")
+  fineWaivedBy     String?     @map("fine_waived_by")
+  issuedBy         String?     @map("issued_by")
+  returnedBy       String?     @map("returned_by")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+  copy             LibraryCopy @relation(fields: [copyId], references: [id], onDelete: Restrict)
+  student          Student?    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user             User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, returnedAt])
+  @@index([studentId])
+  @@index([userId])
+  @@map("library_loans")
+}
+
+// Phase 9 / CP6.3 — digital resources: a PDF (F1, private) or an https link
+// for one subject and some class levels, read by students in those levels.
+enum LibraryResourceKind {
+  FILE
+  LINK
+}
+
+model LibraryResource {
+  id          String                 @id @default(uuid())
+  schoolId    String                 @map("school_id")
+  title       String
+  description String?
+  subjectId   String                 @map("subject_id")
+  kind        LibraryResourceKind
+  url         String? // LINK only, https
+  fileExt     String?                @map("file_ext") // FILE only: "pdf"
+  fileSize    Int?                   @map("file_size")
+  addedBy     String                 @map("added_by")
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @updatedAt @map("updated_at")
+  subject     Subject                @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  levels      LibraryResourceLevel[]
+
+  @@index([schoolId, subjectId])
+  @@map("library_resources")
+}
+
+model LibraryResourceLevel {
+  schoolId     String          @map("school_id")
+  resourceId   String          @map("resource_id")
+  classLevelId String          @map("class_level_id")
+  resource     LibraryResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  classLevel   ClassLevel      @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+
+  @@id([resourceId, classLevelId])
+  @@index([schoolId, classLevelId])
+  @@map("library_resource_levels")
+}
+
+// ─── Phase 9 / CP6b — hostels and boarding ──────────────────────────────────
+// A hostel is for boys or girls, with house masters and a fee per term that
+// stands until changed. A student holds one bed a term (that makes them a
+// boarder); a bed holds one student a term. The HOSTEL charge is raised through
+// StudentChargeService only. docs/modules/phase-9.md §15.
+
+enum HostelGender {
+  BOYS
+  GIRLS
+}
+
+model Hostel {
+  id           String              @id @default(uuid())
+  schoolId     String              @map("school_id")
+  name         String
+  forGender    HostelGender        @map("for_gender")
+  fee          Int                 @default(0) // kobo per term; 0 is none
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+  houseMasters HostelHouseMaster[]
+  rooms        HostelRoom[]
+  beds         HostelBed[]
+  visits       HostelVisit[]
+  exeats       HostelExeat[]
+
+  @@unique([schoolId, name])
+  @@map("hostels")
+}
+
+model HostelHouseMaster {
+  schoolId  String   @map("school_id")
+  hostelId  String   @map("hostel_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  hostel    Hostel   @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([hostelId, userId])
+  @@index([schoolId, userId])
+  @@map("hostel_house_masters")
+}
+
+model HostelRoom {
+  id        String      @id @default(uuid())
+  schoolId  String      @map("school_id")
+  hostelId  String      @map("hostel_id")
+  name      String
+  beds      Int
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+  hostel    Hostel      @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  allocated HostelBed[]
+
+  @@unique([hostelId, name])
+  @@index([schoolId])
+  @@map("hostel_rooms")
+}
+
+model HostelBed {
+  id        String     @id @default(uuid())
+  schoolId  String     @map("school_id")
+  studentId String     @map("student_id")
+  termId    String     @map("term_id")
+  hostelId  String     @map("hostel_id")
+  roomId    String     @map("room_id")
+  bedNumber Int        @map("bed_number")
+  createdBy String?    @map("created_by")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  student   Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  hostel    Hostel     @relation(fields: [hostelId], references: [id], onDelete: Restrict)
+  room      HostelRoom @relation(fields: [roomId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, termId])
+  @@unique([roomId, termId, bedNumber])
+  @@index([schoolId, hostelId, termId])
+  @@map("hostel_beds")
+}
+
+// Phase 9 / CP6b.2 — the visitor log (§15 CP6b-D5). House master and admin
+// only; parents do not see it (owner, §15.8).
+model HostelVisit {
+  id           String    @id @default(uuid())
+  schoolId     String    @map("school_id")
+  hostelId     String    @map("hostel_id")
+  studentId    String    @map("student_id")
+  visitorName  String    @map("visitor_name")
+  relationship String
+  phone        String?
+  arrivedAt    DateTime  @map("arrived_at")
+  leftAt       DateTime? @map("left_at")
+  loggedBy     String    @map("logged_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  hostel       Hostel    @relation(fields: [hostelId], references: [id], onDelete: Restrict)
+  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, hostelId, arrivedAt])
+  @@index([schoolId, studentId])
+  @@map("hostel_visits")
+}
+
+enum HostelExeatStatus {
+  REQUESTED
+  APPROVED
+  REFUSED
+  OUT
+  BACK
+  CANCELLED
+}
+
+// Phase 9 / CP6b.3 — a boarder's leave out (§15 CP6b-D6). Asked by a parent or
+// entered by the school (exactly one of the two requester columns); decided by
+// the house master; left and back logged on the day.
+model HostelExeat {
+  id                    String            @id @default(uuid())
+  schoolId              String            @map("school_id")
+  hostelId              String            @map("hostel_id")
+  studentId             String            @map("student_id")
+  outAt                 DateTime          @map("out_at")
+  backBy                DateTime          @map("back_by")
+  reason                String
+  collectorName         String            @map("collector_name")
+  collectorRelationship String            @map("collector_relationship")
+  collectorPhone        String            @map("collector_phone")
+  status                HostelExeatStatus @default(REQUESTED)
+  requestedByGuardianId String?           @map("requested_by_guardian_id")
+  requestedByUserId     String?           @map("requested_by_user_id")
+  decidedBy             String?           @map("decided_by")
+  decidedAt             DateTime?         @map("decided_at")
+  decisionNote          String?           @map("decision_note")
+  leftAt                DateTime?         @map("left_at")
+  collectedBy           String?           @map("collected_by")
+  backAt                DateTime?         @map("back_at")
+  cancelledAt           DateTime?         @map("cancelled_at")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+  hostel                Hostel            @relation(fields: [hostelId], references: [id], onDelete: Restrict)
+  student               Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, hostelId, status])
+  @@index([schoolId, studentId])
+  @@map("hostel_exeats")
+}
+
+// ---------- Phase 9 / CP7 — online admission applications (§16, §16.8) ----------
+
+enum AdmissionStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  OFFERED
+  OFFER_ACCEPTED
+  ADMITTED
+  REJECTED
+  WITHDRAWN
+}
+
+// One row per school, written on first save. Until then the defaults apply,
+// and applications are OPEN (owner, §16.8).
+model AdmissionSettings {
+  id                  String   @id @default(uuid())
+  schoolId            String   @unique @map("school_id")
+  enabled             Boolean  @default(true)
+  intro               String?
+  smsAlerts           Boolean  @default(true) @map("sms_alerts")
+  notifyEmail         String?  @map("notify_email")
+  offerLetter         String?  @map("offer_letter")
+  form                Json     @default("{}")
+  closedClassLevelIds Json     @default("[]") @map("closed_class_level_ids")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("admission_settings")
+}
+
+model AdmissionApplication {
+  id                   String              @id @default(uuid())
+  schoolId             String              @map("school_id")
+  reference            String
+  classLevelId         String              @map("class_level_id")
+  childFirstName       String              @map("child_first_name")
+  childLastName        String              @map("child_last_name")
+  dateOfBirth          DateTime            @map("date_of_birth") @db.Date
+  gender               Gender
+  guardianFirstName    String              @map("guardian_first_name")
+  guardianLastName     String              @map("guardian_last_name")
+  guardianRelationship Relationship        @map("guardian_relationship")
+  guardianPhone        String              @map("guardian_phone")
+  guardianEmail        String              @map("guardian_email")
+  answers              Json                @default("{}")
+  status               AdmissionStatus     @default(SUBMITTED)
+  statusChangedAt      DateTime            @default(now()) @map("status_changed_at")
+  consentAt            DateTime            @map("consent_at")
+  consentVersion       String              @map("consent_version")
+  trackingTokenHash    String              @unique @map("tracking_token_hash")
+  studentId            String?             @map("student_id")
+  /// CP7.2: ENTRANCE_EXAM, INTERVIEW, ONLINE or OTHER, with its time and note.
+  assessmentKind       String?             @map("assessment_kind")
+  assessmentAt         DateTime?           @map("assessment_at")
+  assessmentNote       String?             @map("assessment_note")
+  /// The offer letter the family saw, in full.
+  offerLetter          String?             @map("offer_letter")
+  offeredAt            DateTime?           @map("offered_at")
+  acceptedAt           DateTime?           @map("accepted_at")
+  /// Who recorded the acceptance; NULL means the family accepted online.
+  acceptedByUserId     String?             @map("accepted_by_user_id")
+  decisionNote         String?             @map("decision_note")
+  admittedAt           DateTime?           @map("admitted_at")
+  admittedByUserId     String?             @map("admitted_by_user_id")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+  classLevel           ClassLevel          @relation(fields: [classLevelId], references: [id], onDelete: Restrict)
+  student              Student?            @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  documents            AdmissionDocument[]
+
+  @@unique([schoolId, reference])
+  @@index([schoolId, status])
+  @@index([schoolId, guardianEmail])
+  @@map("admission_applications")
+}
+
+model AdmissionDocument {
+  id            String               @id @default(uuid())
+  schoolId      String               @map("school_id")
+  applicationId String               @map("application_id")
+  slot          String
+  label         String
+  ext           String
+  sizeBytes     Int                  @map("size_bytes")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  application   AdmissionApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, slot])
+  @@map("admission_documents")
+}
+
+model AdmissionReferenceCounter {
+  schoolId String @map("school_id")
+  year     Int
+  next     Int    @default(1)
+
+  @@id([schoolId, year])
+  @@map("admission_reference_counters")
+}
+
+model AdmissionSmsCounter {
+  schoolId String   @map("school_id")
+  day      DateTime @db.Date
+  sent     Int      @default(0)
+
+  @@id([schoolId, day])
+  @@map("admission_sms_counters")
+}
+
+// ─── Phase 9 / CP8.1 — private messaging (docs/modules/phase-9.md §17.8) ──
+// A parent writes to ONE recipient about one child or in general; only that
+// recipient, anyone it is passed to and anyone who has written in it see it.
+
+enum MessageRecipient {
+  CLASS_TEACHER
+  BURSAR
+  PRINCIPAL
+  HEAD_TEACHER
+  ADMIN
+  OFFICE
+}
+
+model MessageThread {
+  id              String           @id @default(uuid())
+  schoolId        String           @map("school_id")
+  guardianId      String           @map("guardian_id")
+  studentId       String?          @map("student_id")
+  recipient       MessageRecipient
+  /// The class teacher addressed, for CLASS_TEACHER only, fixed at the start.
+  recipientUserId String?          @map("recipient_user_id")
+  subject         String
+  status          String           @default("OPEN")
+  /// NULL: the guardian started it; otherwise the office member who did.
+  startedByUserId String?          @map("started_by_user_id")
+  lastMessageAt   DateTime         @default(now()) @map("last_message_at")
+  lastMessageBy   String           @map("last_message_by")
+  handledByUserId String?          @map("handled_by_user_id")
+  closedAt        DateTime?        @map("closed_at")
+  closedByUserId  String?          @map("closed_by_user_id")
+  /// CP8.2: a report, a staff flag or a safeguarding word. Opens the
+  /// conversation to owner and admins and keeps it until cleared.
+  flaggedAt       DateTime?        @map("flagged_at")
+  flagReason      String?          @map("flag_reason")
+  flagNote        String?          @map("flag_note")
+  flaggedByKind   String?          @map("flagged_by_kind")
+  flaggedById     String?          @map("flagged_by_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  guardian        Guardian         @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+  student         Student?         @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  messages        Message[]
+  passes          MessagePass[]
+  reads           MessageRead[]
+
+  @@index([schoolId, status, lastMessageAt])
+  @@index([schoolId, guardianId])
+  @@index([schoolId, recipient])
+  @@index([recipientUserId])
+  @@index([schoolId, flaggedAt])
+  @@map("message_threads")
+}
+
+model MessagePass {
+  id              String           @id @default(uuid())
+  schoolId        String           @map("school_id")
+  threadId        String           @map("thread_id")
+  recipient       MessageRecipient
+  recipientUserId String?          @map("recipient_user_id")
+  passedByUserId  String           @map("passed_by_user_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  thread          MessageThread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@index([schoolId, recipient])
+  @@map("message_passes")
+}
+
+model Message {
+  id                String            @id @default(uuid())
+  schoolId          String            @map("school_id")
+  threadId          String            @map("thread_id")
+  authorKind        String            @map("author_kind")
+  guardianId        String?           @map("guardian_id")
+  userId            String?           @map("user_id")
+  /// For a staff message, the recipient the writer answered as.
+  asRecipient       MessageRecipient? @map("as_recipient")
+  body              String
+  /// CP8.2: the text matched a safeguarding word.
+  safeguardingMatch Boolean           @default(false) @map("safeguarding_match")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  thread            MessageThread     @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  images            MessageImage[]
+
+  @@index([threadId, createdAt])
+  @@index([schoolId, guardianId, createdAt])
+  @@map("messages")
+}
+
+model MessageRead {
+  schoolId   String        @map("school_id")
+  threadId   String        @map("thread_id")
+  readerKind String        @map("reader_kind")
+  readerId   String        @map("reader_id")
+  lastReadAt DateTime      @map("last_read_at")
+  thread     MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@id([threadId, readerKind, readerId])
+  @@map("message_reads")
+}
+
+model MessageSmsCounter {
+  schoolId String   @map("school_id")
+  day      DateTime @db.Date
+  sent     Int      @default(0)
+
+  @@id([schoolId, day])
+  @@map("message_sms_counters")
+}
+
+/// CP8.2: an image on a message. Staged (no message) until the message is sent.
+model MessageImage {
+  id           String   @id @default(uuid())
+  schoolId     String   @map("school_id")
+  messageId    String?  @map("message_id")
+  uploaderKind String   @map("uploader_kind")
+  uploaderId   String   @map("uploader_id")
+  ext          String
+  sizeBytes    Int      @map("size_bytes")
+  createdAt    DateTime @default(now()) @map("created_at")
+  message      Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([schoolId, uploaderKind, uploaderId])
+  @@map("message_images")
+}
+
+// Phase 9 / CP8.3 — one announcement email to one address
+// (docs/modules/phase-9.md §17.11). Claimed once (QUEUED → SENDING), so a
+// retried job never sends twice. Webhook events move SENT to DELIVERED,
+// BOUNCED or COMPLAINED.
+model AnnouncementEmail {
+  id             String       @id @default(uuid())
+  schoolId       String       @map("school_id")
+  announcementId String       @map("announcement_id")
+  guardianId     String?      @map("guardian_id")
+  email          String
+  status         String
+  skipReason     String?      @map("skip_reason")
+  providerId     String?      @unique @map("provider_id")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  sentAt         DateTime?    @map("sent_at")
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at")
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  guardian       Guardian?    @relation(fields: [guardianId], references: [id], onDelete: SetNull)
+
+  @@unique([announcementId, email])
+  @@index([schoolId, announcementId, status])
+  @@map("announcement_emails")
+}
+
+// An address that gets no more announcement emails (ANNOUNCEMENTS: it
+// unsubscribed) or no non-essential email at all (ALL: a hard bounce or a
+// complaint), from one school.
+model EmailSuppression {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  email     String
+  reason    String
+  scope     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([schoolId, email, scope])
+  @@map("email_suppressions")
+}
+
+// Announcement emails a school has sent in a Lagos day, against its plan's limit.
+model AnnouncementEmailCounter {
+  schoolId String   @map("school_id")
+  day      DateTime @db.Date
+  sent     Int      @default(0)
+
+  @@id([schoolId, day])
+  @@map("announcement_email_counters")
+}
+
+// Phase 9 / CP10.1 — one parent's answer to an event (docs/modules/phase-9.md §19.2).
+model EventRsvp {
+  id         String      @id @default(uuid())
+  schoolId   String      @map("school_id")
+  eventId    String      @map("event_id")
+  guardianId String      @map("guardian_id")
+  answer     String
+  attending  Int?
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @default(now()) @updatedAt @map("updated_at")
+  event      SchoolEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  guardian   Guardian    @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, guardianId])
+  @@index([schoolId, eventId])
+  @@map("event_rsvps")
+}
+
+// ---------- ID cards (2026-10-19, docs/modules/id-cards-and-store.md §3) ----------
+
+enum IdCardHolderKind {
+  STUDENT
+  STAFF
+}
+
+enum IdCardStatus {
+  ACTIVE
+  CANCELLED
+  REPLACED
+}
+
+// One row per card issued. Reissuing marks the old row REPLACED. Plain FKs.
+model IdCard {
+  id             String           @id @default(uuid())
+  schoolId       String           @map("school_id")
+  holderKind     IdCardHolderKind @map("holder_kind")
+  studentId      String?          @map("student_id")
+  userId         String?          @map("user_id")
+  academicYearId String           @map("academic_year_id")
+  cardNumber     String           @map("card_number")
+  status         IdCardStatus     @default(ACTIVE)
+  issuedBy       String           @map("issued_by")
+  issuedAt       DateTime         @default(now()) @map("issued_at")
+  endedAt        DateTime?        @map("ended_at")
+  endedBy        String?          @map("ended_by")
+  endReason      String?          @map("end_reason")
+  replacedById   String?          @map("replaced_by_id")
+
+  @@unique([schoolId, cardNumber])
+  @@index([schoolId, academicYearId])
+  @@index([studentId])
+  @@index([userId])
+  @@map("id_cards")
+}
+
+// ---------- The Store and fixed assets (2026-10-19, docs/modules/id-cards-and-store.md §4) ----------
+
+enum StoreCategory {
+  UNIFORM
+  TEXTBOOK
+  STATIONERY
+  LABORATORY
+  SPORTS
+  ICT
+  CLEANING
+  KITCHEN
+  OTHER
+}
+
+enum StoreMovementKind {
+  RECEIVE
+  ISSUE
+  SELL
+  RETURN
+  WRITE_OFF
+  ADJUST
+}
+
+enum StoreStockTakeStatus {
+  OPEN
+  SUBMITTED
+  APPROVED
+  CANCELLED
+}
+
+enum FixedAssetCategory {
+  ICT
+  FURNITURE
+  LABORATORY
+  SPORTS
+  AUDIO_VISUAL
+  VEHICLE
+  KITCHEN
+  BUILDING
+  OTHER
+}
+
+enum FixedAssetCondition {
+  NEW
+  GOOD
+  FAIR
+  POOR
+  BROKEN
+}
+
+enum FixedAssetStatus {
+  IN_USE
+  IN_STORE
+  UNDER_REPAIR
+  DISPOSED
+}
+
+enum FixedAssetEventKind {
+  ADDED
+  MOVED
+  ASSIGNED
+  CONDITION
+  STATUS
+  EDITED
+}
+
+// What the store holds. Stock is kept per variant (a size, or one unnamed).
+// The code is unique per school ignoring case (an expression index in SQL).
+model StoreItem {
+  id           String        @id @default(uuid())
+  schoolId     String        @map("school_id")
+  name         String
+  code         String?
+  category     StoreCategory
+  unit         String        @default("piece")
+  reorderLevel Int           @default(0) @map("reorder_level")
+  sellPrice    Int?          @map("sell_price") // kobo
+  notes        String?
+  isActive     Boolean       @default(true) @map("is_active")
+  createdBy    String        @map("created_by")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  variants   StoreItemVariant[]
+  movements  StoreMovement[]
+  packItems  StorePackItem[]
+  orderLines StoreOrderLine[]
+
+  @@unique([schoolId, id])
+  @@map("store_items")
+}
+
+model StoreItemVariant {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  itemId    String   @map("item_id")
+  label     String?
+  sellPrice Int?     @map("sell_price") // kobo, overrides the item's
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  item          StoreItem            @relation(fields: [schoolId, itemId], references: [schoolId, id], onDelete: Cascade)
+  movements     StoreMovement[]
+  stockTakeRows StoreStockTakeLine[]
+  orderLines    StoreOrderLine[]
+
+  @@unique([schoolId, id])
+  @@map("store_item_variants")
+}
+
+// The ledger: append-only (a trigger refuses UPDATE and DELETE).
+model StoreMovement {
+  id              String            @id @default(uuid())
+  schoolId        String            @map("school_id")
+  variantId       String            @map("variant_id")
+  itemId          String            @map("item_id")
+  kind            StoreMovementKind
+  quantity        Int // signed: + in, - out
+  unitCost        Int?              @map("unit_cost") // kobo
+  unitPrice       Int?              @map("unit_price") // kobo
+  studentId       String?           @map("student_id")
+  userId          String?           @map("user_id")
+  department      String?
+  supplier        String?
+  reference       String?
+  reason          String?
+  studentChargeId String?           @map("student_charge_id")
+  stockTakeId     String?           @map("stock_take_id")
+  // Store orders (2026-11-11): the order line this hand-over belongs to.
+  orderLineId     String?           @map("order_line_id")
+  createdBy       String            @map("created_by")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  variant   StoreItemVariant @relation(fields: [schoolId, variantId], references: [schoolId, id])
+  item      StoreItem        @relation(fields: [schoolId, itemId], references: [schoolId, id])
+  orderLine StoreOrderLine?  @relation(fields: [schoolId, orderLineId], references: [schoolId, id])
+
+  @@index([variantId])
+  @@index([orderLineId])
+  @@index([schoolId, createdAt])
+  @@index([studentId])
+  @@map("store_movements")
+}
+
+model StoreStockTake {
+  id          String               @id @default(uuid())
+  schoolId    String               @map("school_id")
+  status      StoreStockTakeStatus @default(OPEN)
+  note        String?
+  createdBy   String               @map("created_by")
+  createdAt   DateTime             @default(now()) @map("created_at")
+  submittedBy String?              @map("submitted_by")
+  submittedAt DateTime?            @map("submitted_at")
+  decidedBy   String?              @map("decided_by")
+  decidedAt   DateTime?            @map("decided_at")
+
+  lines StoreStockTakeLine[]
+
+  @@unique([schoolId, id])
+  @@map("store_stock_takes")
+}
+
+model StoreStockTakeLine {
+  id          String @id @default(uuid())
+  schoolId    String @map("school_id")
+  stockTakeId String @map("stock_take_id")
+  variantId   String @map("variant_id")
+  expected    Int?
+  counted     Int?
+
+  stockTake StoreStockTake   @relation(fields: [schoolId, stockTakeId], references: [schoolId, id], onDelete: Cascade)
+  variant   StoreItemVariant @relation(fields: [schoolId, variantId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([stockTakeId, variantId])
+  @@map("store_stock_take_lines")
+}
+
+model FixedAsset {
+  id               String              @id @default(uuid())
+  schoolId         String              @map("school_id")
+  tag              String
+  name             String
+  category         FixedAssetCategory
+  location         String?
+  assignedToUserId String?             @map("assigned_to_user_id")
+  assignedToText   String?             @map("assigned_to_text")
+  condition        FixedAssetCondition @default(GOOD)
+  status           FixedAssetStatus    @default(IN_USE)
+  serialNumber     String?             @map("serial_number")
+  supplier         String?
+  purchaseDate     DateTime?           @map("purchase_date") @db.Date
+  purchaseCost     Int?                @map("purchase_cost") // kobo
+  notes            String?
+  disposedAt       DateTime?           @map("disposed_at") @db.Date
+  disposalReason   String?             @map("disposal_reason")
+  createdBy        String              @map("created_by")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  events FixedAssetEvent[]
+
+  @@unique([schoolId, id])
+  @@map("fixed_assets")
+}
+
+model FixedAssetEvent {
+  id        String              @id @default(uuid())
+  schoolId  String              @map("school_id")
+  assetId   String              @map("asset_id")
+  kind      FixedAssetEventKind
+  fromValue String?             @map("from_value")
+  toValue   String?             @map("to_value")
+  note      String?
+  createdBy String              @map("created_by")
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  asset FixedAsset @relation(fields: [schoolId, assetId], references: [schoolId, id], onDelete: Cascade)
+
+  @@index([assetId, createdAt])
+  @@map("fixed_asset_events")
+}
+
+// ─── The school's public website (2026-10-22, docs/modules/school-website.md)
+
+// One row per school: the page details as the editor last saved them (draft)
+// and as families see them (published). Both are the checked shape of
+// websiteDetailsSchema in @school-kit/types.
+model SchoolWebsite {
+  id          String    @id @default(uuid())
+  schoolId    String    @unique @map("school_id")
+  draft       Json      @default("{}")
+  published   Json?
+  publishedAt DateTime? @map("published_at")
+  publishedBy String?   @map("published_by")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  updatedBy   String?   @map("updated_by")
+
+  @@map("school_websites")
+}
+
+enum WebsitePostStatus {
+  DRAFT
+  PUBLISHED
+
+  @@map("website_post_status")
+}
+
+// News posts: public only, never sent to phones (announcements do that).
+model SchoolWebsitePost {
+  id             String            @id @default(uuid())
+  schoolId       String            @map("school_id")
+  title          String
+  body           String
+  status         WebsitePostStatus @default(DRAFT)
+  publishedAt    DateTime?         @map("published_at")
+  createdBy      String            @map("created_by")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  // SchoolKit's take-down: hidden, and the school cannot republish it.
+  takenDownAt    DateTime?         @map("taken_down_at")
+  takenDownBy    String?           @map("taken_down_by")
+  takeDownReason String?           @map("take_down_reason")
+
+  photos SchoolWebsitePhoto[]
+
+  @@index([schoolId, status, publishedAt])
+  @@map("school_website_posts")
+}
+
+model SchoolWebsiteAlbum {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  title     String
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  photos SchoolWebsitePhoto[]
+
+  @@index([schoolId])
+  @@map("school_website_albums")
+}
+
+enum WebsitePhotoKind {
+  COVER
+  POST
+  GALLERY
+  LEADER
+
+  @@map("website_photo_kind")
+}
+
+// Every photo on the website. Two JPEGs in storage (large, thumb). The
+// uploader's "This photo shows no pupils" tick is recorded with who gave it
+// (W4: no pupils on public pages); there is no photo without one.
+model SchoolWebsitePhoto {
+  id                  String           @id @default(uuid())
+  schoolId            String           @map("school_id")
+  kind                WebsitePhotoKind
+  postId              String?          @map("post_id")
+  albumId             String?          @map("album_id")
+  caption             String?
+  position            Int              @default(0)
+  noPupilsConfirmedBy String           @map("no_pupils_confirmed_by")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  takenDownAt         DateTime?        @map("taken_down_at")
+  takenDownBy         String?          @map("taken_down_by")
+  takeDownReason      String?          @map("take_down_reason")
+
+  post  SchoolWebsitePost?  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  album SchoolWebsiteAlbum? @relation(fields: [albumId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, kind])
+  @@index([postId])
+  @@map("school_website_photos")
+}
+
+// "Report this photo" from the public page. Read by SchoolKit's operator.
+model SchoolWebsiteReport {
+  id         String    @id @default(uuid())
+  schoolId   String    @map("school_id")
+  photoId    String?   @map("photo_id")
+  postId     String?   @map("post_id")
+  reason     String
+  createdAt  DateTime  @default(now()) @map("created_at")
+  resolvedAt DateTime? @map("resolved_at")
+  resolvedBy String?   @map("resolved_by")
+  // TAKEN_DOWN or DISMISSED.
+  resolution String?
+
+  @@index([schoolId, resolvedAt])
+  @@map("school_website_reports")
+}
+
+// A request, from the app, to delete a person's account (2026-10-24). The app
+// stores need one; deleting is the school's call, because the school holds
+// the records, so this only tells the school. One open request per person.
+model AccountDeletionRequest {
+  id          String    @id @default(uuid())
+  schoolId    String    @map("school_id")
+  // STAFF, GUARDIAN or STUDENT (CHECK in the migration).
+  principal   String
+  // users.id, guardians.id or students.id, by `principal`.
+  subjectId   String    @map("subject_id")
+  requestedAt DateTime  @default(now()) @map("requested_at")
+  handledAt   DateTime? @map("handled_at")
+  handledBy   String?   @map("handled_by")
+
+  @@index([schoolId, handledAt])
+  @@map("account_deletion_requests")
+}
+
+// A school's request for a setup call with the SchoolKit team (2026-10-26,
+// docs/modules/onboarding-call.md). Booked from the page shown after the setup
+// wizard; the team confirms the time on WhatsApp and marks it done in the
+// platform admin.
+model OnboardingCallBooking {
+  id           String    @id @default(uuid())
+  schoolId     String    @map("school_id")
+  bookedBy     String    @map("booked_by")
+  // The day, Lagos time, and the start as minutes since midnight (CLAUDE.md:
+  // time of day is an Int, never @db.Time).
+  callDate     DateTime  @map("call_date") @db.Date
+  startMinute  Int       @map("start_minute")
+  contactName  String    @map("contact_name")
+  contactPhone String    @map("contact_phone")
+  note         String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  doneAt       DateTime? @map("done_at")
+
+  @@index([schoolId, createdAt])
+  @@map("onboarding_call_bookings")
+}
+
+// Getting started (2026-10-30, docs/modules/activation.md): a setup reminder
+// sent to a school's owner, at most one of each kind. status is Resend's
+// (SENT, then DELIVERED, BOUNCED or COMPLAINED; FAILED when the send itself
+// failed). Clicks are counted by the API's own redirect. stageAtSend (1-6) is
+// the school's stage when it went, to show whether it moved on afterwards.
+model ActivationEmail {
+  id             String    @id @default(uuid())
+  schoolId       String    @map("school_id")
+  kind           String
+  toEmail        String    @map("to_email")
+  providerId     String?   @map("provider_id")
+  stageAtSend    Int       @map("stage_at_send")
+  status         String    @default("SENT")
+  sentAt         DateTime  @default(now()) @map("sent_at")
+  deliveredAt    DateTime? @map("delivered_at")
+  firstClickedAt DateTime? @map("first_clicked_at")
+  clickCount     Int       @default(0) @map("click_count")
+
+  @@unique([schoolId, kind])
+  @@index([schoolId, providerId])
+  @@map("activation_emails")
+}
+
+// Subjects by class (2026-11-02, docs/modules/subjects-by-class.md): a subject
+// hidden from results. While a hide applies, the subject shows on no report
+// card, broadsheet, portal or result checker and counts in no total, average
+// or position; scores are kept. scope: ARM (class_arm_id), LEVEL
+// (class_level_id) or SCHOOL. until: TERM (term_id only), YEAR (the term's
+// academic year) or INDEFINITE. Unhiding stamps unhidden_at; rows are kept
+// for the record.
+model SubjectHide {
+  id             String    @id @default(uuid())
+  schoolId       String    @map("school_id")
+  subjectId      String    @map("subject_id")
+  scope          String // ARM | LEVEL | SCHOOL
+  classArmId     String?   @map("class_arm_id")
+  classLevelId   String?   @map("class_level_id")
+  until          String // TERM | YEAR | INDEFINITE
+  termId         String    @map("term_id")
+  academicYearId String    @map("academic_year_id")
+  hiddenBy       String    @map("hidden_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  unhiddenAt     DateTime? @map("unhidden_at")
+  unhiddenBy     String?   @map("unhidden_by")
+
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  term    Term    @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, unhiddenAt])
+  @@index([subjectId])
+  @@map("subject_hides")
+}
+
+// Operational invoice proposals. No conversation transcript or model text.
+// Plain school/user references follow Invoice's immutable audit convention.
+model AssistantBillingRun {
+  id          String    @id @default(uuid())
+  schoolId    String    @map("school_id")
+  requestedBy String    @map("requested_by")
+  approvedBy  String?   @map("approved_by")
+  status      String    @default("PENDING")
+  payload     Json
+  previewHash String    @map("preview_hash")
+  result      Json?
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  approvedAt  DateTime? @map("approved_at")
+
+  @@index([schoolId, createdAt(sort: Desc)])
+  @@map("assistant_billing_runs")
+}
+
+// Server-owned workflow proposals (2026-11-09, docs/modules/student-intake-proposals.md).
+// A prepared, reviewed batch of operational work, confirmed by a person and
+// executed once. Kind-tagged so later workflows reuse it; the first kind is
+// "student-intake". `payload` holds the operational rows only while they are
+// needed (until completion or expiry) and is then cleared; `summary`, `result`
+// and the fingerprints are metadata. No model text or chat lives here.
+model WorkflowProposal {
+  id              String    @id @default(uuid())
+  schoolId        String    @map("school_id")
+  kind            String
+  requestedBy     String    @map("requested_by")
+  confirmedBy     String?   @map("confirmed_by")
+  status          String    @default("PENDING")
+  clientRequestId String    @map("client_request_id")
+  requestHash     String    @map("request_hash")
+  previewHash     String    @map("preview_hash")
+  payload         Json?
+  summary         Json
+  result          Json?
+  expiresAt       DateTime  @map("expires_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  confirmedAt     DateTime? @map("confirmed_at")
+  dataClearedAt   DateTime? @map("data_cleared_at")
+
+  @@unique([schoolId, kind, requestedBy, clientRequestId], map: "workflow_proposals_client_request_key")
+  @@index([schoolId, kind, createdAt(sort: Desc)])
+  @@map("workflow_proposals")
+}
+
+// Durable fee reminder campaigns (2026-11-09, docs/modules/reminder-campaigns.md).
+// Created by confirming a reviewed workflow proposal; its sends are an outbox
+// holding ids and states only, never contact details, text or amounts.
+model ReminderCampaign {
+  id                  String                 @id @default(uuid())
+  schoolId            String                 @map("school_id")
+  proposalId          String                 @unique @map("proposal_id")
+  termId              String                 @map("term_id")
+  requestedBy         String                 @map("requested_by")
+  confirmedBy         String                 @map("confirmed_by")
+  status              String                 @default("RUNNING")
+  haltReason          String?                @map("halt_reason")
+  templateVersion     String                 @map("template_version")
+  includePaymentPlans Boolean                @map("include_payment_plans")
+  overdueOnly         Boolean                @map("overdue_only")
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @default(now()) @map("updated_at")
+  haltedAt            DateTime?              @map("halted_at")
+  completedAt         DateTime?              @map("completed_at")
+  sends               ReminderCampaignSend[]
+
+  @@index([schoolId, status])
+  @@map("reminder_campaigns")
+}
+
+model ReminderCampaignSend {
+  id          String           @id @default(uuid())
+  schoolId    String           @map("school_id")
+  campaignId  String           @map("campaign_id")
+  studentId   String           @map("student_id")
+  guardianId  String           @map("guardian_id")
+  channel     String
+  channelUsed String?          @map("channel_used")
+  status      String           @default("PENDING")
+  reason      String?
+  claimToken  String?          @map("claim_token")
+  claimedAt   DateTime?        @map("claimed_at")
+  finishedAt  DateTime?        @map("finished_at")
+  providerRef String?          @map("provider_ref")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  campaign    ReminderCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, studentId, channel, guardianId], map: "reminder_campaign_sends_slot_key")
+  @@index([schoolId, campaignId, status])
+  @@map("reminder_campaign_sends")
+}
+
+// ---------- Store orders (2026-11-11, docs/modules/store-orders.md) ----------
+//
+// One buyer, many lines, one total. Students are billed on the fees invoice
+// (charges) or on a store invoice of their own; staff and walk-in buyers pay at
+// the counter. Stock leaves at hand-over, as a SELL movement tied to the line.
+
+enum StoreOrderBuyer {
+  STUDENT
+  STAFF
+  WALK_IN
+}
+
+enum StoreOrderBilling {
+  FEES_INVOICE
+  STORE_INVOICE
+  COUNTER
+}
+
+enum StoreOrderStatus {
+  ACTIVE
+  CANCELLED
+}
+
+model StorePack {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  name      String
+  note      String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items  StorePackItem[]
+  orders StoreOrder[]
+
+  @@unique([schoolId, id])
+  @@map("store_packs")
+}
+
+model StorePackItem {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  packId   String @map("pack_id")
+  itemId   String @map("item_id")
+  quantity Int
+
+  pack StorePack @relation(fields: [schoolId, packId], references: [schoolId, id], onDelete: Cascade)
+  item StoreItem @relation(fields: [schoolId, itemId], references: [schoolId, id], onDelete: Cascade)
+
+  @@map("store_pack_items")
+}
+
+model StoreOrder {
+  id               String            @id @default(uuid())
+  schoolId         String            @map("school_id")
+  number           Int
+  buyer            StoreOrderBuyer
+  studentId        String?           @map("student_id")
+  userId           String?           @map("user_id")
+  buyerName        String?           @map("buyer_name")
+  billing          StoreOrderBilling
+  status           StoreOrderStatus  @default(ACTIVE)
+  total            Int // kobo
+  termId           String?           @map("term_id")
+  invoiceId        String?           @map("invoice_id")
+  counterMethod    PaymentMethod?    @map("counter_method")
+  counterReference String?           @map("counter_reference")
+  packId           String?           @map("pack_id")
+  classSaleId      String?           @map("class_sale_id")
+  note             String?
+  idempotencyKey   String?           @map("idempotency_key")
+  createdBy        String            @map("created_by")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  cancelledBy      String?           @map("cancelled_by")
+  cancelledAt      DateTime?         @map("cancelled_at")
+  cancelReason     String?           @map("cancel_reason")
+
+  pack  StorePack?       @relation(fields: [schoolId, packId], references: [schoolId, id])
+  lines StoreOrderLine[]
+
+  @@unique([schoolId, id])
+  @@unique([schoolId, number])
+  @@index([schoolId, createdAt])
+  @@index([studentId])
+  @@index([classSaleId])
+  @@map("store_orders")
+}
+
+model StoreOrderLine {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  orderId   String   @map("order_id")
+  itemId    String   @map("item_id")
+  variantId String   @map("variant_id")
+  quantity  Int
+  unitPrice Int      @map("unit_price") // kobo
+  amount    Int // kobo
+  collected Int      @default(0)
+  chargeId  String?  @map("charge_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  order     StoreOrder       @relation(fields: [schoolId, orderId], references: [schoolId, id])
+  item      StoreItem        @relation(fields: [schoolId, itemId], references: [schoolId, id])
+  variant   StoreItemVariant @relation(fields: [schoolId, variantId], references: [schoolId, id])
+  movements StoreMovement[]
+
+  @@unique([schoolId, id])
+  @@index([orderId])
+  @@index([variantId])
+  @@map("store_order_lines")
+}
