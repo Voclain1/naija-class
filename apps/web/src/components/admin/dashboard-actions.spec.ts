@@ -57,11 +57,11 @@ describe("dashboard header quick actions", () => {
     // Destinations confirmed against the app: /finance/invoices exists (the
     // per-invoice page inside it carries the Record payment form),
     // /insights is the shipped admin insights page, and
-    // /students/new is the admin-shell student creation route.
+    // /students/intake is the single front door for every student-add method.
     const byKey = Object.fromEntries(resolveDashboardActions(["*"]).map((a) => [a.key, a.href]));
     expect(byKey["take-attendance"]).toBe("/teacher/attendance");
     expect(byKey["record-payment"]).toBe("/finance/payments/record");
-    expect(byKey["add-student"]).toBe("/students/new");
+    expect(byKey["add-student"]).toBe("/students/intake");
     expect(byKey["enter-scores"]).toBe("/gradebook");
   });
 });
