@@ -39,6 +39,10 @@ model School {
   primaryColor              String?      @map("primary_color")
   status                    SchoolStatus @default(ONBOARDING)
   onboardingStep            Int          @default(0) @map("onboarding_step")
+  // Null preserves the full product menu for schools created before the
+  // 2026-11 UX simplification. New schools explicitly start with the five
+  // core areas; changing this hides navigation only and never deletes data.
+  modulePreferences         Json?        @map("module_preferences")
   ndprConsent               Boolean      @default(false) @map("ndpr_consent")
   ndprConsentAt             DateTime?    @map("ndpr_consent_at")
   // Which wording the owner agreed to, and who (2026-10-25,

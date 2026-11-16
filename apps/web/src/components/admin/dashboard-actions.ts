@@ -1,4 +1,5 @@
 import { hasPermission } from "@/lib/auth/has-permission";
+import { PRIMARY_TASKS, type PrimaryTaskKey } from "./nav-items";
 
 // The dashboard header's three quick actions.
 //
@@ -9,7 +10,7 @@ import { hasPermission } from "@/lib/auth/has-permission";
 // Every destination and gate below was verified against the running app rather
 // than assumed — see the notes on each.
 
-export type DashboardActionKey = "record-fee" | "insights" | "add-student";
+export type DashboardActionKey = PrimaryTaskKey;
 
 export interface DashboardAction {
   key: DashboardActionKey;
@@ -20,50 +21,7 @@ export interface DashboardAction {
   emphasis: "primary" | "secondary";
 }
 
-const ACTIONS: DashboardAction[] = [
-  {
-    key: "record-fee",
-    label: "Record Fee",
-    // The Record payment page (2026-10-30): search the student, record
-    // against one of their unpaid bills. Until then this landed on the bills
-    // list, which read as "the finance dashboard" to the owner.
-    href: "/finance/payments/record",
-    // The gate is the action the user will actually perform, not the page
-    // they land on. Bursar holds both payment.record and invoice.read, so the
-    // landing page is reachable for everyone this admits.
-    permission: "payment.record",
-    emphasis: "secondary",
-  },
-  {
-    key: "insights",
-    label: "Insights",
-    // Replaced "Roll Call" after review (2026-09-10). Roll Call pointed at
-    // /teacher/attendance, which owner/admin CAN use — the page is explicitly
-    // built for managers — but a header quick-action that swaps admin chrome
-    // for teacher chrome is a jarring place to exercise that capability. The
-    // entry point now lives on the teacher dashboard, where the chrome does
-    // not change under the user.
-    //
-    // Insights takes the slot because it is a real, shipped admin feature
-    // (Phase 5 / slice 8) whose ONLY entry point was the sidebar — no quick
-    // access anywhere.
-    href: "/insights",
-    // Verified: NAV_ITEMS gates the sidebar entry on this exact string, and
-    // insight.read appears once in permissions.ts — in the owner/admin grant,
-    // deliberately NOT in the teacher one ("management information about
-    // colleagues' work rather than teaching workflow"). Bursar does not hold
-    // it either, so a bursar still sees Record Fee alone.
-    permission: "insight.read",
-    emphasis: "secondary",
-  },
-  {
-    key: "add-student",
-    label: "Add Student",
-    href: "/students/new",
-    permission: "student.create",
-    emphasis: "primary",
-  },
-];
+const ACTIONS: DashboardAction[] = PRIMARY_TASKS;
 
 /**
  * Filters the actions to what this user can actually do.
@@ -74,6 +32,17 @@ const ACTIONS: DashboardAction[] = [
  * payment.record but neither insight.read nor student.create — so a bursar
  * sees Record Fee alone, which is the gate doing real work.
  */
-export function resolveDashboardActions(permissions: string[]): DashboardAction[] {
-  return ACTIONS.filter((a) => hasPermission(permissions, a.permission));
+export function resolveDashboardActions(permissions: string[], selectedModules?: string[]): DashboardAction[] {
+  return ACTIONS.filter(
+    (a) =>
+      hasPermission(permissions, a.permission) &&
+      (!selectedModules || selectedModules.includes(taskModule(a.key))),
+  );
+}
+
+function taskModule(key: DashboardActionKey): string {
+  if (key === "take-attendance") return "attendance";
+  if (key === "record-payment") return "fees";
+  if (key === "add-student") return "students";
+  return "results";
 }

@@ -38,12 +38,8 @@ type TourStep =
   | { kind: "intro" | "outro"; title: string; body: string }
   | { kind: "spot"; target: string; title: string; body: string };
 
-// The stops, rewritten 2026-10-11 for the shell as it now stands: the school's
-// own name and logo at the head of the menu (docs/modules/school-identity.md),
-// the results and exam tools added since September, announcements, and the
-// setup progress beside the greeting. A stop whose menu item this person
-// cannot see (a permission they lack) still shows its card, centred, so the
-// tour reads the same for every owner and admin.
+// Keep first-run orientation deliberately short. Setup guidance belongs in
+// the resumable checklist; this overlay only points out the daily core.
 export const TOUR_SCHOOL_TARGET = "school-brand";
 
 export function buildTourSteps(schoolName: string | null | undefined): TourStep[] {
@@ -52,78 +48,30 @@ export function buildTourSteps(schoolName: string | null | undefined): TourStep[
     {
       kind: "intro",
       title: "Welcome to SchoolKit",
-      body: `This is ${school}'s home on SchoolKit. A quick tour of where things live — about a minute. Skip anytime.`,
-    },
-    {
-      kind: "spot",
-      target: TOUR_SCHOOL_TARGET,
-      title: "Your school",
-      body: "Your school's name and logo head the menu here, on the parent portal and in the app. Add or change the logo in Settings → School.",
+      body: `This is ${school}'s home on SchoolKit. Here are the three places you will use most. You can skip anytime.`,
     },
     {
       kind: "spot",
       target: "/students",
       title: "Students",
-      body: "Add students one at a time, in bulk, or import a whole class list from a spreadsheet. Parents are linked to each child here or under Parents & guardians.",
+      body: "Add one student, add a whole class, or import a spreadsheet. Place each student in their current class so registers and results work immediately.",
     },
     {
       kind: "spot",
-      target: "/enrollments",
-      title: "Class enrolment",
-      body: "Put students in their classes for the term — one at a time or a whole class at once. Registers, fees and report cards all follow from this.",
-    },
-    {
-      kind: "spot",
-      target: "/staff",
-      title: "Staff",
-      body: "Invite teachers and admins, make form teachers, and assign who teaches which subject.",
-    },
-    {
-      kind: "spot",
-      target: "/settings/academic",
-      title: "Sessions & classes",
-      body: "Your session and terms, class levels, arms and subjects, and which classes take which subjects.",
-    },
-    {
-      kind: "spot",
-      target: "/report-cards",
-      title: "Report cards",
-      body: "Teachers enter scores in the Gradebook; you review, approve and release report cards from here.",
-    },
-    {
-      kind: "spot",
-      target: "/report-cards/pins",
-      title: "Result checker",
-      body: "Let parents check results online — free for everyone, or behind PIN cards you print and hand out.",
-    },
-    {
-      kind: "spot",
-      target: "/teacher/question-bank",
-      title: "Questions and exams",
-      body: "A question bank for each subject (AI can draft, a teacher approves), exam papers in versions A to D, and online exams on your lab computers.",
+      target: "/teacher/attendance",
+      title: "Attendance",
+      body: "Open today's class register, choose a class and mark pupils present, absent, late or excused.",
     },
     {
       kind: "spot",
       target: "/finance/dashboard",
-      title: "Bursary",
-      body: "Your fee list, invoices and payments, including fees parents pay online through Paystack.",
-    },
-    {
-      kind: "spot",
-      target: "/announcements",
-      title: "Announcements",
-      body: "Send news to parents — it reaches them in the app, on the parent portal and by email.",
-    },
-    {
-      kind: "spot",
-      target: "/settings",
-      title: "Settings",
-      body: "Your school profile and logo, notifications and your own SMS sender name, and who can sign in.",
+      title: "Fees & payments",
+      body: "Set school fees, issue bills and record cash, POS or bank-transfer payments here.",
     },
     {
       kind: "outro",
       title: "You're all set",
-      body: "The ring beside your greeting shows how much of setup is done and what to do next. Replay this tour anytime from Settings → School.",
+      body: "Your dashboard now shows one recommended setup action and the daily shortcuts. Replay this short tour from Help whenever you need it.",
     },
   ];
 }

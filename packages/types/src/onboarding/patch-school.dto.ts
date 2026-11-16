@@ -5,6 +5,7 @@ import { bankAccountNumberSchema } from "../finance/bank-details.js";
 
 import { onboardingStep1Schema } from "./step1-basics.dto.js";
 import { onboardingStep2Schema } from "./step2-branding.dto.js";
+import { schoolModulePreferencesSchema } from "./school-modules.js";
 
 // PATCH /schools/me — partial update of basics + branding by owner/admin.
 // Distinct from the wizard's step endpoints: PATCH is the everyday "edit
@@ -51,6 +52,7 @@ const schoolSettingsSchema = z.object({
   bankAccountName: z.string().trim().min(1, "account name cannot be blank").nullable(),
   bankAccountNumber: bankAccountNumberSchema.nullable(),
   bankDetailsEnabled: z.boolean(),
+  modulePreferences: schoolModulePreferencesSchema,
 });
 
 export const patchSchoolSchema = onboardingStep1Schema

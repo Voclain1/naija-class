@@ -1,6 +1,6 @@
 "use client";
 
-import { Globe, MessagesSquare, Award, BarChart3, Inbox, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, UserX, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Globe, MessagesSquare, Award, BarChart3, Boxes, Inbox, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, UserX, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/page-primitives";
@@ -22,6 +22,12 @@ interface SettingsLink {
 }
 
 const LINKS: SettingsLink[] = [
+  {
+    label: "School modules",
+    href: "/settings/modules",
+    description: "Choose what appears in your school's daily menu without deleting any records.",
+    icon: Boxes,
+  },
   {
     label: "School details",
     href: "/settings/school",

@@ -324,6 +324,7 @@ describe("SetupStateService", () => {
       "academic-calendar": "/settings/academic/years",
       students: "/students",
       enrollments: "/enrollments",
+      "first-register": "/teacher/attendance",
       "fee-catalog": "/finance/fees",
       staff: "/staff",
       "form-teachers": "/settings/academic/class-arms",

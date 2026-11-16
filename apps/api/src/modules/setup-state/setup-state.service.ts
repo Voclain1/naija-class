@@ -173,6 +173,16 @@ export class SetupStateService {
           actionLabel: "Enrol students",
         },
         {
+          key: "first-register",
+          tier: "recommended",
+          done: attendanceCount > 0,
+          count: attendanceCount,
+          title: "Take your first attendance",
+          why: "Open today's class register and mark who is present, absent, late or excused. This confirms your class list is ready for daily use.",
+          href: "/teacher/attendance",
+          actionLabel: "Take attendance",
+        },
+        {
           key: "fee-catalog",
           tier: "recommended",
           done: feeItemCount > 0,
@@ -238,7 +248,7 @@ export class SetupStateService {
         {
           label: "Your classes are ready",
           detail:
-            "KG 1 through SSS 3, with one class each. Rename them, remove any you do not run, or add more streams whenever you like.",
+            "Review the classes your school runs, remove any you do not use, or add more streams whenever you like.",
           href: "/settings/academic/class-arms",
         },
         {

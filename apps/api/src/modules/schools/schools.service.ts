@@ -21,6 +21,7 @@ import {
   type SchoolMeDto,
   type SchoolPlanDto,
   SCHOOL_CONSENT_VERSION,
+  readSchoolModulePreferences,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
@@ -125,6 +126,9 @@ export class SchoolsService {
     if (input.bankAccountName !== undefined) data.bankAccountName = input.bankAccountName;
     if (input.bankAccountNumber !== undefined) data.bankAccountNumber = input.bankAccountNumber;
     if (input.bankDetailsEnabled !== undefined) data.bankDetailsEnabled = input.bankDetailsEnabled;
+    if (input.modulePreferences !== undefined) {
+      data.modulePreferences = input.modulePreferences as Prisma.InputJsonValue;
+    }
     // Slice 8 — the subject-attendance opt-in rides this same PATCH (owner/admin,
     // school.update audit). Reaching this endpoint is itself the enable path, so
     // it carries no opt-in gate.
@@ -661,6 +665,7 @@ const SCHOOL_RESPONSE_SELECT = {
   reportCardDesign: true,
   status: true,
   onboardingStep: true,
+  modulePreferences: true,
   ndprConsent: true,
   ndprConsentAt: true,
   subjectAttendanceEnabled: true,
@@ -694,6 +699,7 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     reportCardDesign: readReportCardDesign(school.reportCardDesign),
     status: school.status,
     onboardingStep: school.onboardingStep,
+    modulePreferences: readSchoolModulePreferences(school.modulePreferences),
     ndprConsent: school.ndprConsent,
     ndprConsentAt: school.ndprConsentAt,
     subjectAttendanceEnabled: school.subjectAttendanceEnabled,

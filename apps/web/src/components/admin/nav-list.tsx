@@ -89,8 +89,8 @@ export function NavList({
   // available on the server).
   useEffect(() => {
     const saved = readOpenGroups();
-    if (saved.length) setOpen((prev) => new Set([...prev, ...saved]));
-  }, []);
+    if (saved.length && !currentGroup) setOpen(new Set([saved.at(-1)!]));
+  }, [currentGroup]);
 
   // Arriving on a page from anywhere (a dashboard link, a search result)
   // opens its section.
@@ -114,9 +114,7 @@ export function NavList({
 
   function toggle(key: NavGroupKey) {
     setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      const next = prev.has(key) ? new Set<NavGroupKey>() : new Set<NavGroupKey>([key]);
       writeOpenGroups([...next]);
       return next;
     });
@@ -230,7 +228,6 @@ function NavSection({
       >
         <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-90")} aria-hidden />
         <span className="flex-1">{label}</span>
-        {!open && <span className="text-xs font-normal text-muted-foreground">{items.length}</span>}
       </button>
       {open && (
         <div id={panelId} className="ml-3 flex flex-col gap-1 border-l border-border pl-2">

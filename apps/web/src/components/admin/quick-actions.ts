@@ -58,7 +58,7 @@ export function resolveQuickActions(visibleNavItems: NavItem[]): QuickAction[] {
       key: "ledger",
       badge: "B",
       label: "Go to finance ledger",
-      text: "Ledger",
+      text: "Fees",
       href: ledger.href,
     });
   }

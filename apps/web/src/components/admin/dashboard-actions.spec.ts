@@ -16,40 +16,41 @@ const BURSAR = [
 ];
 
 describe("dashboard header quick actions", () => {
-  it("gives an owner all three, via the * wildcard", () => {
+  it("gives an owner the four daily tasks, via the * wildcard", () => {
     // An owner's grant is literally ["*"] — verified live at /auth/me, which
     // returns exactly one permission for an owner. A gate that looked for the
     // specific strings would hide every button from the one role that can do
     // everything.
     const actions = resolveDashboardActions(["*"]);
-    expect(actions.map((a) => a.key)).toEqual(["record-fee", "insights", "add-student"]);
+    expect(actions.map((a) => a.key)).toEqual(["take-attendance", "record-payment", "add-student", "enter-scores"]);
   });
 
-  it("gives a bursar Record Fee only", () => {
+  it("gives a bursar Record payment only", () => {
     // Bursar's real grant holds payment.record but neither insight.read nor
     // student.create, so this is the gate doing actual work rather than
     // decorating a role that already has everything.
     const actions = resolveDashboardActions(BURSAR);
-    expect(actions.map((a) => a.key)).toEqual(["record-fee"]);
+    expect(actions.map((a) => a.key)).toEqual(["record-payment"]);
   });
 
-  it("gives an admin with the explicit grants all three", () => {
+  it("gives an admin the daily tasks covered by their explicit grants", () => {
     const actions = resolveDashboardActions([
+      "attendance.read",
       "payment.record",
-      "insight.read",
       "student.create",
+      "assessment-score.create",
     ]);
-    expect(actions).toHaveLength(3);
+    expect(actions).toHaveLength(4);
   });
 
   it("returns nothing for a permission set that admits none of them", () => {
     expect(resolveDashboardActions(["dashboard.read"])).toEqual([]);
   });
 
-  it("keeps Add Student as the only primary action", () => {
+  it("keeps Take attendance as the only primary action", () => {
     const actions = resolveDashboardActions(["*"]);
     const primary = actions.filter((a) => a.emphasis === "primary");
-    expect(primary.map((a) => a.key)).toEqual(["add-student"]);
+    expect(primary.map((a) => a.key)).toEqual(["take-attendance"]);
   });
 
   it("points every action at a real admin-reachable route", () => {
@@ -58,8 +59,9 @@ describe("dashboard header quick actions", () => {
     // /insights is the shipped admin insights page, and
     // /students/new is the admin-shell student creation route.
     const byKey = Object.fromEntries(resolveDashboardActions(["*"]).map((a) => [a.key, a.href]));
-    expect(byKey["record-fee"]).toBe("/finance/payments/record");
-    expect(byKey["insights"]).toBe("/insights");
+    expect(byKey["take-attendance"]).toBe("/teacher/attendance");
+    expect(byKey["record-payment"]).toBe("/finance/payments/record");
     expect(byKey["add-student"]).toBe("/students/new");
+    expect(byKey["enter-scores"]).toBe("/gradebook");
   });
 });

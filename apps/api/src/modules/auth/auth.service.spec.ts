@@ -119,6 +119,9 @@ describe("AuthService.signupOwner (Phase 0 Prompt 3)", () => {
     // changes. Switch off per school via PATCH /platform-admin/schools/:id/ai.
     expect(school?.aiEnabled).toBe(true);
     expect(school?.smartImportEnabled).toBe(true);
+    expect(school?.modulePreferences).toEqual({
+      selected: ["students", "fees", "attendance", "results", "parent-communication"],
+    });
 
     await withTenant(result.school.id, async (db) => {
       // User row has a real argon2 hash, not the plaintext.

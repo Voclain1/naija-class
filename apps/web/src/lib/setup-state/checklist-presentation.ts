@@ -69,6 +69,8 @@ export function doneSummary(step: SetupStepDto): string {
       return `${n} ${is ? "student" : "students"} on your roster.`;
     case "enrollments":
       return `${n} ${is ? "student is" : "students are"} in a class this term.`;
+    case "first-register":
+      return `${n} attendance ${is ? "mark has" : "marks have"} been saved.`;
     case "fee-catalog":
       return `${n} ${is ? "fee" : "fees"} priced.`;
     case "staff":
