@@ -1,10 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { Receipt } from "lucide-react";
+import { ChevronDown, Receipt } from "lucide-react";
 
 import { SectionTabs, type SectionTabItem } from "@/components/shared/section-tabs";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
 
@@ -30,17 +36,19 @@ import { useAuth } from "@/lib/auth/use-auth";
 // /settings/finance/payments stays in Settings: it's Paystack credentials
 // (a school-configuration concern), not fee data.
 const TABS: SectionTabItem[] = [
-  { href: "/finance/dashboard", label: "Dashboard", exact: true },
+  { href: "/finance/dashboard", label: "Overview", exact: true },
+  { href: "/finance/fees", label: "Fees", exact: true },
   { href: "/finance/invoices", label: "Invoices" },
-  // Phase 9 / CP5.1 — student charges and supplementary invoices.
-  { href: "/finance/charges", label: "Charges", exact: true },
   { href: "/finance/debtors", label: "Debtors", exact: true },
-  { href: "/finance/reminders", label: "Reminders", exact: true },
-  { href: "/finance/fees", label: "Fee Catalog", exact: true },
-  { href: "/finance/discounts", label: "Discounts", exact: true },
-  { href: "/finance/expenses", label: "Expenses", exact: true },
-  { href: "/finance/payroll", label: "Payroll", exact: true },
 ];
+
+const MORE_TABS = [
+  { href: "/finance/charges", label: "Extra charges", permission: "invoice.issue" },
+  { href: "/finance/reminders", label: "Payment reminders", permission: "finance.debtors.remind" },
+  { href: "/finance/discounts", label: "Discounts", permission: "discount-rule.read" },
+  { href: "/finance/expenses", label: "Expenses", permission: "expense.read" },
+  { href: "/finance/payroll", label: "Payroll", permission: "payroll.read" },
+] as const;
 
 // "Record payment" lives on the SECTION row, not on the dashboard page.
 //
@@ -72,18 +80,33 @@ function FinanceSectionActions() {
   if (!hasPermission(permissions, "payment.record")) return null;
 
   return (
-    <Button asChild size="sm">
-      <Link href="/finance/payments/record">
-        <Receipt className="mr-2 h-4 w-4" aria-hidden />
-        Record payment
-      </Link>
-    </Button>
+    <div className="flex items-center gap-2">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" size="sm" variant="outline">
+            More <ChevronDown className="ml-1 h-4 w-4" aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {MORE_TABS.filter((item) => hasPermission(permissions, item.permission)).map((item) => (
+            <DropdownMenuItem key={item.href} asChild>
+              <Link href={item.href}>{item.label}</Link>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Button asChild size="sm">
+        <Link href="/finance/payments/record">
+          <Receipt className="mr-2 h-4 w-4" aria-hidden />
+          Record payment
+        </Link>
+      </Button>
+    </div>
   );
 }
 
 export function FinanceSubNav() {
-  const { permissions } = useAuth();
-  const tabs = TABS.filter((tab) => tab.href !== "/finance/reminders" || (hasPermission(permissions, "finance.debtors.read") && hasPermission(permissions, "finance.debtors.remind")));
+  const tabs = TABS;
   return (
     <SectionTabs ariaLabel="Finance sections" items={tabs} actions={<FinanceSectionActions />} />
   );

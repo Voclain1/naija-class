@@ -188,7 +188,19 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-15)
+## Latest state (updated 2026-11-16)
+
+- **UX simplification sprint 2 is complete on
+  `feat/ux-students-finance`.** The student area now progressively discloses
+  specialist modules, hides unsupported fee-risk warnings and offers simple
+  admission-number presets. Finance now centres its navigation and fee setup
+  on ordinary daily tasks, preserves specialist tools under More, provides
+  clearer loading/success next steps and keeps integer-kobo handling. Single
+  student creation has a tenant-scoped retry key to prevent accidental
+  duplicates. Local builds/typechecks, touched-file lint and 82 focused web
+  tests pass. The database-backed student suite is blocked before assertions
+  by a missing pre-existing auth SQL function in the local database, so CI is
+  the remaining integration gate. See the 2026-11-16 journal.
 
 - **UX simplification sprint 1 is active on
   `feat/ux-obvious-daily-core`.** Commit `2037b41` makes attendance and the

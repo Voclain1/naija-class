@@ -57,6 +57,16 @@ function formatDateTime(value: string | Date | null): string {
 // means the enrollments tab will swap in real rows without a v2 endpoint.
 export function StudentDetailTabs({ student, onGuardiansChanged, onPhotoChanged }: Props) {
   const [tab, setTab] = useState<TabKey>("bio");
+  const { school } = useAuth();
+  const selectedModules = school?.modulePreferences?.selected;
+  const tabs = TABS.filter((item) => {
+    if (item.key === "health") return !selectedModules || selectedModules.includes("health");
+    // Behaviour is an advanced record rather than part of the calm default
+    // student profile. Legacy schools (null preferences) keep it; a school
+    // that has chosen its modules reaches behaviour from its dedicated area.
+    if (item.key === "behaviour") return !selectedModules;
+    return true;
+  });
 
   return (
     <div className="flex flex-col gap-4">
@@ -69,7 +79,7 @@ export function StudentDetailTabs({ student, onGuardiansChanged, onPhotoChanged 
         role="tablist"
         aria-label="Student detail sections"
       >
-        {TABS.map((t) => {
+        {tabs.map((t) => {
           const active = tab === t.key;
           return (
             <button
@@ -114,7 +124,10 @@ function BioPanel({
   student: StudentDetailDto;
   onPhotoChanged?: (hasPhoto: boolean) => void;
 }) {
-  const { permissions } = useAuth();
+  const { permissions, school } = useAuth();
+  const selectedModules = school?.modulePreferences?.selected;
+  const moduleEnabled = (key: "transport" | "library" | "hostel") =>
+    !selectedModules || selectedModules.includes(key);
   return (
     <dl className="grid grid-cols-1 gap-x-8 gap-y-3 rounded-md border bg-card p-4 text-sm sm:grid-cols-2">
       <Field label="Passport photo" full>
@@ -144,9 +157,9 @@ function BioPanel({
       <Field label="Notes" full>
         {student.notes ?? "—"}
       </Field>
-      <StudentTransportField studentId={student.id} />
-      <BooksOutField kind="STUDENT" id={student.id} />
-      <StudentHostelField studentId={student.id} />
+      {moduleEnabled("transport") && <StudentTransportField studentId={student.id} />}
+      {moduleEnabled("library") && <BooksOutField kind="STUDENT" id={student.id} />}
+      {moduleEnabled("hostel") && <StudentHostelField studentId={student.id} />}
       <StudentAdmissionDocumentsField studentId={student.id} />
       <StudentFeeRiskField studentId={student.id} />
       {student.status === "WITHDRAWN" && (

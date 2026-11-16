@@ -56,20 +56,16 @@ export function StudentFeeRiskField({ studentId }: { studentId: string }) {
 
   if (!allowed) return null;
   const risk = state.value;
+  // A new student has no payment history to assess. Showing "too new" beside
+  // a seconds-old record looks like a negative judgement and adds no useful
+  // action. Wait until the server has an evidence-based level.
+  if (!state.loaded || !risk || risk.level === "TOO_NEW") return null;
   return (
     <div className="flex flex-col gap-0.5 sm:col-span-2" aria-label="Fee payment risk">
       <dt className="text-xs uppercase tracking-wide text-muted-foreground">Fee payment risk (staff only)</dt>
       <dd>
-        {!state.loaded ? (
-          "…"
-        ) : risk ? (
-          <>
-            <FeeRiskBadge level={risk.level} />
-            <FeeRiskReasons risk={risk} />
-          </>
-        ) : (
-          "No current term"
-        )}
+        <FeeRiskBadge level={risk.level} />
+        <FeeRiskReasons risk={risk} />
       </dd>
     </div>
   );
