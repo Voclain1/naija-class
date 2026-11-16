@@ -32,7 +32,7 @@ export const intakePlacementSchema = z.discriminatedUnion("mode", [
 export type IntakePlacement = z.infer<typeof intakePlacementSchema>;
 
 /** A row is exactly a bulk-add row: no enrolment of its own, no guardians. */
-export const intakeStudentRowSchema = createStudentSchema.omit({ enrollment: true });
+export const intakeStudentRowSchema = createStudentSchema.omit({ enrollment: true, creationRequestId: true });
 export type IntakeStudentRow = z.infer<typeof intakeStudentRowSchema>;
 
 export const prepareStudentIntakeSchema = z

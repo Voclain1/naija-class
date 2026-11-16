@@ -166,6 +166,7 @@ export function StudentForm({ existing, admissionNumbering }: Props) {
   // "unanswered" flag would paint the field red before the admin has done
   // anything, which reads as an error they caused rather than a question.
   const [placementBlocked, setPlacementBlocked] = useState(false);
+  const [creationRequestId] = useState(() => crypto.randomUUID());
   const form = useForm<FormValues>({
     resolver: zodResolver(studentFormSchema),
     defaultValues: defaultValues(existing),
@@ -221,6 +222,7 @@ export function StudentForm({ existing, admissionNumbering }: Props) {
       stateOfOrigin: emptyToUndefined(values.stateOfOrigin),
       nationality: emptyToUndefined(values.nationality) ?? "Nigerian",
       notes: emptyToUndefined(values.notes),
+      ...(!existing ? { creationRequestId } : {}),
       ...(existing || !placement ? {} : { enrollment: placement }),
     };
 

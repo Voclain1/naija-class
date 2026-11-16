@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
@@ -129,6 +130,22 @@ describe("StudentsService", () => {
       expect(metadata.lastName).toBeUndefined();
       expect(metadata.dateOfBirth).toBeUndefined();
       expect(metadata.medicalNotes).toBeUndefined();
+    });
+
+    it("returns the original student when the same creation request is retried", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("idempotent-create");
+      const input = { ...requiredFields("retry-001"), creationRequestId: randomUUID() };
+
+      const first = await service.create(authCtx, input, reqCtx);
+      const retry = await service.create(authCtx, input, reqCtx);
+
+      expect(retry.id).toBe(first.id);
+      expect(await withTenant(schoolId, (db) => db.student.count({
+        where: { schoolId, creationRequestId: input.creationRequestId },
+      }))).toBe(1);
+      expect(await withTenant(schoolId, (db) => db.auditLog.count({
+        where: { schoolId, action: "student.create", entityId: first.id },
+      }))).toBe(1);
     });
 
     // Plans (2026-10-11, docs/modules/plans.md D3).

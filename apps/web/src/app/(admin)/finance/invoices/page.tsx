@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { AlertTriangle, Loader2, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -125,6 +125,7 @@ export default function InvoicesPage() {
   // empty "Class" dropdown because /class-arms 500'd looks identical to a
   // school that has not set up any classes, and the two need different advice.
   const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [referenceLoading, setReferenceLoading] = useState(true);
 
   // Picker state (shared between generate and list tabs)
   const [yearId, setYearId] = useState("");
@@ -153,6 +154,7 @@ export default function InvoicesPage() {
 
   // Load reference data on mount
   const loadReferenceData = useCallback(() => {
+    setReferenceLoading(true);
     setReferenceError(null);
     Promise.all([listAcademicYears(), listClassArms()])
       .then(([loadedYears, loadedArms]) => {
@@ -185,7 +187,8 @@ export default function InvoicesPage() {
         // The reference-data alert already explains the failure; stop holding
         // the list back for a link that cannot be resolved.
         if (linkUnresolved.current) finishLink();
-      });
+      })
+      .finally(() => setReferenceLoading(false));
   }, [link.yearId, finishLink]);
 
   useEffect(loadReferenceData, [loadReferenceData]);
@@ -386,7 +389,12 @@ export default function InvoicesPage() {
       )}
 
       {/* Term + arm picker */}
-      <div className="flex flex-wrap items-end gap-3 print:hidden">
+      {referenceLoading ? (
+        <div className="flex min-h-20 items-center gap-2 rounded-lg border bg-card px-4 text-sm text-muted-foreground" role="status">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          Loading school years, terms and classes…
+        </div>
+      ) : <div className="flex flex-wrap items-end gap-3 print:hidden">
         <div>
           <label htmlFor="invoice-year" className="mb-1 block text-sm font-medium text-foreground">
             Academic year
@@ -447,7 +455,7 @@ export default function InvoicesPage() {
             ))}
           </select>
         </div>
-      </div>
+      </div>}
 
       {linkNotice && (
         <InlineAlert title="Link term not found" className="print:hidden">
@@ -529,9 +537,10 @@ export default function InvoicesPage() {
           )}
 
           {generateResult && (
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
-              Done — {generateResult.created} invoice{generateResult.created === 1 ? "" : "s"}{" "}
-              created, {generateResult.skipped} skipped (already issued).
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
+              <span>Done — {generateResult.created} invoice{generateResult.created === 1 ? "" : "s"}{" "}
+              created, {generateResult.skipped} skipped (already issued).</span>
+              <Button type="button" size="sm" variant="outline" onClick={() => changeTab("list")}>View invoices</Button>
             </div>
           )}
 

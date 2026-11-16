@@ -31,6 +31,9 @@ export const createStudentSchema = z
     nationality: z.string().trim().min(1).max(40).optional(),
     admittedAt: z.coerce.date().optional(),
     notes: z.string().trim().min(1).max(2000).nullable().optional(),
+    // One key per single-student form. Reused when the browser retries after
+    // a lost response so the server can return the original record.
+    creationRequestId: z.string().uuid().optional(),
 
     /**
      * Place the student in a class in the same breath as creating them.

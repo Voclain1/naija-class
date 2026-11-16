@@ -1,6 +1,6 @@
 "use client";
 
-import { Hash, Loader2 } from "lucide-react";
+import { ChevronDown, Hash, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -36,6 +36,18 @@ import { getAdmissionNumberSettings, updateAdmissionNumberSettings } from "@/lib
 
 const THIS_YEAR = new Date().getFullYear();
 export const DEFAULT_FORMAT = "{YYYY}/{NNNN}";
+
+export const ADMISSION_FORMAT_PRESETS: ReadonlyArray<{
+  label: string;
+  format: string;
+  example: string;
+  order?: AdmissionNumberOrder;
+}> = [
+  { label: "School / year / number", format: "SCH/{YYYY}/{NNNN}", example: `SCH/${THIS_YEAR}/0001` },
+  { label: "Year / number", format: "{YYYY}/{NNNN}", example: `${THIS_YEAR}/0001` },
+  { label: "School / class / number", format: "SCH/{CLASS}/{NNN}", example: "SCH/JSS1/001", order: "CLASS" as const },
+  { label: "Number only", format: "{NNNN}", example: "0001" },
+];
 
 /** The school's numbering, loaded once per page; `reload` after a change. */
 export function useAdmissionNumbers() {
@@ -223,6 +235,9 @@ export function AdmissionNumbersEditor({
   const [format, setFormat] = useState(settings.format ?? DEFAULT_FORMAT);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customOpen, setCustomOpen] = useState(
+    () => !ADMISSION_FORMAT_PRESETS.some((preset) => preset.format === (settings.format ?? DEFAULT_FORMAT)),
+  );
 
   // Per class needs {CLASS}; offer it rather than leave the admin to guess.
   const changeOrder = (next: AdmissionNumberOrder) => {
@@ -252,7 +267,41 @@ export function AdmissionNumbersEditor({
   return (
     <div className="flex flex-col gap-4">
       <OrderChoice value={order} onChange={changeOrder} name={`${idPrefix}-order`} />
-      <FormatField id={`${idPrefix}-format`} value={format} onChange={setFormat} order={order} error={error} />
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">Choose a common format</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {ADMISSION_FORMAT_PRESETS.filter((preset) => !preset.order || preset.order === order).map((preset) => {
+            const selected = format === preset.format;
+            return (
+              <button
+                key={preset.format}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => {
+                  setFormat(preset.format);
+                  setError(null);
+                  setCustomOpen(false);
+                }}
+                className={`rounded-lg border p-3 text-left ${selected ? "border-primary bg-primary/5" : "bg-card hover:bg-muted/40"}`}
+              >
+                <span className="block text-sm font-medium">{preset.label}</span>
+                <span className="mt-1 block font-mono text-xs text-muted-foreground">{preset.example}</span>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+      <button
+        type="button"
+        className="flex w-fit items-center gap-1 text-sm font-medium text-primary"
+        aria-expanded={customOpen}
+        onClick={() => setCustomOpen((open) => !open)}
+      >
+        Custom format <ChevronDown className={`h-4 w-4 transition-transform ${customOpen ? "rotate-180" : ""}`} />
+      </button>
+      {customOpen && (
+        <FormatField id={`${idPrefix}-format`} value={format} onChange={setFormat} order={order} error={error} />
+      )}
       <div>
         <Button type="button" onClick={() => void save()} disabled={saving || !exampleNumbers(format, order, THIS_YEAR).ok}>
           {saving && <Loader2 className="h-4 w-4 animate-spin" />}

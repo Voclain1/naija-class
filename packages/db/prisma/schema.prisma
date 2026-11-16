@@ -919,6 +919,7 @@ model Student {
   withdrawnAt DateTime? @map("withdrawn_at") // event moment
   graduatedAt DateTime? @map("graduated_at") // event moment
   notes       String?
+  creationRequestId String? @map("creation_request_id")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
@@ -948,6 +949,7 @@ model Student {
   admissionApplications AdmissionApplication[] // Phase 9 / CP7 (set when admitted)
 
   @@unique([schoolId, admissionNumber])
+  @@unique([schoolId, creationRequestId])
   @@index([schoolId])
   @@index([schoolId, status])
   @@index([schoolId, lastName, firstName]) // sorted roster scans

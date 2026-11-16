@@ -221,7 +221,28 @@ export class StudentsService {
   ): Promise<StudentDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
-    return withTenant(authCtx.schoolId, (db) => createStudentInTx(db, authCtx, input, reqCtx));
+    if (input.creationRequestId) {
+      const prior = await withTenant(authCtx.schoolId, (db) => db.student.findUnique({
+        where: { schoolId_creationRequestId: { schoolId: authCtx.schoolId, creationRequestId: input.creationRequestId! } },
+        select: STUDENT_SELECT,
+      }));
+      if (prior) return toStudentDto(prior);
+    }
+
+    try {
+      return await withTenant(authCtx.schoolId, (db) => createStudentInTx(db, authCtx, input, reqCtx));
+    } catch (error) {
+      // Two copies of the same request may race. The unique key chooses the
+      // winner; after the losing transaction rolls back, return that winner.
+      if (input.creationRequestId) {
+        const prior = await withTenant(authCtx.schoolId, (db) => db.student.findUnique({
+          where: { schoolId_creationRequestId: { schoolId: authCtx.schoolId, creationRequestId: input.creationRequestId! } },
+          select: STUDENT_SELECT,
+        }));
+        if (prior) return toStudentDto(prior);
+      }
+      throw error;
+    }
   }
 
   // ----------------------------------------------------------------------
@@ -717,6 +738,7 @@ export async function createStudentInTx(
         nationality: input.nationality ?? "Nigerian",
         admittedAt: input.admittedAt ?? new Date(),
         notes: input.notes ?? null,
+        creationRequestId: input.creationRequestId ?? null,
       },
       select: STUDENT_SELECT,
     });
