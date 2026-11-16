@@ -16,7 +16,7 @@ export const MAX_BULK_STUDENTS = 200;
 
 export const bulkCreateStudentsSchema = z
   .object({
-    students: z.array(createStudentSchema.omit({ enrollment: true })).min(1).max(MAX_BULK_STUDENTS),
+    students: z.array(createStudentSchema.omit({ enrollment: true, creationRequestId: true })).min(1).max(MAX_BULK_STUDENTS),
     // One class for the whole batch (2026-10-12): places every student in it
     // for that term, and gives per-class admission numbers their class.
     enrollment: z.object({ termId: z.string().uuid(), classArmId: z.string().uuid() }).strict().optional(),
