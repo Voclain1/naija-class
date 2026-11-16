@@ -59,6 +59,7 @@ interface Recorded {
   amount: number;
   name: string;
   balanceLeft: number;
+  studentId: string;
 }
 
 export default function RecordPaymentPage() {
@@ -257,6 +258,7 @@ function PayForm({
         amount: payment.amount,
         name: group.name,
         balanceLeft: Math.max(0, balance - payment.amount),
+        studentId: group.studentId,
       });
     } catch (err) {
       setError(financeErrorMessage(err));
@@ -445,6 +447,9 @@ function Done({ recorded, onAnother }: { recorded: Recorded; onAnother: () => vo
         </Button>
         <Button type="button" onClick={onAnother}>
           Record another
+        </Button>
+        <Button asChild type="button" variant="ghost">
+          <Link href={`/students/${recorded.studentId}`}>View student account</Link>
         </Button>
       </div>
     </section>

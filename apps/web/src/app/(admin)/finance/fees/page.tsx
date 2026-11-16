@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, PlusCircle, Trash2, Pencil, X, Check } from "lucide-react";
+import { ChevronDown, Loader2, PlusCircle, Trash2, Pencil, X, Check } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -38,6 +38,7 @@ import {
 } from "@/lib/finance/fee-catalog-api";
 import { formatKobo } from "@/lib/finance/format";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
+import { nairaInputToKobo } from "@/lib/finance/naira-input";
 
 // ---------------------------------------------------------------------------
 // Fee Catalog page (/finance/fees; moved from /settings/finance/fees
@@ -114,6 +115,9 @@ export default function FeesPage() {
   const [editingItem, setEditingItem] = useState<FeeItemDto | null>(null);
   const [itemForm, setItemForm] = useState<ItemFormState>(EMPTY_ITEM_FORM);
   const [itemSaving, setItemSaving] = useState(false);
+  const [preparingFee, setPreparingFee] = useState(false);
+  const [showPeriod, setShowPeriod] = useState(false);
+  const [feeAudience, setFeeAudience] = useState<"school" | "level" | "class">("school");
 
   // ── reference data load ──────────────────────────────────────────────────
   useEffect(() => {
@@ -196,7 +200,9 @@ export default function FeesPage() {
     setCatsLoading(true);
     setCategoriesError(null);
     try {
-      setCategories(await listFeeCategories());
+      const loaded = await listFeeCategories();
+      setCategories(loaded);
+      setSelectedCatId((current) => current ?? loaded[0]?.id ?? null);
     } catch (e) {
       logFinanceError("listFeeCategories", e);
       setCategoriesError(financeErrorMessage(e));
@@ -245,7 +251,7 @@ export default function FeesPage() {
       }
       setCatFormOpen(false);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Could not save category.");
+      toast.error(e instanceof ApiError ? e.message : "Could not save the fee group.");
     } finally {
       setCatSaving(false);
     }
@@ -263,7 +269,7 @@ export default function FeesPage() {
       if (selectedCatId === cat.id) setSelectedCatId(null);
       toast.success(`"${cat.name}" deleted.`);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Could not delete category.");
+      toast.error(e instanceof ApiError ? e.message : "Could not delete the fee group.");
     }
   };
 
@@ -286,8 +292,40 @@ export default function FeesPage() {
 
   const openItemCreate = () => {
     setEditingItem(null);
-    setItemForm(EMPTY_ITEM_FORM);
+    const currentYear = years.find((year) => year.isCurrent);
+    const currentTerm = allTerms.find(
+      (term) => term.isCurrent && (!currentYear || term.academicYearId === currentYear.id),
+    );
+    setItemForm({
+      ...EMPTY_ITEM_FORM,
+      academicYearId: currentYear?.id ?? "",
+      termId: currentTerm?.id ?? "",
+    });
+    setShowPeriod(false);
+    setFeeAudience("school");
     setItemFormOpen(true);
+  };
+
+  const openSimpleFeeCreate = async () => {
+    if (selectedCatId || categories[0]) {
+      if (!selectedCatId && categories[0]) setSelectedCatId(categories[0].id);
+      openItemCreate();
+      return;
+    }
+    setPreparingFee(true);
+    try {
+      const created = await createFeeCategory({
+        name: "School fees",
+        description: "Everyday school fees. You can add optional fee groups later.",
+      });
+      setCategories([created]);
+      setSelectedCatId(created.id);
+      openItemCreate();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Could not prepare the fee form. Try again.");
+    } finally {
+      setPreparingFee(false);
+    }
   };
 
   const openItemEdit = (item: FeeItemDto) => {
@@ -300,13 +338,15 @@ export default function FeesPage() {
       termId: item.termId ?? "",
       academicYearId: item.academicYearId ?? "",
     });
+    setShowPeriod(Boolean(item.termId || item.academicYearId));
+    setFeeAudience(item.classArmId ? "class" : item.classLevelId ? "level" : "school");
     setItemFormOpen(true);
   };
 
   const saveItem = async () => {
     if (!itemForm.name.trim() || !itemForm.amountNaira || !selectedCatId) return;
-    const amountKobo = Math.round(parseFloat(itemForm.amountNaira) * 100);
-    if (!Number.isFinite(amountKobo) || amountKobo <= 0) {
+    const amountKobo = nairaInputToKobo(itemForm.amountNaira);
+    if (amountKobo === null || amountKobo <= 0) {
       toast.error("Enter a valid positive amount in naira.");
       return;
     }
@@ -344,7 +384,7 @@ export default function FeesPage() {
       }
       setItemFormOpen(false);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Could not save fee item.");
+      toast.error(e instanceof ApiError ? e.message : "Could not save the fee.");
     } finally {
       setItemSaving(false);
     }
@@ -362,7 +402,7 @@ export default function FeesPage() {
       );
       toast.success(`"${item.name}" deleted.`);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Could not delete fee item.");
+      toast.error(e instanceof ApiError ? e.message : "Could not delete the fee.");
     }
   };
 
@@ -370,12 +410,17 @@ export default function FeesPage() {
 
   return (
     <div className="schoolkit-workspace flex w-full flex-col gap-6">
-      <header>
-        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Fee catalog</h1>
-        <p className="text-sm text-muted-foreground">
-          Define fee categories (e.g. Tuition, PTA Levy) and the items within
-          each — with optional scope to a class level, arm, term, or academic year.
-        </p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Fees</h1>
+          <p className="text-sm text-muted-foreground">
+            Add what students pay, choose who pays it, and SchoolKit will use it when creating invoices.
+          </p>
+        </div>
+        <Button onClick={() => void openSimpleFeeCreate()} disabled={preparingFee || catsLoading}>
+          {preparingFee ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
+          Add fee
+        </Button>
       </header>
 
       {referenceError && (
@@ -385,13 +430,13 @@ export default function FeesPage() {
       )}
 
       {categoriesError && (
-        <InlineAlert title="Could not load fee categories" action={{ label: "Retry", onClick: () => void loadCategories() }}>
+        <InlineAlert title="Could not load fee groups" action={{ label: "Retry", onClick: () => void loadCategories() }}>
           {categoriesError}
         </InlineAlert>
       )}
 
       {itemsError && (
-        <InlineAlert title="Could not load fee items" action={{ label: "Retry", onClick: () => window.location.reload() }}>
+        <InlineAlert title="Could not load fees" action={{ label: "Retry", onClick: () => window.location.reload() }}>
           {itemsError}
         </InlineAlert>
       )}
@@ -402,7 +447,7 @@ export default function FeesPage() {
         {/* ── Category panel ─────────────────────────────────────────── */}
         <aside className="w-full md:w-64 md:shrink-0">
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-medium">Categories</h2>
+            <h2 className="text-sm font-medium">Fee groups <span className="font-normal text-muted-foreground">(optional)</span></h2>
             <Button size="sm" variant="outline" onClick={openCatCreate}>
               <PlusCircle className="mr-1 h-3.5 w-3.5" aria-hidden />
               {/* Visible label stays "New" (it sits under a "Categories"
@@ -411,7 +456,7 @@ export default function FeesPage() {
                   a screen-reader user tabbing to it out of that visual
                   context otherwise hears only "New". Keeping "New" as the
                   prefix satisfies WCAG 2.5.3 Label in Name. */}
-              New<span className="sr-only"> category</span>
+              New<span className="sr-only"> fee group</span>
             </Button>
           </div>
 
@@ -448,7 +493,7 @@ export default function FeesPage() {
         <Dialog open={catFormOpen} onOpenChange={setCatFormOpen}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle>{editingCat ? "Edit category" : "New category"}</DialogTitle>
+              <DialogTitle>{editingCat ? "Edit fee group" : "New fee group"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
               <div>
@@ -493,7 +538,7 @@ export default function FeesPage() {
         <div className="flex-1 min-w-0">
           {!selectedCat ? (
             <div className="flex h-40 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-              Select a category to manage its fee items.
+              Add a fee to get started. SchoolKit will create a general fee group automatically.
             </div>
           ) : (
             <div className="space-y-4">
@@ -522,7 +567,7 @@ export default function FeesPage() {
                 </div>
                 <Button size="sm" onClick={openItemCreate}>
                   <PlusCircle className="mr-1 h-3.5 w-3.5" />
-                  Add item
+                  Add fee
                 </Button>
               </div>
 
@@ -532,7 +577,7 @@ export default function FeesPage() {
                 </div>
               ) : !itemsError && items.length === 0 ? (
                 <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-                  No fee items in this category yet.
+                  No fees in this group yet.
                 </div>
               ) : items.length > 0 ? (
                 <div className="rounded-lg border">
@@ -541,7 +586,7 @@ export default function FeesPage() {
                       <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead className="text-right">Amount</TableHead>
-                        <TableHead>Scope</TableHead>
+                        <TableHead>Who pays</TableHead>
                         <TableHead className="text-center">Active</TableHead>
                         <TableHead />
                       </TableRow>
@@ -596,7 +641,7 @@ export default function FeesPage() {
       <Dialog open={itemFormOpen} onOpenChange={setItemFormOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingItem ? "Edit fee item" : "New fee item"}</DialogTitle>
+            <DialogTitle>{editingItem ? "Edit fee" : "Add fee"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             {/* Name */}
@@ -626,20 +671,30 @@ export default function FeesPage() {
                 onChange={(e) => setItemForm((f) => ({ ...f, amountNaira: e.target.value }))}
                 placeholder="e.g. 15000"
               />
-              {itemForm.amountNaira && !isNaN(parseFloat(itemForm.amountNaira)) && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Stored as {(Math.round(parseFloat(itemForm.amountNaira) * 100)).toLocaleString()} kobo
-                </p>
-              )}
             </div>
 
-            {/* Scope section */}
-            <p className="pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Scope (all optional — leave blank for school-wide)
-            </p>
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">Who should pay this fee?</legend>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {[
+                  { label: "Whole school", value: "school" },
+                  { label: "A class level", value: "level" },
+                  { label: "One class", value: "class" },
+                ].map((option) => {
+                  return <label key={option.value} className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${feeAudience === option.value ? "border-primary bg-primary/5" : ""}`}>
+                    <input type="radio" name="fee-audience" checked={feeAudience === option.value} onChange={() => {
+                      const next = option.value as "school" | "level" | "class";
+                      setFeeAudience(next);
+                      setItemForm((form) => ({ ...form, classLevelId: next === "school" ? "" : form.classLevelId, classArmId: next === "class" ? form.classArmId : "" }));
+                    }} />
+                    {option.label}
+                  </label>;
+                })}
+              </div>
+            </fieldset>
 
             {/* Class level */}
-            <div>
+            {feeAudience !== "school" && <div>
               <label htmlFor="fee-class-level" className="mb-1 block text-sm font-medium text-foreground">Class level</label>
               <select id="fee-class-level"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -652,17 +707,17 @@ export default function FeesPage() {
                   }))
                 }
               >
-                <option value="">— Any level —</option>
+                <option value="">Select a class level…</option>
                 {levels.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
                   </option>
                 ))}
               </select>
-            </div>
+            </div>}
 
             {/* Class arm — disabled until level selected */}
-            <div>
+            {feeAudience === "class" && itemForm.classLevelId && <div>
               <label htmlFor="fee-class-arm" className="mb-1 block text-sm font-medium text-foreground">Class arm</label>
               <select id="fee-class-arm"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
@@ -670,7 +725,7 @@ export default function FeesPage() {
                 onChange={(e) => setItemForm((f) => ({ ...f, classArmId: e.target.value }))}
                 disabled={!itemForm.classLevelId}
               >
-                <option value="">— Any arm —</option>
+                <option value="">Select a class…</option>
                 {arms.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name}
@@ -680,10 +735,13 @@ export default function FeesPage() {
               {!itemForm.classLevelId && (
                 <p className="mt-0.5 text-xs text-muted-foreground">Select a class level first.</p>
               )}
-            </div>
+            </div>}
 
-            {/* Academic year */}
-            <div>
+            <button type="button" className="flex items-center gap-1 text-sm font-medium text-primary" onClick={() => setShowPeriod((open) => !open)} aria-expanded={showPeriod}>
+              Change school year or term <ChevronDown className={`h-4 w-4 ${showPeriod ? "rotate-180" : ""}`} />
+            </button>
+
+            {showPeriod && <><div>
               <label htmlFor="fee-academic-year" className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
               <select id="fee-academic-year"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -724,7 +782,7 @@ export default function FeesPage() {
               {!itemForm.academicYearId && (
                 <p className="mt-0.5 text-xs text-muted-foreground">Select an academic year first.</p>
               )}
-            </div>
+            </div></>}
           </div>
 
           {/*
@@ -748,10 +806,10 @@ export default function FeesPage() {
             </Button>
             <Button
               onClick={() => void saveItem()}
-              disabled={itemSaving || !itemForm.name.trim() || !itemForm.amountNaira}
+              disabled={itemSaving || !itemForm.name.trim() || !itemForm.amountNaira || (feeAudience !== "school" && !itemForm.classLevelId) || (feeAudience === "class" && !itemForm.classArmId)}
             >
               {itemSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-              Save
+              {editingItem ? "Save changes" : "Add fee"}
             </Button>
           </DialogFooter>
         </DialogContent>
