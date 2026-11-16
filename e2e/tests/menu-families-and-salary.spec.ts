@@ -19,13 +19,15 @@ test("the admin menu is grouped into sections, and finds a page by an everyday w
   // The section holding the page you are on is open; another is closed.
   await expect(menu.getByRole("button", { name: /^Students/ })).toHaveAttribute("aria-expanded", "true");
   await expect(menu.getByRole("link", { name: "Students", exact: true })).toBeVisible();
-  const care = menu.getByRole("button", { name: /Student welfare/ });
-  await expect(care).toHaveAttribute("aria-expanded", "false");
-  await expect(menu.getByRole("link", { name: "Sickbay", exact: true })).toHaveCount(0);
+  // Use a core area: a fresh school intentionally hides optional welfare
+  // modules until its owner enables them.
+  const results = menu.getByRole("button", { name: /Examinations & results/ });
+  await expect(results).toHaveAttribute("aria-expanded", "false");
+  await expect(menu.getByRole("link", { name: "Gradebook", exact: true })).toHaveCount(0);
 
   // Opening a section shows its pages.
-  await care.click();
-  await expect(menu.getByRole("link", { name: "Sickbay", exact: true })).toBeVisible();
+  await results.click();
+  await expect(menu.getByRole("link", { name: "Gradebook", exact: true })).toBeVisible();
 
   // "fees" finds the plain-language Finance destination.
   await menu.getByLabel("Find a page").fill("fees");
