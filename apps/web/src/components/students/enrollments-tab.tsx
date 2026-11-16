@@ -177,7 +177,7 @@ export function EnrollmentsTab({ studentId }: Props) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Loading enrollments…
+        Loading class history…
       </div>
     );
   }
@@ -211,15 +211,15 @@ export function EnrollmentsTab({ studentId }: Props) {
           >
             Settings → Academic
           </a>{" "}
-          before enrolling.
+          before placing this student in a class.
         </div>
       )}
 
       {rows.length === 0 ? (
         <div className="flex flex-col items-center gap-1 rounded-md border border-dashed bg-muted/30 p-8 text-center">
-          <p className="text-sm font-medium">No enrollments yet</p>
+          <p className="text-sm font-medium">No class history yet</p>
           <p className="text-sm text-muted-foreground">
-            This student hasn&apos;t been enrolled in any term.
+            This student has not been placed in a class for any term.
           </p>
         </div>
       ) : (
@@ -309,16 +309,16 @@ function EnrollNowPanel({
         termId: term.id,
         classArmId: armId,
       });
-      toast.success("Enrolled.");
+      toast.success("Student added to the class.");
       setShowForm(false);
       setArmId("");
       onEnrolled();
     } catch (e) {
       if (e instanceof ApiError && e.code === "ENROLLMENT_ALREADY_EXISTS") {
-        toast.error("This student is already enrolled in this term.");
+        toast.error("This student is already in a class for this term.");
       } else {
         toast.error(
-          e instanceof ApiError ? e.message : "Could not enrol.",
+          e instanceof ApiError ? e.message : "Could not add the student to this class.",
         );
       }
     } finally {
@@ -330,10 +330,9 @@ function EnrollNowPanel({
     return (
       <div className="flex flex-col gap-2 rounded-md border border-dashed bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm">
-          <p className="font-medium">Not enrolled this term yet</p>
+          <p className="font-medium">No class selected for this term</p>
           <p className="text-xs text-muted-foreground">
-            Current term: <strong>{term.name}</strong>. Pick a class arm to
-            enrol.
+            Current term: <strong>{term.name}</strong>. Choose the student&apos;s class.
           </p>
         </div>
         <Button
@@ -342,7 +341,7 @@ function EnrollNowPanel({
           onClick={() => setShowForm(true)}
         >
           <PlusCircle className="h-4 w-4" />
-          Enroll in current term
+          Choose class for this term
         </Button>
       </div>
     );
@@ -402,7 +401,7 @@ function EnrollNowPanel({
           disabled={submitting || !armId}
         >
           {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-          {submitting ? "Enrolling…" : "Enrol"}
+          {submitting ? "Saving class…" : "Add to class"}
         </Button>
       </div>
     </div>

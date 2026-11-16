@@ -235,7 +235,7 @@ export default function StudentsRosterPage() {
           body={
             search || status || classArmId
               ? "Try clearing the search, status, or class filter."
-              : "Add your first student — or import a roster from CSV."
+              : "Add one student, paste a class list, or upload your spreadsheet."
           }
           action={
             /* The same chooser as the header: every way to add, one line

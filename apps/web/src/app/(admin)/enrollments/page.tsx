@@ -311,7 +311,7 @@ export default function EnrollmentsPage() {
           >
             Settings → Academic
           </Link>{" "}
-          before enrolling students.
+          before placing students in classes.
         </div>
       </div>
     );
@@ -322,10 +322,10 @@ export default function EnrollmentsPage() {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
       <PageHeader
-        title="Enrollments"
+        title="Class placement"
         subtitle={
           <>
-            Per-term roster by class arm. Pick a year + term to view. At the start of a new term or
+            See who is in each class for a term. Pick a year and term to view. At the start of a new term or
             session, use <strong>Promote students</strong> to bring every class forward at once.
           </>
         }
@@ -344,7 +344,7 @@ export default function EnrollmentsPage() {
           notice names the actual missing thing and links to it. */}
       <PrerequisiteNotice
         stepKey="students"
-        because="There is nobody to enrol yet — your roster is empty."
+        because="There is nobody to place in a class yet — your student roster is empty."
       />
 
       <section className="flex flex-col gap-3 rounded-md border bg-card p-4 sm:flex-row sm:items-end">
@@ -526,11 +526,11 @@ function ArmCard({
             <p className="text-sm text-muted-foreground">
               Students join a class when you add them — choose the class on the student
               form. You can also add an existing student to this class from their own page,
-              under Enrollments.
+              under Class history.
             </p>
             <Button asChild size="sm" variant="outline" className="w-fit">
-              <Link href="/students/new">
-                Add a student
+              <Link href="/students/intake">
+                Add students
                 <ArrowRight className="ml-1 h-4 w-4" />
               </Link>
             </Button>
