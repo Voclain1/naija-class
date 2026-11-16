@@ -190,6 +190,15 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-16)
 
+- **PR #549 Playwright timeout is fixed on its existing branch.** The new
+  admission-number presets intentionally hide the raw input behind **Custom
+  format**, while two E2E scenarios still tried to fill it immediately. Each
+  locator waited for the full three-minute test timeout and its retries drove
+  the job into GitHub's one-hour cancellation. Both scenarios now open the
+  progressive-disclosure control first; no product behaviour or assertion was
+  weakened. The focused format unit suite passes 7/7 and Playwright discovers
+  all 10 bulk-student scenarios. CI is the final browser/database gate.
+
 - **UX simplification sprint 2 is complete on
   `feat/ux-students-finance`.** The student area now progressively discloses
   specialist modules, hides unsupported fee-risk warnings and offers simple

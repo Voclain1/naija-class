@@ -220,6 +220,7 @@ test("a new school is asked how it gives admission numbers, and SchoolKit number
   const question = page.getByRole("dialog");
   await expect(question.getByText("How does your school give admission numbers?")).toBeVisible({ timeout: 60_000 });
   await question.getByRole("button", { name: /SchoolKit assigns them/ }).click();
+  await question.getByRole("button", { name: "Custom format" }).click();
   await question.getByLabel("Your admission number format").fill("E2E/{YYYY}/{NNNN}");
   await expect(question.getByText(`E2E/${year}/0001, E2E/${year}/0002, E2E/${year}/0003…`)).toBeVisible();
   await question.getByRole("button", { name: "Use this format" }).click();
@@ -267,6 +268,7 @@ test("Settings turns on random numbers; the Change dialog switches back to typin
   await expect(page.getByText(/Now: typed by you/)).toBeVisible();
 
   await page.getByRole("radio", { name: /Random/ }).check();
+  await page.getByRole("button", { name: "Custom format" }).click();
   await page.getByLabel("Your admission number format").fill("R{NNNNN}");
   await page.getByRole("button", { name: "Turn on automatic numbers" }).click();
   await expect(page.getByText(/Now: automatic/)).toBeVisible({ timeout: 30_000 });
