@@ -17,11 +17,11 @@ export default function NewStudentPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <Link
-        href="/students"
+        href="/students/intake"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to roster
+        Back to add students
       </Link>
       <header className="flex flex-col gap-1">
         <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Add student</h1>

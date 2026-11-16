@@ -29,7 +29,7 @@ type TabKey = "bio" | "guardians" | "enrollments" | "health" | "behaviour";
 const TABS: { key: TabKey; label: string }[] = [
   { key: "bio", label: "Bio" },
   { key: "guardians", label: "Guardians" },
-  { key: "enrollments", label: "Enrollments" },
+  { key: "enrollments", label: "Class history" },
   // Phase 9 / CP3.1 — the health record (docs/modules/phase-9.md §10). Opens
   // its own audited read only when chosen.
   { key: "health", label: "Health" },

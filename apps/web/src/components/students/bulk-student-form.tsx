@@ -644,7 +644,7 @@ export function BulkStudentForm({
             <p className="mt-1">They were also added to the class and term selected above.</p>
           )}
           {allDone && placement === null && (
-            <p className="mt-1">They are not in a class yet. Open each student&apos;s Enrollments tab to place them later.</p>
+            <p className="mt-1">They are not in a class yet. Open each student&apos;s Class history tab to place them later.</p>
           )}
         </div>
       )}
@@ -656,7 +656,7 @@ export function BulkStudentForm({
       </div>}
       {guidedReview && allDone && <div className="rounded-lg bg-primary/5 p-4 text-sm">
         <p className="font-medium">Next: link parents and check class placement</p>
-        <p className="mt-1">Use each saved student’s View link below to open their record. Their Guardians tab handles parent links and invitations; the Enrollments tab shows their class. Nothing has been sent to parents.</p>
+        <p className="mt-1">Use each saved student’s View link below to open their record. Their Guardians tab handles parent links and invitations; Class history shows their current and past classes. Nothing has been sent to parents.</p>
       </div>}
       <div className="overflow-x-auto rounded-md border">
         <Table>

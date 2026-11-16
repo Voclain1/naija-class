@@ -107,7 +107,7 @@ export const NAV_ITEMS: NavItem[] = [
   // time. Gated on guardian.read, which owner and admin hold.
   { label: "Parents & guardians", href: "/guardians", icon: Contact, group: "students", module: "parent-communication", keywords: ["guardians", "parents", "families"], enabled: true, requiredPermission: "guardian.read" },
   { label: "Staff", href: "/staff", icon: Users, group: "staff", keywords: ["teachers", "employees", "salary", "invite"], enabled: true, requiredPermission: "user.read" },
-  { label: "Class enrolment", href: "/enrollments", icon: UserPlus, group: "students", module: "students", keywords: ["enrollments", "classes", "promote", "term"], enabled: true, requiredPermission: "enrollment.read" },
+  { label: "Class placement", href: "/enrollments", icon: UserPlus, group: "students", module: "students", keywords: ["enrollments", "classes", "placement", "promote", "term"], enabled: true, requiredPermission: "enrollment.read" },
   {
     id: "attendance",
     label: "Attendance",
@@ -296,7 +296,7 @@ export const PRIMARY_TASKS: PrimaryTask[] = [
   {
     key: "add-student",
     label: "Add student",
-    href: "/students/new",
+    href: "/students/intake",
     permission: "student.create",
     emphasis: "secondary",
     aliases: ["add pupil", "new pupil", "admit student", "enrol pupil"],
