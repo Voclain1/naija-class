@@ -27,9 +27,9 @@ test("the admin menu is grouped into sections, and finds a page by an everyday w
   await care.click();
   await expect(menu.getByRole("link", { name: "Sickbay", exact: true })).toBeVisible();
 
-  // "fees" is not a page name, but it finds Bursary.
+  // "fees" finds the plain-language Finance destination.
   await menu.getByLabel("Find a page").fill("fees");
-  await menu.getByRole("link", { name: "Bursary", exact: true }).click();
+  await menu.getByRole("link", { name: "Fees & payments", exact: true }).click();
   await expect(page).toHaveURL(/\/finance\/dashboard/);
 
   await admin.context.close();

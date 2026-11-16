@@ -57,7 +57,9 @@ test.describe("first-login tour", () => {
     const admin = await loginAsAdmin(browser);
     try {
       await admin.page.setViewportSize({ width: 1366, height: 768 });
-      expect(await walkTour(admin.page)).toBeGreaterThanOrEqual(10);
+      // The orientation is deliberately short now: Students, Attendance and
+      // Fees & payments between the intro and finish cards.
+      expect(await walkTour(admin.page)).toBe(3);
     } finally {
       await admin.context.close();
       await admin.api.dispose();
@@ -68,7 +70,7 @@ test.describe("first-login tour", () => {
     const admin = await loginAsAdmin(browser);
     try {
       await admin.page.setViewportSize({ width: 390, height: 844 });
-      expect(await walkTour(admin.page)).toBeGreaterThanOrEqual(10);
+      expect(await walkTour(admin.page)).toBe(3);
     } finally {
       await admin.context.close();
       await admin.api.dispose();
