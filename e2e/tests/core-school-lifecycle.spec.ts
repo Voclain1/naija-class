@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { withTenant } from "@school-kit/db";
+
 import { apiCreateEnrollment } from "../fixtures/finance.js";
 import { createPortalGuardian, PORTAL_BASE_URL } from "../fixtures/guardian.js";
 import { seedTeacherInvitation } from "../fixtures/db.js";
@@ -41,11 +43,21 @@ test("one school completes the daily owner, teacher, bursar and parent journey",
     suffix,
     schoolId: admin.schoolId,
   });
-  await apiCreateEnrollment(admin.api, {
+  const enrollment = await apiCreateEnrollment(admin.api, {
     studentId: guardian.studentId,
     termId: structure.termId,
     classArmId,
   });
+  // setupAcademicStructure deliberately uses the stable historical 2025/26
+  // fixture term. The attendance service correctly excludes pupils who joined
+  // after the register date, so align this disposable enrolment with the term
+  // start just as seedAttendanceRoster does for the focused attendance specs.
+  await withTenant(admin.schoolId, (db) =>
+    db.enrollment.update({
+      where: { id: enrollment.id },
+      data: { enrolledAt: new Date("2025-09-01T00:00:00.000Z") },
+    }),
+  );
 
   const invitedTeacher = await inviteAndAcceptTeacher(browser, {
     schoolId: admin.schoolId,

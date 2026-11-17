@@ -13,3 +13,11 @@ proves finance is available while Gradebook is not.
 No production records, permissions, workflow states or feature defaults were
 changed. The validation matrix is recorded in
 `docs/reviews/sprint-4-core-journey-validation.md`.
+
+CI #1385 passed all 246 pre-existing browser tests and failed only the new
+journey at the teacher register. The child had been enrolled with today's
+timestamp while the stable fixture term/register date is in 2025; attendance
+correctly excludes a pupil who joined after the selected date. The composed
+fixture now backdates that one disposable enrolment to the fixture term start,
+matching the established `seedAttendanceRoster` setup. Product attendance
+logic was not changed or weakened.
