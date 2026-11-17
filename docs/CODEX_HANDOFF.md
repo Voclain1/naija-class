@@ -190,6 +190,15 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-17)
 
+- **PR #550 follow-through, CI #1371:** the five browser files corrected in
+  the prior commit now pass. Lint/typecheck/unit/build passed again. The
+  next timeouts expose more stale sprint controls: guided intake still used
+  the old start-button label, two gradebook tests reached alternate totals
+  without revealing them, one bursar menu assertion still used Bursary, and
+  setup expected the old enrollment wording. Those five test files now
+  follow the current UI. No workflow gate or product code changed; the
+  fresh head still requires complete CI before merge and VPS verification.
+
 - **Sprint 1–3 delivery: PR #550 remains unmerged.** CI #1370 passed the
   lint/typecheck/unit/build job but its Playwright job hit the one-hour limit.
   Browser logs and current screens exposed stale expectations for fee-group

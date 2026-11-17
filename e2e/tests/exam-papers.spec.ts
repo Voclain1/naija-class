@@ -144,6 +144,7 @@ test("a paper is set from the bank, finalised, printed per version with matching
 
     // ---- 5. The gradebook's Exam column starts "Out of" the paper -------------
     await page.goto(`/gradebook/${classArmId}/${structure.subjectId}?termId=${structure.termId}`);
+    await page.getByRole("checkbox", { name: "Scores are out of a different total" }).check();
     await expect(page.getByLabel("Exam out of")).toHaveValue("12", { timeout: 60_000 });
     await expect(page.getByText("From the paper “First Term Examination”")).toBeVisible();
 
