@@ -11,7 +11,7 @@ async function setup(browser: Browser, automatic = false, guided = true, reviewe
   }
   if (reviewed) await basePrisma.school.update({ where: { id: admin.schoolId }, data: { featureSwitches: { "student-intake": true } } });
   await admin.page.goto(guided ? "/students/intake" : "/students/new/bulk");
-  if (guided) await admin.page.getByRole("button", { name: "Start guided class list" }).click();
+  if (guided) await admin.page.getByRole("button", { name: "Add a class list" }).click();
   await expect(admin.page.getByText(automatic ? /Admission numbers: automatic/ : "Admission numbers: typed by you")).toBeVisible();
   return { admin, page: admin.page, structure };
 }
@@ -40,7 +40,7 @@ test("frontend intake controls are hidden when student.create is absent", async 
     });
     await admin.page.goto("/students/intake");
     await expect(admin.page.getByRole("heading", { name: "Student intake is not available for this account" })).toBeVisible();
-    await expect(admin.page.getByRole("button", { name: "Start guided class list" })).toHaveCount(0);
+    await expect(admin.page.getByRole("button", { name: "Add a class list" })).toHaveCount(0);
   } finally { await admin.context.close(); await admin.api.dispose(); }
 });
 
@@ -135,7 +135,7 @@ test("intake entry and review fit a phone and leave no browser draft", async ({ 
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
     await page.reload();
-    await page.getByRole("button", { name: "Start guided class list" }).click();
+    await page.getByRole("button", { name: "Add a class list" }).click();
     await expect(page.locator('[data-cell="0:1"]')).toHaveValue("");
   } finally { await admin.context.close(); await admin.api.dispose(); }
 });

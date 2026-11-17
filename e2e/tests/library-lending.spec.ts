@@ -12,7 +12,7 @@ import { createPortalGuardian } from "../fixtures/guardian.js";
 test("the librarian catalogues a book, lends a copy to a student and takes it back", async ({ browser }) => {
   test.setTimeout(6 * 60 * 1000);
   const suffix = uniqueSuffix();
-  const admin = await loginAsAdmin(browser);
+  const admin = await loginAsAdmin(browser, { modules: ["library"] });
   const guardian = await createPortalGuardian(admin.api, { suffix, schoolId: admin.schoolId });
   const invited = await inviteAndAcceptTeacher(browser, {
     schoolId: admin.schoolId,

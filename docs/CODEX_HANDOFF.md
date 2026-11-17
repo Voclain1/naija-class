@@ -188,7 +188,46 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-16)
+## Latest state (updated 2026-11-17)
+
+- **PR #550 CI #1372 completed the full browser suite:** 238 passed and eight
+  failed; non-E2E checks passed. Failures were source-confirmed fixture/menu
+  drift from the sprints: optional hostel/library/transport/store/insights
+  areas were not selected; phone-fit expected Enrollments instead of Class
+  history and needs the preserved legacy full profile; scan entry still
+  expected the removed chooser; the tour counted a transient fallback before
+  spotlight measurement. Focused test/fixture corrections are on the same
+  branch. No production code or CI gate changed. Require fresh complete CI
+  before squash merge and main/VPS migration/deploy/smoke verification.
+
+- **PR #550 follow-through, CI #1371:** the five browser files corrected in
+  the prior commit now pass. Lint/typecheck/unit/build passed again. The
+  next timeouts expose more stale sprint controls: guided intake still used
+  the old start-button label, two gradebook tests reached alternate totals
+  without revealing them, one bursar menu assertion still used Bursary, and
+  setup expected the old enrollment wording. Those five test files now
+  follow the current UI. No workflow gate or product code changed; the
+  fresh head still requires complete CI before merge and VPS verification.
+
+- **Sprint 1–3 delivery: PR #550 remains unmerged.** CI #1370 passed the
+  lint/typecheck/unit/build job but its Playwright job hit the one-hour limit.
+  Browser logs and current screens exposed stale expectations for fee-group
+  naming, the payment launcher, the finance menu, removed assignment badges,
+  the retired Coming soon area and the intake workspace. Those tests now
+  follow the sprint UI; the behaviour-history test explicitly models a legacy
+  school whose profile tab is retained. No production code, permissions or
+  deployment gate was changed. Fresh CI must pass before squash merge, then
+  main CI and VPS migration/deployment/smoke must all pass. See the dated
+  2026-11-17 delivery journal.
+
+- **UX simplification Sprint 3 is implemented on `feat/ux-results-report-cards`**
+  (2026-11-16), pending PR/CI. Gradebook selection now follows the product
+  rule that every active subject appears by default and owner/admin class
+  disabling—not teacher assignment or score presence—controls exclusion.
+  Score entry is faster on keyboard/tablet, alternate totals are progressive,
+  positions refresh at sign-off, report-card ownership/warnings are clearer,
+  and schools can choose Simple or Controlled results approval without losing
+  validation, permissions or audit history. See the 2026-11-16 journal.
 
 - **PR #549 Playwright timeout is fixed on its existing branch.** The new
   admission-number presets intentionally hide the raw input behind **Custom

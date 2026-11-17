@@ -11,7 +11,7 @@ import { setupFinanceScaffold } from "../fixtures/finance.js";
 test("a hostel with a room and a fee gives a girl a bed and raises the charge", async ({ browser }) => {
   test.setTimeout(6 * 60 * 1000);
   const suffix = uniqueSuffix();
-  const admin = await loginAsAdmin(browser);
+  const admin = await loginAsAdmin(browser, { modules: ["hostel"] });
   const structure = await setupAcademicStructure(admin.api, {
     arms: [{ name: "JSS 1 Blue", code: `jss1b-${suffix}`.slice(0, 20) }],
     subjectCode: `math-${suffix}`.slice(0, 20),

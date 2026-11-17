@@ -46,6 +46,8 @@ test("marks typed out of 100 are converted by the server, confirmed, saved with 
     await expect(page.getByRole("heading", { name: "Biology — SS 1 Blue" })).toBeVisible({ timeout: 60_000 });
 
     // ---- 1. Out of 100 ------------------------------------------------------
+    // Sprint 3 keeps alternate totals behind an explicit choice.
+    await page.getByRole("checkbox", { name: "Scores are out of a different total" }).check();
     const outOf = page.getByLabel("Exam out of");
     await outOf.fill("100");
     await outOf.press("Enter");

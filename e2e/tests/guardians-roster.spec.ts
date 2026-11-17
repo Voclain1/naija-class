@@ -217,7 +217,7 @@ test("the guardian roster shows every parent's portal access and lets an owner a
     const bursarApi = await createApiContext(bursar.token);
     try {
       await bursar.page.goto("/finance/dashboard");
-      await expect(bursar.page.getByRole("link", { name: "Bursary" }).first()).toBeVisible({ timeout: 60_000 });
+      await expect(bursar.page.getByRole("link", { name: "Fees & payments" }).first()).toBeVisible({ timeout: 60_000 });
       await expect(bursar.page.getByRole("link", { name: "Parents & guardians" })).toHaveCount(0);
       expect((await bursarApi.get("guardians")).status()).toBe(403);
       expect((await bursarApi.post(`guardians/${ids.never}/invite`)).status()).toBe(403);

@@ -27,6 +27,17 @@ test("a bursar looks up what a class has been set", async ({ browser }) => {
   });
   const classArmId = armId(structure, "JSS 3 Green");
 
+  // New schools start with the five core modules. This journey is about an
+  // enabled Homework module, so opt in before expecting it in the menu.
+  const enabled = await admin.api.patch("schools/me", {
+    data: {
+      modulePreferences: {
+        selected: ["students", "fees", "attendance", "results", "parent-communication", "homework"],
+      },
+    },
+  });
+  expect(enabled.ok(), await enabled.text()).toBe(true);
+
   const invited = await inviteAndAcceptTeacher(browser, { schoolId: admin.schoolId, invitedByUserId: admin.ownerUserId });
   await invited.context.close();
   await assignTeacher(admin.api, {

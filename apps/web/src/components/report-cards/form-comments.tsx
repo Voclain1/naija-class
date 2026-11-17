@@ -148,8 +148,8 @@ export function FormComments({ termId, classArmId, rows, onAccepted }: Props) {
         <div>
           <h2 className="font-serif text-lg font-medium text-foreground">Form teacher comments</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Drafted from each student&apos;s results across every subject, plus attendance. Nothing
-            reaches a report card until you accept it.
+            This is the student&apos;s overall end-of-term comment. Subject teachers&apos; remarks stay beside
+            their individual subjects. Nothing reaches a report card until you accept it.
           </p>
         </div>
         <Button onClick={() => void handleGenerate()} disabled={generating}>

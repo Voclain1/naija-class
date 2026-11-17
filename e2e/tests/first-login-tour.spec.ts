@@ -29,7 +29,10 @@ async function walkTour(page: Page) {
   for (let i = 1; i <= total; i++) {
     await expect(page.getByText(`Step ${i} of ${total}`, { exact: true })).toBeVisible();
     const card = page.locator("[data-tour-for]");
-    if ((await card.count()) > 0) {
+    if (i > 1 && i < total) {
+      // Spotlight placement follows the target's layout measurement. Counting
+      // synchronously can see the temporary centered fallback and skip a stop.
+      await expect(card).toBeVisible();
       spots++;
       const target = (await card.getAttribute("data-tour-for"))!;
       const item = page.locator(`[data-tour-target="${target}"]:visible`).first();

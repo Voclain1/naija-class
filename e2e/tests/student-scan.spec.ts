@@ -35,16 +35,18 @@ test("smart student import — the scan page is reachable and degrades safely", 
 
   try {
     // --- The entry point exists on the students page ----------------------
-    // Since 2026-10-30 it is one of the ways listed by the Add students chooser.
+    // The intake workspace lists the paper-register scan alongside other methods.
     await page.goto("/students");
-    await page.getByRole("button", { name: "Add students" }).first().click({ timeout: 60_000 });
-    const scanLink = page.getByRole("dialog").getByRole("link", { name: /scan a register/i });
+    await page.getByRole("link", { name: "Add students" }).first().click({ timeout: 60_000 });
+    await expect(page).toHaveURL(/\/students\/intake$/);
+    const scanLink = page.getByRole("link", { name: "Check register scan availability" });
     await expect(scanLink).toBeVisible();
 
     // --- The route resolves ------------------------------------------------
     // A route-group mistake here — (scan) instead of scan — would 404, and
     // CLAUDE.md's route-group note says only the browser catches that.
-    await page.goto("/students/scan");
+    await scanLink.click();
+    await expect(page).toHaveURL(/\/students\/scan$/);
     await expect(page.getByRole("heading", { name: /scan a student list/i })).toBeVisible();
 
     // --- The capture control is camera-backed ------------------------------

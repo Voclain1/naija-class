@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { basePrisma, Prisma } from "@school-kit/db";
 
 import { armId, setupAcademicStructure } from "../fixtures/academic.js";
 import { apiCreateEnrollment, apiCreateStudent } from "../fixtures/finance.js";
@@ -13,6 +14,12 @@ test("the owner records an incident involving two students", async ({ browser })
   test.setTimeout(5 * 60 * 1000);
   const suffix = uniqueSuffix();
   const admin = await loginAsAdmin(browser);
+  // Sprint 2 preserves the Behaviour profile tab for existing schools.
+  // New schools use the dedicated behaviour area instead of this tab.
+  await basePrisma.school.update({
+    where: { id: admin.schoolId },
+    data: { modulePreferences: Prisma.DbNull },
+  });
   const structure = await setupAcademicStructure(admin.api, {
     arms: [{ name: `JSS 2 Red ${suffix}`, code: `jss2-red-${suffix}` }],
   });

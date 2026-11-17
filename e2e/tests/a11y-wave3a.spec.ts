@@ -136,7 +136,7 @@ test.describe("wave 3A — accessibility regressions", () => {
 
     // Pre-fix this button's accessible name was the bare, ambiguous "New";
     // the slice gave it an sr-only suffix, so this selector also pins that.
-    await admin.page.getByRole("button", { name: "New category" }).click();
+    await admin.page.getByRole("button", { name: "New fee group" }).click();
     const name = admin.page.getByLabel("Name", { exact: true });
     await expect(name).toBeVisible();
     // Typing *through the label* proves the association is real, not cosmetic.
@@ -191,22 +191,18 @@ test.describe("wave 3A — accessibility regressions", () => {
     await ctx.close();
   });
 
-  test("nav 'Coming soon' heading is not rendered at reduced opacity", async ({ browser }) => {
-    // Was text-muted-foreground/70 => 2.81:1 on Paper (AA needs 4.5:1). The
-    // /70 opacity modifier was the entire defect; full muted-foreground is
-    // 5.22:1, so asserting the alpha channel pins the fix at its cause.
+  test("unavailable products do not occupy the daily menu", async ({ browser }) => {
     const admin = await loginAsAdmin(browser);
-    await admin.page.setViewportSize({ width: 1280, height: 900 });
-    await admin.page.goto("/dashboard", { waitUntil: "domcontentloaded" });
-
-    const heading = admin.page.getByText("Coming soon", { exact: true }).first();
-    await expect(heading).toBeVisible();
-    const color = await heading.evaluate((el) => getComputedStyle(el).color);
-    // rgba(...) with alpha < 1 is exactly what the /70 modifier produced.
-    expect(color).not.toMatch(/rgba\([^)]*,\s*0?\.\d+\s*\)/);
-
-    await admin.context.close();
-    await admin.api.dispose();
+    try {
+      await admin.page.goto("/dashboard", { waitUntil: "domcontentloaded" });
+      const menu = admin.page.locator("aside").getByRole("navigation", { name: "Main menu" });
+      await expect(menu.getByRole("link", { name: "Dashboard", exact: true })).toBeVisible();
+      await expect(menu.getByText("Coming soon", { exact: true })).toHaveCount(0);
+      await expect(menu.locator('[aria-disabled="true"]')).toHaveCount(0);
+    } finally {
+      await admin.context.close();
+      await admin.api.dispose();
+    }
   });
 
   test("finance selectors are operable by keyboard alone", async ({ browser }) => {

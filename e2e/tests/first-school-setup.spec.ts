@@ -68,9 +68,9 @@ test("first-school setup: a new owner is told what to do next, and stops being t
   // ───────────────────────────────────────────────────────────────────────
   await page.goto("/enrollments");
   await expect(page.getByTestId("prerequisite-students")).toBeVisible();
-  await expect(page.getByText(/there is nobody to enrol yet/i)).toBeVisible();
+  await expect(page.getByText(/there is nobody to place in a class yet/i)).toBeVisible();
   // Not a route guard: the screen itself is still there and still usable.
-  await expect(page.getByRole("heading", { name: "Enrollments" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Class placement" })).toBeVisible();
 
   await page.goto("/finance/invoices");
   await expect(page.getByTestId("prerequisite-fee-catalog")).toBeVisible();

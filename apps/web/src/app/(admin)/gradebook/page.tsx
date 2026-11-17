@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2, Search, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TeacherAssignmentDto, TermDto } from "@school-kit/types";
 
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
+import { Input } from "@/components/ui/input";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { ApiError } from "@/lib/api-client";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
@@ -48,6 +49,7 @@ export default function AdminGradebookPickerPage() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [subjectQuery, setSubjectQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,6 +87,10 @@ export default function AdminGradebookPickerPage() {
     () => (loaded && term && armId ? gradebookSubjects(loaded.subjects, loaded.assignments, armId, term) : []),
     [loaded, term, armId],
   );
+  const visibleSubjects = useMemo(() => {
+    const query = subjectQuery.trim().toLocaleLowerCase();
+    return query ? subjects.filter((subject) => subject.name.toLocaleLowerCase().includes(query)) : subjects;
+  }, [subjects, subjectQuery]);
 
   function select(next: { termId?: string; armId?: string }) {
     const params = new URLSearchParams(search.toString());
@@ -175,22 +181,49 @@ export default function AdminGradebookPickerPage() {
               <p className="mt-1">Add subjects under Academics before entering scores.</p>
             </div>
           ) : (
-            <ul className="flex flex-col divide-y rounded-md border" aria-label="Subjects">
-              {subjects.map((s) => (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <label className="relative block w-full sm:max-w-sm">
+                  <span className="sr-only">Find a subject</span>
+                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={subjectQuery}
+                    onChange={(event) => setSubjectQuery(event.target.value)}
+                    placeholder="Find English, Mathematics…"
+                    className="pl-9"
+                  />
+                </label>
+                <Link
+                  href="/settings/subjects-by-class"
+                  className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  <Settings2 className="h-4 w-4" />
+                  Choose subjects for this class
+                </Link>
+              </div>
+              {visibleSubjects.length === 0 ? (
+                <p className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+                  No enabled subject matches “{subjectQuery}”.
+                </p>
+              ) : (
+                <ul className="flex flex-col divide-y rounded-md border" aria-label="Subjects">
+              {visibleSubjects.map((s) => (
                 <li key={s.id}>
                   <Link
                     href={`/gradebook/${armId}/${s.id}?termId=${term.id}`}
                     className="flex items-center justify-between gap-3 px-4 py-3 text-sm transition-colors hover:bg-accent/40"
                   >
                     <span>{s.name}</span>
-                    <span className="flex items-center gap-3 text-xs text-muted-foreground">
-                      {s.hasTeacher ? <span>Teacher assigned</span> : <span>No teacher assigned</span>}
-                      <span aria-hidden>Open gradebook →</span>
-                    </span>
+                    <span className="text-xs text-muted-foreground" aria-hidden>Open gradebook →</span>
                   </Link>
                 </li>
               ))}
-            </ul>
+                </ul>
+              )}
+              <p className="text-xs text-muted-foreground">
+                All active subjects are shown by default. Owner/admin choices for this class control what appears here.
+              </p>
+            </div>
           )}
         </>
       )}

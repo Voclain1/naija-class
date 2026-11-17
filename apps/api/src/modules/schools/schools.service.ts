@@ -142,6 +142,9 @@ export class SchoolsService {
     if (input.positionOnReportCardPdf !== undefined) {
       data.positionOnReportCardPdf = input.positionOnReportCardPdf;
     }
+    if (input.resultWorkflowMode !== undefined) {
+      data.resultWorkflowMode = input.resultWorkflowMode;
+    }
     // Phase 9 / CP1.2 — the Attendance report's chronic-absence line.
     if (input.chronicAbsenceThreshold !== undefined) {
       data.chronicAbsenceThreshold = input.chronicAbsenceThreshold;
@@ -671,6 +674,7 @@ const SCHOOL_RESPONSE_SELECT = {
   subjectAttendanceEnabled: true,
   positionVisibleToFamilies: true,
   positionOnReportCardPdf: true,
+  resultWorkflowMode: true,
   chronicAbsenceThreshold: true,
   paystackSubaccountCode: true,
   paystackSplitCode: true,
@@ -705,6 +709,7 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     subjectAttendanceEnabled: school.subjectAttendanceEnabled,
     positionVisibleToFamilies: school.positionVisibleToFamilies,
     positionOnReportCardPdf: school.positionOnReportCardPdf,
+    resultWorkflowMode: school.resultWorkflowMode as "SIMPLE" | "CONTROLLED",
     chronicAbsenceThreshold: school.chronicAbsenceThreshold,
     bankName: school.bankName,
     bankAccountName: school.bankAccountName,

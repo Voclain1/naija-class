@@ -67,7 +67,7 @@ test("is reachable across staff pages, keeps the conversation across navigation,
     await expect(panel.getByRole("navigation", { name: "Suggested tasks" }).getByRole("button").first()).toHaveText("Add and enrol students");
     // Navigating with the panel open keeps it open and intact.
     await menu.getByLabel("Find a page").fill("fees");
-    await menu.getByRole("link", { name: "Bursary", exact: true }).click();
+    await menu.getByRole("link", { name: "Fees & payments", exact: true }).click();
     await expect(page).toHaveURL(/\/finance\/dashboard/);
     await expect(panel.getByText("How do I add parents?")).toBeVisible();
     expect(await page.evaluate(() => (window as unknown as { __sameDoc?: boolean }).__sameDoc)).toBe(true);

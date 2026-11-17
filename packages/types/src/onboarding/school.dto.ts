@@ -39,6 +39,7 @@ export interface SchoolMeDto {
   // app (default false), and printed on the report-card PDF (default true).
   positionVisibleToFamilies: boolean;
   positionOnReportCardPdf: boolean;
+  resultWorkflowMode: "SIMPLE" | "CONTROLLED";
   // Phase 9 / CP1.2 — attendance rate (whole percent) below which a student
   // is listed as chronically absent on the Attendance report. Default 90.
   chronicAbsenceThreshold: number;

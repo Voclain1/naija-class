@@ -165,10 +165,10 @@ export function SubjectComments({ termId, classArmId, subjectId, rows }: Props) 
     <section className="flex flex-col gap-4 rounded-lg border bg-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-serif text-lg font-medium text-foreground">Report card comments</h2>
+          <h2 className="font-serif text-lg font-medium text-foreground">Subject teacher remarks</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Drafted from each student&apos;s scores and attendance. Nothing is saved to a report
-            card until you accept it.
+            Your remark appears beside this subject on the student&apos;s report card. The form teacher&apos;s
+            overall comment is written separately on the report-card board. Nothing is saved until you accept it.
           </p>
         </div>
         <Button onClick={() => void handleGenerate()} disabled={generating}>

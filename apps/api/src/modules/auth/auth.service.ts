@@ -921,6 +921,7 @@ export class AuthService {
       user,
       school: {
         ...school,
+        resultWorkflowMode: school.resultWorkflowMode as "SIMPLE" | "CONTROLLED",
         modulePreferences: readSchoolModulePreferences(school.modulePreferences),
         paystackSubaccountBusinessName: null,
         // Server-derived, from the one shared helper. See SchoolMeDto.
@@ -1125,6 +1126,7 @@ const SCHOOL_RESPONSE_SELECT = {
   subjectAttendanceEnabled: true,
   positionVisibleToFamilies: true,
   positionOnReportCardPdf: true,
+  resultWorkflowMode: true,
   chronicAbsenceThreshold: true,
   paystackSubaccountCode: true,
   paystackSplitCode: true,

@@ -1,6 +1,6 @@
 "use client";
 
-import { EyeOff } from "lucide-react";
+import { ChevronDown, EyeOff } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -30,6 +30,7 @@ export function ArmHiddenSubjects({ armId, armName, classLevelId, termId, termNa
   const [subjects, setSubjects] = useState<SubjectDto[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -73,16 +74,17 @@ export function ArmHiddenSubjects({ armId, armName, classLevelId, termId, termNa
   if (hides === null) return null;
 
   return (
-    <section aria-label="Hidden subjects" className="flex flex-col gap-2 rounded-lg bg-muted/40 p-3 text-sm">
+    <section aria-label="Subject visibility" className="flex flex-col gap-2 rounded-lg bg-muted/40 p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-medium">
-          Hidden subjects{hides.length > 0 ? ` (${hides.length})` : ""}
-        </p>
-        <Button type="button" size="sm" variant="outline" onClick={() => void openDialog()}>
-          <EyeOff className="h-4 w-4" />
-          Hide a subject
+        <button type="button" className="flex items-center gap-1.5 font-medium" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
+          Subject visibility{hides.length > 0 ? ` · ${hides.length} hidden` : ""}
+          <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
+        </button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => void openDialog()}>
+          <EyeOff className="h-4 w-4" /> Manage
         </Button>
       </div>
+      {expanded && <>
       {hides.length === 0 ? (
         <p className="text-muted-foreground">
           None. Hide a subject to keep it off these report cards without deleting its scores.
@@ -110,6 +112,7 @@ export function ArmHiddenSubjects({ armId, armName, classLevelId, termId, termNa
       <p className="text-xs text-muted-foreground">
         The subject leaves the cards at once. Totals and positions change when an admin presses Rebuild draft report cards (while the cards are in draft).
       </p>
+      </>}
 
       <HideSubjectDialog
         open={open}

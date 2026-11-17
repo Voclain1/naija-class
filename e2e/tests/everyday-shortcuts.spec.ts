@@ -4,7 +4,7 @@ import { setupFinanceScaffold } from "../fixtures/finance.js";
 import { loginAsAdmin, setupAcademicStructure, uniqueSuffix, type AdminSession } from "../fixtures/index.js";
 
 // Owner's asks of 2026-10-30, through the real screens:
-//   1. Add students opens a chooser with every way to add.
+//   1. Add students opens the intake workspace with every way to add.
 //   2. The staff Role filter lists every staff role, not three.
 //   3. Record payment: find the student, pick the bill, Paid in full, done.
 
@@ -13,23 +13,21 @@ async function close(admin: AdminSession) {
   await admin.api.dispose();
 }
 
-test("Add students opens every way to add, and each one goes to its page", async ({ browser }) => {
+test("Add students opens the guided intake workspace and its recommended class-list path", async ({ browser }) => {
   const admin = await loginAsAdmin(browser);
   const page = admin.page;
   try {
     await page.goto("/students");
-    await page.getByRole("button", { name: "Add students" }).first().click({ timeout: 60_000 });
-    const chooser = page.getByRole("dialog", { name: "Add students" });
-    for (const name of ["One student", "Several in a grid", "Import a spreadsheet", "Scan a register"]) {
-      await expect(chooser.getByRole("link", { name: new RegExp(name) })).toBeVisible();
+    await page.getByRole("link", { name: "Add students" }).first().click({ timeout: 60_000 });
+    await expect(page).toHaveURL(/\/students\/intake$/);
+    await expect(page.getByRole("heading", { name: "Add students. Get their class right." })).toBeVisible();
+    for (const name of ["A whole class or several students", "Just one student", "A saved spreadsheet", "Paper register"]) {
+      await expect(page.getByRole("heading", { name: new RegExp(name) })).toBeVisible();
     }
-    await chooser.getByRole("link", { name: /Several in a grid/ }).click();
-    await expect(page).toHaveURL(/\/students\/new\/bulk$/);
-    await expect(page.getByRole("heading", { name: "Add multiple students" })).toBeVisible();
-    // The tips are behind the "?", not on the page.
-    await expect(page.getByText("Paste from Excel or Google Sheets")).toHaveCount(0);
-    await page.getByRole("button", { name: "Help: Adding several students" }).click();
-    await expect(page.getByRole("dialog").getByText("Paste from Excel or Google Sheets")).toBeVisible();
+    await page.getByRole("button", { name: "Add a class list" }).click();
+    await expect(page.getByRole("heading", { name: "Your class list" })).toBeVisible();
+    await expect(page.getByText("Class for these students", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Review students", exact: true })).toBeVisible();
   } finally {
     await close(admin);
   }
@@ -91,7 +89,7 @@ test("Record payment: search the student, Paid in full, receipt", async ({ brows
 
     // The dashboard's Record Fee now opens this page, not the bills list.
     await page.goto("/dashboard");
-    await page.getByRole("link", { name: "Record Fee" }).click({ timeout: 60_000 });
+    await page.getByRole("link", { name: "Record payment" }).click({ timeout: 60_000 });
     await expect(page).toHaveURL(/\/finance\/payments\/record$/);
 
     // Search by admission number: unique to this run, whatever else is in the database.
