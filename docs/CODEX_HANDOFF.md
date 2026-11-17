@@ -190,6 +190,15 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-17)
 
+- **UX simplification Sprint 4 validation is in progress on
+  `feat/ux-complete-journey-validation`.** The existing browser suite proves
+  each core screen independently; the new composed lifecycle carries one
+  isolated school's child across owner setup, teacher attendance, owner score
+  entry/report release, bursar access boundaries and guardian visibility. No
+  product behaviour or permission was changed. See the 2026-11-17 Sprint 4
+  journal and validation matrix; require the normal CI and complete Playwright
+  gate before merge.
+
 - **PR #550 CI #1372 completed the full browser suite:** 238 passed and eight
   failed; non-E2E checks passed. Failures were source-confirmed fixture/menu
   drift from the sprints: optional hostel/library/transport/store/insights
