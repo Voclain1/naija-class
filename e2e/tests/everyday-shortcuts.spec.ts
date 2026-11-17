@@ -4,7 +4,7 @@ import { setupFinanceScaffold } from "../fixtures/finance.js";
 import { loginAsAdmin, setupAcademicStructure, uniqueSuffix, type AdminSession } from "../fixtures/index.js";
 
 // Owner's asks of 2026-10-30, through the real screens:
-//   1. Add students opens a chooser with every way to add.
+//   1. Add students opens the intake workspace with every way to add.
 //   2. The staff Role filter lists every staff role, not three.
 //   3. Record payment: find the student, pick the bill, Paid in full, done.
 
@@ -26,10 +26,8 @@ test("Add students opens the guided intake workspace and its recommended class-l
     }
     await page.getByRole("button", { name: "Add a class list" }).click();
     await expect(page.getByRole("heading", { name: "Your class list" })).toBeVisible();
-    // The tips are behind the "?", not on the page.
-    await expect(page.getByText("Paste from Excel or Google Sheets")).toHaveCount(0);
-    await page.getByRole("button", { name: "Help: Adding several students" }).click();
-    await expect(page.getByRole("dialog").getByText("Paste from Excel or Google Sheets")).toBeVisible();
+    await expect(page.getByText("Class for these students", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Review students", exact: true })).toBeVisible();
   } finally {
     await close(admin);
   }
@@ -91,7 +89,7 @@ test("Record payment: search the student, Paid in full, receipt", async ({ brows
 
     // The dashboard's Record Fee now opens this page, not the bills list.
     await page.goto("/dashboard");
-    await page.getByRole("link", { name: "Record Fee" }).click({ timeout: 60_000 });
+    await page.getByRole("link", { name: "Record payment" }).click({ timeout: 60_000 });
     await expect(page).toHaveURL(/\/finance\/payments\/record$/);
 
     // Search by admission number: unique to this run, whatever else is in the database.

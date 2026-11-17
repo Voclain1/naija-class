@@ -188,7 +188,18 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-16)
+## Latest state (updated 2026-11-17)
+
+- **Sprint 1–3 delivery: PR #550 remains unmerged.** CI #1370 passed the
+  lint/typecheck/unit/build job but its Playwright job hit the one-hour limit.
+  Browser logs and current screens exposed stale expectations for fee-group
+  naming, the payment launcher, the finance menu, removed assignment badges,
+  the retired Coming soon area and the intake workspace. Those tests now
+  follow the sprint UI; the behaviour-history test explicitly models a legacy
+  school whose profile tab is retained. No production code, permissions or
+  deployment gate was changed. Fresh CI must pass before squash merge, then
+  main CI and VPS migration/deployment/smoke must all pass. See the dated
+  2026-11-17 delivery journal.
 
 - **UX simplification Sprint 3 is implemented on `feat/ux-results-report-cards`**
   (2026-11-16), pending PR/CI. Gradebook selection now follows the product

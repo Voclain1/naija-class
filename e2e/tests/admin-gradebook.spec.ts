@@ -111,8 +111,8 @@ test("an owner with no teacher identity enters scores, signs off and builds repo
     const rows = list.getByRole("listitem");
     // The assigned subject is first; the untaught one is listed too.
     await expect(rows.first()).toContainText(TAUGHT);
-    await expect(rows.first()).toContainText("Teacher assigned");
-    await expect(list.getByRole("link", { name: new RegExp(UNTAUGHT) })).toContainText("No teacher assigned");
+    await expect(list.getByRole("link", { name: TAUGHT, exact: true })).toBeVisible();
+    await expect(list.getByRole("link", { name: UNTAUGHT, exact: true })).toBeVisible();
     // Every active subject is offered: the signup seed plus the fixture's one.
     const activeSubjects = await withTenant(admin.schoolId, (db) => db.subject.count({ where: { isActive: true } }));
     await expect(rows).toHaveCount(activeSubjects);
@@ -253,7 +253,7 @@ test("an owner with no teacher identity enters scores, signs off and builds repo
     const bursarApi = await createApiContext(bursar.token);
     try {
       await bursar.page.goto("/finance/dashboard");
-      await expect(bursar.page.getByRole("link", { name: "Bursary" }).first()).toBeVisible();
+      await expect(bursar.page.getByRole("link", { name: "Fees & payments" }).first()).toBeVisible();
       await expect(bursar.page.getByRole("link", { name: "Gradebook" })).toHaveCount(0);
       const okaforId = await studentIdOf(admin.schoolId, "Okafor");
       const refused = await bursarApi.post("assessment-scores/bulk", {
