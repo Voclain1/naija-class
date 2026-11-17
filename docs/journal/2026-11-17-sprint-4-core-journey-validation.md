@@ -21,3 +21,10 @@ correctly excludes a pupil who joined after the selected date. The composed
 fixture now backdates that one disposable enrolment to the fixture term start,
 matching the established `seedAttendanceRoster` setup. Product attendance
 logic was not changed or weakened.
+
+The next run passed the attendance hand-off and all 246 existing browser
+tests, then reached the final-term approval safeguard. Because the fixture has
+one term, SchoolKit correctly requires a promotion decision for every pupil.
+The composed journey now marks the child's card **Promoted** through the real
+promotion-status endpoint after form review and before principal approval.
+The approval rule remains unchanged.

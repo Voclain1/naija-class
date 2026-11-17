@@ -122,6 +122,31 @@ test("one school completes the daily owner, teacher, bursar and parent journey",
     for (const [path, data] of [
       ["report-cards/arm/build", armAction],
       ["report-cards/arm/form-review", armAction],
+    ] as const) {
+      const response = await admin.api.post(path, { data });
+      expect(response.ok(), `${path}: ${await response.text()}`).toBe(true);
+    }
+
+    // This stable fixture has one term, which makes it the final term. The
+    // principal-approval safeguard therefore requires an explicit promotion
+    // decision before release; exercise that real endpoint rather than
+    // weakening or bypassing the gate.
+    const boardResponse = await admin.api.get(
+      `report-cards?termId=${structure.termId}&classArmId=${classArmId}`,
+    );
+    expect(boardResponse.ok(), await boardResponse.text()).toBe(true);
+    const board = (await boardResponse.json()) as {
+      data: Array<{ reportCard: { id: string } }>;
+    };
+    const reportCardId = board.data[0]?.reportCard.id;
+    expect(reportCardId).toBeTruthy();
+    const promoted = await admin.api.patch(
+      `report-cards/${reportCardId}/promotion-status`,
+      { data: { promotionStatus: "PROMOTED" } },
+    );
+    expect(promoted.ok(), await promoted.text()).toBe(true);
+
+    for (const [path, data] of [
       ["report-cards/arm/approve", armAction],
       ["report-cards/arm/release", { ...armAction, accessMode: "FREE" }],
     ] as const) {
