@@ -1,4 +1,7 @@
+import { CORE_SCHOOL_MODULES, type SchoolModuleKey } from "@school-kit/types";
+
 import {
+  expect,
   type APIRequestContext,
   type Browser,
   type BrowserContext,
@@ -73,7 +76,7 @@ export interface AdminSession {
 // disposes the whole session via closeSession().
 export async function loginAsAdmin(
   browser: Browser,
-  opts?: { email?: string; password?: string; admissionNumbersUndecided?: boolean; setupCallPending?: boolean },
+  opts?: { email?: string; password?: string; admissionNumbersUndecided?: boolean; setupCallPending?: boolean; modules?: SchoolModuleKey[] },
 ): Promise<AdminSession> {
   if (opts?.email && opts.password) {
     const anonApi = await createApiContext();
@@ -123,6 +126,14 @@ export async function loginAsAdmin(
   // Pre-dismiss the first-login tour — see apiCompleteTour's header comment.
   await apiCompleteTour(api);
   if (!opts?.admissionNumbersUndecided) await apiTypeAdmissionNumbers(api);
+  // New schools keep the five-area default. A specialist workflow opts its
+  // own throwaway school into the area it exercises before the browser loads.
+  if (opts?.modules) {
+    const modules = await api.patch("schools/me", {
+      data: { modulePreferences: { selected: [...new Set([...CORE_SCHOOL_MODULES, ...opts.modules])] } },
+    });
+    expect(modules.ok(), await modules.text()).toBe(true);
+  }
 
   const { context, page } = await authedContext(browser, signup.token);
   return {

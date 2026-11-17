@@ -11,7 +11,7 @@ import { apiCreateEnrollment, apiCreateStudent } from "../fixtures/finance.js";
 
 test("add an item, receive and sell stock, approve a stock take, and register an asset", async ({ browser }) => {
   test.setTimeout(5 * 60 * 1000);
-  const admin = await loginAsAdmin(browser);
+  const admin = await loginAsAdmin(browser, { modules: ["store"] });
   const page = admin.page;
   const suffix = uniqueSuffix();
   const structure = await setupAcademicStructure(admin.api, { arms: [{ name: `JSS 1 Store ${suffix}`, code: `st${suffix}`.slice(0, 20) }] });

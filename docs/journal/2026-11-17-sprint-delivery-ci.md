@@ -9,3 +9,9 @@ Validation: source comparisons against the exact PR head; syntax checks recorded
 ## CI #1371 follow-up
 
 The previous five edited browser files pass in CI. The run again passed the non-E2E job but timed out in Playwright. Corrected the next source-confirmed stale controls: Add a class list in guided intake (including reload and permission assertions), Fees & payments in the guardian-roster bursar check, Class placement and the empty-roster explanation in first-school setup, and the explicit alternate-total checkbox in both gradebook-out-of and exam-papers. Money assertions, database verification, approval gates and lost-response checks remain in place. Syntax validation is performed before pushing; full integration validation stays with CI.
+
+## Full-suite CI #1372
+
+Playwright completed in 47.2 minutes: 238 passed, eight failed; the other CI job passed. Earlier corrected tests are green. Exact failure logs identify optional modules absent from new-school defaults (hostel/library/transport profile fields and Reports/Store menu links), the renamed Class history tab, the removed Add students chooser in scan reachability, and the tour's synchronous card count seeing its temporary fallback.
+
+Added an optional modules argument to the new-school test fixture, preserving normal defaults and explicitly selecting each specialist area through the real schools/me API. The full-profile phone audit explicitly represents a legacy school. Updated the tab and scan path, and made the tour wait for every expected spotlight before counting/measuring. All workflow, money, approval and accessibility assertions remain. Syntax checks run before push; full browser validation remains CI's gate.

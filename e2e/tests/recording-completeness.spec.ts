@@ -23,7 +23,7 @@ const d = (iso: string) => new Date(`${iso}T00:00:00Z`);
 test("owner sees the ended term and '1 of 18 school days'; opening teacher activity is audited once; a teacher is refused", async ({
   browser,
 }) => {
-  const admin = await loginAsAdmin(browser);
+  const admin = await loginAsAdmin(browser, { modules: ["insights"] });
   const suffix = uniqueSuffix();
   const armName = `Completeness ${suffix}`;
 

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { basePrisma, Prisma } from "@school-kit/db";
 
 import { setupAcademicStructure } from "../fixtures/academic.js";
 import { setupFinanceScaffold } from "../fixtures/finance.js";
@@ -102,7 +103,7 @@ const PAGES: Array<{ path: string; label?: string; ready: (page: Page) => Promis
   { path: "/finance/expenses", ready: (page) => page.locator("main table tbody tr").first().waitFor({ timeout: 120_000 }) },
   studentTab("Bio"),
   studentTab("Guardians"),
-  studentTab("Enrollments"),
+  studentTab("Class history"),
   studentTab("Health"),
   studentTab("Behaviour"),
   { path: "/staff/staff", label: "/staff", ready: (page) => page.locator("main table tbody tr").first().waitFor({ timeout: 120_000 }) },
@@ -133,6 +134,12 @@ async function pastTheEdge(page: Page) {
 test("admin pages fit a phone screen: nothing past the right edge", async ({ browser }) => {
   test.setTimeout(15 * 60 * 1000);
   const admin = await loginAsAdmin(browser);
+  // Audit every specialist panel on the preserved full profile for an
+  // existing school, including Health and Behaviour.
+  await basePrisma.school.update({
+    where: { id: admin.schoolId },
+    data: { modulePreferences: Prisma.DbNull },
+  });
   const structure = await setupAcademicStructure(admin.api);
   const scaffold = await setupFinanceScaffold(admin.api, {
     suffix: uniqueSuffix(),

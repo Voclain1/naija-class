@@ -190,6 +190,16 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-17)
 
+- **PR #550 CI #1372 completed the full browser suite:** 238 passed and eight
+  failed; non-E2E checks passed. Failures were source-confirmed fixture/menu
+  drift from the sprints: optional hostel/library/transport/store/insights
+  areas were not selected; phone-fit expected Enrollments instead of Class
+  history and needs the preserved legacy full profile; scan entry still
+  expected the removed chooser; the tour counted a transient fallback before
+  spotlight measurement. Focused test/fixture corrections are on the same
+  branch. No production code or CI gate changed. Require fresh complete CI
+  before squash merge and main/VPS migration/deploy/smoke verification.
+
 - **PR #550 follow-through, CI #1371:** the five browser files corrected in
   the prior commit now pass. Lint/typecheck/unit/build passed again. The
   next timeouts expose more stale sprint controls: guided intake still used
