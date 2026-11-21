@@ -31,7 +31,7 @@ import { academicCalendarSchema } from "./academic-calendar.dto.js";
 // using this same calendar schema.
 export const onboardingStep5Schema = z
   .object({
-    calendar: academicCalendarSchema,
+    calendar: academicCalendarSchema.optional(),
   })
   .strict();
 
