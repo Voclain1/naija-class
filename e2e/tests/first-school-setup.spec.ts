@@ -36,31 +36,16 @@ test("first-school setup: a new owner is told what to do next, and stops being t
   // 1. Brand-new school — the checklist is the dashboard.
   // ───────────────────────────────────────────────────────────────────────
   await page.goto("/dashboard");
-
-  const checklist = page.getByText(/finish setting up your school/i);
-  await expect(checklist).toBeVisible();
-
-  // The calendar is already done (onboarding step 5 collected it), so the
-  // owner immediately sees that something IS complete. A list where nothing
-  // is ticked cannot answer "what is already done".
-  await expect(page.getByTestId("setup-step-academic-calendar")).toHaveAttribute(
-    "data-done",
-    "true",
-  );
+  // First visit shows the five-second introduction, not a permanent setup page.
+  await expect(page.getByRole("dialog", { name: "School setup introduction" })).toBeVisible();
+  await expect(page.getByRole("timer")).toContainText(/Dashboard opens in [0-5] seconds/);
+  await expect(page.getByTestId("setup-step-academic-calendar")).toHaveAttribute("data-done", "true");
   await expect(page.getByTestId("setup-step-students")).toHaveAttribute("data-done", "false");
   await expect(page.getByTestId("setup-step-enrollments")).toHaveAttribute("data-done", "false");
-
-  // The tiering is visible, not just modelled — the whole finding is that
-  // everything used to read as equally mandatory.
   await expect(page.getByText(/the school cannot run day to day/i)).toBeVisible();
   await expect(page.getByText(/you can still work without them/i)).toBeVisible();
-
-  // And the next action actually goes somewhere.
-  await page
-    .getByTestId("setup-step-students")
-    .getByRole("link", { name: /add students/i })
-    .click();
-  await expect(page).toHaveURL(/\/students$/);
+  await page.getByTestId("setup-step-students").getByRole("link", { name: /add students/i }).click();
+  await expect(page).toHaveURL(/\\/students$/);
 
   // ───────────────────────────────────────────────────────────────────────
   // 2. A workflow screen with an absent prerequisite explains itself rather
@@ -92,13 +77,11 @@ test("first-school setup: a new owner is told what to do next, and stops being t
   });
 
   await page.goto("/dashboard");
-  await expect(page.getByTestId("setup-step-students")).toHaveAttribute("data-done", "true");
-  await expect(page.getByTestId("setup-step-enrollments")).toHaveAttribute("data-done", "false");
-  // Scoped to the checklist: the setup progress chip beside the greeting
-  // names the same next step (school-identity, 2026-10-11).
-  await expect(
-    page.getByTestId("setup-checklist").getByText(/next: put your students in their classes/i),
-  ).toBeVisible();
+  // The introduction is once per school/browser. Progress remains visible in
+  // the dashboard chip, while the dashboard itself stays usable.
+  await expect(page.getByRole("dialog", { name: "School setup introduction" })).toHaveCount(0);
+  await expect(page.locator(".dashboard-welcome h1")).toBeVisible();
+  await expect(page.getByRole("link", { name: /School setup .* Next: Put your students in their classes/i })).toBeVisible();
 
   // The handover appears on the Students page itself, at the moment it stops
   // being premature — an owner who has just built a roster is exactly who
@@ -146,16 +129,10 @@ test("first-school setup: a new owner is told what to do next, and stops being t
   ]);
   const freshPage = await secondContext.newPage();
   await freshPage.goto("/dashboard");
-  await expect(freshPage.getByTestId("setup-step-enrollments")).toHaveAttribute(
-    "data-done",
-    "true",
-  );
-  // Required work is done, so the card changes its tune rather than vanishing
-  // — there is still recommended work, and the school has not started using
-  // anything yet.
-  await expect(
-    freshPage.getByText(/a few things left to set up/i),
-  ).toBeVisible();
+  // A fresh browser can still see current progress in its introduction.
+  await expect(freshPage.getByRole("dialog", { name: "School setup introduction" })).toBeVisible();
+  await expect(freshPage.getByTestId("setup-step-enrollments")).toHaveAttribute("data-done", "true");
+  await expect(freshPage.getByText(/a few things left to set up/i)).toBeVisible();
   await secondContext.close();
 
   // The enrolment prerequisite is gone from every screen that carried it.
