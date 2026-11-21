@@ -142,7 +142,7 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
   await ownerPage.getByTestId("setup-call-skip").click();
   await ownerPage.waitForURL(/\/dashboard$/);
   await expect(
-    ownerPage.getByRole("heading", { name: "Dashboard", level: 1 }),
+    ownerPage.locator(".dashboard-welcome h1"),
   ).toBeVisible();
 
   // 6b. First-login product tour auto-shows here — a real owner landing on
