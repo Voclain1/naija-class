@@ -167,7 +167,7 @@ export default function AttendanceRegisterPage() {
             <>
               <p className="font-medium text-foreground">No classes set up yet.</p>
               <p className="mt-1">Create class arms under Academics before marking attendance.</p>
-              <Link href="/settings/academic/classes" className="mt-3 inline-block font-medium text-primary underline">Set up classes</Link>
+              <Link href="/settings/academic/class-arms" className="mt-3 inline-block font-medium text-primary underline">Set up classes</Link>
             </>
           ) : (
             <>
