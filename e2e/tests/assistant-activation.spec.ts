@@ -84,6 +84,7 @@ test("the platform admin, and only the platform admin, switches the Assistant on
     await assistantButton.click();
     const panel = staff.getByRole("dialog", { name: "SchoolKit Assistant" });
     await expect(panel).toBeVisible();
+    await panel.getByRole("button", { name: "Show task shortcuts" }).click();
     await expect(panel.getByRole("navigation", { name: "Suggested tasks" }).getByRole("button", { name: "Add and enrol students" })).toBeEnabled();
 
     // ---- 4. AI understanding: switch on, still not working, and it says why ----
