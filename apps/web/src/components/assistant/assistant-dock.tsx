@@ -79,6 +79,7 @@ function Panel({ caps, onMinimise }: { caps: AssistantCapabilitiesDto; onMinimis
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   useEffect(() => { composerRef.current?.focus(); }, []);
   // Keep the newest message in view without stealing focus.
@@ -108,7 +109,7 @@ function Panel({ caps, onMinimise }: { caps: AssistantCapabilitiesDto; onMinimis
         </span>
         <div className="min-w-0 flex-1">
           <h2 id={titleId} className="text-base font-semibold leading-tight">SchoolKit Assistant</h2>
-          <p className="text-xs text-muted-foreground">Prepares school tasks for you to review and approve.</p>
+          <p className="text-xs text-muted-foreground">Ask questions, find information and prepare school tasks.</p>
         </div>
         <Button
           type="button"
@@ -151,7 +152,7 @@ function Panel({ caps, onMinimise }: { caps: AssistantCapabilitiesDto; onMinimis
         )}
       </div>
 
-      <Suggestions caps={caps} />
+      <Suggestions caps={caps} expanded={showShortcuts} onToggle={() => setShowShortcuts((value) => !value)} />
       <Composer caps={caps} inputRef={composerRef} />
     </div>
   );
@@ -161,11 +162,11 @@ function Welcome({ caps }: { caps: AssistantCapabilitiesDto }) {
   const any = ASSISTANT_WORKFLOWS.some((w) => caps.workflows[w].available);
   return (
     <div className="space-y-3 text-sm">
-      <p className="font-medium">What do you need done?</p>
+      <p className="text-lg font-semibold">Hello! How can I help you today?</p>
       <p className="text-muted-foreground">
         {any
-          ? "Describe the task in your own words, or pick one below. I’ll gather what’s needed, show you exactly what will change, and only act when you approve it."
-          : "Your account can search the Getting started guide here. Ask a question about using SchoolKit."}
+          ? "Ask about your school, look up a student, or describe a task. I’ll help you work through it, and you’ll review any changes before they happen."
+          : "I can help you find answers in the SchoolKit guide. School administration actions aren’t available for this account."}
       </p>
       {caps.modelRouting.available ? (
         <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
@@ -281,7 +282,7 @@ function HelpAnswer({ id, query, hits }: { id: string; query: string; hits: { an
 }
 
 /** Task suggestions ordered by the page’s area only (never its contents). */
-function Suggestions({ caps }: { caps: AssistantCapabilitiesDto }) {
+function Suggestions({ caps, expanded, onToggle }: { caps: AssistantCapabilitiesDto; expanded: boolean; onToggle: () => void }) {
   const { store } = useAssistant();
   const area = stripBasePath(usePathname() ?? "/").split("/")[1] ?? "";
   const order: AssistantWorkflow[] =
@@ -289,8 +290,9 @@ function Suggestions({ caps }: { caps: AssistantCapabilitiesDto }) {
   const shown = order.filter((w) => caps.workflows[w].available);
   if (shown.length === 0) return null;
   return (
-    <nav aria-label="Suggested tasks" className="border-t border-border px-4 pt-3 sm:px-5">
-      <ul className="flex gap-2 overflow-x-auto pb-1">
+    <nav aria-label="Suggested tasks" className="border-t border-border px-4 pt-2 sm:px-5">
+      <button type="button" onClick={onToggle} aria-expanded={expanded} className="mb-1 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{expanded ? "Hide task shortcuts" : "Show task shortcuts"}</button>
+      {expanded && <ul className="flex gap-2 overflow-x-auto pb-1">
         {shown.map((w) => (
           <li key={w} className="shrink-0">
             <button type="button" onClick={() => store.start(w, caps)} className="rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none">
@@ -298,7 +300,7 @@ function Suggestions({ caps }: { caps: AssistantCapabilitiesDto }) {
             </button>
           </li>
         ))}
-      </ul>
+      </ul>}
     </nav>
   );
 }
@@ -337,7 +339,7 @@ function Composer({ caps, inputRef }: { caps: AssistantCapabilitiesDto; inputRef
         value={text}
         onChange={(e) => { setText(e.target.value); store.touch(); }}
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
-        placeholder="e.g. Remind parents with overdue fees in JSS 1"
+        placeholder={caps.modelRouting.available ? "Ask SchoolKit Assistant anything about your school…" : "Ask a question or describe a school task…"}
         className="max-h-40 min-h-[2.75rem] flex-1 resize-none rounded-xl border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-sm"
       />
       {tooLong && <p id={`${id}-long`} className="sr-only" role="alert">Keep requests under {ASSISTANT_MAX_REQUEST_CHARS} characters. Put student details in the task forms.</p>}
