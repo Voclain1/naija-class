@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
 
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
+import { usePrerequisiteRedirect } from "@/lib/setup-state/use-prerequisite-redirect";
 import { RegisterEditor } from "@/components/teacher/attendance/register-editor";
 import { useAttendanceScope } from "@/components/teacher/attendance/use-attendance-scope";
 
@@ -31,6 +32,7 @@ function formatMarkedTime(d: Date): string {
 // today) → the RegisterEditor loads the roster and handles marking + saving.
 export default function AttendanceRegisterPage() {
   const { state } = useAttendanceScope();
+  usePrerequisiteRedirect(["students", "enrollments"]);
   const today = useMemo(() => todayLocalIso(), []);
 
   const [armId, setArmId] = useState<string | null>(null);
