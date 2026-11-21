@@ -23,6 +23,9 @@ export function usePrerequisiteRedirect(keys: readonly SetupStepKey[]): boolean 
     // The destination is an existing, API-defined setup step, never user input.
     const url = new URL(missing.href, window.location.origin);
     url.searchParams.set("setupFrom", pathname);
+    try {
+      window.sessionStorage.setItem("schoolkit:setup-return", JSON.stringify({ from: pathname, stepKey: missing.key, destination: url.pathname }));
+    } catch { /* Storage is optional; setup still works without it. */ }
     router.replace(url.pathname + url.search);
   }, [missing, pathname, router]);
 
