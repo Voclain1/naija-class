@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 
 import { CalendarSetupPrompt } from "@/components/academic-calendar/calendar-setup-prompt";
+import { ReturnAfterSetup } from "@/components/setup/return-after-setup";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { SetupCallGate } from "@/components/onboarding/setup-call-gate";
 import { AdminSidebar } from "@/components/admin/sidebar";
@@ -95,6 +96,7 @@ function AdminShell({
           <div className="print:hidden">
             <CalendarSetupPrompt />
           </div>
+          <ReturnAfterSetup key={pathname} />
           {children}
         </main>
       </div>
