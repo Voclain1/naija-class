@@ -43,8 +43,9 @@ test("is reachable across staff pages, keeps the conversation across navigation,
   try {
     await page.goto("/dashboard");
     let panel = await openAssistant(page);
-    await expect(panel.getByText("What do you need done?")).toBeVisible();
-    await expect(panel.getByRole("navigation", { name: "Suggested tasks" }).getByRole("button")).toHaveCount(4);
+    await expect(panel.getByText("Hello! How can I help you today?")).toBeVisible();
+    await panel.getByRole("button", { name: "Show task shortcuts" }).click();
+    await expect(panel.getByRole("navigation", { name: "Suggested tasks" }).getByRole("button")).toHaveCount(5);
     await ask(page, "How do I add parents?");
     await expect(panel.getByText("From the Getting started guide:")).toBeVisible();
     await ask(page, "delete all students");
@@ -64,7 +65,8 @@ test("is reachable across staff pages, keeps the conversation across navigation,
     panel = await openAssistant(page);
     await expect(panel.getByText("How do I add parents?")).toBeVisible();
     // Students pages put student tasks first (from the path only, not the page's contents).
-    await expect(panel.getByRole("navigation", { name: "Suggested tasks" }).getByRole("button").first()).toHaveText("Add and enrol students");
+    await panel.getByRole("button", { name: "Show task shortcuts" }).click();
+    await expect(panel.getByRole("navigation", { name: "Suggested tasks" }).getByRole("button").nth(1)).toHaveText("Add and enrol students");
     // Navigating with the panel open keeps it open and intact.
     await menu.getByLabel("Find a page").fill("fees");
     await menu.getByRole("link", { name: "Fees & payments", exact: true }).click();
@@ -92,7 +94,7 @@ test("is reachable across staff pages, keeps the conversation across navigation,
     // A reload ends the conversation: it lived only in this page's memory.
     await page.reload();
     panel = await openAssistant(page);
-    await expect(panel.getByText("What do you need done?")).toBeVisible();
+    await expect(panel.getByText("Hello! How can I help you today?")).toBeVisible();
     await expect(panel.getByText("How do I add parents?")).toHaveCount(0);
   } finally { await admin.context.close(); await admin.api.dispose(); }
 });
