@@ -18,7 +18,6 @@ import { AlertList } from "@/components/shared/alert-list";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { LogoReminder } from "@/components/dashboard/logo-reminder";
 import { SetupProgressChip } from "@/components/dashboard/setup-progress-chip";
-import { SetupChecklist } from "@/components/setup/setup-checklist";
 import { SetupIntroduction } from "@/components/dashboard/setup-introduction";
 import { useSetupState } from "@/lib/setup-state/use-setup-state";
 import { StatCard } from "@/components/shared/stat-card";
