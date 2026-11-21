@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ClassArmDto, TermDto } from "@school-kit/types";
 
+import { usePrerequisiteRedirect } from "@/lib/setup-state/use-prerequisite-redirect";
 import { PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
@@ -36,6 +37,7 @@ interface Loaded {
 // Flag-B gate the gradebook uses). Selecting an arm opens its workflow
 // board at `${basePath}/[armId]?termId=<term>`.
 export function ReportCardsPicker({ basePath }: { basePath: string }) {
+  usePrerequisiteRedirect(["students", "enrollments"]);
   const { roles } = useAuth();
   const isManager = useMemo(
     () => roles.some((r) => r.key === "owner" || r.key === "admin"),
