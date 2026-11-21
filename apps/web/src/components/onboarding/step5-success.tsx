@@ -35,10 +35,8 @@ import { OnboardingProgress } from "./progress-indicator";
 // or mark a register (#198 — a production census found 36 of 42 real schools
 // stuck exactly there).
 //
-// NOT SKIPPABLE, deliberately. A skip returns the school to the broken state
-// this step exists to close, and it would do so invisibly. The cost of not
-// skipping is low precisely because every field is pre-filled — the owner can
-// read the defaults and press the button.
+// Schools may accept the suggested calendar without editing it. Both actions
+// persist a real academic year and terms before activating the school.
 //
 // The component keeps its filename and export so no route or import moves;
 // the step number is unchanged too (see step5-complete.dto.ts for why the
@@ -63,7 +61,6 @@ export function Step5Success() {
   // Cheap (three date comparisons), and always in step with what the user has
   // just typed.
   const fieldErrors = validateCalendarState(calendar);
-  const invalid = hasCalendarErrors(fieldErrors);
 
   // Fire onboarding_completed on mount — landing on step 5 *is* the
   // completion signal regardless of whether the user clicks the button.
@@ -79,20 +76,22 @@ export function Step5Success() {
     );
   }, [school]);
 
-  async function finish(e: React.FormEvent) {
+  async function finish(e: React.FormEvent, useDefaults = false) {
     e.preventDefault();
+    const selectedCalendar = useDefaults ? initial.state : calendar;
+    const selectedErrors = validateCalendarState(selectedCalendar);
     setShowValidation(true);
 
     // Stop here rather than spending a round-trip to be told the same thing.
     // The messages are the server's own, so this cannot disagree with it.
-    if (invalid) {
-      setErrorLines(fieldErrors.all);
+    if (hasCalendarErrors(selectedErrors)) {
+      setErrorLines(selectedErrors.all);
       if (school) {
         track("onboarding_step_rejected", {
           schoolId: school.id,
           step: 5,
           source: "client",
-          issuePaths: calendarErrorPaths(fieldErrors),
+          issuePaths: calendarErrorPaths(selectedErrors),
           errorCode: "VALIDATION_ERROR",
         });
       }
@@ -102,7 +101,7 @@ export function Step5Success() {
     setSubmitting(true);
     setErrorLines([]);
     try {
-      const res = await advanceStep5({ calendar: toCalendarInput(calendar) });
+      const res = await advanceStep5(useDefaults ? {} : { calendar: toCalendarInput(selectedCalendar) });
       setSchool(res.school);
       track("onboarding_step_completed", { schoolId: res.school.id, step: 5 });
       // The one-time setup-call page (docs/modules/onboarding-call.md); it
@@ -166,6 +165,10 @@ export function Step5Success() {
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {submitting ? "Finishing setup…" : "Finish setup"}
           </Button>
+          <Button type="button" variant="outline" disabled={submitting} className="w-full" onClick={(event) => void finish(event, true)}>
+            Use suggested dates and continue
+          </Button>
+          <p className="text-xs text-muted-foreground">If you do not want to choose dates now, we will save the suggested academic year and terms automatically. You can edit them later in Academic Settings.</p>
         </form>
       </CardContent>
     </Card>

@@ -370,6 +370,10 @@ export default function InvoicesPage() {
           Neither notice disables the form — a school mid-setup can still
           preview, and both vanish as soon as the step is done. */}
       <PrerequisiteNotice
+        stepKey="students"
+        because="Add your students first, then enrol them into classes before generating invoices."
+      />
+      <PrerequisiteNotice
         stepKey="fee-catalog"
         because="No fees are priced yet, so generating invoices here would bill nobody."
       />

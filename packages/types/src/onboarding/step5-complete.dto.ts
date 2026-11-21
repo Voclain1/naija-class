@@ -4,7 +4,8 @@ import { academicCalendarSchema } from "./academic-calendar.dto.js";
 
 // Step 5 — Academic calendar, then Complete.
 //
-// This step used to carry NO payload: it only flipped school.status from
+// This step accepts an omitted calendar and uses server-generated defaults.
+// It previously carried NO payload: it only flipped school.status from
 // ONBOARDING to ACTIVE. As of 2026-08-21 it also carries the school's first
 // academic year and its three terms — see academic-calendar.dto.ts and
 // docs/modules/academic-calendar-bootstrap.md (#198) for why that has to be
@@ -31,7 +32,7 @@ import { academicCalendarSchema } from "./academic-calendar.dto.js";
 // using this same calendar schema.
 export const onboardingStep5Schema = z
   .object({
-    calendar: academicCalendarSchema,
+    calendar: academicCalendarSchema.optional(),
   })
   .strict();
 

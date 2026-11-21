@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
 
+import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { RegisterEditor } from "@/components/teacher/attendance/register-editor";
 import { useAttendanceScope } from "@/components/teacher/attendance/use-attendance-scope";
 
@@ -149,6 +150,8 @@ export default function AttendanceRegisterPage() {
         </p>
       </header>
 
+      {state.kind === "ready" && state.scope.isManager && <PrerequisiteNotice stepKey="enrollments" because="Attendance needs students enrolled in a class before you can mark a register." />}
+
       {state.kind === "loading" ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -164,6 +167,7 @@ export default function AttendanceRegisterPage() {
             <>
               <p className="font-medium text-foreground">No classes set up yet.</p>
               <p className="mt-1">Create class arms under Academics before marking attendance.</p>
+              <Link href="/settings/academic/class-arms" className="mt-3 inline-block font-medium text-primary underline">Set up classes</Link>
             </>
           ) : (
             <>

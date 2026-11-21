@@ -124,6 +124,10 @@ export function ReportCardsPicker({ basePath }: { basePath: string }) {
           Renders nothing for a teacher (the API is owner/admin) and nothing
           once students are enrolled. */}
       <PrerequisiteNotice
+        stepKey="students"
+        because="Add students before preparing report cards for your classes."
+      />
+      <PrerequisiteNotice
         stepKey="enrollments"
         because="These classes are empty, so a report card run here would produce nothing."
       />
@@ -177,6 +181,7 @@ export function ReportCardsPicker({ basePath }: { basePath: string }) {
                   ? "Create class arms under Academics before building report cards."
                   : "Report cards are available to the form teacher of a class. You are not currently a form teacher of any class."}
               </p>
+              {loaded.isManager && <Link href="/settings/academic/class-arms" className="mt-3 inline-block font-medium text-primary underline">Set up classes</Link>}
             </div>
           ) : (
             <ul className="flex flex-col divide-y rounded-md border">

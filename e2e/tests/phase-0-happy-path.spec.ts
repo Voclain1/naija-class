@@ -142,7 +142,7 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
   await ownerPage.getByTestId("setup-call-skip").click();
   await ownerPage.waitForURL(/\/dashboard$/);
   await expect(
-    ownerPage.getByRole("heading", { name: "Dashboard", level: 1 }),
+    ownerPage.locator(".dashboard-welcome h1"),
   ).toBeVisible();
 
   // 6b. First-login product tour auto-shows here — a real owner landing on
@@ -219,7 +219,7 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
   // apps/web/src/components/invitations/accept-invitation-form.tsx.
   await adminPage.waitForURL(/\/dashboard$/);
   await expect(
-    adminPage.getByRole("heading", { name: "Dashboard", level: 1 }),
+    adminPage.locator(".dashboard-welcome h1"),
   ).toBeVisible();
 
   // 8b. This invited admin is also a first-time /dashboard visitor — their
@@ -258,7 +258,7 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
 
   await adminPage.waitForURL(/\/dashboard$/);
   await expect(
-    adminPage.getByRole("heading", { name: "Dashboard", level: 1 }),
+    adminPage.locator(".dashboard-welcome h1"),
   ).toBeVisible();
 
   await ownerContext.close();

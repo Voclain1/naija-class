@@ -18,7 +18,7 @@ import { AlertList } from "@/components/shared/alert-list";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { LogoReminder } from "@/components/dashboard/logo-reminder";
 import { SetupProgressChip } from "@/components/dashboard/setup-progress-chip";
-import { SetupChecklist } from "@/components/setup/setup-checklist";
+import { SetupIntroduction } from "@/components/dashboard/setup-introduction";
 import { useSetupState } from "@/lib/setup-state/use-setup-state";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
@@ -159,35 +159,9 @@ export default function DashboardPage() {
 
   if (!dashboard) return null;
 
-  // A school with nothing enrolled and nothing billed yet has nothing real
-  // to show — the KPI grid would just be a wall of zeros. Show the setup
-  // checklist instead of faking a populated dashboard.
-  //
-  // This replaced a single "Get started by adding your first student" card
-  // (F-25, 2026-08-29). That card was not wrong, it was alone: it named the
-  // second of three required steps, said nothing about the third (enrolling
-  // those students into a class, without which every register, invoice and
-  // report card stays empty), and gave an owner no way to tell what else was
-  // waiting or what had already been done for them. SetupChecklist answers
-  // all four questions from real persisted state.
+  // An empty school still deserves the real dashboard: zero values are honest,
+  // and the setup checklist is optional guidance rather than a replacement page.
   const isEmpty = dashboard.enrolled.count === 0 && dashboard.fees.billed === 0;
-  if (isEmpty) {
-    return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-6">
-        <div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Dashboard</h1>
-            <SetupProgressChip setup={setup} />
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Once your school is set up, this is where the day-to-day will live.
-          </p>
-        </div>
-        {setup.setupState?.status === "established" && <LogoReminder />}
-        <SetupChecklist setup={setup} placeholder />
-      </div>
-    );
-  }
 
   const enrolledDelta =
     dashboard.enrolled.previousTermCount === null
@@ -198,6 +172,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-8">
+      {isEmpty && <SetupIntroduction setup={setup} schoolId={school?.id ?? ""} />}
       {/* The A/B quick actions live in the TOPBAR, not here. This page used to
           render its own "A · Command" / "B · Ledger" pair plus a second
           CommandDialog instance, which meant /dashboard showed both sets at
@@ -251,7 +226,8 @@ export default function DashboardPage() {
           SetupChecklist renders nothing once the API calls the school
           established, so this is not permanent furniture; it is here so that
           progress on the roster does not make the remaining steps vanish. */}
-      <SetupChecklist setup={setup} />
+      {/* The complete checklist is available in the first-visit introduction;
+          dashboard space is reserved for the school’s real activity. */}
 
       {/* KPI row */}
       <div className="dashboard-stats grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">

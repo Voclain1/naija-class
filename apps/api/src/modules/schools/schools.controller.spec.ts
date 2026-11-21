@@ -368,21 +368,15 @@ describe("SchoolsController (Slice 6)", () => {
     expect(res.body.school?.onboardingStep).toBe(5);
   });
 
-  // The regression this whole change exists to prevent: a school must not be
-  // able to finish onboarding without a usable calendar (#198). An empty
-  // step-5 body used to be the valid, and only, way to complete the wizard.
-  it("POST /schools/me/onboarding/5 — rejects an empty body, so no school can go ACTIVE without a calendar", async () => {
-    await request(app.getHttpServer())
-      .post("/api/v1/schools/me/onboarding/4")
-      .set(withAuth(ownerToken))
-      .send({ ndprConsent: true });
-
+  // This shared fixture has already completed step 5 in the preceding test.
+  // Repeating it must be rejected, including when the calendar is omitted:
+  // defaults are only generated on the legitimate first completion.
+  it("POST /schools/me/onboarding/5 — cannot complete twice with an empty body", async () => {
     const res = await request(app.getHttpServer())
       .post("/api/v1/schools/me/onboarding/5")
       .set(withAuth(ownerToken))
       .send({});
-    expect(res.status).toBe(400);
-    expect(res.body.error?.code).toBe("VALIDATION_ERROR");
+    expect(res.status).toBe(409);
   });
 
   // REGRESSION (2026-09-11). A real school was blocked here: the owner changed
@@ -392,8 +386,7 @@ describe("SchoolsController (Slice 6)", () => {
   // validation failure in the codebase, and the web form rendered exactly that
   // and nothing else. The owner had no way to learn which field was wrong.
   //
-  // The empty-body case above asserts only `status === 400`, which is why it
-  // never caught this: the status was always right. THIS test asserts the
+  // The completed-school case above checks the step transition. THIS test asserts the
   // actionable text is present, and says where the client must read it from.
   // If details.issues[] is ever dropped or its messages made generic, the web
   // fix (lib/errors/api-error-lines.ts) silently regresses to the old
