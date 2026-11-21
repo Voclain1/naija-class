@@ -275,7 +275,7 @@ export class AssistantStore {
   private respond(route: AssistantRoute, caps: AssistantCapabilitiesDto | null) {
     switch (route.kind) {
       case "greeting":
-        this.say({ id: this.nextId(), role: "assistant", kind: "text", text: "Hello. Tell me what you need done, or pick one of the tasks below." });
+        this.say({ id: this.nextId(), role: "assistant", kind: "text", text: "Hello! How can I help you today? You can ask about SchoolKit, find a student or describe a school task. I'll help with what this account can access." });
         return;
       case "clarify":
         this.say({ id: this.nextId(), role: "assistant", kind: "clarify", text: "Which of these do you want to do?", options: route.options });
