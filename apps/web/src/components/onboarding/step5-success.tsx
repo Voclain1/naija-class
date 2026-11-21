@@ -79,20 +79,22 @@ export function Step5Success() {
     );
   }, [school]);
 
-  async function finish(e: React.FormEvent) {
+  async function finish(e: React.FormEvent, useDefaults = false) {
     e.preventDefault();
+    const selectedCalendar = useDefaults ? initial.state : calendar;
+    const selectedErrors = validateCalendarState(selectedCalendar);
     setShowValidation(true);
 
     // Stop here rather than spending a round-trip to be told the same thing.
     // The messages are the server's own, so this cannot disagree with it.
-    if (invalid) {
-      setErrorLines(fieldErrors.all);
+    if (hasCalendarErrors(selectedErrors)) {
+      setErrorLines(selectedErrors.all);
       if (school) {
         track("onboarding_step_rejected", {
           schoolId: school.id,
           step: 5,
           source: "client",
-          issuePaths: calendarErrorPaths(fieldErrors),
+          issuePaths: calendarErrorPaths(selectedErrors),
           errorCode: "VALIDATION_ERROR",
         });
       }
@@ -102,7 +104,7 @@ export function Step5Success() {
     setSubmitting(true);
     setErrorLines([]);
     try {
-      const res = await advanceStep5({ calendar: toCalendarInput(calendar) });
+      const res = await advanceStep5({ calendar: toCalendarInput(selectedCalendar) });
       setSchool(res.school);
       track("onboarding_step_completed", { schoolId: res.school.id, step: 5 });
       // The one-time setup-call page (docs/modules/onboarding-call.md); it
@@ -166,6 +168,10 @@ export function Step5Success() {
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {submitting ? "Finishing setup…" : "Finish setup"}
           </Button>
+          <Button type="button" variant="outline" disabled={submitting} className="w-full" onClick={(event) => void finish(event, true)}>
+            Use suggested dates and continue
+          </Button>
+          <p className="text-xs text-muted-foreground">If you do not want to choose dates now, we will save the suggested academic year and terms automatically. You can edit them later in Academic Settings.</p>
         </form>
       </CardContent>
     </Card>
