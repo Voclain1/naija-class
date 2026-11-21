@@ -129,10 +129,11 @@ test("first-school setup: a new owner is told what to do next, and stops being t
   ]);
   const freshPage = await secondContext.newPage();
   await freshPage.goto("/dashboard");
-  // A fresh browser can still see current progress in its introduction.
-  await expect(freshPage.getByRole("dialog", { name: "School setup introduction" })).toBeVisible();
-  await expect(freshPage.getByTestId("setup-step-enrollments")).toHaveAttribute("data-done", "true");
-  await expect(freshPage.getByText(/a few things left to set up/i)).toBeVisible();
+  // An enrolled school sees the real dashboard immediately; the introduction
+  // is reserved for a school with no enrolments or billing activity.
+  await expect(freshPage.locator(".dashboard-welcome h1")).toBeVisible();
+  await expect(freshPage.getByRole("dialog", { name: "School setup introduction" })).toHaveCount(0);
+  await expect(freshPage.getByRole("link", { name: /School setup .* Next:/i })).toBeVisible();
   await secondContext.close();
 
   // The enrolment prerequisite is gone from every screen that carried it.
