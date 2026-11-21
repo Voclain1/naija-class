@@ -35,10 +35,8 @@ import { OnboardingProgress } from "./progress-indicator";
 // or mark a register (#198 — a production census found 36 of 42 real schools
 // stuck exactly there).
 //
-// NOT SKIPPABLE, deliberately. A skip returns the school to the broken state
-// this step exists to close, and it would do so invisibly. The cost of not
-// skipping is low precisely because every field is pre-filled — the owner can
-// read the defaults and press the button.
+// Schools may accept the suggested calendar without editing it. Both actions
+// persist a real academic year and terms before activating the school.
 //
 // The component keeps its filename and export so no route or import moves;
 // the step number is unchanged too (see step5-complete.dto.ts for why the
@@ -63,7 +61,6 @@ export function Step5Success() {
   // Cheap (three date comparisons), and always in step with what the user has
   // just typed.
   const fieldErrors = validateCalendarState(calendar);
-  const invalid = hasCalendarErrors(fieldErrors);
 
   // Fire onboarding_completed on mount — landing on step 5 *is* the
   // completion signal regardless of whether the user clicks the button.
