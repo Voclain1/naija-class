@@ -15,6 +15,7 @@ import {
   type OnboardingStep3Input,
   type OnboardingStep4Input,
   type OnboardingStep5Input,
+  proposeAcademicCalendar,
   type OnboardingStepResponse,
   type PatchSchoolInput,
   type SchoolLogoUrlDto,
@@ -499,7 +500,7 @@ export class SchoolsService {
         db,
         authCtx.schoolId,
         authCtx.userId,
-        data.calendar,
+        data.calendar ?? proposeAcademicCalendar(new Date()),
         reqCtx.ipAddress,
       );
 
