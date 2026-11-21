@@ -15,7 +15,6 @@ import {
   type TermDto,
 } from "@school-kit/types";
 
-import { usePrerequisiteRedirect } from "@/lib/setup-state/use-prerequisite-redirect";
 import { BillingAssistant } from "@/components/finance/billing-assistant";
 import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
 import { GenerateInvoicesDialog } from "@/components/finance/generate-invoices-dialog";
@@ -90,7 +89,6 @@ const LINK_NOT_FOUND =
   "The term in this link could not be found for your school, so the list is not filtered. Choose a term above.";
 
 export default function InvoicesPage() {
-  usePrerequisiteRedirect(["students", "enrollments", "fee-catalog"]);
   // Cancelling is `@Permissions("invoice.cancel")` on the server. Read the
   // signed-in user's grant here so the row action reflects it, rather than
   // offering the action and letting a 403 be the answer.
