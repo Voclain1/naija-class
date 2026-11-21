@@ -101,7 +101,7 @@ export function Step5Success() {
     setSubmitting(true);
     setErrorLines([]);
     try {
-      const res = await advanceStep5({ calendar: toCalendarInput(selectedCalendar) });
+      const res = await advanceStep5(useDefaults ? {} : { calendar: toCalendarInput(selectedCalendar) });
       setSchool(res.school);
       track("onboarding_step_completed", { schoolId: res.school.id, step: 5 });
       // The one-time setup-call page (docs/modules/onboarding-call.md); it
