@@ -45,7 +45,7 @@ test("first-school setup: a new owner is told what to do next, and stops being t
   await expect(page.getByText(/the school cannot run day to day/i)).toBeVisible();
   await expect(page.getByText(/you can still work without them/i)).toBeVisible();
   await page.getByTestId("setup-step-students").getByRole("link", { name: /add students/i }).click();
-  await expect(page).toHaveURL(/\\/students$/);
+  await expect(page).toHaveURL(/\/students$/);
 
   // ───────────────────────────────────────────────────────────────────────
   // 2. A workflow screen with an absent prerequisite explains itself rather
