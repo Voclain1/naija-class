@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Check, Loader2, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -222,7 +223,8 @@ export function RegisterEditor({ classArmId, date, onLoaded, onDirtyChange }: Pr
     return (
       <div className="rounded-md border border-dashed bg-muted/20 p-8 text-sm text-muted-foreground">
         <p className="font-medium text-foreground">No students enrolled.</p>
-        <p className="mt-1">No students are enrolled in this arm for this date.</p>
+        <p className="mt-1">No students are enrolled in this arm for this date. Add students and enrol them into the class to start marking attendance.</p>
+        <Link href="/students" className="mt-3 inline-block font-medium text-primary underline">Go to students</Link>
       </div>
     );
   }
