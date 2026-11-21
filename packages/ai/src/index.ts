@@ -208,3 +208,4 @@ export {
   type OrchestratorToolSpec,
   NOT_PERMITTED_SECTION_NOTE,
 } from "./prompts/assistant-orchestrator.js";
+export { ASSISTANT_VOICE_APPROVAL } from "./prompts/assistant-voice.js";

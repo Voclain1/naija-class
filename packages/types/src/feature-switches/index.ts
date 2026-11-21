@@ -48,6 +48,13 @@ export const FEATURE_KEYS = [
   // own allowlist row; the API also refuses it in production until that
   // approval is recorded in code. Off by default and for every school.
   "assistant-model-routing",
+  // Realtime voice for the SchoolKit Assistant (2026-11-21,
+  // docs/modules/assistant-voice.md). A second interface to the SAME
+  // model-backed turn above: it needs "assistant-model-routing" working too.
+  // Audio goes to a speech provider, so it carries its own approval
+  // (ASSISTANT_VOICE_APPROVAL, pending) and the API refuses it in production
+  // until that is recorded. Off by default and for every school.
+  "assistant-voice",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -66,6 +73,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   "student-corrections": "Reviewed student corrections",
   "assistant-workspace": "SchoolKit Assistant",
   "assistant-model-routing": "SchoolKit Assistant: AI understanding",
+  "assistant-voice": "SchoolKit Assistant: voice",
 };
 
 /** Narrows an arbitrary string (an audit row, an env entry) to a known key. */

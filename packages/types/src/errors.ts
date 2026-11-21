@@ -168,3 +168,15 @@ export class InternalError extends BaseError {
   readonly code = "INTERNAL_ERROR";
   readonly httpStatus = 500;
 }
+
+// 502 — an upstream provider (e.g. the voice speech provider) refused or
+// failed. Sub-code in the same shape as ConflictError. The message never
+// carries the provider's own error text.
+export class UpstreamError extends BaseError {
+  readonly httpStatus = 502;
+  readonly code: string;
+  constructor(code: string, message: string, details?: unknown) {
+    super(message, details);
+    this.code = code;
+  }
+}

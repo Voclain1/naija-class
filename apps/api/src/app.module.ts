@@ -92,6 +92,7 @@ import { StudentsModule } from "./modules/students/students.module";
 import { StudentIntakeModule } from "./modules/student-intake/student-intake.module";
 import { WorkflowModule } from "./common/workflow/workflow.module";
 import { AssistantWorkspaceModule } from "./modules/assistant-workspace/assistant-workspace.module";
+import { AssistantVoiceModule } from "./modules/assistant-voice/assistant-voice.module";
 import { ReminderCampaignsModule } from "./modules/reminder-campaigns/reminder-campaigns.module";
 import { StudentCorrectionsModule } from "./modules/student-corrections/student-corrections.module";
 import { SubjectAttendanceModule } from "./modules/subject-attendance/subject-attendance.module";
@@ -159,6 +160,7 @@ const isProd = process.env.NODE_ENV === "production";
     StudentIntakeModule,
     WorkflowModule,
     AssistantWorkspaceModule,
+    AssistantVoiceModule,
     ReminderCampaignsModule,
     StudentCorrectionsModule,
     NotificationsModule,

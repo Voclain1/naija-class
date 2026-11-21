@@ -282,6 +282,33 @@ switching `assistant-model-routing` on is refused while the approval is
 pending. Do not add a school-side control, a default-on, or a bypass of the
 approval for a "test" school. Steps: `docs/runbooks/assistant-activation.md`.
 
+### SchoolKit Assistant voice (2026-11-21), BUILT BUT NOT APPROVED
+
+`docs/modules/assistant-voice.md`. Realtime voice is a second interface to the
+SAME assistant: the browser streams audio over WebRTC to a speech provider in a
+**transcription-only** session (a per-session credential the API mints for under
+a minute), and each final transcript goes through
+`AssistantOrchestratorService.turn` unchanged. The provider never reasons or
+calls a tool. It has **no tool, prompt or approval of its own**: a spoken "yes"
+or "approve it" is answered with "tap Approve on the card" and calls no model,
+and the speech endpoint speaks only text the server wrote for that turn
+(HMAC-bound). `assistant_voice_sessions` holds ids, counts and billed seconds
+only, never audio, transcripts, replies or credentials.
+
+Audio reaches the speech provider before any detector, so voice needs its own
+CLAUDE.md row (proposed wording in the module doc) and the orchestrator's row
+first. Until then:
+- `ASSISTANT_VOICE_APPROVAL` stays `"pending"`, and the API refuses voice in
+  production and refuses switching `assistant-voice` on there;
+- the `assistant-voice` switch is off for every school;
+- the evals pin the constant.
+
+Do not add a voice-only tool, a spoken approval, a speech endpoint that accepts
+client text without the server's token, or a browser `SpeechRecognition`
+fallback. Cost controls (monthly seconds reserved at start, per-school
+concurrency, idle and maximum length, per-session reconnect and speech caps)
+are in the module doc; do not remove one to make a demo work.
+
 ### Git
 
 - Never commit to `main`. Every change goes through a PR (bundled — see Git conventions).
@@ -1089,6 +1116,8 @@ SESSION_COOKIE_DOMAIN
 RESEND_WEBHOOK_SECRET
 SCHOOL_ADDRESS_DOMAIN
 SCHOOL_ADDRESSES_LIVE
+VOICE_PROVIDER
+VOICE_OPENAI_API_KEY
 ```
 
 Never commit. Never log. Test keys and live keys are different env files.
@@ -1237,6 +1266,13 @@ in setup reminders (2026-10-30, `docs/modules/activation.md`). Empty means
 `https://api.schoolkit.ng` in production and `http://localhost:4000` in
 development; set it only if the API's address changes. Every link is signed
 under `RESULT_PIN_HMAC_KEY`, so rotating that key also ends old reminder links.
+
+`VOICE_PROVIDER` / `VOICE_OPENAI_API_KEY` and the other `VOICE_*` limits —
+SchoolKit Assistant voice (2026-11-21, `docs/modules/assistant-voice.md`), on
+the API only. Empty `VOICE_PROVIDER` means no provider: voice reports
+`PROVIDER_NOT_CONFIGURED` and never fakes audio. The key never reaches a
+browser. Every limit is clamped in `voice.config.ts`. Setting a key does not
+switch anything on: the approval and the per-school switch still apply.
 
 `TERMII_BASE_URL` — unlike Paystack's fixed `api.paystack.co`, Termii's API
 base URL is **per-account** (dashboard-assigned), not a global constant.

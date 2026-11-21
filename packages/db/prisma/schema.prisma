@@ -204,6 +204,12 @@ model School {
   // AI budget would be the tail wagging the dog.
   aiEnabled                    Boolean         @default(true) @map("ai_enabled")
   aiMonthlyTokenBudget         Int?            @map("ai_monthly_token_budget")
+  //   voiceMonthlySecondsBudget  per-school monthly cap on SchoolKit
+  //                          Assistant voice, in SECONDS of open voice
+  //                          session (2026-11-21, docs/modules/assistant-voice.md).
+  //                          NULL = the platform default (VOICE_DEFAULT_MONTHLY_SECONDS).
+  //                          Set by the platform operator only.
+  voiceMonthlySecondsBudget    Int?            @map("voice_monthly_seconds_budget")
   //   smartImportEnabled     Smart Student Import (photograph a register,
   //                          the model transcribes it) for this school
   //                          (2026-10-11). Off by default, switched on by the
@@ -5863,4 +5869,34 @@ model StoreOrderLine {
   @@index([orderId])
   @@index([variantId])
   @@map("store_order_lines")
+}
+
+// SchoolKit Assistant voice sessions (2026-11-21, docs/modules/assistant-voice.md).
+// Lifecycle, limits and metering ONLY: no audio, no transcript, no reply text,
+// no provider credential. `recent_turn_ids` are client-generated UUIDs kept to
+// refuse a replayed turn. Billed seconds are wall-clock seconds the session was
+// open, an upper bound of the audio the provider can bill.
+model AssistantVoiceSession {
+  id                    String    @id @default(uuid())
+  schoolId              String    @map("school_id")
+  userId                String    @map("user_id")
+  status                String    @default("ACTIVE")
+  provider              String
+  startedAt             DateTime  @default(now()) @map("started_at")
+  lastActivityAt        DateTime  @default(now()) @map("last_activity_at")
+  expiresAt             DateTime  @map("expires_at")
+  endedAt               DateTime? @map("ended_at")
+  endReason             String?   @map("end_reason")
+  credentialCount       Int       @default(0) @map("credential_count")
+  turnCount             Int       @default(0) @map("turn_count")
+  interruptionCount     Int       @default(0) @map("interruption_count")
+  speechCharacters      Int       @default(0) @map("speech_characters")
+  billedSeconds         Int       @default(0) @map("billed_seconds")
+  estimatedCostMicroUsd Int       @default(0) @map("estimated_cost_micro_usd")
+  recentTurnIds         String[]  @default([]) @map("recent_turn_ids")
+
+  @@index([schoolId, status])
+  @@index([schoolId, startedAt(sort: Desc)])
+  @@index([schoolId, userId, status])
+  @@map("assistant_voice_sessions")
 }

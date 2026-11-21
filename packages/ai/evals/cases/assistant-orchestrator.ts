@@ -9,6 +9,7 @@ import {
   ASSISTANT_ORCHESTRATOR_SYSTEM,
   ASSISTANT_ORCHESTRATOR_TOOLS,
 } from "../../src/prompts/assistant-orchestrator.js";
+import { ASSISTANT_VOICE_APPROVAL } from "../../src/prompts/assistant-voice.js";
 import { PROMPTS } from "../../src/prompts/registry.js";
 import { SCENARIOS } from "../assistant-orchestrator/scenarios.js";
 import { check, type EvalCase } from "../harness.js";
@@ -23,6 +24,10 @@ export const assistantOrchestratorCase: EvalCase = {
     check(
       "approval is still PENDING (activation needs the owner's allowlist row; flip it in the same change as CLAUDE.md)",
       ASSISTANT_ORCHESTRATOR_APPROVAL === "pending",
+    ),
+    check(
+      "voice approval is still PENDING (audio reaches a speech provider unredacted; needs its own allowlist row, docs/modules/assistant-voice.md)",
+      ASSISTANT_VOICE_APPROVAL === "pending",
     ),
     check(
       "exactly the eleven tools, none named like an approval or an execution",
