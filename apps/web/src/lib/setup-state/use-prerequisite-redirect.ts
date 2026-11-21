@@ -24,7 +24,7 @@ export function usePrerequisiteRedirect(keys: readonly SetupStepKey[]): boolean 
     const url = new URL(missing.href, window.location.origin);
     url.searchParams.set("setupFrom", pathname);
     router.replace(url.pathname + url.search);
-  }, [missing?.href, pathname, router]);
+  }, [missing, pathname, router]);
 
   return Boolean(missing);
 }
