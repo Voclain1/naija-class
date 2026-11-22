@@ -1,3 +1,5 @@
+import { assistantVoiceApi } from "@/lib/assistant/voice-api";
+import { AssistantVoiceControls } from "@/components/assistant/assistant-voice-controls";
 "use client";
 
 import { ArrowUp, BookOpen, Eraser, Loader2, Minus, Sparkles } from "lucide-react";
@@ -153,6 +155,22 @@ function Panel({ caps, onMinimise }: { caps: AssistantCapabilitiesDto; onMinimis
       </div>
 
       <Suggestions caps={caps} expanded={showShortcuts} onToggle={() => setShowShortcuts((value) => !value)} />
+      <AssistantVoiceControls onTranscript={async (text, sessionId) => {
+        if (!caps.modelRouting.available) return null;
+        let spoken: { turnId: string; token: string; text: string } | null = null;
+        await store.sendModel(text, caps, {
+          turn: async (input) => {
+            const result = await assistantVoiceApi.turn(sessionId, {
+              turnId: crypto.randomUUID(), inputMode: "voice", turn: input,
+            });
+            if (!result.interrupted && result.speech) {
+              spoken = { turnId: result.turnId, token: result.speech.token, text: result.speech.text };
+            }
+            return result.turn;
+          },
+        });
+        return spoken;
+      }} />
       <Composer caps={caps} inputRef={composerRef} />
     </div>
   );
