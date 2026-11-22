@@ -271,7 +271,7 @@ describe("SchoolKit Assistant voice (PostgreSQL, real orchestrator, scripted mod
     expect(port.seen()).toMatch(/⟨P1⟩/);
   });
 
-  it("a spoken 'yes, approve it' approves nothing and calls no model; the same words typed go to the assistant as in chat", async () => {
+  it("[release-check:eng.no-approval-path] a spoken 'yes, approve it' approves nothing and calls no model; the same words typed go to the assistant as in chat", async () => {
     const port = new ScriptedPort([
       calls(tool("prepare_invoices", { task: "new", term: "second", classes: ["JSS2"] })),
       answer("The preview is ready."),

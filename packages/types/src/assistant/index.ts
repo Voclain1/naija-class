@@ -46,7 +46,12 @@ export interface AssistantCapabilitiesDto {
    * FEATURE_OFF: the school's `assistant-model-routing` switch is off.
    * AI_UNAVAILABLE: AI is off for the school or not configured.
    */
-  modelRouting: { available: boolean; reason: "NOT_APPROVED" | "FEATURE_OFF" | "AI_UNAVAILABLE" | null };
+  /**
+   * NOT_APPROVED (since 2026-11-22): the release for this school's data scope
+   * is not authorised, or was revoked (docs/modules/assistant-ai-governance.md).
+   * TERMS_NOT_ACCEPTED: the school's owner has not accepted the current AI terms.
+   */
+  modelRouting: { available: boolean; reason: "NOT_APPROVED" | "FEATURE_OFF" | "TERMS_NOT_ACCEPTED" | "AI_UNAVAILABLE" | null };
   inactivityMinutes: number;
 }
 

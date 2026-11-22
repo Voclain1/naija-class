@@ -76,3 +76,4 @@ export * from './feature-switches/index.js';
 export * from "./assistant/index.js";
 export * from "./assistant/orchestration.js";
 export * from "./assistant/voice.js";
+export * from "./assistant/governance.js";

@@ -193,4 +193,5 @@ export const ASSISTANT_BLOCK_LABELS: Record<string, string> = {
   "full-date": "a full date",
   "too-long": "a very long message",
   "pasted-rows": "pasted rows",
+  "known-identifier": "contact or ID details of someone at your school",
 };

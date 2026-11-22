@@ -14,7 +14,8 @@ import {
 import { AiGenerationService } from "../../common/ai/ai-generation.service";
 import { DEFAULT_MONTHLY_TOKEN_BUDGET, currentPeriodStart } from "../../common/ai/ai.constants";
 import { FEATURE_SWITCH_CACHE_TTL_MS, FeatureSwitchesService } from "../../common/features/feature-switches.service";
-import { modelRoutingBlockers, orchestratorApproval } from "../assistant-workspace/orchestrator/model-routing-gate";
+import { readSchoolAiGovernance } from "../../common/ai-release/ai-governance";
+import { governanceBlocking, modelRoutingBlockers, orchestratorApproval } from "../assistant-workspace/orchestrator/model-routing-gate";
 
 // The platform admin's view of the SchoolKit Assistant for ONE school
 // (docs/modules/assistant-workspace.md, "Controlled activation").
@@ -26,7 +27,7 @@ import { modelRoutingBlockers, orchestratorApproval } from "../assistant-workspa
 // gate, the provider key, the school's AI switch or its budget still stops it.
 //
 // The blockers come from the same functions the request path uses
-// (modelRoutingBlockers, orchestratorApproval, isPlatformDisabled), so this
+// (modelRoutingBlockers, readSchoolAiGovernance, isPlatformDisabled), so this
 // report cannot drift from what staff actually get. What it cannot see is one
 // person's permissions: "working" means working for staff who hold them.
 
@@ -74,14 +75,16 @@ export class AssistantActivationService {
       ASSISTANT_WORKFLOWS.map((w) => [w, item(WORKFLOW_FEATURE[w], behindPanel)]),
     ) as Record<AssistantWorkflow, AssistantActivationItemDto>;
 
-    const approval = orchestratorApproval();
+    const governance = await readSchoolAiGovernance(schoolId);
+    const { releaseBlocking, termsBlocking } = governanceBlocking(governance);
     const { platformEnabled, providerConfigured } = this.ai.availability();
     const budget = read.school.aiMonthlyTokenBudget ?? DEFAULT_MONTHLY_TOKEN_BUDGET;
     const routingKey = "assistant-model-routing" as const;
     const routing = modelRoutingBlockers({
       switchOn: stored[routingKey],
       platformDisabled: this.features.isPlatformDisabled(routingKey),
-      approvalBlocking: approval.blocking,
+      releaseBlocking,
+      termsBlocking,
       aiPlatformEnabled: platformEnabled,
       providerConfigured,
       schoolAiEnabled: read.school.aiEnabled,
@@ -103,8 +106,11 @@ export class AssistantActivationService {
         switchOn: stored[routingKey],
         working: aiBlockers.length === 0,
         blockers: aiBlockers,
-        approval: approval.approval,
-        approvalEnforced: approval.enforced,
+        approval: governance.releaseAuthorised ? "approved" : "pending",
+        approvalEnforced: governance.enforced,
+        dataClassification: governance.classification,
+        termsAccepted: governance.termsAccepted,
+        allowlistApproval: orchestratorApproval().approval,
       },
       ai: {
         platformEnabled,

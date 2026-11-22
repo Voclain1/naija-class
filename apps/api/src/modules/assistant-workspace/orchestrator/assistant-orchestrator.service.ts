@@ -6,7 +6,8 @@ import { withTenant } from "@school-kit/db";
 import { ForbiddenError, type AssistantTurnDto, type AssistantTurnInput, type AssistantTurnOutcome } from "@school-kit/types";
 
 import { AiGenerationService, type TurnOutcome } from "../../../common/ai/ai-generation.service.js";
-import { PersonRefs, checkConversation, loadQuestionRoster, redactRosterNames } from "../../../common/ai/pii/question-check.js";
+import { WITHHELD, loadProviderEgressGuard } from "../../../common/ai/pii/provider-egress-guard.js";
+import { PersonRefs, checkConversation, loadQuestionRoster, redactRosterNames, withholdRosterNames } from "../../../common/ai/pii/question-check.js";
 import type { AuthContext } from "../../../common/auth/auth-context.js";
 import { BillingRunsService } from "../../invoices/billing-runs.service.js";
 import { ReminderCampaignsService } from "../../reminder-campaigns/reminder-campaigns.service.js";
@@ -112,9 +113,20 @@ export class AssistantOrchestratorService {
     // admission numbers) still means NOTHING goes to the model.
     const roster = await loadQuestionRoster(auth.schoolId);
     const persons = new PersonRefs();
-    const messages = input.messages.map((m) => ({ ...m, text: redactRosterNames(m.text, roster, persons) }));
+    // Second line, by VALUE not pattern (provider-egress-guard.ts): a full
+    // name the school holds becomes a marker too, in any case or order; any
+    // other identifier the school holds (admission number, email, phone) that
+    // survived the detectors blocks the turn.
+    const egress = await loadProviderEgressGuard(auth.schoolId);
+    const messages = input.messages.map((m) => ({ ...m, text: egress.markNames(redactRosterNames(m.text, roster, persons), persons) }));
     const check = checkConversation(messages.map((m) => m.text), roster);
-    if (check.blocked) return { outcome: "blocked", reply: "", actions: [], blockedCategories: [...check.categories], toolsUsed: [] };
+    const heldIdentifiers = new Set(messages.flatMap((m) => egress.scan(m.text)));
+    if (check.blocked || heldIdentifiers.size > 0) {
+      // The pattern detectors' categories when they caught it; "known-identifier"
+      // only for what they missed and the value match caught.
+      const categories = check.blocked ? [...check.categories] : ["known-identifier"];
+      return { outcome: "blocked", reply: "", actions: [], blockedCategories: categories, toolsUsed: [] };
+    }
 
     // Students found earlier, re-checked now against tenant, role and scope:
     // another school's id, or one outside a teacher's classes, is dropped.
@@ -126,10 +138,17 @@ export class AssistantOrchestratorService {
     const state = new TurnState(await this.deps.structure(auth), input.tasks, students, persons.values);
     const registry = orchestratorToolRegistry(this.deps, state).forTurn(auth);
     const deadline = Date.now() + TURN_DEADLINE_MS;
-    const executeTool = (call: AiToolCall): Promise<AiToolResult> =>
-      Date.now() > deadline
-        ? Promise.resolve({ toolUseId: call.id, content: "Time limit reached. Stop and tell the person to try again.", isError: true })
-        : registry.executeTool(call);
+    let withheld = 0;
+    const executeTool = async (call: AiToolCall): Promise<AiToolResult> => {
+      if (Date.now() > deadline) return { toolUseId: call.id, content: "Time limit reached. Stop and tell the person to try again.", isError: true };
+      const result = await registry.executeTool(call);
+      // Tool results are labels and counts by design; school-typed labels can
+      // still carry a name or contact. Nothing the school holds leaves here.
+      const byValue = egress.redact(result.content);
+      const byRoster = withholdRosterNames(byValue.text, roster, WITHHELD);
+      withheld += byValue.withheld + byRoster.withheld;
+      return { ...result, content: byRoster.text };
+    };
 
     // An interaction record with no content, so each model call's ledger row
     // groups under this turn.
@@ -147,12 +166,17 @@ export class AssistantOrchestratorService {
         interactionLogId: interaction.id,
         prompt: ASSISTANT_ORCHESTRATOR_PROMPT,
         system: ASSISTANT_ORCHESTRATOR_SYSTEM,
-        history: modelHistory({ ...input, messages }, state.summary()).map((m): AiConversationMessage => (m.role === "user" ? { role: "user", text: m.text } : { role: "assistant", text: m.text })),
+        history: modelHistory({ ...input, messages }, state.summary()).map((m): AiConversationMessage => {
+          // The whole outgoing history, task summary included, passes the guard last.
+          const text = egress.redact(m.text).text;
+          return m.role === "user" ? { role: "user", text } : { role: "assistant", text };
+        }),
         tools: registry.tools,
         executeTool,
         maxSteps: TURN_MAX_STEPS,
         maxInputTokensPerTurn: TURN_MAX_INPUT_TOKENS,
       });
+      if (withheld > 0) this.logger.warn(`Assistant turn withheld identifiers from tool results: school=${auth.schoolId} count=${withheld}`);
       const outcome = OUTCOMES[turn.outcome];
       const reply = outcome === "answered" ? checkReply(turn.text) : "";
       return result(outcome, reply, { actions: state.actions, toolsUsed: [...turn.toolCallNames] });

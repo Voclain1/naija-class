@@ -1,5 +1,15 @@
 # Virgo Fidelis assistant pilot — approval and evidence register
 
+> **Update 2026-11-22:** the runtime gate is now a release per data scope
+> (`docs/modules/assistant-ai-governance.md`). A **fictional-data** pilot
+> tenant for Virgo Fidelis can be authorised by the platform admin after three
+> attestations (fictional records only; testers briefed; provider retention
+> reviewed). Nothing in this register is marked complete by that change. Every
+> gate below still applies to **live** data: the LIVE release requires AO-1 and
+> the counsel, terms and notices, provider and evals attestations. The
+> engineering evidence for "Runtime privacy and authorisation" is listed in
+> `docs/security/assistant-ai-security-report.md`.
+
 **Status: OPEN / NO ACTIVATION AUTHORISED.** Prepared 2026-11-11. Owner decision: retain the current working Anthropic API key; rotate before public rollout only if necessary.
 
 This register is the decision tracker for the existing [pilot review packet](virgo-assistant-pilot-review-packet.md) and [consent release specification](virgo-assistant-consent-release-spec.md). It is not a substitute for a lawyer's opinion, provider agreements or a production verification.

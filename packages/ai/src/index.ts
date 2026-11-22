@@ -209,3 +209,12 @@ export {
   NOT_PERMITTED_SECTION_NOTE,
 } from "./prompts/assistant-orchestrator.js";
 export { ASSISTANT_VOICE_APPROVAL } from "./prompts/assistant-voice.js";
+export {
+  AI_RELEASE_REQUIREMENTS,
+  AI_RELEASE_REQUIREMENTS_VERSION,
+  aiReleaseRequirementsFor,
+  type AiReleaseRequirement,
+  type AiReleaseScopeName,
+  type AttestationRequirement,
+  type EngineeringRequirement,
+} from "./release/ai-release-requirements.js";

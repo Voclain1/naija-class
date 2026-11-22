@@ -836,6 +836,8 @@ Refresh the page first. If it still does not work, write down which page you wer
 
 **Settings → Data protection.** This page shows when your school confirmed SchoolKit's data protection terms, and by whom. When the terms are updated, your dashboard shows **Data protection terms to confirm**, and the school owner ticks the box and presses **Confirm** on this page; other staff can read it but only the owner can confirm. The page also has the **Letter to parents** (see [Step 10](#step-10-add-parents)) and links to the Privacy Policy, Terms of Service, Data Processing Agreement and Refund Policy. The same links are at the foot of every sign-in page.
 
+**SchoolKit Assistant: AI terms.** On the same page, the school owner can read and accept the terms for the SchoolKit Assistant's AI understanding: what staff type is sent to an AI provider (and, with voice, what they say), what is checked first, how long the providers keep it, and that only a member of staff can approve anything. Accepting does **not** switch AI on. Only SchoolKit can switch it on for your school, and it stays off until then. The owner can **Withdraw acceptance** at any time, and AI understanding stops at once. Other staff can read the terms but only the owner can accept or withdraw.
+
 # Getting help
 
 We are happy to help — no question is too small.

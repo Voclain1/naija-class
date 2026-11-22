@@ -70,6 +70,18 @@ import {
   changeSchoolAddressSchema,
   type ChangeSchoolAddressInput,
   platformAdminSetVoiceBudgetSchema,
+  aiReleaseAttestSchema,
+  aiReleaseAuthoriseSchema,
+  aiReleaseRevokeSchema,
+  aiReleaseScopeSchema,
+  platformAdminSetAiClassificationSchema,
+  type AiReleaseAttestInput,
+  type AiReleaseAuthoriseInput,
+  type AiReleaseRevokeInput,
+  type AiReleaseStatusDto,
+  type PlatformAdminFictionalSeedResponse,
+  type PlatformAdminSetAiClassificationInput,
+  type PlatformAdminSetAiClassificationResponse,
   type PlatformAdminEndVoiceSessionsResponse,
   type PlatformAdminSetVoiceBudgetInput,
   type PlatformAdminSetVoiceBudgetResponse,
@@ -306,6 +318,85 @@ export class PlatformAdminController {
   @UseGuards(PlatformAdminGuard)
   async assistantStatus(@Param("schoolId") schoolId: string): Promise<PlatformAdminAssistantStatusDto> {
     return this.assistantActivation.status(schoolId);
+  }
+
+  // ---- SchoolKit Assistant AI governance (docs/modules/assistant-ai-governance.md).
+  // Platform admin only (PlatformAdminGuard re-reads is_platform_admin and
+  // is_active on every request). Every write is audited.
+
+  @Get("ai-release")
+  @UseGuards(PlatformAdminGuard)
+  async aiReleaseStatus(): Promise<AiReleaseStatusDto> {
+    return this.platformAdminService.aiReleaseStatus();
+  }
+
+  @Post("ai-release/:scope/attestations")
+  @HttpCode(200)
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async attestAiRelease(
+    @Param("scope", new ZodValidationPipe(aiReleaseScopeSchema)) scope: "LIVE" | "FICTIONAL",
+    @Body(new ZodValidationPipe(aiReleaseAttestSchema)) dto: AiReleaseAttestInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<AiReleaseStatusDto> {
+    return this.platformAdminService.attestAiRelease(scope, dto, adminCtx, { ipAddress: ip, userAgent: req.header("user-agent") ?? null });
+  }
+
+  @Post("ai-release/:scope/authorise")
+  @HttpCode(200)
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  async authoriseAiRelease(
+    @Param("scope", new ZodValidationPipe(aiReleaseScopeSchema)) scope: "LIVE" | "FICTIONAL",
+    @Body(new ZodValidationPipe(aiReleaseAuthoriseSchema)) dto: AiReleaseAuthoriseInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<AiReleaseStatusDto> {
+    return this.platformAdminService.authoriseAiRelease(scope, dto, adminCtx, { ipAddress: ip, userAgent: req.header("user-agent") ?? null });
+  }
+
+  // The kill switch: every school of this data scope stops at its next request.
+  @Post("ai-release/:scope/revoke")
+  @HttpCode(200)
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async revokeAiRelease(
+    @Param("scope", new ZodValidationPipe(aiReleaseScopeSchema)) scope: "LIVE" | "FICTIONAL",
+    @Body(new ZodValidationPipe(aiReleaseRevokeSchema)) dto: AiReleaseRevokeInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<AiReleaseStatusDto> {
+    return this.platformAdminService.revokeAiRelease(scope, dto, adminCtx, { ipAddress: ip, userAgent: req.header("user-agent") ?? null });
+  }
+
+  @Patch("schools/:schoolId/ai-data-classification")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async setAiDataClassification(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminSetAiClassificationSchema)) dto: PlatformAdminSetAiClassificationInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSetAiClassificationResponse> {
+    return this.platformAdminService.setAiDataClassification(schoolId, dto, adminCtx, { ipAddress: ip, userAgent: req.header("user-agent") ?? null });
+  }
+
+  @Post("schools/:schoolId/fictional-pilot/seed")
+  @HttpCode(200)
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  async seedFictionalPilot(
+    @Param("schoolId") schoolId: string,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminFictionalSeedResponse> {
+    return this.platformAdminService.seedFictionalPilot(schoolId, adminCtx, { ipAddress: ip, userAgent: req.header("user-agent") ?? null });
   }
 
   // GET /platform-admin/schools/:schoolId/voice — SchoolKit Assistant voice for

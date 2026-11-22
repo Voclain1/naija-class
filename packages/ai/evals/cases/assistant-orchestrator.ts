@@ -10,6 +10,7 @@ import {
   ASSISTANT_ORCHESTRATOR_TOOLS,
 } from "../../src/prompts/assistant-orchestrator.js";
 import { ASSISTANT_VOICE_APPROVAL } from "../../src/prompts/assistant-voice.js";
+import { aiReleaseRequirementsFor } from "../../src/release/ai-release-requirements.js";
 import { PROMPTS } from "../../src/prompts/registry.js";
 import { SCENARIOS } from "../assistant-orchestrator/scenarios.js";
 import { check, type EvalCase } from "../harness.js";
@@ -24,6 +25,14 @@ export const assistantOrchestratorCase: EvalCase = {
     check(
       "approval is still PENDING (activation needs the owner's allowlist row; flip it in the same change as CLAUDE.md)",
       ASSISTANT_ORCHESTRATOR_APPROVAL === "pending",
+    ),
+    check(
+      "the LIVE release requires CLAUDE.md's allowlist row (AO-1) and keeps it open while the approval is pending; the FICTIONAL release does not depend on it (docs/modules/assistant-ai-governance.md)",
+      (() => {
+        const live = aiReleaseRequirementsFor("LIVE").find((r) => r.id === "live.allowlist-row");
+        const fictional = aiReleaseRequirementsFor("FICTIONAL").some((r) => r.id === "live.allowlist-row");
+        return live?.kind === "engineering" && (ASSISTANT_ORCHESTRATOR_APPROVAL !== "pending" || live.status === "open") && !fictional;
+      })(),
     ),
     check(
       "voice approval is still PENDING (audio reaches a speech provider unredacted; needs its own allowlist row, docs/modules/assistant-voice.md)",
