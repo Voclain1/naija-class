@@ -136,7 +136,6 @@ const count = (schoolId: string, table: "invoices" | "assistant_billing_runs" | 
 describe("SchoolKit Assistant security (PostgreSQL, real orchestrator, adversarial scripted model)", () => {
   let A: School;
   let B: School;
-  let logged: string[];
 
   beforeAll(async () => {
     A = await makeSchool("a", {
