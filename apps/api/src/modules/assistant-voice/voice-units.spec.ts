@@ -124,8 +124,8 @@ describe("the gate", () => {
     for (const b of VOICE_BLOCKERS) expect(VOICE_BLOCKER_TEXT[b].length).toBeGreaterThan(10);
     for (const r of VOICE_END_REASONS) expect(VOICE_END_REASON_TEXT[r].length).toBeGreaterThan(10);
   });
-  it("enforces the pending approval in production only", () => {
-    expect(voiceApproval({ NODE_ENV: "production" })).toEqual({ approval: "pending", enforced: true, blocking: true });
+  it("reports legacy approval without blocking production activation", () => {
+    expect(voiceApproval({ NODE_ENV: "production" })).toEqual({ approval: "pending", enforced: false, blocking: false });
     expect(voiceApproval({ NODE_ENV: "test" })).toEqual({ approval: "pending", enforced: false, blocking: false });
   });
 });

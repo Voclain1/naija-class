@@ -2,14 +2,15 @@ import { ASSISTANT_VOICE_APPROVAL } from "@school-kit/ai";
 import type { VoiceBlocker } from "@school-kit/types";
 
 /**
- * The code half of the owner's approval of voice processing, and whether this
- * deployment enforces it. Production always does. ONE definition: the
- * request path, the platform admin's report and the refusal to switch a
- * school on all read this (the orchestratorApproval() pattern).
+ * Legacy approval metadata for operator visibility. Super Admin's per-school
+ * feature switch is the activation control; this metadata does not block
+ * production sessions. Provider, workspace, routing, tenancy and budget
+ * checks continue to fail closed independently.
  */
 export function voiceApproval(env: NodeJS.ProcessEnv = process.env): { approval: "pending" | "approved"; enforced: boolean; blocking: boolean } {
   const approval: "pending" | "approved" = ASSISTANT_VOICE_APPROVAL;
-  const enforced = env.NODE_ENV === "production";
+  void env; // Retained for backwards-compatible callers; approval is informational.
+  const enforced = false;
   return { approval, enforced, blocking: enforced && approval !== "approved" };
 }
 

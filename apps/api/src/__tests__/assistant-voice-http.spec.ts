@@ -222,22 +222,18 @@ describe("SchoolKit Assistant voice over HTTP", () => {
     expect(audits.map((a) => a.action).sort()).toEqual(["platform_admin.schools.end-voice-sessions", "platform_admin.schools.set-voice-budget", "platform_admin.schools.set-voice-budget"]);
   });
 
-  it("production: with voice approval pending, voice is refused for every school and cannot be switched on", async () => {
+  it("production: Super Admin controls the school voice switch without a voice-specific approval veto", async () => {
     expect(ASSISTANT_VOICE_APPROVAL).toBe("pending");
     process.env.NODE_ENV = "production";
-    const caps = await http().get("/api/v1/assistant/voice/capabilities").set("Authorization", `Bearer ${staffToken}`);
-    expect(caps.body.available).toBe(false);
-    expect(caps.body.blockers).toContain("APPROVAL_PENDING");
-    const s = await start();
-    expect(s.status).toBe(403);
-    expect(s.body.error.code).toBe("VOICE_UNAVAILABLE");
-
     const set = (enabled: boolean) => http().patch(`/api/v1/platform-admin/schools/${schoolId}/features`).set("Authorization", `Bearer ${platformToken}`).send({ key: "assistant-voice", enabled });
     expect((await set(false)).status).toBe(200);
-    const on = await set(true);
-    expect(on.status).toBe(409);
-    expect(on.body.error.code).toBe("ASSISTANT_VOICE_NOT_APPROVED");
+    const off = await http().get("/api/v1/assistant/voice/capabilities").set("Authorization", `Bearer ${staffToken}`);
+    expect(off.body.blockers).toContain("SWITCH_OFF");
+    expect(off.body.blockers).not.toContain("APPROVAL_PENDING");
+    expect((await set(true)).status).toBe(200);
+    const caps = await http().get("/api/v1/assistant/voice/capabilities").set("Authorization", `Bearer ${staffToken}`);
+    expect(caps.body.blockers).not.toContain("APPROVAL_PENDING");
     const stored = (await basePrisma.school.findUnique({ where: { id: schoolId }, select: { featureSwitches: true } }))!.featureSwitches as Record<string, boolean>;
-    expect(stored["assistant-voice"]).toBe(false);
+    expect(stored["assistant-voice"]).toBe(true);
   });
 });
