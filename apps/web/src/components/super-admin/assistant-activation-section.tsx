@@ -192,7 +192,7 @@ export function AssistantActivationSection({
               </label>
               <label className="flex items-start gap-2 text-xs">
                 <input type="checkbox" className="mt-1" checked={reviewConfirmed} onChange={e => setReviewConfirmed(e.target.checked)} />
-                I have reviewed this school's records and confirm they are exclusively invented test data, with no real student, guardian or staff personal data.
+                I have reviewed this school&apos;s records and confirm they are exclusively invented test data, with no real student, guardian or staff personal data.
               </label>
               <Button type="button" size="sm" variant="outline" disabled={pilotBusy || !reviewConfirmed || reviewSchoolName !== school.name || reviewEvidence.trim().length < 3} onClick={async () => {
                 if (!window.confirm(`Confirm ${school.name} contains fictional data only? This is an audited Super Admin assertion, not an automated data verification.`)) return;
