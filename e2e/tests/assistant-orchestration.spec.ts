@@ -178,6 +178,7 @@ test("pasted rows never reach the model; intake and correction plans prefill the
     await expect(panel.getByText("(pasted rows: kept on this device)")).toBeVisible();
 
     // A correction: the person picks the student in the card; the turn only learns "1 selected".
+    await panel.getByRole("button", { name: "Show task shortcuts" }).click();
     await panel.getByRole("button", { name: "Correct student records" }).first().click();
     const corr = panel.getByRole("region", { name: "Correct student records" });
     const target = scaffold.students[0]!;
