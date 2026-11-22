@@ -1297,15 +1297,25 @@ export class PlatformAdminService {
         SELECT (SELECT count(*) FROM students WHERE school_id = ${schoolId}) AS students,
                (SELECT count(*) FROM guardians WHERE school_id = ${schoolId}) AS guardians
       `;
-      if (Number(counts!.students) > 0 || Number(counts!.guardians) > 0) {
-        throw new ConflictError("SCHOOL_HAS_RECORDS", "A school's data classification can only change while it holds no student or guardian records.");
+      const hasRecords = Number(counts!.students) > 0 || Number(counts!.guardians) > 0;
+      if (hasRecords) {
+        const review = input.existingRecordsReview;
+        if (input.classification !== "FICTIONAL" || !review?.confirmFictionalOnly) {
+          throw new ConflictError("SCHOOL_HAS_RECORDS", "Existing records require an explicit Super Admin fictional-data review.");
+        }
+        const [identity] = await tx.$queryRaw<{ name: string }[]>`
+          SELECT name FROM schools WHERE id = ${schoolId}
+        `;
+        if (review.reviewedSchoolName !== identity?.name) {
+          throw new ConflictError("SCHOOL_REVIEW_NAME_MISMATCH", "The reviewed school name does not match this school.");
+        }
       }
       const switches = { ...parseFeatureSwitches(row.feature_switches), "assistant-model-routing": false, "assistant-voice": false };
       await tx.school.update({ where: { id: schoolId }, data: { aiDataClassification: input.classification, featureSwitches: switches } });
       await tx.auditLog.create({
         data: {
           schoolId: null, userId: adminCtx.userId, action: SCHOOLS_SET_AI_CLASSIFICATION_AUDIT_ACTION, entityType: "school", entityId: schoolId,
-          ipAddress: reqCtx.ipAddress, metadata: { from: row.ai_data_classification, to: input.classification },
+          ipAddress: reqCtx.ipAddress, metadata: { from: row.ai_data_classification, to: input.classification, existingRecords: hasRecords, students: Number(counts!.students), guardians: Number(counts!.guardians), reviewEvidence: hasRecords ? input.existingRecordsReview?.evidenceReference : null },
         },
       });
       return row.ai_data_classification;
