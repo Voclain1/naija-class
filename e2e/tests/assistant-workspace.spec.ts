@@ -64,6 +64,8 @@ test("is reachable across staff pages, keeps the conversation across navigation,
     await expect(page).toHaveURL(/\/students$/);
     panel = await openAssistant(page);
     await expect(panel.getByText("How do I add parents?")).toBeVisible();
+    // Reopening the panel resets the shortcuts to collapsed.
+    await panel.getByRole("button", { name: "Show task shortcuts" }).click();
     // Students pages put student tasks first (from the path only, not the page's contents).
     await expect(panel.getByRole("navigation", { name: "Suggested tasks" }).getByRole("button", { name: "Add and enrol students" })).toBeVisible();
     // Navigating with the panel open keeps it open and intact.
