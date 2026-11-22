@@ -9,6 +9,7 @@ import type { VoiceBlocker } from "@school-kit/types";
  */
 export function voiceApproval(env: NodeJS.ProcessEnv = process.env): { approval: "pending" | "approved"; enforced: boolean; blocking: boolean } {
   const approval: "pending" | "approved" = ASSISTANT_VOICE_APPROVAL;
+  void env; // Retained for backwards-compatible callers; approval is informational.
   const enforced = false;
   return { approval, enforced, blocking: enforced && approval !== "approved" };
 }
