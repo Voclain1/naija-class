@@ -108,6 +108,15 @@ export class FeatureSwitchesService {
     return value;
   }
 
+  /**
+   * The school's own switches read from the row now, bypassing the cache.
+   * For kill-switch paths (model routing) where a switch-off must stop the
+   * very next request in every API process, not within the cache TTL.
+   */
+  async schoolSwitchesFresh(schoolId: string): Promise<FeatureSwitchMap> {
+    return parseFeatureSwitches(await this.load(schoolId));
+  }
+
   /** Drops the cached entry so this process sees a write at once. */
   invalidate(schoolId: string): void {
     this.cache.delete(schoolId);

@@ -25,6 +25,7 @@ import {
   type VoiceTurnInput,
 } from "@school-kit/types";
 
+import { loadProviderEgressGuard } from "../../common/ai/pii/provider-egress-guard.js";
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { FeatureSwitchesService } from "../../common/features/feature-switches.service.js";
 import { AssistantWorkspaceService } from "../assistant-workspace/assistant-workspace.service.js";
@@ -361,7 +362,8 @@ export class AssistantVoiceService {
     const approvalRequiresCard = actionsNeedCardApproval(result);
     let speech: VoiceTurnDto["speech"] = null;
     if (!flight.interrupted) {
-      const text = speakableReply(result, approvalRequiresCard);
+      // The text goes to the speech provider: nothing the school holds leaves in it.
+      const text = (await loadProviderEgressGuard(auth.schoolId)).redact(speakableReply(result, approvalRequiresCard)).text;
       if (text.length > 0) {
         const signed = signSpeech(row.id, input.turnId, text, this.ledger.now());
         speech = { text, token: signed.token, expiresAt: signed.expiresAt.toISOString() };

@@ -242,6 +242,19 @@ export function redactRosterNames(text: string, roster: QuestionRoster, refs: Pe
   return out + text.slice(at);
 }
 
+/**
+ * Every roster name word in `text` replaced by `replacement`. For text going
+ * TO a provider that no person typed (tool results: school-entered class and
+ * term labels), where hiding an ordinary word that is also a name costs only a
+ * label, and letting a name through is the failure that matters.
+ */
+export function withholdRosterNames(text: string, roster: QuestionRoster, replacement: string): { text: string; withheld: number } {
+  const spans = rosterNameSpans(text, roster);
+  let out = text;
+  for (const s of [...spans].reverse()) out = out.slice(0, s.start) + replacement + out.slice(s.end);
+  return { text: out, withheld: spans.length };
+}
+
 /** The school's students, guardians and staff, read under the school's own tenant. */
 export async function loadQuestionRoster(schoolId: string): Promise<QuestionRoster> {
   return withTenant(schoolId, async (db) => {

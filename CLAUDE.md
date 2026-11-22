@@ -252,8 +252,10 @@ off by default.
 is **NOT on the PII allowlist above**. Staff-typed operational text can carry
 personal data the detectors miss, so it needs its own row and sign-off; the
 proposed wording is in the module doc, for the owner. Until then:
-- `ASSISTANT_ORCHESTRATOR_APPROVAL` stays `"pending"`, and the API refuses the
-  prompt in production;
+- `ASSISTANT_ORCHESTRATOR_APPROVAL` stays `"pending"`. Since 2026-11-22 it is
+  the LIVE release's `live.allowlist-row` check rather than the whole runtime
+  gate (see "AI governance" below), so no school holding real records can use
+  the prompt in production;
 - the `assistant-model-routing` switch is off for every school;
 - the evals pin both.
 
@@ -278,9 +280,39 @@ school cannot switch it on. This approves who holds the switch, not any
 data-processing term. `GET /platform-admin/schools/:schoolId/assistant`
 reports each switch and whether it is actually working, with every blocker;
 never show a switch as "AI enabled" while a blocker remains. In production,
-switching `assistant-model-routing` on is refused while the approval is
-pending. Do not add a school-side control, a default-on, or a bypass of the
-approval for a "test" school. Steps: `docs/runbooks/assistant-activation.md`.
+switching `assistant-model-routing` on is refused unless the release for that
+school's data scope is authorised. Do not add a school-side control, a
+default-on, or a bypass of the release for a "test" school: a test school is a
+FICTIONAL school under the FICTIONAL release (below). Steps:
+`docs/runbooks/assistant-activation.md`.
+
+**AI governance (2026-11-22), `docs/modules/assistant-ai-governance.md`.**
+Model calls for a school need all three, read on every turn with no cache:
+1. **The release for the school's data scope** (`FICTIONAL` or `LIVE`,
+   `schools.ai_data_classification`, set by the platform admin only and only
+   while the school holds no student or guardian records). The requirements
+   are code (`packages/ai/src/release/ai-release-requirements.ts`). An
+   engineering check is `verified` only with a spec that names it in a test
+   title (`[release-check:<id>]`), and `ai-release-requirements.spec.ts`
+   enforces that. Attestations are facts only a person can confirm, recorded
+   by the platform admin through the audited API, never in code. Authorising
+   needs every requirement met; revoking is the immediate kill switch. The
+   LIVE release includes `live.allowlist-row` (AO-1 above), so it stays
+   blocked until the owner's row is added. Never mark a check verified
+   without its test, and never record an attestation in code or a migration.
+2. **The school's switch**, set only by the platform admin.
+3. **The school owner's acceptance of the current AI terms**
+   (`SCHOOL_AI_TERMS_VERSION` in `packages/types/src/assistant/governance.ts`;
+   versioned and hashed like the consent rule). Accepting never activates
+   anything; withdrawing stops the next turn and ends voice sessions.
+
+Enforced in production always, elsewhere only with `AI_RELEASE_ENFORCEMENT=on`.
+Before any provider: roster names become markers; the school's actual
+names, admission numbers, emails and phone numbers are matched by value
+(`provider-egress-guard.ts`) in messages, tool results, the outgoing history
+and speech text; and Sentry drops every `/assistant/` request body. Do not
+weaken any of these to make a pilot work. The evidence-based report is
+`docs/security/assistant-ai-security-report.md`.
 
 ### SchoolKit Assistant voice (2026-11-21), BUILT BUT NOT APPROVED
 
@@ -1118,6 +1150,7 @@ SCHOOL_ADDRESS_DOMAIN
 SCHOOL_ADDRESSES_LIVE
 VOICE_PROVIDER
 VOICE_OPENAI_API_KEY
+AI_RELEASE_ENFORCEMENT
 ```
 
 Never commit. Never log. Test keys and live keys are different env files.
@@ -1273,6 +1306,11 @@ the API only. Empty `VOICE_PROVIDER` means no provider: voice reports
 `PROVIDER_NOT_CONFIGURED` and never fakes audio. The key never reaches a
 browser. Every limit is clamped in `voice.config.ts`. Setting a key does not
 switch anything on: the approval and the per-school switch still apply.
+
+`AI_RELEASE_ENFORCEMENT` — `on` forces the SchoolKit Assistant's release and
+school-terms gates outside production (`docs/modules/assistant-ai-governance.md`).
+Production always enforces them, whatever this says. Leave it unset in
+development; the governance tests set it themselves.
 
 `TERMII_BASE_URL` — unlike Paystack's fixed `api.paystack.co`, Termii's API
 base URL is **per-account** (dashboard-assigned), not a global constant.

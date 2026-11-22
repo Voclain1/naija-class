@@ -452,6 +452,15 @@ Before activation, the owner also needs to decide:
   It also checks that no request carries a student's name or admission
   number.
 
+## AI governance (2026-11-22)
+
+The runtime gate for model orchestration is now a **release per data scope**
+(FICTIONAL or LIVE), the school's switch, and the school owner's acceptance of
+the AI terms, read on every turn: `docs/modules/assistant-ai-governance.md`.
+`ASSISTANT_ORCHESTRATOR_APPROVAL` and AO-1 below remain in force for the LIVE
+scope (`live.allowlist-row`). Payloads are also minimised by value
+(`provider-egress-guard.ts`). See `docs/security/assistant-ai-security-report.md`.
+
 ## Voice (2026-11-21)
 
 Realtime voice is a second interface to this assistant, specified in

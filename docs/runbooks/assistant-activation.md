@@ -11,9 +11,24 @@ gates: `docs/reviews/virgo-assistant-pilot-signoff-register.md`.
 - Only a platform admin can switch the Assistant on or off for a school. A
   school's owner cannot. Nothing is on by default, for old or new schools.
 - There are six switches per school. Five involve no AI provider. The sixth,
-  **AI understanding**, sends what staff type to the AI provider and is
-  **refused in production** until the owner's decision AO-1 is recorded in
-  code. You cannot switch it on before then: the console will say so.
+  **AI understanding**, sends what staff type to the AI provider. Since
+  2026-11-22 it is governed by the **release for the school's data scope**
+  (`docs/modules/assistant-ai-governance.md`):
+  - a **FICTIONAL** school, a pilot tenant of invented records, needs the
+    FICTIONAL release, which you can authorise once the three FICTIONAL
+    attestations are truthfully recorded;
+  - a **LIVE** school needs the LIVE release, which stays blocked until the
+    owner's decision AO-1 and the legal, provider and policy attestations are
+    recorded.
+
+  Switching it on is refused in production until the right release is
+  authorised. The school's owner must also accept the current AI terms
+  (Settings → Data protection). The Virgo Fidelis pilot steps are in §3 of
+  that document.
+- **Kill switches:** revoke the release (`POST /platform-admin/ai-release/<SCOPE>/revoke`)
+  for every school of that scope at once; switch one school off as below; or
+  set `FEATURES_DISABLED=assistant-model-routing` and restart. Each stops the
+  next request.
 - The switches never give a member of staff anything their own permissions
   do not. Every invoice run, reminder campaign, intake and correction still
   needs a person's approval on the server's preview.

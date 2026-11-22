@@ -16,6 +16,11 @@ import { redactString, redactValue } from "@school-kit/types";
 
 let initialised = false;
 
+/** Routes whose request bodies never reach an error report. */
+export function dropsRequestBody(url: string | undefined): boolean {
+  return typeof url === "string" && /\/assistant\//.test(url);
+}
+
 export function initSentry(): void {
   if (initialised) return;
   const dsn = process.env.SENTRY_DSN_API;
@@ -53,9 +58,11 @@ export function initSentry(): void {
         req.headers = headers;
       }
       if (req?.data !== undefined) {
-        // Billing requests may contain incidental typed personal details.
-        // Drop the whole body, rather than relying on pattern redaction.
-        req.data = req.url?.includes("/assistant/billing") ? undefined : redactValue(req.data) as typeof req.data;
+        // Assistant requests carry conversation text, transcripts, typed names
+        // and spoken replies: drop the whole body for EVERY assistant route
+        // (chat turns, voice turns and speech, named lookup, billing), rather
+        // than relying on pattern redaction (docs/modules/assistant-ai-governance.md).
+        req.data = dropsRequestBody(req.url) ? undefined : redactValue(req.data) as typeof req.data;
       }
       if (req?.query_string !== undefined && typeof req.query_string === "string") {
         req.query_string = redactString(req.query_string);

@@ -20,8 +20,10 @@ export const ASSISTANT_BLOCKERS = [
   "PLATFORM_DISABLED",
   // The Assistant panel itself is off (or platform-disabled) for the school, so nothing can reach this item.
   "WORKSPACE_OFF",
-  // AI understanding only: the prompt's own approval is not recorded in code, and production refuses it.
+  // AI understanding only: the release for the school's data scope (FICTIONAL or LIVE) is not authorised, or was revoked.
   "APPROVAL_PENDING",
+  // AI understanding only: the school's owner has not accepted the current AI terms.
+  "TERMS_NOT_ACCEPTED",
   // AI understanding only: AI is switched off for the whole platform (AI_ENABLED=false).
   "AI_PLATFORM_OFF",
   // AI understanding only: no AI provider key is configured on this deployment.
@@ -39,7 +41,8 @@ export const ASSISTANT_BLOCKER_TEXT: Record<AssistantBlocker, string> = {
   PLATFORM_DISABLED: "Switched off for every school on the server (FEATURES_DISABLED).",
   WORKSPACE_OFF: "The Assistant panel is not working for this school, so staff cannot reach it.",
   APPROVAL_PENDING:
-    "The owner's approval of the assistant-orchestrator prompt is not recorded in code yet. Production refuses it for every school until it is.",
+    "The AI release for this school's data scope (fictional or live) is not authorised, or was revoked. Production refuses AI understanding until it is.",
+  TERMS_NOT_ACCEPTED: "The school's owner has not accepted the current SchoolKit Assistant AI terms.",
   AI_PLATFORM_OFF: "AI is switched off for the whole platform (AI_ENABLED).",
   AI_NOT_CONFIGURED: "No AI provider key is configured on the server.",
   SCHOOL_AI_OFF: "AI is off for this school.",
@@ -64,10 +67,20 @@ export interface PlatformAdminAssistantStatusDto {
   workflows: Record<AssistantWorkflow, AssistantActivationItemDto>;
   /** Model-backed understanding of typed requests. Without it the panel still works, by buttons and fixed phrases. */
   aiUnderstanding: AssistantActivationItemDto & {
-    /** The code-level approval of the prompt's own PII allowlist row. */
+    /**
+     * Since 2026-11-22: whether the AI release for this school's data scope is
+     * authorised ("approved") or not ("pending"); see
+     * docs/modules/assistant-ai-governance.md.
+     */
     approval: "pending" | "approved";
-    /** Whether this deployment enforces that approval (production does). */
+    /** Whether this deployment enforces the release and terms gates (production does). */
     approvalEnforced: boolean;
+    /** LIVE (real records) or FICTIONAL (a pilot tenant of invented records). Set by the platform admin. */
+    dataClassification: "LIVE" | "FICTIONAL";
+    /** The school owner's acceptance of the current AI terms. */
+    termsAccepted: boolean;
+    /** CLAUDE.md's allowlist approval of the prompt (AO-1): required by the LIVE release only. */
+    allowlistApproval: "pending" | "approved";
   };
   ai: {
     platformEnabled: boolean;

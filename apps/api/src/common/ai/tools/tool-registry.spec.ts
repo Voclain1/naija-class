@@ -160,7 +160,7 @@ describe("ToolRegistry — registration refuses an unsafe tool", () => {
   });
 });
 
-describe("ToolRegistry — every call checked at execution", () => {
+describe("ToolRegistry — every call checked at execution [release-check:eng.tool-authorisation]", () => {
   let schoolA: string;
   let schoolB: string;
   let teacherA: AuthContext;

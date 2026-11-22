@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { LEGAL_URLS, parentNoticeLetter, type SchoolDataProtectionDto } from "@school-kit/types";
 
+import { AiTermsSection } from "@/components/legal/ai-terms-section";
 import { LegalLink, SchoolConsentText } from "@/components/legal/legal-links";
 import { Button } from "@/components/ui/button";
 import { ApiError, apiFetch } from "@/lib/api-client";
@@ -129,6 +130,8 @@ export default function DataProtectionSettingsPage() {
           )
         )}
       </section>
+
+      <AiTermsSection />
 
       <section aria-labelledby="dp-letter" className="flex flex-col gap-3 rounded-lg border bg-card p-5">
         <h2 id="dp-letter" className="text-lg font-semibold">

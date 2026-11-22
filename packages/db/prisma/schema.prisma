@@ -210,6 +210,14 @@ model School {
   //                          NULL = the platform default (VOICE_DEFAULT_MONTHLY_SECONDS).
   //                          Set by the platform operator only.
   voiceMonthlySecondsBudget    Int?            @map("voice_monthly_seconds_budget")
+  //   aiDataClassification  LIVE (default) or FICTIONAL (2026-11-22,
+  //                          docs/modules/assistant-ai-governance.md). Set by
+  //                          the platform admin only, and only while the school
+  //                          holds no student or guardian records. A FICTIONAL
+  //                          school is a pilot tenant of invented records; its
+  //                          AI understanding needs the FICTIONAL release, a
+  //                          LIVE school's needs the LIVE release.
+  aiDataClassification         String          @default("LIVE") @map("ai_data_classification")
   //   smartImportEnabled     Smart Student Import (photograph a register,
   //                          the model transcribes it) for this school
   //                          (2026-10-11). Off by default, switched on by the
@@ -5899,4 +5907,40 @@ model AssistantVoiceSession {
   @@index([schoolId, startedAt(sort: Desc)])
   @@index([schoolId, userId, status])
   @@map("assistant_voice_sessions")
+}
+
+// SchoolKit Assistant release decisions (2026-11-22,
+// docs/modules/assistant-ai-governance.md). PLATFORM-level, so no school_id:
+// attestations, authorisations and revocations of a data scope, recorded by
+// the platform admin. Append-only: the runtime role may insert and read only.
+model AiReleaseEvent {
+  id                  String   @id @default(uuid())
+  scope               String
+  action              String
+  requirementId       String?  @map("requirement_id")
+  requirementsVersion String   @map("requirements_version")
+  statementSha256     String?  @map("statement_sha256")
+  reference           String
+  recordedBy          String   @map("recorded_by")
+  recordedAt          DateTime @default(now()) @map("recorded_at")
+
+  @@index([scope, recordedAt(sort: Desc)])
+  @@map("ai_release_events")
+}
+
+// A school owner's decisions on the SchoolKit Assistant's AI terms
+// (2026-11-22). Append-only evidence: version, a hash of the exact wording,
+// who and when. The latest row decides; withdrawing is a new row.
+model SchoolAiTermsEvent {
+  id            String   @id @default(uuid())
+  schoolId      String   @map("school_id")
+  action        String
+  version       String
+  wordingSha256 String   @map("wording_sha256")
+  userId        String   @map("user_id")
+  ipAddress     String?  @map("ip_address")
+  recordedAt    DateTime @default(now()) @map("recorded_at")
+
+  @@index([schoolId, recordedAt(sort: Desc)])
+  @@map("school_ai_terms_events")
 }

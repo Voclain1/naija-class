@@ -53,6 +53,15 @@ import {
   type PlatformAdminSetEarlyAccessInput,
   type PlatformAdminSetEarlyAccessResponse,
   type PlatformAdminUserDto,
+  AI_DATA_CLASSIFICATIONS,
+  type AiReleaseAttestInput,
+  type AiReleaseAuthoriseInput,
+  type AiReleaseRevokeInput,
+  type AiReleaseScope,
+  type AiReleaseStatusDto,
+  type PlatformAdminFictionalSeedResponse,
+  type PlatformAdminSetAiClassificationInput,
+  type PlatformAdminSetAiClassificationResponse,
 } from "@school-kit/types";
 
 import { DEFAULT_MONTHLY_TOKEN_BUDGET } from "../../common/ai/ai.constants.js";
@@ -61,7 +70,9 @@ import * as password from "../../common/auth/password";
 import { createSession } from "../../common/auth/sessions";
 import { EmailService } from "../../common/email/email.service";
 import { FeatureSwitchesService } from "../../common/features/feature-switches.service";
-import { orchestratorApproval } from "../assistant-workspace/orchestrator/model-routing-gate";
+import { AI_RELEASE_REQUIREMENTS_VERSION, aiReleaseRequirementsFor } from "@school-kit/ai";
+import { aiReleaseEnforced, attestationHash, computeScopeStatus, readSchoolAiGovernance } from "../../common/ai-release/ai-governance";
+import { seedFictionalPilot } from "../../common/ai-release/fictional-pilot-seed";
 import { voiceApproval } from "../assistant-voice/voice-gate";
 import { VoiceLedger } from "../assistant-voice/voice-ledger";
 import { PaystackService } from "../../common/paystack/paystack.service";
@@ -297,6 +308,10 @@ const SCHOOLS_SET_ADDRESS_AUDIT_ACTION = "platform_admin.schools.set-address";
 // Same action name the hand-written production row used on 2026-08-16, so
 // that row and every later one read as one history.
 const SCHOOLS_SET_AI_BUDGET_AUDIT_ACTION = "platform_admin.schools.set-ai-budget";
+const AI_RELEASE_AUDIT_ACTION = "platform_admin.ai-release";
+const SCHOOLS_SET_AI_CLASSIFICATION_AUDIT_ACTION = "platform_admin.schools.set-ai-data-classification";
+const SCHOOLS_SEED_FICTIONAL_PILOT_AUDIT_ACTION = "platform_admin.schools.seed-fictional-pilot";
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SCHOOLS_SET_VOICE_BUDGET_AUDIT_ACTION = "platform_admin.schools.set-voice-budget";
 const SCHOOLS_END_VOICE_SESSIONS_AUDIT_ACTION = "platform_admin.schools.end-voice-sessions";
 const OWNER_INVITATION_RESEND_AUDIT_ACTION = "platform_admin.owner-invitation.resend";
@@ -801,16 +816,21 @@ export class PlatformAdminService {
     adminCtx: PlatformAdminContext,
     reqCtx: RequestContext,
   ): Promise<PlatformAdminSetFeatureResponse> {
-    // AI understanding cannot be switched ON for any school while production
-    // still refuses its prompt (the owner's approval is not recorded in code).
-    // The gate would refuse every turn anyway; refusing the write as well means
-    // the stored switch can never read "on" for something that is not approved.
-    // Switching it OFF is always allowed.
-    if (input.key === "assistant-model-routing" && input.enabled && orchestratorApproval().blocking) {
-      throw new ConflictError(
-        "ASSISTANT_MODEL_NOT_APPROVED",
-        "AI understanding cannot be switched on yet: the owner's approval of the assistant-orchestrator prompt is not recorded in code.",
-      );
+    // AI understanding cannot be switched ON for a school while the release
+    // for that school's data scope (FICTIONAL or LIVE) is not authorised
+    // (docs/modules/assistant-ai-governance.md). The gate would refuse every
+    // turn anyway; refusing the write as well means the stored switch never
+    // reads "on" for something not released. Switching it OFF is always
+    // allowed. A school's own owner can never reach this route.
+    if (input.key === "assistant-model-routing" && input.enabled && UUID_SHAPE.test(schoolId)) {
+      const governance = await readSchoolAiGovernance(schoolId);
+      if (governance.enforced && !governance.releaseAuthorised) {
+        throw new ConflictError(
+          "ASSISTANT_MODEL_NOT_APPROVED",
+          `AI understanding cannot be switched on: the ${governance.classification === "FICTIONAL" ? "fictional-data" : "live-data"} AI release is not authorised.`,
+          { classification: governance.classification },
+        );
+      }
     }
     // Same rule for voice (docs/modules/assistant-voice.md): audio reaches a
     // speech provider, which needs its own recorded approval.
@@ -1177,6 +1197,137 @@ export class PlatformAdminService {
   // monthly voice allowance in seconds (null = platform default, 0 = none).
   // Audited like the AI budget. Lowering it does not cut a running session
   // short (its seconds were reserved when it started); use end-sessions.
+  // ---- SchoolKit Assistant AI governance (docs/modules/assistant-ai-governance.md)
+
+  // GET /platform-admin/ai-release — both data scopes: every requirement, its
+  // status and evidence, and the latest decision. `attestedBy`/`by` are the
+  // recording platform admin's user id (staff names sit behind RLS).
+  async aiReleaseStatus(): Promise<AiReleaseStatusDto> {
+    const events = await basePrisma.aiReleaseEvent.findMany({ orderBy: { recordedAt: "asc" } });
+    const enforced = aiReleaseEnforced();
+    const id = (u: string) => u;
+    return {
+      scopes: {
+        FICTIONAL: computeScopeStatus("FICTIONAL", events, enforced, id),
+        LIVE: computeScopeStatus("LIVE", events, enforced, id),
+      },
+    };
+  }
+
+  // POST /platform-admin/ai-release/:scope/attestations — a person confirms one
+  // attestation, in its exact words, with a reference to the evidence.
+  // Engineering checks cannot be attested: they are verified in code.
+  async attestAiRelease(scope: AiReleaseScope, input: AiReleaseAttestInput, adminCtx: PlatformAdminContext, reqCtx: RequestContext): Promise<AiReleaseStatusDto> {
+    const req = aiReleaseRequirementsFor(scope).find((r) => r.id === input.requirementId);
+    if (!req) throw new NotFoundError("That requirement is not part of this release.");
+    if (req.kind !== "attestation") {
+      throw new ConflictError("AI_RELEASE_NOT_ATTESTABLE", "Engineering checks are verified in code with test evidence; they cannot be attested.");
+    }
+    await this.recordAiRelease(scope, "ATTEST", input.reference, adminCtx, reqCtx, { requirementId: req.id, statementSha256: attestationHash(req) });
+    return this.aiReleaseStatus();
+  }
+
+  // POST /platform-admin/ai-release/:scope/authorise — refused until every
+  // requirement for the scope is verified or attested for the current version.
+  async authoriseAiRelease(scope: AiReleaseScope, input: AiReleaseAuthoriseInput, adminCtx: PlatformAdminContext, reqCtx: RequestContext): Promise<AiReleaseStatusDto> {
+    const current = (await this.aiReleaseStatus()).scopes[scope];
+    if (!current.complete) {
+      throw new ConflictError("AI_RELEASE_INCOMPLETE", "This release cannot be authorised while requirements are open.", {
+        open: current.requirements.filter((r) => r.status === "open").map((r) => r.id),
+      });
+    }
+    await this.recordAiRelease(scope, "AUTHORISE", input.reference, adminCtx, reqCtx);
+    return this.aiReleaseStatus();
+  }
+
+  // POST /platform-admin/ai-release/:scope/revoke — the kill switch. Every
+  // school of this scope stops at its next request; voice sessions end there.
+  async revokeAiRelease(scope: AiReleaseScope, input: AiReleaseRevokeInput, adminCtx: PlatformAdminContext, reqCtx: RequestContext): Promise<AiReleaseStatusDto> {
+    await this.recordAiRelease(scope, "REVOKE", input.reason, adminCtx, reqCtx);
+    return this.aiReleaseStatus();
+  }
+
+  private async recordAiRelease(
+    scope: AiReleaseScope,
+    action: "ATTEST" | "AUTHORISE" | "REVOKE",
+    reference: string,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+    extra: { requirementId?: string; statementSha256?: string } = {},
+  ): Promise<void> {
+    await basePrisma.$transaction(async (tx) => {
+      await tx.aiReleaseEvent.create({
+        data: {
+          scope, action, reference, recordedBy: adminCtx.userId, requirementsVersion: AI_RELEASE_REQUIREMENTS_VERSION,
+          requirementId: extra.requirementId ?? null, statementSha256: extra.statementSha256 ?? null,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          schoolId: null, userId: adminCtx.userId, action: AI_RELEASE_AUDIT_ACTION, entityType: "ai_release", entityId: scope,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { action, scope, requirementId: extra.requirementId ?? null, requirementsVersion: AI_RELEASE_REQUIREMENTS_VERSION },
+        },
+      });
+    });
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/ai-data-classification — LIVE or
+  // FICTIONAL, only while the school holds no student or guardian records,
+  // so real records can never be relabelled fictional (or the reverse). Both
+  // AI switches are turned off by the change: the school now needs another
+  // release, and the operator switches it on again deliberately.
+  async setAiDataClassification(
+    schoolId: string,
+    input: PlatformAdminSetAiClassificationInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminSetAiClassificationResponse> {
+    if (!UUID_SHAPE.test(schoolId)) throw new NotFoundError("School not found.");
+    if (!(AI_DATA_CLASSIFICATIONS as readonly string[]).includes(input.classification)) throw new NotFoundError("Unknown classification.");
+    const before = await basePrisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_school_id', ${schoolId}, true)`;
+      const locked = await tx.$queryRaw<{ ai_data_classification: string; feature_switches: unknown }[]>`
+        SELECT ai_data_classification, feature_switches FROM schools WHERE id = ${schoolId} FOR UPDATE
+      `;
+      const row = locked[0];
+      if (!row) throw new NotFoundError("School not found.");
+      if (row.ai_data_classification === input.classification) return row.ai_data_classification;
+      const [counts] = await tx.$queryRaw<{ students: bigint; guardians: bigint }[]>`
+        SELECT (SELECT count(*) FROM students WHERE school_id = ${schoolId}) AS students,
+               (SELECT count(*) FROM guardians WHERE school_id = ${schoolId}) AS guardians
+      `;
+      if (Number(counts!.students) > 0 || Number(counts!.guardians) > 0) {
+        throw new ConflictError("SCHOOL_HAS_RECORDS", "A school's data classification can only change while it holds no student or guardian records.");
+      }
+      const switches = { ...parseFeatureSwitches(row.feature_switches), "assistant-model-routing": false, "assistant-voice": false };
+      await tx.school.update({ where: { id: schoolId }, data: { aiDataClassification: input.classification, featureSwitches: switches } });
+      await tx.auditLog.create({
+        data: {
+          schoolId: null, userId: adminCtx.userId, action: SCHOOLS_SET_AI_CLASSIFICATION_AUDIT_ACTION, entityType: "school", entityId: schoolId,
+          ipAddress: reqCtx.ipAddress, metadata: { from: row.ai_data_classification, to: input.classification },
+        },
+      });
+      return row.ai_data_classification;
+    });
+    if (before !== input.classification) this.featureSwitches.invalidate(schoolId);
+    return { schoolId, classification: input.classification };
+  }
+
+  // POST /platform-admin/schools/:schoolId/fictional-pilot/seed — invented
+  // records for a FICTIONAL school (fictional-pilot-seed.ts). Audited.
+  async seedFictionalPilot(schoolId: string, adminCtx: PlatformAdminContext, reqCtx: RequestContext): Promise<PlatformAdminFictionalSeedResponse> {
+    if (!UUID_SHAPE.test(schoolId)) throw new NotFoundError("School not found.");
+    const result = await seedFictionalPilot(schoolId, adminCtx.userId);
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null, userId: adminCtx.userId, action: SCHOOLS_SEED_FICTIONAL_PILOT_AUDIT_ACTION, entityType: "school", entityId: schoolId,
+        ipAddress: reqCtx.ipAddress, metadata: { students: result.students, guardians: result.guardians },
+      },
+    });
+    return result;
+  }
+
   async setVoiceBudget(
     schoolId: string,
     input: PlatformAdminSetVoiceBudgetInput,

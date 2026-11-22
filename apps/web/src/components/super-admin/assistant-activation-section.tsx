@@ -182,7 +182,10 @@ export function AssistantActivationSection({
             AI for this school: {status.ai.schoolEnabled ? "on" : "off"}. AI provider key on the server:{" "}
             {status.ai.providerConfigured ? "configured" : "not configured"}. Tokens this month:{" "}
             {status.ai.tokensUsedThisMonth.toLocaleString("en-NG")} of {status.ai.monthlyTokenBudget.toLocaleString("en-NG")}. Owner&apos;s
-            approval of the AI prompt: {status.aiUnderstanding.approval === "approved" ? "recorded" : "not recorded"}.
+            approval of the AI prompt: {status.aiUnderstanding.allowlistApproval === "approved" ? "recorded" : "not recorded"}.
+            {" "}School data: {status.aiUnderstanding.dataClassification === "FICTIONAL" ? "fictional (pilot)" : "live"}. AI release for
+            this data: {status.aiUnderstanding.approval === "approved" ? "authorised" : "not authorised"}. Owner&apos;s AI terms:{" "}
+            {status.aiUnderstanding.termsAccepted ? "accepted" : "not accepted"}.
           </p>
           <p className="text-sm text-muted-foreground">
             A change can take up to {status.switchCacheSeconds} seconds to reach every member of staff.

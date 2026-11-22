@@ -776,6 +776,7 @@ The assistant is **not yet switched on** for any school. When it is, a **SchoolK
 - **What it will not do:** record payments, change scores, behaviour or health records, move children between classes, change admission numbers, link parents, send other messages, or delete anything. It tells you which page to use instead.
 - **Your words stay on your device.** Your requests are not sent to an AI model. The conversation is cleared when you sign out, after 15 minutes without use, or when you press **Clear conversation**. Please do not type passwords, BVNs, PINs or one-time codes.
 - **AI understanding (not switched on for any school).** SchoolKit can also let the assistant understand requests with an AI model, so you can say things like "leave JSS 2C out" and it changes the same task. If this is ever switched on for your school, the panel says so before you type. Names and other personal details still go only in the task forms, which the AI never sees, and nothing changes until you approve it on a card.
+- **AI terms.** Before AI understanding can work, the school owner accepts its terms in **Settings → Data protection**. Accepting does not switch it on: only SchoolKit can. The owner can withdraw at any time, which stops it at once.
 - **If the connection drops while you approve,** the assistant checks what actually happened and never sends the same job twice. A reminder marked "may have been sent" is never sent again by itself.
 
 Who sees which tasks depends on your role: teachers see the guide questions only.
