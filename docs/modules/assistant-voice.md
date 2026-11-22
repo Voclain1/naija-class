@@ -1,6 +1,6 @@
 # SchoolKit Assistant — realtime voice (backend, Sprint 1)
 
-Status: **built, off by default, NOT APPROVED for production.** Issue #554.
+Status: **built, off by default.** Super Admin activation is the voice-specific rollout control; provider and model-routing readiness remain separate prerequisites. Issue #554.
 Contract version **1** (`VOICE_CONTRACT_VERSION` in `@school-kit/types`).
 
 Voice is a second **interface** to the SchoolKit Assistant described in
@@ -110,7 +110,7 @@ Platform admin (behind `PlatformAdminGuard`):
 
 | Method & path | Body | Answer |
 |---|---|---|
-| `PATCH /platform-admin/schools/:schoolId/features` | `{ key: "assistant-voice", enabled }` | existing route; **switching on is refused in production while the voice approval is pending** (409 `ASSISTANT_VOICE_NOT_APPROVED`) |
+| `PATCH /platform-admin/schools/:schoolId/features` | `{ key: "assistant-voice", enabled }` | existing route; switching on is controlled by Super Admin; actual sessions still require the provider, workspace, model routing, and budgets |
 | `GET /platform-admin/schools/:schoolId/voice` | — | `PlatformAdminVoiceStatusDto`: switch, working, every blocker, approval, provider, budget, this month's seconds, sessions, estimated cost, limits |
 | `PATCH /platform-admin/schools/:schoolId/voice-budget` | `{ monthlySecondsBudget: number \| null }` | audited (`platform_admin.schools.set-voice-budget`); `null` = default, `0` = none |
 | `POST /platform-admin/schools/:schoolId/voice/end-sessions` | — | `{ schoolId, ended }`, audited (`platform_admin.schools.end-voice-sessions`) |
@@ -327,9 +327,7 @@ be checked against the live reference and a real key:
 
 ## 9. Activation gates (all required)
 
-1. **`ASSISTANT_VOICE_APPROVAL`** (`packages/ai/src/prompts/assistant-voice.ts`)
-   is `"pending"`; production refuses voice and refuses switching it on. The
-   evals pin it.
+1. **Super Admin school switch** controls voice access (off by default). The legacy `ASSISTANT_VOICE_APPROVAL` field is informational and no longer a runtime veto.
 2. **Everything the orchestrator needs**, including its own pending approval.
 3. The school's **`assistant-voice`** switch (platform admin only; off by
    default and for new schools) and no `FEATURES_DISABLED` kill.
@@ -351,7 +349,7 @@ be checked against the live reference and a real key:
 > member's tap. Requires the provider's data-processing terms reviewed and
 > the orchestrator's row approved first.
 
-Approving it is a CLAUDE.md row plus flipping the constant, in one change.
+Provider privacy/data-processing review remains an operational prerequisite before real audio is sent to the provider; the voice-specific code gate is no longer used for school activation.
 
 ## 10. Tests
 
