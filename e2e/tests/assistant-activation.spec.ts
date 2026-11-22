@@ -70,7 +70,10 @@ test("the platform admin, and only the platform admin, switches the Assistant on
     }
     await expect(item("student-intake").getByText("The Assistant panel is not working for this school, so staff cannot reach it.")).toBeVisible();
     // The Assistant's switches are not repeated in the generic pilot list.
-    await expect(dialog.getByRole("region", { name: "Pilot features" }).getByRole("listitem")).toHaveCount(1);
+    // Two rows: the help assistant, and voice (2026-11-21), which is listed
+    // there until the SchoolKit Assistant section shows it with its own status
+    // (GET /platform-admin/schools/:id/voice; docs/modules/assistant-voice.md).
+    await expect(dialog.getByRole("region", { name: "Pilot features" }).getByRole("listitem")).toHaveCount(2);
 
     // ---- 3. Panel and one task on ---------------------------------------------
     await item("assistant-workspace").getByRole("button", { name: `Turn on Assistant panel for ${school.schoolName}` }).click();

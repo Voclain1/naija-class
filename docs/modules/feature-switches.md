@@ -58,6 +58,7 @@ stays 23.
 | `student-corrections` | Reviewed student corrections | Reviewed batch corrections to names, date of birth, gender and email (`docs/modules/student-corrections.md`); no model. `PATCH /students/:id` is not behind it | Backend built; off everywhere |
 | `assistant-workspace` | SchoolKit Assistant | The staff assistant panel (`docs/modules/assistant-workspace.md`); no model. Each task also needs its own switch (`assistant-billing`, `reminder-campaigns`, `student-intake`, `student-corrections`) | Built; off everywhere |
 | `assistant-model-routing` | SchoolKit Assistant: AI understanding (pending approval) | Sends staff requests to the `assistant-orchestrator` prompt (`docs/modules/assistant-workspace.md`, "Model orchestration"). Its allowlist row is NOT approved; production refuses it until `ASSISTANT_ORCHESTRATOR_APPROVAL` is "approved". Needs `assistant-workspace` and AI on for the school | Built; off everywhere; do not switch on |
+| `assistant-voice` | SchoolKit Assistant: voice (pending approval) | Realtime voice over the same model-backed turn (`docs/modules/assistant-voice.md`). Audio goes to a speech provider, so it has its own approval; production refuses it, and refuses switching it on, until `ASSISTANT_VOICE_APPROVAL` is "approved". Needs `assistant-model-routing` working and a configured provider | Built; off everywhere; do not switch on |
 
 ## API
 
@@ -115,7 +116,10 @@ actually working and why not (`docs/modules/assistant-workspace.md`,
 "Controlled activation"; `GET /platform-admin/schools/:schoolId/assistant`).
 One write is refused: in production, `assistant-model-routing` cannot be
 switched on while its prompt's approval is pending (409
-`ASSISTANT_MODEL_NOT_APPROVED`). Turning a key on asks for confirmation; turning it off does not. The
+`ASSISTANT_MODEL_NOT_APPROVED`), and likewise `assistant-voice` while the voice
+approval is pending (409 `ASSISTANT_VOICE_NOT_APPROVED`; it appears under Pilot
+features, with its status at `GET /platform-admin/schools/:schoolId/voice`).
+Turning a key on asks for confirmation; turning it off does not. The
 platform audit page shows "Turned Help assistant on/off".
 
 ## Tests

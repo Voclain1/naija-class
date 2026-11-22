@@ -1,5 +1,5 @@
 import * as crypto from "node:crypto";
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 
 import { applySchoolDefaults, basePrisma } from "@school-kit/db";
 import {
@@ -33,6 +33,9 @@ import {
   type PlatformAdminResolvePaystackSetupResponse,
   type PlatformAdminSchoolDto,
   type PlatformAdminSetAiBudgetInput,
+  type PlatformAdminSetVoiceBudgetInput,
+  type PlatformAdminSetVoiceBudgetResponse,
+  type PlatformAdminEndVoiceSessionsResponse,
   type PlatformAdminSetAiBudgetResponse,
   type PlatformAdminSetAiEnabledInput,
   type PlatformAdminSetAiEnabledResponse,
@@ -59,6 +62,8 @@ import { createSession } from "../../common/auth/sessions";
 import { EmailService } from "../../common/email/email.service";
 import { FeatureSwitchesService } from "../../common/features/feature-switches.service";
 import { orchestratorApproval } from "../assistant-workspace/orchestrator/model-routing-gate";
+import { voiceApproval } from "../assistant-voice/voice-gate";
+import { VoiceLedger } from "../assistant-voice/voice-ledger";
 import { PaystackService } from "../../common/paystack/paystack.service";
 import { redactEmail } from "../../common/redact";
 import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
@@ -292,6 +297,8 @@ const SCHOOLS_SET_ADDRESS_AUDIT_ACTION = "platform_admin.schools.set-address";
 // Same action name the hand-written production row used on 2026-08-16, so
 // that row and every later one read as one history.
 const SCHOOLS_SET_AI_BUDGET_AUDIT_ACTION = "platform_admin.schools.set-ai-budget";
+const SCHOOLS_SET_VOICE_BUDGET_AUDIT_ACTION = "platform_admin.schools.set-voice-budget";
+const SCHOOLS_END_VOICE_SESSIONS_AUDIT_ACTION = "platform_admin.schools.end-voice-sessions";
 const OWNER_INVITATION_RESEND_AUDIT_ACTION = "platform_admin.owner-invitation.resend";
 const OWNER_INVITATION_CANCEL_AUDIT_ACTION = "platform_admin.owner-invitation.cancel";
 const SCHOOLS_SUSPEND_AUDIT_ACTION = "platform_admin.schools.suspend";
@@ -318,6 +325,9 @@ export class PlatformAdminService {
     private readonly email: EmailService,
     private readonly paystack: PaystackService,
     private readonly featureSwitches: FeatureSwitchesService,
+    // Optional so existing hand-built instances (specs) keep working; the
+    // module always provides it.
+    @Optional() private readonly voiceLedger?: VoiceLedger,
   ) {}
 
   // Reuses the exact same SECURITY DEFINER lookup, argon2 verification, and
@@ -802,6 +812,14 @@ export class PlatformAdminService {
         "AI understanding cannot be switched on yet: the owner's approval of the assistant-orchestrator prompt is not recorded in code.",
       );
     }
+    // Same rule for voice (docs/modules/assistant-voice.md): audio reaches a
+    // speech provider, which needs its own recorded approval.
+    if (input.key === "assistant-voice" && input.enabled && voiceApproval().blocking) {
+      throw new ConflictError(
+        "ASSISTANT_VOICE_NOT_APPROVED",
+        "Voice cannot be switched on yet: the owner's approval of voice processing is not recorded in code.",
+      );
+    }
     const after = await basePrisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<{ feature_switches: unknown }[]>`
         SELECT feature_switches FROM schools WHERE id = ${schoolId} FOR UPDATE
@@ -1153,6 +1171,70 @@ export class PlatformAdminService {
       aiMonthlyTokenBudget: updated.aiMonthlyTokenBudget,
       aiEffectiveMonthlyTokenBudget: updated.aiMonthlyTokenBudget ?? DEFAULT_MONTHLY_TOKEN_BUDGET,
     };
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/voice-budget — the per-school
+  // monthly voice allowance in seconds (null = platform default, 0 = none).
+  // Audited like the AI budget. Lowering it does not cut a running session
+  // short (its seconds were reserved when it started); use end-sessions.
+  async setVoiceBudget(
+    schoolId: string,
+    input: PlatformAdminSetVoiceBudgetInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminSetVoiceBudgetResponse> {
+    const ledger = this.requireVoiceLedger();
+    const existing = await basePrisma.school.findUnique({ where: { id: schoolId }, select: { id: true, voiceMonthlySecondsBudget: true } });
+    if (!existing) throw new NotFoundError("School not found.");
+    const updated = await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { voiceMonthlySecondsBudget: input.monthlySecondsBudget },
+      select: { id: true, voiceMonthlySecondsBudget: true },
+    });
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_SET_VOICE_BUDGET_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: { field: "voiceMonthlySecondsBudget", from: existing.voiceMonthlySecondsBudget, to: updated.voiceMonthlySecondsBudget },
+      },
+    });
+    return {
+      schoolId: updated.id,
+      monthlySecondsBudget: updated.voiceMonthlySecondsBudget,
+      effectiveMonthlySecondsBudget: ledger.effectiveBudget(updated.voiceMonthlySecondsBudget),
+    };
+  }
+
+  // POST /platform-admin/schools/:schoolId/voice/end-sessions — ends every live
+  // voice session at the school now (ADMIN_ENDED). Their next request is
+  // refused; the browser falls back to text. Audited with the count only.
+  async endVoiceSessions(schoolId: string, adminCtx: PlatformAdminContext, reqCtx: RequestContext): Promise<PlatformAdminEndVoiceSessionsResponse> {
+    const ledger = this.requireVoiceLedger();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(schoolId)) throw new NotFoundError("School not found.");
+    const school = await basePrisma.school.findUnique({ where: { id: schoolId }, select: { id: true } });
+    if (!school) throw new NotFoundError("School not found.");
+    const ended = await ledger.endAll(schoolId, "ADMIN_ENDED");
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_END_VOICE_SESSIONS_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: { ended },
+      },
+    });
+    return { schoolId, ended };
+  }
+
+  private requireVoiceLedger(): VoiceLedger {
+    if (!this.voiceLedger) throw new Error("VoiceLedger is not provided to PlatformAdminService");
+    return this.voiceLedger;
   }
 
   // POST /platform-admin/schools/:schoolId/owner-invitation/resend — ends

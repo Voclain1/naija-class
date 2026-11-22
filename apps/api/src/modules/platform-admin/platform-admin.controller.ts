@@ -69,6 +69,11 @@ import {
   type PlatformAdminUserDto,
   changeSchoolAddressSchema,
   type ChangeSchoolAddressInput,
+  platformAdminSetVoiceBudgetSchema,
+  type PlatformAdminEndVoiceSessionsResponse,
+  type PlatformAdminSetVoiceBudgetInput,
+  type PlatformAdminSetVoiceBudgetResponse,
+  type PlatformAdminVoiceStatusDto,
 } from "@school-kit/types";
 import type { Request } from "express";
 
@@ -77,6 +82,7 @@ import type { PlatformAdminContext } from "../../common/auth/platform-admin-cont
 import { PlatformAdminGuard } from "../../common/auth/platform-admin.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AssistantActivationService } from "./assistant-activation.service";
+import { VoiceAdminService } from "./voice-admin.service";
 import { PlatformAdminService } from "./platform-admin.service";
 
 // Genuinely separate top-level surface — see CLAUDE.md's "Platform
@@ -88,6 +94,7 @@ export class PlatformAdminController {
   constructor(
     private readonly platformAdminService: PlatformAdminService,
     private readonly assistantActivation: AssistantActivationService,
+    private readonly voiceAdmin: VoiceAdminService,
   ) {}
 
   // POST /platform-admin/login — same tighter-than-global throttle as
@@ -299,6 +306,44 @@ export class PlatformAdminController {
   @UseGuards(PlatformAdminGuard)
   async assistantStatus(@Param("schoolId") schoolId: string): Promise<PlatformAdminAssistantStatusDto> {
     return this.assistantActivation.status(schoolId);
+  }
+
+  // GET /platform-admin/schools/:schoolId/voice — SchoolKit Assistant voice for
+  // one school: the switch, whether it works, every blocker, this month's
+  // usage and the limits (docs/modules/assistant-voice.md). Read-only; the
+  // switch is set through PATCH .../features.
+  @Get("schools/:schoolId/voice")
+  @UseGuards(PlatformAdminGuard)
+  async voiceStatus(@Param("schoolId") schoolId: string): Promise<PlatformAdminVoiceStatusDto> {
+    return this.voiceAdmin.status(schoolId);
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/voice-budget — monthly voice seconds.
+  @Patch("schools/:schoolId/voice-budget")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async setVoiceBudget(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminSetVoiceBudgetSchema)) dto: PlatformAdminSetVoiceBudgetInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSetVoiceBudgetResponse> {
+    return this.platformAdminService.setVoiceBudget(schoolId, dto, adminCtx, { ipAddress: ip, userAgent: req.header("user-agent") ?? null });
+  }
+
+  // POST /platform-admin/schools/:schoolId/voice/end-sessions — ends every live voice session at the school.
+  @Post("schools/:schoolId/voice/end-sessions")
+  @HttpCode(200)
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async endVoiceSessions(
+    @Param("schoolId") schoolId: string,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminEndVoiceSessionsResponse> {
+    return this.platformAdminService.endVoiceSessions(schoolId, adminCtx, { ipAddress: ip, userAgent: req.header("user-agent") ?? null });
   }
 
   // PATCH /platform-admin/schools/:schoolId/sms-sender — records the

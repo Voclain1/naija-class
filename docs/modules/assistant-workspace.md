@@ -452,6 +452,14 @@ Before activation, the owner also needs to decide:
   It also checks that no request carries a student's name or admission
   number.
 
+## Voice (2026-11-21)
+
+Realtime voice is a second interface to this assistant, specified in
+`docs/modules/assistant-voice.md`. It calls `AssistantOrchestratorService.turn`
+unchanged and adds no tool, prompt or approval path; it needs everything this
+section's model orchestration needs, plus its own `assistant-voice` switch and
+its own pending approval (`ASSISTANT_VOICE_APPROVAL`).
+
 ## Endpoints
 
 Both endpoints below need a signed-in staff member (`AuthGuard`). Neither

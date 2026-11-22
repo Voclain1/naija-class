@@ -24,6 +24,6 @@ import { ModelRoutingGate } from "./model-routing-gate";
   imports: [AuthModule, FeatureSwitchesModule, AiModule, InvoicesModule, ReminderCampaignsModule, StudentIntakeModule, StudentCorrectionsModule, StudentsModule, TeacherScopeModule],
   controllers: [AssistantOrchestratorController],
   providers: [ModelRoutingGate, AssistantWorkspaceService, AssistantOrchestratorService, StudentLookupService],
-  exports: [ModelRoutingGate],
+  exports: [ModelRoutingGate, AssistantWorkspaceService, AssistantOrchestratorService],
 })
 export class AssistantOrchestratorModule {}
