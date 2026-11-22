@@ -17,6 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError, proxyFetch } from "@/lib/api-client";
+import { AssistantReleaseConsole } from "./assistant-release-console";
 
 // The SchoolKit Assistant for one school, in its Manage dialog (2026-11-10,
 // docs/modules/assistant-workspace.md, "Controlled activation").
@@ -115,6 +116,7 @@ export function AssistantActivationSection({
   const [status, setStatus] = useState<PlatformAdminAssistantStatusDto | null>(null);
   const [failed, setFailed] = useState(false);
   const [busyKey, setBusyKey] = useState<FeatureKey | null>(null);
+  const [pilotBusy, setPilotBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -173,6 +175,30 @@ export function AssistantActivationSection({
         </p>
       ) : (
         <>
+
+          <div className="space-y-2 rounded-lg border p-3">
+            <p className="text-sm font-medium">School data: {status.aiUnderstanding.dataClassification}</p>
+            <p className="text-xs text-muted-foreground">Only empty schools with no student or guardian records may be classified as fictional. Never use real records in a pilot.</p>
+            <Button type="button" size="sm" variant="outline" disabled={pilotBusy || status.aiUnderstanding.dataClassification === "FICTIONAL"} onClick={async () => {
+              if (!window.confirm("Classify this empty school as FICTIONAL? This must contain no real personal data.")) return;
+              setPilotBusy(true);
+              try {
+                await proxyFetch(`/api/platform-admin/schools/${school.schoolId}/ai-data-classification`, {method:"PATCH",body:JSON.stringify({classification:"FICTIONAL"})});
+                toast.success("Fictional classification saved."); await load();
+              } catch(err) {toast.error(err instanceof ApiError ? err.message : "Classification failed.");}
+              finally {setPilotBusy(false);}
+            }}>Classify empty school as fictional</Button>
+            {status.aiUnderstanding.dataClassification === "FICTIONAL" && <Button type="button" size="sm" variant="outline" disabled={pilotBusy} onClick={async () => {
+              if (!window.confirm("Seed this empty fictional school with invented student and guardian records?")) return;
+              setPilotBusy(true);
+              try {
+                await proxyFetch(`/api/platform-admin/schools/${school.schoolId}/fictional-pilot/seed`, {method:"POST"});
+                toast.success("Pilot records created."); await load();
+              } catch(err) {toast.error(err instanceof ApiError ? err.message : "Seeding failed.");}
+              finally {setPilotBusy(false);}
+            }}>Seed fictional pilot</Button>}
+          </div>
+          <AssistantReleaseConsole scope={status.aiUnderstanding.dataClassification} onChanged={() => void load()} />
           <ul className="flex flex-col gap-2">
             {[status.workspace, status.workflows.invoices, status.workflows.reminders, status.workflows.intake, status.workflows.corrections, status.aiUnderstanding].map((item) => (
               <Row key={item.key} item={item} schoolName={school.name} busy={busyKey === item.key} disabled={busyKey !== null} onSet={(k, n) => void set(k, n)} />
