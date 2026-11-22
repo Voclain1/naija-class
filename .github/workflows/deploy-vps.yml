@@ -257,8 +257,35 @@ jobs:
           ENV
           sed -i 's/^ *//' out/deploy.env
 
+          # Transfer the generated API environment as an incoming file first.
+          # Preserve only the two voice settings configured directly on the VPS;
+          # GitHub's existing API_ENV_FILE remains the source for everything else.
+          # Never echo or copy the OpenAI key into Actions logs/artifacts.
+          mv out/api.env out/api.env.incoming
           tar -C infra/vps --exclude='Dockerfile.next*' -cf - . | ssh vps 'tar -C /opt/school-kit -xf -'
           tar -C out -cf - . | ssh vps 'umask 077; tar -C /opt/school-kit -xf -'
+          ssh vps 'bash -se' <<'VOICE_ENV'
+          set -euo pipefail
+          umask 077
+          cd /opt/school-kit
+          # Existing local values take precedence for these two keys only.
+          # Do not print the environment or source the file as shell code.
+          if [ -f api.env ]; then
+            grep -E '^(VOICE_PROVIDER|VOICE_OPENAI_API_KEY)=' api.env > api.voice.local.tmp || true
+          else
+            : > api.voice.local.tmp
+          fi
+          if [ -s api.voice.local.tmp ]; then
+            awk -F= 'NR==FNR { local[$1]=1; next } !($1 in local)' \
+              api.voice.local.tmp api.env.incoming > api.env.merged
+            cat api.voice.local.tmp >> api.env.merged
+          else
+            cp api.env.incoming api.env.merged
+          fi
+          chmod 600 api.env.merged
+          mv -f api.env.merged api.env
+          rm -f api.env.incoming api.voice.local.tmp
+          VOICE_ENV
           printf '%s' "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
           ssh vps "/opt/school-kit/deploy.sh ${TAG}"
           ssh vps 'docker logout ghcr.io'
