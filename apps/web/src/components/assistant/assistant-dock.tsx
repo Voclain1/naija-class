@@ -1,6 +1,7 @@
+"use client";
+
 import { assistantVoiceApi } from "@/lib/assistant/voice-api";
 import { AssistantVoiceControls } from "@/components/assistant/assistant-voice-controls";
-"use client";
 
 import { ArrowUp, BookOpen, Eraser, Loader2, Minus, Sparkles } from "lucide-react";
 import Link from "next/link";
