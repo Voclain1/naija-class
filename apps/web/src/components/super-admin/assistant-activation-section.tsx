@@ -49,7 +49,7 @@ const ROW_LABEL: Record<string, { name: string; what: string }> = {
   "student-corrections": { name: "Correct student records", what: "Prepare corrections to names, date of birth, gender and email. An owner or admin confirms them." },
   "assistant-model-routing": {
     name: "AI understanding",
-    what: "Sends what staff type to the AI provider so requests can be understood in everyday language. Without it the panel still works, by buttons and fixed phrases.",
+    what: "Sends staff requests to the AI provider for everyday-language understanding. Only Super Admin can control this school switch; production also requires the separate model-routing approval.",
   },
 };
 
@@ -178,6 +178,11 @@ export function AssistantActivationSection({
               <Row key={item.key} item={item} schoolName={school.name} busy={busyKey === item.key} disabled={busyKey !== null} onSet={(k, n) => void set(k, n)} />
             ))}
           </ul>
+          {status.aiUnderstanding.approval !== "approved" ? (
+            <p className="text-sm text-amber-700 dark:text-amber-300" role="status" data-testid="assistant-approval-pending">
+              AI understanding cannot be activated in production yet: the model-routing approval is pending. This is a release safeguard, not a Super Admin permission error. Turning on the school switch cannot override it. The Assistant panel and non-model workflows can still be tested.
+            </p>
+          ) : null}
           <p className="text-sm text-muted-foreground" data-testid="assistant-ai-facts">
             AI for this school: {status.ai.schoolEnabled ? "on" : "off"}. AI provider key on the server:{" "}
             {status.ai.providerConfigured ? "configured" : "not configured"}. Tokens this month:{" "}
