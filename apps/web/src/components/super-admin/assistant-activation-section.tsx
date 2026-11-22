@@ -178,7 +178,7 @@ export function AssistantActivationSection({
 
           <div className="space-y-2 rounded-lg border p-3">
             <p className="text-sm font-medium">School data: {status.aiUnderstanding.dataClassification}</p>
-            <p className="text-xs text-muted-foreground">Only empty schools with no student or guardian records may be classified as fictional. Never use real records in a pilot.</p>
+            <p className="text-xs text-muted-foreground">Existing schools with records require a separate verified fictional-data review. This screen cannot reclassify them automatically. Never use real records in a fictional pilot.</p>
             <Button type="button" size="sm" variant="outline" disabled={pilotBusy || status.aiUnderstanding.dataClassification === "FICTIONAL"} onClick={async () => {
               if (!window.confirm("Classify this empty school as FICTIONAL? This must contain no real personal data.")) return;
               setPilotBusy(true);
@@ -187,7 +187,7 @@ export function AssistantActivationSection({
                 toast.success("Fictional classification saved."); await load();
               } catch(err) {toast.error(err instanceof ApiError ? err.message : "Classification failed.");}
               finally {setPilotBusy(false);}
-            }}>Classify empty school as fictional</Button>
+            }}>Classify school (empty records only)</Button>
             {status.aiUnderstanding.dataClassification === "FICTIONAL" && <Button type="button" size="sm" variant="outline" disabled={pilotBusy} onClick={async () => {
               if (!window.confirm("Seed this empty fictional school with invented student and guardian records?")) return;
               setPilotBusy(true);
