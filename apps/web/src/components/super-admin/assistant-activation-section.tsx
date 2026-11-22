@@ -184,7 +184,7 @@ export function AssistantActivationSection({
             <p className="text-sm font-medium">School data: {status.aiUnderstanding.dataClassification}</p>
             <p className="text-xs text-muted-foreground">Existing school records are preserved. A Super Admin may classify an existing school as fictional only after independently reviewing all relevant records and verifying they contain no real personal data. This confirmation is audited; software cannot prove records are invented.</p>
             {status.aiUnderstanding.dataClassification !== "FICTIONAL" && <>
-              <label className="block text-xs font-medium">Type the exact school name to confirm your review
+              <label className="block text-xs font-medium">School name reviewed for fictional-data classification
                 <input className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm" value={reviewSchoolName} onChange={e => setReviewSchoolName(e.target.value)} placeholder={school.name} />
               </label>
               <label className="block text-xs font-medium">Evidence reference (review log or ticket)
