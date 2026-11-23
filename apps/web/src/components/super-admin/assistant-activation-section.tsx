@@ -17,6 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError, proxyFetch } from "@/lib/api-client";
+import { AssistantReleaseConsole } from "./assistant-release-console";
 
 // The SchoolKit Assistant for one school, in its Manage dialog (2026-11-10,
 // docs/modules/assistant-workspace.md, "Controlled activation").
@@ -115,6 +116,10 @@ export function AssistantActivationSection({
   const [status, setStatus] = useState<PlatformAdminAssistantStatusDto | null>(null);
   const [failed, setFailed] = useState(false);
   const [busyKey, setBusyKey] = useState<FeatureKey | null>(null);
+  const [pilotBusy, setPilotBusy] = useState(false);
+  const [reviewEvidence, setReviewEvidence] = useState("");
+  const [reviewSchoolName, setReviewSchoolName] = useState("");
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -173,6 +178,35 @@ export function AssistantActivationSection({
         </p>
       ) : (
         <>
+
+
+          <div className="space-y-3 rounded-lg border p-3">
+            <p className="text-sm font-medium">School data: {status.aiUnderstanding.dataClassification}</p>
+            <p className="text-xs text-muted-foreground">Existing school records are preserved. A Super Admin may classify an existing school as fictional only after independently reviewing all relevant records and verifying they contain no real personal data. This confirmation is audited; software cannot prove records are invented.</p>
+            {status.aiUnderstanding.dataClassification !== "FICTIONAL" && <>
+              <label className="block text-xs font-medium">School name reviewed for fictional-data classification
+                <input className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm" value={reviewSchoolName} onChange={e => setReviewSchoolName(e.target.value)} placeholder={school.name} />
+              </label>
+              <label className="block text-xs font-medium">Evidence reference (review log or ticket)
+                <input className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm" maxLength={300} value={reviewEvidence} onChange={e => setReviewEvidence(e.target.value)} placeholder="Reference to completed data review" />
+              </label>
+              <label className="flex items-start gap-2 text-xs">
+                <input type="checkbox" className="mt-1" checked={reviewConfirmed} onChange={e => setReviewConfirmed(e.target.checked)} />
+                I have reviewed this school&apos;s records and confirm they are exclusively invented test data, with no real student, guardian or staff personal data.
+              </label>
+              <Button type="button" size="sm" variant="outline" disabled={pilotBusy || !reviewConfirmed || reviewSchoolName !== school.name || reviewEvidence.trim().length < 3} onClick={async () => {
+                if (!window.confirm(`Confirm ${school.name} contains fictional data only? This is an audited Super Admin assertion, not an automated data verification.`)) return;
+                setPilotBusy(true);
+                try {
+                  await proxyFetch(`/api/platform-admin/schools/${school.schoolId}/ai-data-classification`, {method:"PATCH",body:JSON.stringify({classification:"FICTIONAL",existingRecordsReview:{confirmFictionalOnly:true,evidenceReference:reviewEvidence.trim(),reviewedSchoolName:reviewSchoolName}})});
+                  toast.success("Fictional classification saved."); await load();
+                } catch(err) {toast.error(err instanceof ApiError ? err.message : "Classification failed.");}
+                finally {setPilotBusy(false);}
+              }}>Classify reviewed school as fictional</Button>
+            </>}
+            {status.aiUnderstanding.dataClassification === "FICTIONAL" && <p className="text-xs text-muted-foreground">Existing records remain untouched. The fictional seed endpoint is intended only for empty schools; do not seed this existing school.</p>}
+          </div>
+          <AssistantReleaseConsole scope={status.aiUnderstanding.dataClassification} onChanged={() => void load()} />
           <ul className="flex flex-col gap-2">
             {[status.workspace, status.workflows.invoices, status.workflows.reminders, status.workflows.intake, status.workflows.corrections, status.aiUnderstanding].map((item) => (
               <Row key={item.key} item={item} schoolName={school.name} busy={busyKey === item.key} disabled={busyKey !== null} onSet={(k, n) => void set(k, n)} />

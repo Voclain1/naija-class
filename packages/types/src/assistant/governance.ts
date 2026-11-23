@@ -76,7 +76,7 @@ export type AiReleaseRevokeInput = z.infer<typeof aiReleaseRevokeSchema>;
 
 /** PATCH /platform-admin/schools/:schoolId/ai-data-classification */
 export const platformAdminSetAiClassificationSchema = z
-  .object({ classification: aiReleaseScopeSchema })
+  .object({ classification: aiReleaseScopeSchema, existingRecordsReview: z.object({ confirmFictionalOnly: z.literal(true), evidenceReference: reference, reviewedSchoolName: z.string().trim().min(3).max(200) }).strict().optional() })
   .strict();
 export type PlatformAdminSetAiClassificationInput = z.infer<typeof platformAdminSetAiClassificationSchema>;
 

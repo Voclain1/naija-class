@@ -89,9 +89,7 @@ revoked in the migration, which the governance spec proves.
 `schools.ai_data_classification` is `LIVE` (default) or `FICTIONAL`.
 
 - Only the platform admin sets it (`PATCH /platform-admin/schools/:id/ai-data-classification`),
-  and only while the school holds **no student or guardian records**. Real
-  records can therefore never be relabelled fictional, and fictional ones never
-  relabelled live.
+  and automatically only while the school holds **no student or guardian records**. An existing LIVE school with records may be classified FICTIONAL only with an explicit, audited Super Admin review confirming all its data is invented; the request must include the exact school name and an evidence reference. This is a human attestation, **not automatic proof**. Existing FICTIONAL schools with records cannot be reclassified LIVE. Never use this path for real student, guardian, staff or contact data.
 - A change switches `assistant-model-routing` and `assistant-voice` off for
   the school and is audited.
 - A FICTIONAL school needs the FICTIONAL release; a LIVE school needs the LIVE
@@ -112,16 +110,12 @@ It writes through `withTenant` under RLS and is audited.
 
 ### Virgo Fidelis fictional pilot: steps
 
-The real Virgo Fidelis Montessori School stays **LIVE**, with AI
-understanding off. The pilot is a **separate school tenant** that holds
-invented records only.
+Virgo Fidelis Montessori School is the **existing pilot tenant** requested by the operator. It must remain LIVE with AI understanding off until its existing records have been reviewed and confirmed entirely fictional. Do not create a second school, overwrite records, or run the fictional seed on this existing tenant.
 
-1. **Platform admin:** create the pilot school (`POST /platform-admin/schools`).
-   Name it e.g. "Virgo Fidelis Montessori — AI pilot (fictional data)" and use
-   the pilot coordinator's email as owner.
-2. **Platform admin:** classify it **before anything is entered**:
-   `PATCH /platform-admin/schools/<id>/ai-data-classification {"classification":"FICTIONAL"}`.
-3. **Platform admin:** `POST /platform-admin/schools/<id>/fictional-pilot/seed`.
+1. **Platform admin:** open the existing Virgo Fidelis Montessori School in Super Admin. Review its student, guardian, staff and contact data outside the Assistant; confirm all records are invented, and document the evidence. If any real personal data is present or uncertain, **do not classify it fictional**.
+2. **Platform admin:** enter the exact school name, evidence reference and confirmation in the SchoolKit Assistant panel, then classify FICTIONAL. The API records the attestation in the audit log and disables model routing and voice switches. This does not seed or modify existing records.
+3. **Do not run the seed command** on Virgo Fidelis. Existing records are retained.
+
 4. Switch on, through the existing console or `PATCH …/features`:
    - `assistant-workspace` and the task switches you want to test;
    - set the school's AI budget (`PATCH …/ai-budget`) and voice budget if needed.
