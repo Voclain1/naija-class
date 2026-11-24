@@ -23,7 +23,11 @@ afterAll(async () => {
   const admin = createPrismaClient(process.env.DIRECT_URL!);
   try {
     await admin.messagingTermiiInbox.deleteMany({ where: { accountId } });
-    await admin.messagingWalletEntry.deleteMany({ where: { schoolId: { in: schools } } });
+    await admin.$transaction(async (tx) => {
+      await tx.$executeRaw`ALTER TABLE messaging_wallet_entries DISABLE TRIGGER messaging_wallet_entry_immutable`;
+      await tx.messagingWalletEntry.deleteMany({ where: { schoolId: { in: schools } } });
+      await tx.$executeRaw`ALTER TABLE messaging_wallet_entries ENABLE TRIGGER messaging_wallet_entry_immutable`;
+    });
     await admin.auditLog.deleteMany({ where: { schoolId: { in: schools } } });
     await admin.notificationDelivery.deleteMany({ where: { schoolId: { in: schools } } });
     await admin.school.deleteMany({ where: { id: { in: schools } } });
