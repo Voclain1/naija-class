@@ -410,13 +410,23 @@ describe("fee reminder campaigns against PostgreSQL", () => {
   });
 
   it("requires a fresh approval before an SMS unit price increases", async () => {
-    port.channels.email = false;
     const campaign = await confirm(await prepare([A.bo.id]));
-    vi.spyOn(port, "smsPricePerSegmentKobo").mockResolvedValue(13n);
+    const price = vi.spyOn(port, "smsPricePerSegmentKobo").mockResolvedValue(13n);
     await run(campaign.id);
     expect(port.texts).toHaveLength(0);
+    expect(port.emails).toHaveLength(1);
     expect(await service.getCampaign(A.bursar.auth, campaign.id, DAY()))
       .toMatchObject({ status: "HALTED", haltReason: "PRICE_APPROVAL_REQUIRED" });
+    await expect(service.resume(A.bursar.auth, campaign.id, null)).rejects.toMatchObject({ code: "CAMPAIGN_REAPPROVAL_REQUIRED" });
+    const firstReview = await service.getReapprovalQuote(A.bursar.auth, campaign.id);
+    expect(firstReview).toMatchObject({ remainingMobileSlots: 1, smsUnitKobo: "13" });
+    price.mockResolvedValue(14n);
+    await expect(service.reapprove(A.bursar.auth, campaign.id, firstReview.previewHash, null)).rejects.toMatchObject({ httpStatus: 409 });
+    const approved = await service.getReapprovalQuote(A.bursar.auth, campaign.id);
+    await service.reapprove(A.bursar.auth, campaign.id, approved.previewHash, null);
+    await run(campaign.id);
+    expect(port.texts).toHaveLength(1);
+    expect(port.emails).toHaveLength(1);
   });
 
   it("allows configured repeat intervals while keeping channels in the same campaign together", async () => {

@@ -103,6 +103,7 @@ import { messagingEmergencyState, writeMessagingEmergencyState } from "../../com
 import { messagingSpendLimit, writeMessagingSpendLimit } from "../../common/messaging-spend-limits";
 import type { MessagingEmergencyChannel, MessagingEmergencyWrite, MessagingProviderActivationWrite, MessagingRateReviewWrite, MessagingSpendLimitWrite, MessagingTemplateReviewWrite } from "@school-kit/types";
 import { messagingProviderActivation, messagingRateCatalogState, writeMessagingProviderActivation, writeMessagingRateCatalog, writeMessagingTemplateReview } from "../notifications/messaging/messaging-review-controls";
+import { PaymentsService } from "../payments/payments.service";
 import { PaystackWebhookInboxService } from "../payments/paystack-webhook-inbox.service";
 import { MessagingTopUpService } from "../notifications/messaging/messaging-top-up.service";
 import { MetaConnectionsService } from "../notifications/messaging/meta-connections.service";
@@ -134,6 +135,7 @@ export class PlatformAdminController {
     private readonly voiceAdmin: VoiceAdminService,
     private readonly metaConnections: MetaConnectionsService,
     private readonly paystackInbox: PaystackWebhookInboxService,
+    private readonly payments: PaymentsService,
     private readonly messagingTopUps: MessagingTopUpService,
   ) {}
 
@@ -366,6 +368,37 @@ export class PlatformAdminController {
       });
       return { status: input.status, reviewedAt };
     });
+  }
+
+  @Post("schools/:schoolId/payments/reconciliation/reverify")
+  @UseGuards(PlatformAdminGuard)
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async reverifyPaymentException(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @Body(new ZodValidationPipe(z.object({
+      reference: z.string().regex(/^PSK-[a-f0-9-]{36}-[a-f0-9-]{36}$/),
+      evidenceRef: reviewRef,
+    }).strict())) input: { reference: string; evidenceRef: string },
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+  ) {
+    await withTenant(schoolId, async (db) => {
+      const exception = await db.paystackPaymentException.findFirst({
+        where: { schoolId, reference: input.reference }, select: { reference: true },
+      });
+      if (!exception) throw new NotFoundError("Payment exception not found.");
+      await db.auditLog.create({
+        data: {
+          schoolId, userId: admin.userId, action: "payment.reconciliation.reverify", entityType: "paystack_exception",
+          entityId: input.reference, metadata: { evidenceRef: input.evidenceRef },
+        },
+      });
+    });
+    const payment = await this.payments.verifyAndApply(schoolId, input.reference);
+    return {
+      reference: input.reference, paymentStatus: payment.status,
+      allocatedKobo: payment.allocatedKobo ?? null, unappliedKobo: payment.unappliedKobo ?? null,
+    };
   }
 
   @Get("schools/:schoolId/messaging/reconciliation")

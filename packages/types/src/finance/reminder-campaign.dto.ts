@@ -228,3 +228,18 @@ export const REMINDER_CAMPAIGN_CONFLICT_CODES = {
   notHalted: "REMINDER_CAMPAIGN_NOT_HALTED",
   stillOff: "REMINDER_CAMPAIGN_FEATURE_OFF",
 } as const;
+
+export interface ReminderCampaignReapprovalQuote {
+  previewHash: string;
+  remainingMobileSlots: number;
+  smsUnitKobo: string | null;
+  whatsappUnitKobo: string | null;
+  /** Upper bound for WhatsApp. SMS units are segments, with the final quote checked at dispatch. */
+  maximumWhatsAppKobo: string | null;
+}
+
+export const reapproveReminderCampaignSchema = z.object({
+  previewHash: z.string().regex(/^[0-9a-f]{64}$/),
+}).strict();
+
+export type ReapproveReminderCampaignInput = z.infer<typeof reapproveReminderCampaignSchema>;

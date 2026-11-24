@@ -4,6 +4,9 @@ import {
   confirmReminderCampaignSchema,
   prepareReminderCampaignSchema,
   refreshReminderCampaignSchema,
+  reapproveReminderCampaignSchema,
+  type ReapproveReminderCampaignInput,
+  type ReminderCampaignReapprovalQuote,
   type ConfirmReminderCampaignInput,
   type PrepareReminderCampaignInput,
   type RefreshReminderCampaignInput,
@@ -75,6 +78,23 @@ export class ReminderCampaignsController {
   @Permissions("finance.debtors.remind")
   halt(@CurrentUser() auth: AuthContext, @Param("campaignId", ParseUUIDPipe) id: string, @Ip() ip: string): Promise<ReminderCampaignDto> {
     return this.service.halt(auth, id, ip);
+  }
+
+  @Get(":campaignId/reapproval")
+  @Permissions("finance.debtors.remind")
+  reapproval(@CurrentUser() auth: AuthContext, @Param("campaignId", ParseUUIDPipe) id: string): Promise<ReminderCampaignReapprovalQuote> {
+    return this.service.getReapprovalQuote(auth, id);
+  }
+
+  @Post(":campaignId/reapprove")
+  @HttpCode(200)
+  @Permissions("finance.debtors.remind")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  reapprove(
+    @CurrentUser() auth: AuthContext, @Param("campaignId", ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(reapproveReminderCampaignSchema)) body: ReapproveReminderCampaignInput, @Ip() ip: string,
+  ): Promise<ReminderCampaignDto> {
+    return this.service.reapprove(auth, id, body.previewHash, ip);
   }
 
   @Post(":campaignId/resume")

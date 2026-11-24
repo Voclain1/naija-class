@@ -273,3 +273,8 @@ export interface PaystackPaymentExceptionReview {
   status: Exclude<PaystackPaymentExceptionStatus, "OPEN">;
   evidenceRef: string;
 }
+
+export interface PaystackPaymentExceptionReverify {
+  reference: string;
+  evidenceRef: string;
+}

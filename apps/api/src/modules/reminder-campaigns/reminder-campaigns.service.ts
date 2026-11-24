@@ -18,6 +18,7 @@ import {
   type PrepareReminderCampaignInput,
   type ReminderCampaignDto,
   type ReminderCampaignProposalDto,
+  type ReminderCampaignReapprovalQuote,
   type ReminderCampaignSendDto,
   type ReminderCampaignStudentPreview,
   type ReminderHaltReason,
@@ -330,7 +331,7 @@ export class ReminderCampaignsService {
         if (campaign.status === "RUNNING") return;
         if (campaign.status === "COMPLETED") throw new ConflictError(C.notHalted, "This campaign has finished: nothing is left to send.");
         if (campaign.halt_reason === "PRICE_APPROVAL_REQUIRED" || campaign.halt_reason === "WHATSAPP_REVIEW_REQUIRED") {
-          throw new ConflictError("CAMPAIGN_REAPPROVAL_REQUIRED", "Prepare and approve a fresh review for the unsent recipients.");
+          throw new ConflictError("CAMPAIGN_REAPPROVAL_REQUIRED", "Approve a fresh price review for this campaign before continuing.");
         }
         await db.$executeRaw`
           UPDATE reminder_campaigns SET status = 'RUNNING', halt_reason = NULL, halted_at = NULL, updated_at = CURRENT_TIMESTAMP
@@ -342,6 +343,75 @@ export class ReminderCampaignsService {
     }
     this.kick(auth.schoolId, id);
     return this.getCampaign(auth, id);
+  }
+
+  async getReapprovalQuote(auth: AuthContext, id: string): Promise<ReminderCampaignReapprovalQuote> {
+    return withTenant(auth.schoolId, async (db) => {
+      await this.requireAccess(db, auth.schoolId, auth.userId, { feature: true });
+      const campaign = await this.loadCampaign(db, auth, id, true);
+      return this.reapprovalQuote(db, campaign);
+    });
+  }
+
+  async reapprove(auth: AuthContext, id: string, previewHash: string, ip: string | null): Promise<ReminderCampaignDto> {
+    await withTenant(auth.schoolId, async (db) => {
+      await this.requireAccess(db, auth.schoolId, auth.userId, { feature: true, lock: true });
+      const campaign = await this.loadCampaign(db, auth, id, true);
+      const review = await this.reapprovalQuote(db, campaign);
+      if (review.previewHash !== previewHash) throw new ConflictError(C.stale, "Refresh this campaign review before approving.");
+      await db.$executeRaw`
+        UPDATE reminder_campaigns
+        SET status = 'RUNNING', halt_reason = NULL, halted_at = NULL, completed_at = NULL, updated_at = CURRENT_TIMESTAMP,
+          confirmed_by = ${auth.userId}, approved_sms_unit_kobo = ${review.smsUnitKobo}::integer,
+          approved_whatsapp_unit_kobo = ${review.whatsappUnitKobo}::integer
+        WHERE school_id = ${auth.schoolId} AND id = ${id}`;
+      await db.$executeRaw`
+        UPDATE reminder_campaign_sends SET status = 'PENDING', reason = NULL, claimed_at = NULL,
+          claim_token = NULL, finished_at = NULL
+        WHERE school_id = ${auth.schoolId} AND campaign_id = ${id} AND channel = 'MOBILE'
+          AND status = 'SKIPPED' AND reason = 'PRICE_APPROVAL_REQUIRED'
+          AND channel_used IS NULL AND provider_ref IS NULL`;
+      await this.audit(db, auth.schoolId, auth.userId, id, "reminder-campaign.reapprove", ip, {
+        previewHash, remainingMobileSlots: review.remainingMobileSlots,
+        smsUnitKobo: review.smsUnitKobo ?? "", whatsappUnitKobo: review.whatsappUnitKobo ?? "",
+      });
+    });
+    this.kick(auth.schoolId, id);
+    return this.getCampaign(auth, id);
+  }
+
+  private async reapprovalQuote(db: Db, campaign: CampaignRow): Promise<ReminderCampaignReapprovalQuote> {
+    if (campaign.status !== "HALTED" ||
+        (campaign.halt_reason !== "PRICE_APPROVAL_REQUIRED" && campaign.halt_reason !== "WHATSAPP_REVIEW_REQUIRED")) {
+      throw new ConflictError("CAMPAIGN_REAPPROVAL_UNAVAILABLE", "This campaign has no pending price or template review.");
+    }
+    const { school_id: schoolId, id: campaignId } = campaign;
+    if (await db.reminderCampaignSend.count({ where: { schoolId, campaignId, status: "SENDING" } })) {
+      throw new ConflictError("CAMPAIGN_SENDS_IN_PROGRESS", "Wait until the current send claims finish before approving.");
+    }
+    const remainingMobileSlots = await db.reminderCampaignSend.count({
+      where: { schoolId, campaignId, channel: "MOBILE", OR: [
+        { status: "PENDING" },
+        { status: "SKIPPED", reason: "PRICE_APPROVAL_REQUIRED", channelUsed: null, providerRef: null },
+      ] },
+    });
+    if (!remainingMobileSlots) {
+      throw new ConflictError("CAMPAIGN_REAPPROVAL_UNAVAILABLE", "This campaign has no unsent paid slots to review.");
+    }
+    const { can } = await attemptableChannels(this.port, schoolId);
+    const rate = campaign.use_whatsapp
+      ? await this.port.whatsappRate(schoolId, campaign.overdue_only, new Date())
+      : can.sms ? await this.port.smsPricePerSegmentKobo() : null;
+    if (rate === null || rate <= 0n || rate > 2_147_483_647n) {
+      throw new ConflictError("CAMPAIGN_PRICE_UNAVAILABLE", "Verify the channel and its current price before approving.");
+    }
+    const review = {
+      remainingMobileSlots,
+      smsUnitKobo: campaign.use_whatsapp ? null : String(rate),
+      whatsappUnitKobo: campaign.use_whatsapp ? String(rate) : null,
+      maximumWhatsAppKobo: campaign.use_whatsapp ? String(rate * BigInt(remainingMobileSlots)) : null,
+    };
+    return { ...review, previewHash: fingerprint({ campaignId, haltedAt: campaign.halted_at?.toISOString(), review }) };
   }
 
   // ---------------------------------------------------------------------
