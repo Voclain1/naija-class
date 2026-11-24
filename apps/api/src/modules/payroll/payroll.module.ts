@@ -1,14 +1,14 @@
 import { Module } from "@nestjs/common";
 
-// StorageService is provided by the global StorageModule (registered in
-// AppModule) — no need to import it here, same as ExpensesModule/PaymentsModule.
-
+// Import storage explicitly: PayrollModule is also reached from PaymentsModule
+// in isolated platform-admin applications that do not import AppModule.
 import { PaystackModule } from "../../common/paystack/paystack.module.js";
+import { StorageModule } from "../../common/storage/storage.module.js";
 import { PayrollController } from "./payroll.controller.js";
 import { PayrollService } from "./payroll.service.js";
 
 @Module({
-  imports: [PaystackModule],
+  imports: [PaystackModule, StorageModule],
   controllers: [PayrollController],
   providers: [PayrollService],
   exports: [PayrollService],
