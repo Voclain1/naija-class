@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Test } from "@nestjs/testing";
 import { ConfigModule } from "@nestjs/config";
 import { APP_FILTER } from "@nestjs/core";
-import type { INestApplication } from "@nestjs/common";
+import { Global, Module, type INestApplication } from "@nestjs/common";
 import request from "supertest";
 
 import {
@@ -18,6 +18,7 @@ import {
 } from "@school-kit/db";
 import { AuthService } from "../modules/auth/auth.service";
 import * as password from "../common/auth/password";
+import { REDIS_AUTH_CLIENT } from "../common/auth/redis-auth.provider";
 import { createSession } from "../common/auth/sessions";
 
 import { HttpExceptionFilter } from "../common/http-exception.filter";
@@ -38,6 +39,16 @@ import { InvitationsModule } from "../modules/invitations/invitations.module";
 // native CommonJS global here, unlike the workspace's ESM packages
 // (see CLAUDE.md's "ESM module resolution" note, which is about
 // packages/*, not apps/api itself).
+
+// The admin module now reaches AuthModule through payment notifications.
+// As in the governance/lifecycle HTTP specs, keep the auth cache inert so
+// these probes exercise real PostgreSQL sessions without external Redis I/O.
+@Global()
+@Module({
+  providers: [{ provide: REDIS_AUTH_CLIENT, useValue: { get: async () => null, set: async () => "OK", del: async () => 1, pttl: async () => -2, incr: async () => 1, expire: async () => 1 } }],
+  exports: [REDIS_AUTH_CLIENT],
+})
+class InertRedisAuthModule {}
 
 let phoneCounter = 0;
 function randomPhone(): string {
@@ -70,7 +81,7 @@ describe("Platform admin access (2026-08-02)", () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), PlatformAdminModule, InvitationsModule],
+      imports: [ConfigModule.forRoot({ isGlobal: true }), InertRedisAuthModule, PlatformAdminModule, InvitationsModule],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
     app = moduleRef.createNestApplication();
