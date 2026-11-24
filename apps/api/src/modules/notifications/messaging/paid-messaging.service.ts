@@ -53,6 +53,10 @@ export class PaidMessagingService {
     return channel === "WHATSAPP" ? flags.paidWhatsAppEnabled : channel === "SMS" && flags.walletSmsEnabled;
   }
 
+  legacySmsReadiness() {
+    return this.termii.legacyReadiness();
+  }
+
   async readiness(schoolId: string, availableKobo: bigint, now = new Date()) {
     const profile = this.profiles().find((item) => item.schoolId === schoolId);
     const sms: MessagingOverview["providers"][number] = { channel: "SMS", ready: false, blockers: ["CHANNEL_DISABLED"] };
@@ -137,7 +141,7 @@ export class PaidMessagingService {
     if (!profile) return null;
     const name = overdue ? "fee_payment_overdue" : "fee_payment_reminder";
     const template = await this.template(profile, name, now);
-    if (!template) return null;
+    if (!template || template.category !== "UTILITY") return null;
     return quoteDispatchCost(await reviewedMessagingRates(schoolId, profile.rates), `META_${template.category}`, "SCHOOL_OWNED", 1, now)?.estimatedKobo ?? null;
   }
 
@@ -261,6 +265,11 @@ export class PaidMessagingService {
     const cost = quoteDispatchCost(await reviewedMessagingRates(schoolId, profile.rates), priceKey, template ? "SCHOOL_OWNED" : "SCHOOLKIT",
       template ? 1 : countSmsSegments(preflight.sms), now);
     if (!cost || cost.estimatedKobo > 2_147_483_647n) return block("PRICE_MISSING");
+    if (preflight.campaign && (template?.category !== "UTILITY" || preflight.campaign.approvedUnitKobo == null ||
+        cost.estimatedKobo > BigInt(preflight.campaign.approvedUnitKobo))) {
+      await this.haltCampaign(schoolId, preflight.campaign.id, "PRICE_APPROVAL_REQUIRED");
+      return block("PRICE_APPROVAL_REQUIRED");
+    }
 
     const claimed = await withTenant(schoolId, async (db) => {
       const [school] = await db.$queryRaw<{ id: string }[]>`
@@ -298,11 +307,23 @@ export class PaidMessagingService {
       const outcome = await sendMetaTemplate(account, template, recipient, preflight.fields, preflight.paymentCode, fetch, async () => {
         const currentAccount = await this.accounts.activeAccount(schoolId);
         const currentReview = await this.template(profile, templateName, new Date());
+        if (preflight.campaign) {
+          const latestCost = currentReview && quoteDispatchCost(await reviewedMessagingRates(schoolId, profile.rates),
+            `META_${currentReview.category}`, "SCHOOL_OWNED", 1, new Date());
+          if (!latestCost || currentReview?.category !== "UTILITY" || preflight.campaign.approvedUnitKobo == null ||
+              latestCost.estimatedKobo > BigInt(preflight.campaign.approvedUnitKobo)) {
+            await this.haltCampaign(schoolId, preflight.campaign.id, "PRICE_APPROVAL_REQUIRED");
+            return false;
+          }
+        }
         return !(await messagingEmergencyState("WHATSAPP")).stopped &&
           (await messagingProviderActivation("WHATSAPP")).enabled !== false &&
           currentAccount?.token === account.token && JSON.stringify(template) === JSON.stringify(currentReview) &&
           await currentRecipient();
       });
+      if (preflight.campaign && outcome.status === "BLOCKED" && ["TEMPLATE", "CATEGORY_REVIEW_REQUIRED"].includes(outcome.reason)) {
+        await this.haltCampaign(schoolId, preflight.campaign.id, "WHATSAPP_REVIEW_REQUIRED");
+      }
       if (outcome.status === "ACCEPTED") {
         return this.finish(job, "SENDING", { state: "ACCEPTED", accountId: account.phoneNumberId, reference: outcome.providerRef });
       }
@@ -340,6 +361,19 @@ export class PaidMessagingService {
       await this.finish(job, "SENDING", { state: "UNKNOWN", reason: "PROVIDER_BILLING_UNRECONCILED" });
     }
     await this.alertLowBalance(schoolId, profile, now);
+  }
+
+  private async haltCampaign(schoolId: string, campaignId: string, reason: string): Promise<void> {
+    await withTenant(schoolId, async (db) => {
+      const changed = await db.reminderCampaign.updateMany({
+        where: { id: campaignId, schoolId, status: { in: ["RUNNING", "COMPLETED"] } },
+        data: { status: "HALTED", haltReason: reason, haltedAt: new Date() },
+      });
+      if (changed.count) await db.auditLog.create({ data: {
+        schoolId, action: "reminder-campaign.halt", entityType: "reminder_campaign", entityId: campaignId,
+        metadata: { reason },
+      } });
+    });
   }
 
   private async finish(job: NotificationDelivery, expected: "QUEUED" | "SENDING", decision: Claimed): Promise<void> {

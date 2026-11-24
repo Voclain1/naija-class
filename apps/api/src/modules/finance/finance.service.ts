@@ -761,6 +761,7 @@ export class FinanceService implements OnModuleInit {
                 normalized,
                 buildReminderSms({ studentName, schoolName: school.name, balance, dueDate: dueDateStr }),
                 smsSender,
+                { schoolId: authCtx.schoolId, eventType: "FEE_REMINDER", eventId: studentId },
               );
               sentAny = true;
             } catch (err) {

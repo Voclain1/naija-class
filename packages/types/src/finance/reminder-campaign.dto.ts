@@ -166,6 +166,8 @@ export const REMINDER_HALT_REASONS = [
   "SCHOOL_UNAVAILABLE",
   "CONFIRMER_ACCESS_REVOKED",
   "NO_CHANNEL",
+  "PRICE_APPROVAL_REQUIRED",
+  "WHATSAPP_REVIEW_REQUIRED",
 ] as const;
 export type ReminderHaltReason = (typeof REMINDER_HALT_REASONS)[number];
 

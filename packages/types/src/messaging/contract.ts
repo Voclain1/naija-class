@@ -11,6 +11,8 @@ export type DeliveryState =
   | "FAILED" | "UNKNOWN" | "CANCELLED" | "DEAD_LETTER" | "BLOCKED";
 
 export interface MessagingOverview {
+  topUps?: MessagingTopUpAvailability;
+  legacySms?: { configured: boolean; release: "on" | "existing-authorized" | "off"; financiallyAuthorized: boolean; ready: boolean };
   providers: Array<{
     channel: MessagingChannel;
     ready: boolean;
@@ -89,6 +91,7 @@ export interface MessagingTopUpRequest {
 export interface MessagingTopUpCheckout {
   reference: string;
   checkoutUrl: string;
+  quote?: MessagingTopUpQuote;
 }
 
 export interface MessagingMetaSignupSession {
@@ -130,6 +133,7 @@ export interface MessagingReconciliationReport {
     status: "PENDING_EVIDENCE" | "DISCREPANCY" | "SETTLED" | "RELEASED";
     discrepancyRecorded: boolean;
     reservedAt: string;
+    escalatedAt?: string | null;
   }>;
   truncated: boolean;
 }
@@ -221,4 +225,17 @@ export interface MessagingProviderActivationWrite {
 export interface MessagingRateCatalogState {
   revision: string | null;
   rates: MessagingRateReviewWrite["rates"] | null;
+}
+
+export interface MessagingTopUpQuote {
+  amountKobo: Kobo;
+  estimatedFeeKobo: Kobo;
+  expectedCreditKobo: Kobo;
+}
+
+export interface MessagingTopUpAvailability {
+  available: boolean;
+  minKobo: Kobo | null;
+  maxKobo: Kobo | null;
+  estimatedFeeKobo: Kobo | null;
 }

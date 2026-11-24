@@ -132,12 +132,13 @@ describe("messaging wallet with PostgreSQL and runtime RLS", () => {
     const auth = { schoolId: a, userId: owner.id, sessionId: "test" };
     let verificationSchool = b;
     let verificationAmount = 600;
+    let verificationFee: number | null = null;
     const fake = {
       initializeTransaction: vi.fn(async ({ reference }: { reference: string }) => ({
         reference, authorization_url: "https://checkout.paystack.com/fictional", access_code: "fictional",
       })),
       verifyTransaction: vi.fn(async (reference: string) => ({
-        reference, status: "success", amount: verificationAmount, currency: "NGN", paid_at: new Date().toISOString(),
+        reference, status: "success", amount: verificationAmount, fees: verificationFee, currency: "NGN", paid_at: new Date().toISOString(),
         metadata: { purpose: "messaging-wallet-top-up", schoolId: verificationSchool },
       })),
     };
@@ -145,9 +146,10 @@ describe("messaging wallet with PostgreSQL and runtime RLS", () => {
     await expect(blocked.checkout(auth, randomUUID(), "500")).rejects.toThrow("currently disabled");
     expect(fake.initializeTransaction).not.toHaveBeenCalled();
     const service = new MessagingTopUpService(new ConfigService({
-      MESSAGING_TOP_UPS_ENABLED: "on", MESSAGING_TOP_UP_MIN_KOBO: "100", MESSAGING_TOP_UP_MAX_KOBO: "1000",
+      MESSAGING_TOP_UPS_ENABLED: "on", MESSAGING_TOP_UP_MIN_KOBO: "100", MESSAGING_TOP_UP_MAX_KOBO: "1000", MESSAGING_TOP_UP_ESTIMATED_FEE_KOBO: "20",
     }), fake as never);
     const clientRequestId = randomUUID();
+    expect(service.quote("500")).toEqual({ amountKobo: "500", estimatedFeeKobo: "20", expectedCreditKobo: "480" });
     const checkout = await service.checkout(auth, clientRequestId, "500");
     expect(await service.checkout(auth, clientRequestId, "500")).toEqual(checkout);
     expect(fake.initializeTransaction).toHaveBeenCalledTimes(1);
@@ -158,8 +160,14 @@ describe("messaging wallet with PostgreSQL and runtime RLS", () => {
     await service.acceptVerifiedCharge(checkout.reference);
     expect((await getMessagingWallet(a)).availableKobo).toBe(0n);
     verificationAmount = 500;
-    await Promise.all([service.acceptVerifiedCharge(checkout.reference), service.acceptVerifiedCharge(checkout.reference)]);
-    expect((await getMessagingWallet(a)).availableKobo).toBe(500n);
+    await service.recover(auth, checkout.reference);
+    expect((await getMessagingWallet(a)).availableKobo).toBe(0n);
+    expect(await withTenant(a, (db) => db.messagingWalletTopUp.findUnique({
+      where: { reference: checkout.reference },
+    }))).toMatchObject({ reconciliationCode: "FEES_UNVERIFIED" });
+    verificationFee = 25;
+    await Promise.all([service.recover(auth, checkout.reference), service.acceptVerifiedCharge(checkout.reference)]);
+    expect((await getMessagingWallet(a)).availableKobo).toBe(475n);
     expect((await getMessagingWallet(b)).availableKobo).toBe(0n);
   });
 

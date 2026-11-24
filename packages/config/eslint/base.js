@@ -152,6 +152,11 @@ export const baseConfig = [
       // billing data. Exact pre-tenant lookup returns only the school ID.
       // Delivery and wallet updates run under withTenant.
       "**/notifications/messaging/termii-reports.service.ts",
+      // Authenticated Paystack pre-tenant inbox. Tenant mutations run in the
+      // normal payment, wallet and payroll services.
+      "**/payments/paystack-webhook-inbox.service.ts",
+      // Top-up recovery enumerates school IDs only, then verifies tenant-scoped intents.
+      "**/notifications/messaging/messaging-top-up.service.ts",
       // Cross-tenant retention sweep: basePrisma lists school IDs only.
       "**/notifications/messaging/meta-inbound-history.service.ts",
       // Operator revisions and the shared daily cap are platform metadata.

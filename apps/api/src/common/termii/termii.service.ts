@@ -58,6 +58,14 @@ export function normalizeNigerianPhone(raw: string): string | null {
   return null;
 }
 
+export interface LegacySmsAttribution {
+  schoolId: string;
+  eventType: "ADMISSION" | "PARENT_MESSAGE" | "GUARDIAN_INVITATION" | "SICKBAY" |
+    "FEE_REMINDER" | "REMINDER_CAMPAIGN" | "HOSTEL_EXEAT" | "DISCIPLINE";
+  eventId: string;
+  approvedUnitKobo?: number | null;
+}
+
 @Injectable()
 export class TermiiService {
   private readonly logger = new Logger(TermiiService.name);
@@ -94,8 +102,8 @@ export class TermiiService {
   // senderId: the school's own APPROVED sender name (smsSenderFor in
   // modules/schools/sms-sender.service.ts), else the platform's
   // TERMII_SENDER_ID (docs/modules/school-identity.md slice 2).
-  async sendSms(to: string, message: string, senderId?: string): Promise<void> {
-    const outcome = await this.sendSmsWithOutcome(to, message, senderId);
+  async sendSms(to: string, message: string, senderId?: string, attribution?: LegacySmsAttribution): Promise<void> {
+    const outcome = await this.sendSmsWithOutcome(to, message, senderId, attribution);
     if (outcome.status !== "ACCEPTED") throw new InternalError("Termii SMS did not complete.");
   }
 
@@ -111,9 +119,10 @@ export class TermiiService {
     to: string,
     message: string,
     senderId?: string,
+    attribution?: LegacySmsAttribution,
   ): Promise<SmsOutcome> {
     if (!this.apiKey) return { status: "REJECTED", reason: "SMS_NOT_CONFIGURED" };
-    if (!(await this.reservePlatformSpend(message))) return { status: "REJECTED", reason: "PLATFORM_SMS_BUDGET_UNAVAILABLE" };
+    if (!(await this.reservePlatformSpend(message, attribution))) return { status: "REJECTED", reason: "PLATFORM_SMS_BUDGET_UNAVAILABLE" };
     return this.requestSms(to, message, senderId);
   }
 
@@ -139,24 +148,63 @@ export class TermiiService {
     return this.requestSms(to, message, senderId);
   }
 
-  private async reservePlatformSpend(message: string): Promise<boolean> {
-    if (this.config.get<string>("MESSAGING_LEGACY_SMS_ENABLED") !== "on") return false;
+  async legacyReadiness() {
+    const release: "on" | "existing-authorized" | "off" = this.config.get<string>("MESSAGING_LEGACY_SMS_ENABLED") === "on" ? "on"
+      : this.config.get<string>("MESSAGING_LEGACY_SMS_MIGRATION_MODE") === "existing-authorized" ? "existing-authorized"
+      : "off";
+    const configuredLimit = parsePaidPlatformLimit(this.config.get<string>("MESSAGING_PAID_PLATFORM_DAILY_KOBO"));
+    if (!this.isConfigured || release === "off" || !configuredLimit) {
+      return { configured: this.isConfigured, release, financiallyAuthorized: false, ready: false };
+    }
+    const limit = await effectiveMessagingSpendLimit("platform", configuredLimit);
+    const rates = await reviewedMessagingRates("platform", readVerifiedMessagingRates(this.config.get<string>("MESSAGING_LEGACY_SMS_RATES")));
+    const cost = quoteDispatchCost(rates, "TERMII_SMS", "SCHOOLKIT", 1, new Date());
+    const financiallyAuthorized = !!cost && cost.walletKobo <= limit;
+    const [day] = await basePrisma.$queryRaw<{ reserved_kobo: bigint }[]>`
+      SELECT reserved_kobo FROM messaging_platform_reservations_daily
+      WHERE day = (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Lagos')::date`;
+    const ready = financiallyAuthorized && (day?.reserved_kobo ?? 0n) + cost!.walletKobo <= limit &&
+      !(await messagingEmergencyState("SMS")).stopped && (await messagingProviderActivation("SMS")).enabled !== false;
+    return { configured: true, release, financiallyAuthorized, ready };
+  }
+
+  private async reservePlatformSpend(message: string, attribution?: LegacySmsAttribution): Promise<boolean> {
+    const release = this.config.get<string>("MESSAGING_LEGACY_SMS_ENABLED") === "on" ||
+      this.config.get<string>("MESSAGING_LEGACY_SMS_MIGRATION_MODE") === "existing-authorized";
+    if (!release || !attribution) return false;
+    const { schoolId, eventType, eventId } = attribution;
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(eventId)) return false;
     const configuredLimit = parsePaidPlatformLimit(this.config.get<string>("MESSAGING_PAID_PLATFORM_DAILY_KOBO"));
     if (!configuredLimit || (await messagingEmergencyState("SMS")).stopped ||
         (await messagingProviderActivation("SMS")).enabled === false) return false;
-    const limit = await effectiveMessagingSpendLimit("platform", configuredLimit);
     const units = countSmsSegments(message);
-    if (!limit || !units) return false;
-    const rates = await reviewedMessagingRates("platform", readVerifiedMessagingRates(this.config.get<string>("MESSAGING_LEGACY_SMS_RATES")));
-    const cost = quoteDispatchCost(rates, "TERMII_SMS", "SCHOOLKIT", units, new Date());
-    if (!cost || cost.walletKobo > limit) return false;
-    const { walletKobo } = cost;
-    return !!(await basePrisma.$executeRaw`
-      INSERT INTO messaging_platform_reservations_daily (day, reserved_kobo)
-      VALUES ((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Lagos')::date, ${walletKobo}::bigint)
-      ON CONFLICT (day) DO UPDATE SET reserved_kobo =
-        messaging_platform_reservations_daily.reserved_kobo + EXCLUDED.reserved_kobo
-      WHERE messaging_platform_reservations_daily.reserved_kobo + EXCLUDED.reserved_kobo <= ${limit}::bigint`);
+    if (!units) return false;
+    return withTenant(schoolId, async (db) => {
+      const school = await db.school.findFirst({
+        where: { id: schoolId, status: "ACTIVE", suspendedAt: null, deletionStartedAt: null }, select: { id: true },
+      });
+      if (!school) return false;
+      const limit = await effectiveMessagingSpendLimit("platform", configuredLimit, db);
+      const rates = await reviewedMessagingRates("platform",
+        readVerifiedMessagingRates(this.config.get<string>("MESSAGING_LEGACY_SMS_RATES")), db);
+      const cost = quoteDispatchCost(rates, "TERMII_SMS", "SCHOOLKIT", units, new Date());
+      if (!cost || cost.walletKobo > limit) return false;
+      if (eventType === "REMINDER_CAMPAIGN" && (attribution.approvedUnitKobo == null ||
+          cost.walletKobo > BigInt(attribution.approvedUnitKobo) * BigInt(units))) return false;
+      const { walletKobo } = cost;
+      const reserved = await db.$executeRaw`
+        INSERT INTO messaging_platform_reservations_daily (day, reserved_kobo)
+        VALUES ((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Lagos')::date, ${walletKobo}::bigint)
+        ON CONFLICT (day) DO UPDATE SET reserved_kobo =
+          messaging_platform_reservations_daily.reserved_kobo + EXCLUDED.reserved_kobo
+        WHERE messaging_platform_reservations_daily.reserved_kobo + EXCLUDED.reserved_kobo <= ${limit}::bigint`;
+      if (!reserved) return false;
+      await db.auditLog.create({ data: {
+        schoolId, action: "messaging.legacy-sms.spend-authorized", entityType: eventType, entityId: eventId,
+        metadata: { segments: units, reservedKobo: String(walletKobo), rateVersion: cost.rateVersion },
+      } });
+      return true;
+    });
   }
 
   private async requestSms(to: string, message: string, senderId?: string): Promise<SmsOutcome> {

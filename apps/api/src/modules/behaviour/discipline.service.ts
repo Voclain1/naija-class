@@ -462,7 +462,7 @@ export class DisciplineService {
       });
       if (channel === "SMS" && phone) {
         try {
-          await this.termii.sendSms(phone, sms, sender);
+          await this.termii.sendSms(phone, sms, sender, { schoolId: authCtx.schoolId, eventType: "DISCIPLINE", eventId: actionId });
         } catch (err) {
           this.logger.error(`Discipline notice SMS to ${redactPhone(guardian.phone)} failed: ${String(err)}`);
           channel = "NONE";

@@ -99,7 +99,7 @@ export class AdmissionAlertsService {
       if (sent === null) return; // today's 30 are used; email and push still went
       const last = sent === ADMISSION_LIMITS.smsPerDay ? " SMS alerts have reached today's limit; the rest come by email and in the app." : "";
       try {
-        await this.termii.sendSms(phone, `${school.name}: new admission application ${app.reference} for ${app.classLevel.name}. Open SchoolKit to review.${last}`, sender);
+        await this.termii.sendSms(phone, `${school.name}: new admission application ${app.reference} for ${app.classLevel.name}. Open SchoolKit to review.${last}`, sender, { schoolId, eventType: "ADMISSION", eventId: applicationId });
       } catch (err) {
         this.logger.warn(`Admission alert SMS to ${redactPhone(user.phone)} failed: ${String(err)}`);
       }

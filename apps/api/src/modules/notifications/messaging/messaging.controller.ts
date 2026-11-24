@@ -58,6 +58,8 @@ export class MessagingController {
     const paidPreferences = await this.preferences.getPaidChannels(auth.schoolId);
     const readiness = await this.paid?.readiness(auth.schoolId, wallet.availableKobo);
     return {
+      topUps: this.topUps.availability?.(),
+      legacySms: await this.paid?.legacySmsReadiness(),
       preferences: {
         EMAIL: preferences.emailEnabled, PUSH: preferences.pushEnabled,
         SMS: preferences.smsEnabled, WHATSAPP: paidPreferences.paidWhatsAppEnabled,
@@ -222,6 +224,25 @@ export class MessagingController {
       } });
       return { status: "CANCELLED" as const };
     });
+  }
+
+  @Get("wallet/top-ups/availability")
+  @Permissions("messaging-wallet.top-up")
+  topUpAvailability() {
+    return this.topUps.availability();
+  }
+
+  @Get("wallet/top-ups/quote")
+  @Permissions("messaging-wallet.top-up")
+  topUpQuote(@Query("amountKobo") amount: string) {
+    return this.topUps.quote(amount);
+  }
+
+  @Post("wallet/top-ups/:reference/recover")
+  @Permissions("messaging-wallet.top-up")
+  async recoverTopUp(@CurrentUser() auth: AuthContext, @Param("reference") reference: string) {
+    await this.topUps.recover(auth, reference);
+    return { status: "checked" as const };
   }
 
   @Post("wallet/top-ups")

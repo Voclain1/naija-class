@@ -10,6 +10,7 @@ import { InvoicesModule } from "../invoices/invoices.module.js";
 import { PaymentConfirmationService } from "./payment-confirmation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
 import { PaymentPlansController } from "./payment-plans.controller.js";
+import { PaystackWebhookInboxService } from "./paystack-webhook-inbox.service.js";
 import { PaystackController } from "./paystack.controller.js";
 import { PaymentsController } from "./payments.controller.js";
 import { PaymentsService } from "./payments.service.js";
@@ -27,7 +28,7 @@ import { RefundsService } from "./refunds.service.js";
 @Module({
   imports: [PaystackModule, MessagingWalletModule, PaidMessagingModule, PayrollModule, InvoicesModule, NotificationDispatchModule, EmailModule],
   controllers: [PaymentsController, PaystackController, PaymentPlansController, RefundsController],
-  providers: [PaymentsService, PaymentPlanService, RefundsService, PaymentConfirmationService],
+  providers: [PaymentsService, PaymentPlanService, RefundsService, PaymentConfirmationService, PaystackWebhookInboxService],
   exports: [PaymentsService, PaymentPlanService, RefundsService],
 })
 export class PaymentsModule {}

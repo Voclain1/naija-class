@@ -72,7 +72,10 @@ describe("paymentrequest.success — real database application", () => {
     await basePrisma.$disconnect();
   });
 
-  it("credits once, updates the invoice, consumes the link, and archives remotely", async () => {
+  it("credits once when the link was invalidating, preserves PAID, and archives remotely", async () => {
+    await withTenant(schoolId, (db) => db.paymentLink.update({
+      where: { id: linkId }, data: { status: "ARCHIVE_PENDING", hostedUrl: null },
+    }));
     const metadata = { schoolKitPaymentLinkId: linkId, schoolId, invoiceId };
     const paystack = {
       getPaymentRequest: vi.fn(async () => ({

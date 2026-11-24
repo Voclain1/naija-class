@@ -277,3 +277,52 @@ school-owned billing and display names, approved templates and exact
 components on the sending WABAs, official rates and version dates, and
 Termii's account-specific webhook signing contract. Shared SchoolKit-branded
 tenant delivery is disabled. The existing internal alert is separate.
+
+## Paystack and legacy SMS remediation
+
+Before deploying this branch to an environment that already sends authorized
+Termii SMS, configure the verified legacy rate catalogue and an explicit
+platform daily ceiling. Use `MESSAGING_LEGACY_SMS_MIGRATION_MODE=existing-authorized`
+for already authorized producers during migration, or the regular
+`MESSAGING_LEGACY_SMS_ENABLED=on` release. Both modes require a valid rate and
+use the same atomic budget. Each attempt writes its school, business event,
+segments and reserved cost before the provider request. Validate the legacy
+readiness field before cutover. Leave new paid features and recovery off
+unless separately authorized.
+
+For Paystack, deploy the inbox migration before running the new worker. Its
+public endpoint stays `/api/v1/payments/paystack/webhook`. Configure
+`PAYSTACK_WEBHOOK_MODE` as either `test` or `live`, and provide the matching
+keyring JSON mapping `whk_` IDs to `whsec_` secrets. Keep the existing API
+secret and legacy compatibility while providers send legacy-only events.
+A malformed modern header is rejected even during this transition. During
+rotation install both key IDs and remove the retired entry after the overlap
+is verified. Set `PAYSTACK_WEBHOOK_REQUIRE_MODERN=on` only after confirming
+delivery in that mode. Never mix modes on one deployment. The inbox retains
+an idempotency key after processing and discards processed payloads. Failed
+processing retries with backoff and then leaves a dead letter for investigation.
+Keep the inbox and its keys on rollback. Drain outstanding work or record
+which events must be replayed before returning to synchronous handling.
+
+The top-up fee estimate is an explicit configuration value. The verified
+Paystack processing fee is deducted once from the gross charge before the
+ledger credits spendable funds. Unknown fees and mismatches are held for
+operator review. The independently gated recovery worker can verify old
+outstanding intents when callbacks are missing. Bank settlement statements
+still require a separate reconciliation review.
+
+Use `PAYSTACK_PAYMENT_LINK_VALIDITY_MINUTES` to set the local validity of new
+links. Older links retain their prior validity behavior. Expired links are
+excluded from outbound reminders. Request archival blocks local sharing
+while invalidation is pending. Paystack documents archive and due-date
+parameters, without establishing that all externally distributed URLs
+reject every late payment. A verified payment during invalidation is still
+processed or recorded for operator reconciliation. No automatic refund is
+issued.
+
+Wallet holds older than 24 hours are escalated for investigation. Passing the
+deadline never changes the wallet, sends again, or triggers fallback. Only
+verified provider billing or an audited operator decision can resolve a hold.
+
+[Paystack webhook signing](https://paystack.com/docs/payments/webhooks/) ·
+[Paystack Payment Requests API](https://paystack.com/docs/api/payment-request/)

@@ -31,6 +31,7 @@ class FakePort extends ReminderSendPort {
   pushAnswer: (req: NotificationRequest) => DeliveryChannel = (req) => (req.smsAvailable ? "SMS" : "NONE");
   emailConfigured() { return this.emailReady; }
   smsConfigured() { return this.smsReady; }
+  override async smsPricePerSegmentKobo(): Promise<bigint | null> { return 12n; }
   async enabledChannels() { return { ...this.channels }; }
   async sendEmail(p: { to: string; html: string; idempotencyKey: string }) { this.emails.push(p); return this.emailOutcome(); }
   async sendSms(to: string, text: string) { this.texts.push({ to, text }); return this.smsOutcome(); }
@@ -172,9 +173,10 @@ describe("fee reminder campaigns against PostgreSQL", () => {
   });
 
   it("shows a configured cost ceiling for all potential campaign SMS segments", async () => {
+    const rate = vi.spyOn(port, "smsPricePerSegmentKobo").mockResolvedValue(null);
     const unpriced = await prepare([A.bo.id]);
     expect(unpriced.smsEstimate).toMatchObject({ maximumKobo: null });
-    vi.spyOn(port, "smsPricePerSegmentKobo").mockResolvedValue(12n);
+    rate.mockResolvedValue(12n);
     const priced = await prepare([A.bo.id]);
     expect(priced.smsEstimate?.segments).toBeGreaterThan(0);
     expect(priced.smsEstimate?.maximumKobo).toBe(String(12 * priced.smsEstimate!.segments));
@@ -393,6 +395,16 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     expect(port.texts).toHaveLength(0);
     expect(queued).toHaveBeenCalledTimes(1);
     expect(queued).toHaveBeenCalledWith(expect.objectContaining({ invoiceId: A.boInv.id, guardianId: A.mum.id }));
+  });
+
+  it("requires a fresh approval before an SMS unit price increases", async () => {
+    port.channels.email = false;
+    const campaign = await confirm(await prepare([A.bo.id]));
+    vi.spyOn(port, "smsPricePerSegmentKobo").mockResolvedValue(13n);
+    await run(campaign.id);
+    expect(port.texts).toHaveLength(0);
+    expect(await service.getCampaign(A.bursar.auth, campaign.id, DAY()))
+      .toMatchObject({ status: "HALTED", haltReason: "PRICE_APPROVAL_REQUIRED" });
   });
 
   it("allows configured repeat intervals while keeping channels in the same campaign together", async () => {

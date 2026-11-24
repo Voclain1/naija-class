@@ -711,6 +711,7 @@ export class PaystackService {
     amount: number;
     description: string;
     splitCode: string;
+    dueDate?: string;
     metadata: Record<string, unknown>;
   }): Promise<PaystackPaymentRequestData> {
     if (!this.secretKey) throw new Error("PAYSTACK_SECRET_KEY is not configured on this server");
@@ -727,6 +728,7 @@ export class PaystackService {
         currency: "NGN",
         send_notification: false,
         split_code: params.splitCode,
+        ...(params.dueDate && { due_date: params.dueDate }),
         metadata: params.metadata,
       }),
     });

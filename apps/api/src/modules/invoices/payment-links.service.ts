@@ -1,6 +1,8 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 
-import { Prisma, withTenant } from "@school-kit/db";
+import { ConfigService } from "@nestjs/config";
+
+import { withTenant } from "@school-kit/db";
 import {
   ConflictError,
   NotFoundError,
@@ -24,15 +26,22 @@ const PAYMENT_LINK_CUSTOMER_EMAIL = "parent@schoolkit.ng";
 
 @Injectable()
 export class PaymentLinksService {
-  constructor(private readonly paystack: PaystackService) {}
+  constructor(private readonly paystack: PaystackService, @Optional() private readonly config?: ConfigService) {}
+
+  private expiresAt(): Date | null {
+    const configured = this.config?.get<string>("PAYSTACK_PAYMENT_LINK_VALIDITY_MINUTES");
+    if (!configured || !/^[1-9]\d{0,4}$/.test(configured) || Number(configured) > 43_200) return null;
+    return new Date(Date.now() + Number(configured) * 60_000);
+  }
 
   async get(authCtx: AuthContext, invoiceId: string): Promise<PaymentLinkStateDto> {
     return withTenant(authCtx.schoolId, async (db) => {
       const invoice = await db.invoice.findFirst({
         where: { id: invoiceId, schoolId: authCtx.schoolId },
-        select: { id: true, studentId: true },
+        select: { id: true, studentId: true, status: true, totalDue: true, totalPaid: true },
       });
       if (!invoice) throw new NotFoundError("Invoice not found.");
+      if (invoice.status === "PAID" || invoice.totalPaid >= invoice.totalDue) return { state: "ALREADY_PAID" };
       const studentLabel = await findStudentLabel(db, authCtx.schoolId, invoice.studentId);
 
       const school = await db.school.findUnique({
@@ -57,7 +66,12 @@ export class PaymentLinksService {
         orderBy: { createdAt: "desc" },
       });
       if (active?.status === "CREATING") return { state: "CREATING" };
-      if (active?.status === "LIVE") return toLiveDto(active, school.name, studentLabel);
+      if (active?.status === "LIVE") return active.expiresAt && active.expiresAt <= new Date()
+        ? { state: "EXPIRED" } : toLiveDto(active, school.name, studentLabel);
+      const pending = await db.paymentLink.findFirst({
+        where: { schoolId: authCtx.schoolId, invoiceId, status: "ARCHIVE_PENDING" }, select: { id: true },
+      });
+      if (pending) return { state: "INVALIDATION_PENDING" };
 
       const failed = await db.paymentLink.findFirst({
         where: { schoolId: authCtx.schoolId, invoiceId, status: "CREATE_FAILED" },
@@ -78,6 +92,7 @@ export class PaymentLinksService {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
 
     const prepared = await withTenant(authCtx.schoolId, async (db) => {
+      await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${authCtx.schoolId} AND id = ${invoiceId} FOR UPDATE`;
       const invoice = await db.invoice.findFirst({
         where: { id: invoiceId, schoolId: authCtx.schoolId },
         select: { id: true, studentId: true, totalDue: true, totalPaid: true, status: true },
@@ -117,35 +132,23 @@ export class PaymentLinksService {
         );
       }
 
-      try {
-        const link = await db.paymentLink.create({
-          data: {
-            schoolId: authCtx.schoolId,
-            invoiceId,
-            amount,
-            createdBy: authCtx.userId,
-          },
-        });
-        return { link, splitCode: school.paystackSplitCode, schoolName: school.name, studentLabel };
-      } catch (error) {
-        if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
-          throw error;
-        }
-        const existing = await db.paymentLink.findFirst({
-          where: {
-            schoolId: authCtx.schoolId,
-            invoiceId,
-            status: { in: [...ACTIVE_STATUSES] },
-          },
-          orderBy: { createdAt: "desc" },
-        });
-        if (!existing) throw error;
-        return { existing, schoolName: school.name, studentLabel } as const;
-      }
+      const existing = await db.paymentLink.findFirst({
+        where: {
+          schoolId: authCtx.schoolId, invoiceId, status: { in: ["CREATING", "LIVE", "ARCHIVE_PENDING"] },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      if (existing) return { existing, schoolName: school.name, studentLabel } as const;
+      const link = await db.paymentLink.create({
+        data: { schoolId: authCtx.schoolId, invoiceId, amount, createdBy: authCtx.userId, expiresAt: this.expiresAt() },
+      });
+      return { link, splitCode: school.paystackSplitCode, schoolName: school.name, studentLabel };
     });
 
     const existing = "existing" in prepared ? prepared.existing : undefined;
     if (existing) {
+      if (existing.status === "ARCHIVE_PENDING") return { state: "INVALIDATION_PENDING" };
+      if (existing.status === "LIVE" && existing.expiresAt && existing.expiresAt <= new Date()) return { state: "EXPIRED" };
       return existing.status === "LIVE"
         ? toLiveDto(existing, prepared.schoolName, prepared.studentLabel)
         : { state: "CREATING" };
@@ -178,6 +181,7 @@ export class PaymentLinksService {
         amount: link.amount,
         description: `${prepared.schoolName} invoice payment`,
         splitCode: prepared.splitCode,
+        ...(link.expiresAt && { dueDate: link.expiresAt.toISOString() }),
         metadata,
       });
       if (!isPaystackPaymentRequestCode(created.request_code)) {
@@ -208,7 +212,7 @@ export class PaymentLinksService {
         const [current] = await db.$queryRaw<{ outstanding: number; status: string }[]>`
           SELECT total_due - total_paid AS outstanding, status::text
           FROM invoices WHERE school_id = ${authCtx.schoolId} AND id = ${invoiceId} FOR UPDATE`;
-        if (!current || current.outstanding !== link.amount || ["PAID", "CANCELLED", "REFUNDED"].includes(current.status)) {
+        if (!current || (link.expiresAt && link.expiresAt <= new Date()) || current.outstanding !== link.amount || ["PAID", "CANCELLED", "REFUNDED"].includes(current.status)) {
           throw new ConflictError("PAYMENT_LINK_BALANCE_CHANGED", "The outstanding invoice changed during payment link creation.");
         }
         const hostedUrl = `${PAYSTACK_PAYMENT_REQUEST_BASE}${fetched.request_code}`;
@@ -359,6 +363,7 @@ function domainFailureCode(error: unknown): string {
 function toLiveDto(row: {
   id: string;
   hostedUrl: string | null;
+  expiresAt: Date | null;
   requestCode: string | null;
   amount: number;
   currency: string;
@@ -377,6 +382,7 @@ function toLiveDto(row: {
     studentLabel,
     requestCode: row.requestCode,
     createdAt: row.createdAt.toISOString(),
+    ...(row.expiresAt && { expiresAt: row.expiresAt.toISOString() }),
   };
 }
 

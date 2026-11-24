@@ -251,7 +251,7 @@ export class PaymentsService {
       if (prior) return this.replay(prior, dto);
     }
 
-    let result: PaymentDto;
+    let result: ManualPaymentResultDto;
     try {
       result = await this.recordManualOnce(authCtx, dto, reqCtx);
     } catch (e) {
@@ -261,6 +261,7 @@ export class PaymentsService {
       }
       throw e;
     }
+    if (result.replayed) return result;
     await this.paymentLinkInvalidation?.archivePending(authCtx.schoolId, dto.invoiceId);
     const receipt = await this.tryIssueReceipt(authCtx.schoolId, result.id);
     // The family hears about money received (N1), after the payment stands.
@@ -298,8 +299,15 @@ export class PaymentsService {
     authCtx: AuthContext,
     dto: RecordManualPaymentInput,
     reqCtx: { ipAddress: string | null; userAgent?: string | null },
-  ): Promise<PaymentDto> {
+  ): Promise<ManualPaymentResultDto> {
     return withTenant(authCtx.schoolId, async (db) => {
+      await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${authCtx.schoolId} AND id = ${dto.invoiceId} FOR UPDATE`;
+      if (dto.idempotencyKey) {
+        const prior = await db.payment.findUnique({
+          where: { schoolId_idempotencyKey: { schoolId: authCtx.schoolId, idempotencyKey: dto.idempotencyKey } },
+        });
+        if (prior) return this.replay(prior as PaymentRow, dto);
+      }
       // 1. Load invoice — RLS ensures school_id matches; double-check to be explicit.
       const invoice = await db.invoice.findUnique({
         where: { id: dto.invoiceId },
@@ -389,7 +397,7 @@ export class PaymentsService {
         dto.invoiceId,
       );
 
-      return toDto(payment as PaymentRow);
+      return { ...toDto(payment as PaymentRow), replayed: false };
     });
   }
 
@@ -401,6 +409,7 @@ export class PaymentsService {
   ): Promise<PaystackInitResponseDto> {
     // Phase 1: validate and create PENDING payment row (short DB transaction).
     const { paymentId, customerEmail, subaccountCode } = await withTenant(authCtx.schoolId, async (db) => {
+      await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${authCtx.schoolId} AND id = ${dto.invoiceId} FOR UPDATE`;
       const invoice = await db.invoice.findUnique({
         where: { id: dto.invoiceId },
         select: { id: true, schoolId: true, studentId: true, status: true, totalDue: true, totalPaid: true },
@@ -594,7 +603,7 @@ export class PaymentsService {
       !link.requestCode ||
       !link.requestId ||
       !link.paystackCustomerCode ||
-      !["LIVE", "PAID"].includes(link.status)
+      !["LIVE", "ARCHIVE_PENDING", "ARCHIVED", "PAID"].includes(link.status)
     ) {
       this.logger.error("Payment Request webhook rejected: stored link correlation failed");
       return;
@@ -636,6 +645,9 @@ export class PaymentsService {
       transaction.currency !== link.currency ||
       transaction.split?.split_code !== request.split_code
     ) {
+      if (transaction.status === "success") await withTenant(schoolId, (db) =>
+        recordPaystackException(db, schoolId, invoiceId, reference, "VERIFICATION_MISMATCH",
+          link.amount, transaction.amount, transaction.currency));
       this.logger.error("Payment Request webhook rejected: transaction verification mismatch");
       return;
     }
@@ -645,8 +657,24 @@ export class PaymentsService {
       await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${schoolId} AND id = ${invoiceId} FOR UPDATE`;
       const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
       if (!invoice || invoice.schoolId !== schoolId) return null;
+      const prior = await db.payment.findFirst({
+        where: { schoolId, paystackReference: reference }, select: { invoiceId: true },
+      });
+      if (prior) {
+        if (prior.invoiceId !== invoiceId) await recordPaystackException(db, schoolId, invoiceId, reference, "REFERENCE_ALLOCATED_ELSEWHERE",
+          link.amount, transaction.amount, transaction.currency);
+        return null;
+      }
+      if (invoice.status === "CANCELLED" || invoice.status === "REFUNDED") {
+        await recordPaystackException(db, schoolId, invoiceId, reference, "CLOSED_INVOICE",
+          link.amount, transaction.amount, transaction.currency, transaction.amount);
+        return null;
+      }
+      const surplus = Math.max(0, link.amount - Math.max(0, invoice.totalDue - invoice.totalPaid));
+      if (surplus) await recordPaystackException(db, schoolId, invoiceId, reference, "INVOICE_OVERPAYMENT",
+        link.amount, transaction.amount, transaction.currency, surplus);
       const claim = await db.paymentLink.updateMany({
-        where: { id: linkId, schoolId, invoiceId, status: "LIVE" },
+        where: { id: linkId, schoolId, invoiceId, status: { in: ["LIVE", "ARCHIVE_PENDING", "ARCHIVED"] } },
         data: { status: "PAID", paidAt, hostedUrl: null, failureCode: null },
       });
       if (claim.count === 0) return null;
@@ -1066,15 +1094,21 @@ export class PaymentsService {
     paystackData: Record<string, unknown>,
     paidAt: Date,
   ): Promise<boolean> {
+    await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${payment.schoolId} AND id = ${payment.invoiceId} FOR UPDATE`;
+    const invoice = await db.invoice.findUniqueOrThrow({
+      where: { id: payment.invoiceId }, select: { totalDue: true, totalPaid: true, status: true },
+    });
     if (payment.method !== "PAYSTACK" || !Number.isSafeInteger(paystackData.amount) || paystackData.amount !== payment.amount ||
         (paystackData.currency !== undefined && paystackData.currency !== "NGN")) {
-      this.logger.warn("Paystack confirmation requires reconciliation: pending transaction amount or method mismatch.");
+      await recordPaystackException(db, payment.schoolId, payment.invoiceId, `PSK-${payment.schoolId}-${payment.id}`,
+        "VERIFICATION_MISMATCH", payment.amount, paystackData.amount, paystackData.currency);
       return false;
     }
-
-    // Use the same invoice-first lock as hosted payment requests so two
-    // distinct partial confirmations cannot overwrite each other's aggregate.
-    await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${payment.schoolId} AND id = ${payment.invoiceId} FOR UPDATE`;
+    if (invoice.status === "CANCELLED" || invoice.status === "REFUNDED") {
+      await recordPaystackException(db, payment.schoolId, payment.invoiceId, `PSK-${payment.schoolId}-${payment.id}`,
+        "CLOSED_INVOICE", payment.amount, paystackData.amount, paystackData.currency, payment.amount);
+      return false;
+    }
 
     // 1. Transition payment to SUCCESS and store Paystack payload — an
     // ATOMIC conditional update (updateMany + a status: "PENDING" filter),
@@ -1112,10 +1146,6 @@ export class PaymentsService {
     // 3. The receipt is issued AFTER this transaction commits, by the caller
     //    (issueReceiptFor) — never inside it.
 
-    const invoice = await db.invoice.findUniqueOrThrow({
-      where: { id: payment.invoiceId },
-      select: { totalDue: true },
-    });
     const newStatus = computeInvoiceStatus(newTotalPaid, invoice.totalDue);
 
     // 4. Update invoice.
@@ -1137,6 +1167,8 @@ export class PaymentsService {
     //    payment's doing.
     const excess = Math.min(payment.amount, newTotalPaid - invoice.totalDue);
     if (excess > 0) {
+      await recordPaystackException(db, payment.schoolId, payment.invoiceId, `PSK-${payment.schoolId}-${payment.id}`,
+        "INVOICE_OVERPAYMENT", payment.amount, paystackData.amount, paystackData.currency, excess);
       await db.auditLog.create({
         data: {
           schoolId: payment.schoolId,
@@ -1210,4 +1242,18 @@ export class PaymentsService {
       },
     });
   }
+}
+
+async function recordPaystackException(
+  db: PrismaClient, schoolId: string, invoiceId: string, reference: string, reason: string,
+  expectedKobo: number, observed: unknown, currency: unknown, unappliedKobo?: number,
+): Promise<void> {
+  await db.paystackPaymentException.createMany({
+    skipDuplicates: true,
+    data: {
+      schoolId, invoiceId, reference, reason, expectedKobo, unappliedKobo,
+      observedKobo: typeof observed === "number" && Number.isSafeInteger(observed) ? BigInt(observed) : null,
+      observedCurrency: typeof currency === "string" && /^[A-Z]{3}$/.test(currency) ? currency : null,
+    },
+  });
 }

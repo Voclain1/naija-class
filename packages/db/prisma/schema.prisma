@@ -367,6 +367,7 @@ model School {
   previousAddresses       SchoolPreviousAddress[]
 
   messagingInboundMessages MessagingInboundMessage[]
+  paystackPaymentExceptions PaystackPaymentException[]
   messagingWalletEntries  MessagingWalletEntry[]
   messagingWalletTopUps   MessagingWalletTopUp[]
   metaSignupSession       MessagingMetaSignupSession?
@@ -2715,6 +2716,7 @@ enum PaymentLinkStatus {
 }
 
 model PaymentLink {
+  expiresAt DateTime? @map("expires_at")
   id                   String            @id @default(uuid())
   schoolId             String            @map("school_id")
   invoiceId            String            @map("invoice_id")
@@ -3517,6 +3519,7 @@ model NotificationDelivery {
   dispatchReason    String?   @map("dispatch_reason")
   dispatchRateVersion String? @map("dispatch_rate_version")
   dispatchEstimateKobo Int?   @map("dispatch_estimate_kobo")
+  financialEscalatedAt DateTime? @map("financial_escalated_at")
 
   @@unique([schoolId, eventType, eventId, principalType, principalId])
   @@index([schoolId, sentAt])
@@ -5751,6 +5754,8 @@ model WorkflowProposal {
 // Created by confirming a reviewed workflow proposal; its sends are an outbox
 // holding ids and states only, never contact details, text or amounts.
 model ReminderCampaign {
+  approvedSmsUnitKobo Int? @map("approved_sms_unit_kobo")
+  approvedWhatsAppUnitKobo Int? @map("approved_whatsapp_unit_kobo")
   id                  String                 @id @default(uuid())
   schoolId            String                 @map("school_id")
   proposalId          String                 @unique @map("proposal_id")
@@ -6022,6 +6027,12 @@ model MessagingMetaEvent {
 }
 
 model MessagingWalletTopUp {
+  recoveryAttempts Int @default(0) @map("recovery_attempts")
+  nextRecoveryAt DateTime? @map("next_recovery_at")
+  estimatedFeeKobo Int? @map("estimated_fee_kobo")
+  actualFeeKobo Int? @map("actual_fee_kobo")
+  reconciliationCode String? @map("reconciliation_code")
+  verifiedAt DateTime? @map("verified_at")
   reference       String   @id
   schoolId        String   @map("school_id")
   clientRequestId String   @map("client_request_id")
@@ -6189,4 +6200,38 @@ model MessagingReviewRevision {
 
   @@index([scope, reviewKey, revision(sort: Desc)], map: "messaging_review_latest_idx")
   @@map("messaging_review_revisions")
+}
+
+model PaystackWebhookInbox {
+  mode          String
+  eventKey      String    @map("event_key")
+  eventType     String    @map("event_type")
+  payload       Json?
+  attempts      Int       @default(0)
+  receivedAt    DateTime  @default(now()) @map("received_at")
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at")
+  claimId       String?   @map("claim_id")
+  claimedUntil  DateTime? @map("claimed_until")
+  processedAt   DateTime? @map("processed_at")
+  deadAt        DateTime? @map("dead_at")
+
+  @@id([mode, eventKey])
+  @@map("paystack_webhook_inbox")
+}
+
+model PaystackPaymentException {
+  schoolId         String   @map("school_id")
+  reference        String
+  reason           String
+  invoiceId        String   @map("invoice_id")
+  expectedKobo     Int?     @map("expected_kobo")
+  observedKobo     BigInt?  @map("observed_kobo")
+  observedCurrency String?  @map("observed_currency")
+  unappliedKobo    Int?     @map("unapplied_kobo")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+
+  @@id([schoolId, reference, reason])
+  @@map("paystack_payment_exceptions")
 }

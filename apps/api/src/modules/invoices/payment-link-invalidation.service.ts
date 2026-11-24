@@ -62,15 +62,13 @@ export class PaymentLinkInvalidationService {
       try {
         await this.paystack.archivePaymentRequest(link.requestCode);
         await withTenant(schoolId, async (db) => {
-          await db.paymentLink.update({
-            where: { id: link.id },
-            data: {
-              status: link.status === "PAID" ? "PAID" : "ARCHIVED",
-              archivedAt: new Date(),
-              hostedUrl: null,
-              failureCode: null,
-              lastAttemptAt: new Date(),
-            },
+          const details = { archivedAt: new Date(), hostedUrl: null, failureCode: null, lastAttemptAt: new Date() };
+          const archived = await db.paymentLink.updateMany({
+            where: { id: link.id, schoolId, status: "ARCHIVE_PENDING" },
+            data: { ...details, status: "ARCHIVED" },
+          });
+          if (!archived.count) await db.paymentLink.updateMany({
+            where: { id: link.id, schoolId, status: "PAID" }, data: details,
           });
           await db.auditLog.create({
             data: {

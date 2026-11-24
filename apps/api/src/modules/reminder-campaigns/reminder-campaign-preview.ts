@@ -193,7 +193,7 @@ export async function computeReminderPreview(
   const phoneOf = new Map(consents.map(({ guardianId, phone }) => [guardianId, phone]));
   const liveLinks = whatsappReady ? await db.paymentLink.findMany({
     where: { schoolId, invoiceId: { in: [...debt.values()].flatMap((facts) => facts.onlyInvoiceId ? [facts.onlyInvoiceId] : []) },
-      status: "LIVE", archivedAt: null, currency: "NGN" },
+      status: "LIVE", archivedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }], currency: "NGN" },
     select: { invoiceId: true, amount: true, requestCode: true, hostedUrl: true },
   }) : [];
   const linkOf = new Map(liveLinks.filter(({ requestCode, hostedUrl }) =>

@@ -27,6 +27,7 @@ export type DispatchFacts = {
   sms: string;
   senderId?: string;
   paymentCode?: string;
+  campaign?: { id: string; approvedUnitKobo: number | null };
 };
 
 export async function readPaidEventFacts(job: NotificationDelivery, now: Date): Promise<DispatchFacts | "WAIT_LINK" | null> {
@@ -95,17 +96,19 @@ export async function readPaidEventFacts(job: NotificationDelivery, now: Date): 
       const reminder = job.eventType !== "messaging.invoice-issued";
       const [invoiceId, sendId] = eventId.split(":");
       if (!invoiceId) return null;
+      let campaign: DispatchFacts["campaign"];
       if (reminder) {
         if (!sendId) return null;
         const send = await db.reminderCampaignSend.findFirst({
           where: { id: sendId, schoolId, invoiceId, guardianId: principalId, status: { in: ["SENDING", "ACCEPTED"] },
             campaign: { schoolId, useWhatsApp: true, status: { in: ["RUNNING", "COMPLETED"] } },
           },
-          select: { studentId: true },
+          select: { studentId: true, campaign: { select: { id: true, approvedWhatsAppUnitKobo: true } } },
         });
         if (!send || !studentIds.includes(send.studentId)) return null;
         const invoiceMatch = await db.invoice.count({ where: { id: invoiceId, schoolId, studentId: send.studentId } });
         if (invoiceMatch !== 1) return null;
+        campaign = { id: send.campaign.id, approvedUnitKobo: send.campaign.approvedWhatsAppUnitKobo };
       }
       const invoice = await db.invoice.findFirst({
         where: { schoolId, id: invoiceId, studentId: { in: studentIds },
@@ -116,7 +119,7 @@ export async function readPaidEventFacts(job: NotificationDelivery, now: Date): 
       if (await db.paymentPlan.count({ where: { schoolId, invoiceId } })) return null;
       const outstanding = invoice.totalDue - invoice.totalPaid;
       const link = await db.paymentLink.findFirst({
-        where: { schoolId, invoiceId, status: "LIVE", archivedAt: null, currency: "NGN", amount: outstanding },
+        where: { schoolId, invoiceId, status: "LIVE", archivedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }], currency: "NGN", amount: outstanding },
         select: { requestCode: true, hostedUrl: true },
       });
       if (!isPaystackPaymentRequestCode(link?.requestCode) || link.hostedUrl !== `${PAYSTACK_PAYMENT_REQUEST_BASE}${link.requestCode}`) return reminder ? null : "WAIT_LINK";
@@ -124,7 +127,7 @@ export async function readPaidEventFacts(job: NotificationDelivery, now: Date): 
       fields.balanceLeft = formatKobo(outstanding);
       if (student) fields.studentName = `${student.firstName} ${student.lastName}`;
       if (invoice.dueDate) fields.dueDate = invoice.dueDate.toISOString().slice(0, 10);
-      return { fields, sms: "", paymentCode: link.requestCode };
+      return { fields, sms: "", paymentCode: link.requestCode, campaign };
     }
 
     if (job.eventType !== PAID_PAYMENT_EVENT) return null;

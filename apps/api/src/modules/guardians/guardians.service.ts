@@ -397,6 +397,7 @@ export class GuardiansService {
       );
 
       return {
+        invitationId: invitation.id,
         portalInvitedAt: updated.portalInvitedAt as Date,
         email: existing.email,
         phone: existing.phone,
@@ -412,7 +413,7 @@ export class GuardiansService {
     const acceptUrl = parentSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
 
     await this.deliverInvitation({
-      schoolId: authCtx.schoolId,
+      schoolId: authCtx.schoolId, invitationId: result.invitationId,
       schoolName: result.schoolName,
       smsSender: result.smsSender,
       firstName: result.firstName,
@@ -535,6 +536,7 @@ export class GuardiansService {
       );
 
       return {
+        invitationId: invitation.id,
         portalInvitedAt: updated.portalInvitedAt as Date,
         email: existing.email,
         phone: existing.phone,
@@ -548,7 +550,7 @@ export class GuardiansService {
     const acceptUrl = parentSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
 
     await this.deliverInvitation({
-      schoolId: authCtx.schoolId,
+      schoolId: authCtx.schoolId, invitationId: result.invitationId,
       schoolName: result.schoolName,
       smsSender: result.smsSender,
       firstName: result.firstName,
@@ -757,6 +759,7 @@ export class GuardiansService {
   // invitation or removes acceptUrl from the response.
   private async deliverInvitation(params: {
     schoolId: string;
+    invitationId: string;
     schoolName: string;
     // The school's approved SMS sender name, else undefined for SchoolKit's.
     smsSender: string | undefined;
@@ -812,6 +815,7 @@ export class GuardiansService {
             normalized,
             `${params.schoolName}: You've been invited to the parent portal. Set your password: ${params.acceptUrl}`,
             params.smsSender,
+            { schoolId: params.schoolId, eventType: "GUARDIAN_INVITATION", eventId: params.invitationId },
           );
         } catch (err) {
           this.logger.warn(

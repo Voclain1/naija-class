@@ -97,6 +97,8 @@ interface CampaignRow {
   scheduled_for: Date | null;
   include_invoice_link: boolean;
   use_whatsapp: boolean;
+  approved_sms_unit_kobo: number | null;
+  approved_whatsapp_unit_kobo: number | null;
   created_at: Date;
   halted_at: Date | null;
   completed_at: Date | null;
@@ -131,6 +133,7 @@ interface Job {
   email?: { to: string; firstName: string | null };
   phone: string | null;
   smsAvailable: boolean;
+  approvedSmsUnitKobo: number | null;
   paymentUrl?: string;
   whatsappInvoiceId?: string;
   whatsappOverdue?: boolean;
@@ -245,12 +248,16 @@ export class ReminderCampaignsService {
         if (!fresh.canConfirm) throw new ConflictError(C.blocked, "This review has problems to fix first. Nothing was sent.");
         const cid = randomUUID();
         const { input } = proposal.payload;
+        const smsEstimate = fresh.summary.smsEstimate;
+        const whatsappEstimate = fresh.summary.whatsappEstimate;
+        const smsUnit = approvedUnitPrice(smsEstimate?.maximumKobo, smsEstimate?.segments);
+        const whatsappUnit = approvedUnitPrice(whatsappEstimate?.maximumKobo, whatsappEstimate?.recipients);
         await db.$executeRaw`
           INSERT INTO reminder_campaigns
-            (id, school_id, proposal_id, term_id, requested_by, confirmed_by, template_version, include_payment_plans, overdue_only, scheduled_for, include_invoice_link, use_whatsapp)
+            (id, school_id, proposal_id, term_id, requested_by, confirmed_by, template_version, include_payment_plans, overdue_only, scheduled_for, include_invoice_link, use_whatsapp, approved_sms_unit_kobo, approved_whatsapp_unit_kobo)
           VALUES (${cid}, ${auth.schoolId}, ${proposal.id}, ${input.termId}, ${proposal.requested_by}, ${auth.userId},
                   ${REMINDER_TEMPLATE_VERSION}, ${input.options.includePaymentPlans}, ${input.options.overdueOnly},
-                  ${input.options.scheduledFor ? new Date(input.options.scheduledFor) : null}, ${input.options.includeInvoiceLink ?? false}, ${input.options.useWhatsApp ?? false})`;
+                  ${input.options.scheduledFor ? new Date(input.options.scheduledFor) : null}, ${input.options.includeInvoiceLink ?? false}, ${input.options.useWhatsApp ?? false}, ${smsUnit}::integer, ${whatsappUnit}::integer)`;
         await db.reminderCampaignSend.createMany({
           data: fresh.plan.flatMap((p) => [
             ...p.emailGuardianIds.map((g) => ({ schoolId: auth.schoolId, campaignId: cid, studentId: p.studentId, guardianId: g, channel: "EMAIL" })),
@@ -396,7 +403,13 @@ export class ReminderCampaignsService {
         await this.setHalted(db, campaign, problem === "INACTIVE" ? "CONFIRMER_ACCESS_REVOKED" : problem, null, null);
         return { kind: "HALTED" as const };
       }
-      const whatsapp = campaign.use_whatsapp && await this.port.whatsappRate(schoolId, campaign.overdue_only, now) !== null;
+      const currentWa = campaign.use_whatsapp ? await this.port.whatsappRate(schoolId, campaign.overdue_only, now) : null;
+      const whatsapp = currentWa !== null;
+      if (campaign.use_whatsapp && (!whatsapp || campaign.approved_whatsapp_unit_kobo == null ||
+          currentWa > BigInt(campaign.approved_whatsapp_unit_kobo))) {
+        await this.setHalted(db, campaign, whatsapp ? "PRICE_APPROVAL_REQUIRED" : "WHATSAPP_REVIEW_REQUIRED", null, null);
+        return { kind: "HALTED" as const };
+      }
       if (!can.email && (campaign.use_whatsapp ? !whatsapp : !can.sms && !can.push)) {
         await this.setHalted(db, campaign, "NO_CHANNEL", null, null);
         return { kind: "HALTED" as const };
@@ -483,7 +496,7 @@ export class ReminderCampaignsService {
           schoolName: school.name, smsSender: smsSenderFor(school), studentName: nameOf.get(row.student_id)!,
           balance: facts!.balance, dueDate: facts!.earliestDueDate,
           email: row.channel === "EMAIL" ? { to: email!, firstName: g.firstName } : undefined,
-          phone: g.phone, smsAvailable: can.sms && !!g.phone,
+          phone: g.phone, smsAvailable: can.sms && !!g.phone, approvedSmsUnitKobo: campaign.approved_sms_unit_kobo,
           ...(campaign.use_whatsapp && row.channel === "MOBILE" && row.invoice_id
             ? { whatsappInvoiceId: row.invoice_id, whatsappOverdue: campaign.overdue_only } : {}),
         });
@@ -522,7 +535,16 @@ export class ReminderCampaignsService {
         if (!email || email !== job.email?.to) return "CONTACT_CHANGED";
         if ((await blockedAddresses(db, job.schoolId, [email])).get(email) === "SUPPRESSED") return "EMAIL_SUPPRESSED";
       } else if (!job.whatsappInvoiceId) {
-        job.smsAvailable = can.sms && !!job.phone && link.guardian.phone === job.phone;
+        const current = can.sms ? await this.port.smsPricePerSegmentKobo() : null;
+        if (can.sms && (current === null || campaign.approved_sms_unit_kobo == null || current > BigInt(campaign.approved_sms_unit_kobo))) {
+          if (!can.push) {
+            await this.setHalted(db, campaign, "PRICE_APPROVAL_REQUIRED", null, null);
+            return "PRICE_APPROVAL_REQUIRED";
+          }
+          job.smsAvailable = false;
+        } else {
+          job.smsAvailable = can.sms && !!job.phone && link.guardian.phone === job.phone;
+        }
         if (!can.push && !job.smsAvailable) return "NO_ROUTE";
       }
       const facts = (await loadDebtFacts(db, job.schoolId, campaign.term_id, [job.studentId])).get(job.studentId);
@@ -539,7 +561,7 @@ export class ReminderCampaignsService {
         if (school?.paystackPaymentsEnabled && school.paystackSubaccountCode && school.paystackSplitCode) {
           const link = await db.paymentLink.findFirst({
             where: {
-              schoolId: job.schoolId, invoiceId: facts.onlyInvoiceId, status: "LIVE", archivedAt: null,
+              schoolId: job.schoolId, invoiceId: facts.onlyInvoiceId, status: "LIVE", archivedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
               amount: facts.balance, currency: "NGN",
             },
             select: { requestCode: true, hostedUrl: true },
@@ -550,7 +572,7 @@ export class ReminderCampaignsService {
           }
         }
       }
-      const frequency = this.port.frequencyMinutes(job.schoolId);
+      const frequency = Math.max(1, this.port.frequencyMinutes(job.schoolId));
       if (frequency > 0) {
         const cutoff = new Date(now.getTime() - frequency * 60_000);
         const marked = await db.$executeRaw`
@@ -623,7 +645,8 @@ export class ReminderCampaignsService {
       const to = normalizeNigerianPhone(job.phone);
       if (!to) return { status: "FAILED", reason: "INVALID_PHONE", channelUsed: "SMS", providerRef: null };
       return asResult(
-        await this.port.sendSms(to, buildReminderSms({ studentName: job.studentName, schoolName: job.schoolName, balance: job.balance, dueDate: job.dueDate }), job.smsSender),
+        await this.port.sendSms(to, buildReminderSms({ studentName: job.studentName, schoolName: job.schoolName, balance: job.balance, dueDate: job.dueDate }), job.smsSender,
+          { schoolId: job.schoolId, eventType: "REMINDER_CAMPAIGN", eventId: job.id, approvedUnitKobo: job.approvedSmsUnitKobo }),
         "SMS",
       );
     } catch {
@@ -824,4 +847,10 @@ export class ReminderCampaignsService {
     this.logger.error(`Reminder campaign ${operation} failed: school=${schoolId}; details omitted`);
     throw new InternalError("The reminder campaign operation could not finish. Open it to check its status before retrying.");
   }
+}
+
+function approvedUnitPrice(maximum: string | null | undefined, recipients: number | undefined): number | null {
+  if (maximum == null || !recipients) return null;
+  const price = BigInt(maximum) / BigInt(recipients);
+  return price > 0n && price <= 2_147_483_647n ? Number(price) : null;
 }

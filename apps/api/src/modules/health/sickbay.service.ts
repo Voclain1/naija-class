@@ -365,7 +365,7 @@ export class SickbayService {
       });
       if (channel === "SMS" && phone && ctx.visit.sentHome) {
         try {
-          await this.termii.sendSms(phone, sms, sender);
+          await this.termii.sendSms(phone, sms, sender, { schoolId: authCtx.schoolId, eventType: "SICKBAY", eventId: visitId });
         } catch (err) {
           this.logger.error(`Sickbay SMS to ${redactPhone(guardian.phone)} failed: ${String(err)}`);
           channel = "NONE";

@@ -26,3 +26,13 @@ on legacy SMS. Added append-only platform emergency controls, gated Meta
 number registration and template submission, and encrypted inbound history
 with configured retention. All changes remain on draft PR #563. See the
 rollout runbook for remaining engineering and external checks.
+
+## Remediation continuation
+
+Added Paystack signing-secret rotation and a durable callback inbox, fee-aware
+top-up credit and recovery, serialized invoice mutations, exception records,
+local validity and archive-race handling, and 24-hour wallet escalations.
+Legacy SMS remains subject to the shared spending ceiling and writes a
+tenant-scoped authorization event. The original Muse report was unavailable
+in the workspace, so audit and acceptance claims are limited to supplied
+findings and executed tests.

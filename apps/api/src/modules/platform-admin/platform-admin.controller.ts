@@ -1,3 +1,4 @@
+import { withTenant } from "@school-kit/db";
 import {
   Body,
   Controller,
@@ -264,6 +265,38 @@ export class PlatformAdminController {
   async messagingWallet(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
     const wallet = await getMessagingWallet(schoolId);
     return { availableKobo: String(wallet.availableKobo), reservedKobo: String(wallet.reservedKobo) };
+  }
+
+  @Get("schools/:schoolId/messaging/top-up-reconciliation")
+  @UseGuards(PlatformAdminGuard)
+  messagingTopUpReconciliation(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    return withTenant(schoolId, async (db) => {
+      const rows = await db.messagingWalletTopUp.findMany({
+        where: { schoolId, verifiedAt: null }, take: 100, orderBy: { createdAt: "asc" },
+        select: { reference: true, reconciliationCode: true, amountKobo: true, recoveryAttempts: true, createdAt: true },
+      });
+      return { items: rows.map((row) => ({ ...row, amountKobo: String(row.amountKobo) })) };
+    });
+  }
+
+  @Get("schools/:schoolId/payments/reconciliation")
+  @UseGuards(PlatformAdminGuard)
+  paystackPaymentReconciliation(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    return withTenant(schoolId, async (db) => {
+      const rows = await db.paystackPaymentException.findMany({
+        where: { schoolId }, take: 100, orderBy: { createdAt: "desc" },
+        select: {
+          reference: true, invoiceId: true, reason: true, expectedKobo: true, observedKobo: true,
+          observedCurrency: true, unappliedKobo: true, createdAt: true,
+        },
+      });
+      return { items: rows.map((row) => ({
+        ...row,
+        expectedKobo: row.expectedKobo === null ? null : String(row.expectedKobo),
+        observedKobo: row.observedKobo === null ? null : String(row.observedKobo),
+        unappliedKobo: row.unappliedKobo === null ? null : String(row.unappliedKobo),
+      })) };
+    });
   }
 
   @Get("schools/:schoolId/messaging/reconciliation")

@@ -246,7 +246,7 @@ export class HostelExeatService {
       });
       if (channel === "SMS" && phone) {
         try {
-          await this.termii.sendSms(phone, `${ctx.school.name}: ${message}`, smsSenderFor(ctx.school));
+          await this.termii.sendSms(phone, `${ctx.school.name}: ${message}`, smsSenderFor(ctx.school), { schoolId: authCtx.schoolId, eventType: "HOSTEL_EXEAT", eventId: exeat.id });
         } catch (err) {
           this.logger.error(`Exeat SMS to ${redactPhone(guardian.phone)} failed: ${String(err)}`);
           channel = "NONE";

@@ -5,7 +5,7 @@ import { basePrisma, createPrismaClient, withTenant } from "@school-kit/db";
 import type { Request } from "express";
 import { afterAll, expect, it } from "vitest";
 
-import { getMessagingReconciliation, getMessagingWallet } from "./messaging-wallet";
+import { escalateStaleMessagingHolds, getMessagingReconciliation, getMessagingWallet } from "./messaging-wallet";
 import { TermiiReportsController } from "./termii-reports.controller";
 import { TermiiReportsService, type TermiiReportProfile } from "./termii-reports.service";
 
@@ -99,6 +99,13 @@ it("requires a single configured signature profile, preserves transitions, and i
       { id: randomUUID(), schoolId, kind: "TOP_UP", reference: randomUUID(), amountKobo: 500 },
       { id: randomUUID(), schoolId, kind: "RESERVE", reference: `notification:${billable.id}`, amountKobo: 100 },
     ] });
+  });
+  const tomorrow = new Date(Date.now() + 25 * 60 * 60 * 1000);
+  expect(await escalateStaleMessagingHolds(schoolId, tomorrow)).toBe(1);
+  expect(await escalateStaleMessagingHolds(schoolId, tomorrow)).toBe(0);
+  expect(await getMessagingWallet(schoolId)).toEqual({ availableKobo: 400n, reservedKobo: 100n });
+  expect((await getMessagingReconciliation(schoolId)).items[0]).toMatchObject({
+    escalatedAt: tomorrow.toISOString(), status: "PENDING_EVIDENCE",
   });
   for (const [state, cost] of [["Message Sent", "0.50"], ["Delivered", "0"], ["Delivered", "50.001"]] as const) {
     await controller.report(accountId, payload(state, "sha512", "charge-reference", cost));

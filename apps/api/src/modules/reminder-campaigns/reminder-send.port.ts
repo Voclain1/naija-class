@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
 import { EmailService } from "../../common/email/email.service";
-import { TermiiService } from "../../common/termii/termii.service";
+import { TermiiService, type LegacySmsAttribution } from "../../common/termii/termii.service";
 import { PaidMessagingService } from "../notifications/messaging/paid-messaging.service";
 import { reviewedMessagingRates } from "../notifications/messaging/messaging-review-controls";
 import { quoteDispatchCost } from "../notifications/messaging/messaging-pricing";
@@ -28,7 +28,7 @@ export abstract class ReminderSendPort {
   frequencyMinutes(_schoolId: string): number { return 0; }
   abstract enabledChannels(schoolId: string): Promise<{ email: boolean; sms: boolean; push: boolean }>;
   abstract sendEmail(p: { to: string; subject: string; html: string; schoolName: string; idempotencyKey: string }): Promise<SendOutcome>;
-  abstract sendSms(to: string, text: string, sender: string | undefined): Promise<SendOutcome>;
+  abstract sendSms(to: string, text: string, sender: string | undefined, attribution: LegacySmsAttribution): Promise<SendOutcome>;
   /** Push if the guardian has a live device and push is on, else says SMS or NONE. Sends no SMS itself. */
   abstract pushOrSms(req: NotificationRequest): Promise<DeliveryChannel>;
 }
@@ -87,8 +87,8 @@ export class LiveReminderSendPort extends ReminderSendPort {
     return this.email.sendWithOutcome({ ...p, purpose: "fee-reminder-campaign" });
   }
 
-  sendSms(to: string, text: string, sender: string | undefined): Promise<SendOutcome> {
-    return this.termii.sendSmsWithOutcome(to, text, sender);
+  sendSms(to: string, text: string, sender: string | undefined, attribution: LegacySmsAttribution): Promise<SendOutcome> {
+    return this.termii.sendSmsWithOutcome(to, text, sender, attribution);
   }
 
   pushOrSms(req: NotificationRequest): Promise<DeliveryChannel> {

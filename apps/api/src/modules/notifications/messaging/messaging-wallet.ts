@@ -205,12 +205,12 @@ export function getMessagingReconciliation(schoolId: string): Promise<MessagingR
   return withTenant(schoolId, async (db) => {
     const rows = await db.$queryRaw<{
       delivery_id: string; reserved: number; charged: number | null; released: number | null;
-      resolution: "SETTLE" | "RELEASE" | null; discrepancy: boolean; created_at: Date;
+      resolution: "SETTLE" | "RELEASE" | null; discrepancy: boolean; created_at: Date; escalated_at: Date | null;
     }[]>`
       SELECT d.id AS delivery_id, held.amount_kobo AS reserved,
         CASE r.kind WHEN 'SETTLE' THEN r.amount_kobo WHEN 'RELEASE' THEN 0 END AS charged,
         CASE r.kind WHEN 'SETTLE' THEN r.released_kobo WHEN 'RELEASE' THEN r.amount_kobo END AS released,
-        r.kind AS resolution, held.created_at,
+        r.kind AS resolution, held.created_at, d.financial_escalated_at AS escalated_at,
         EXISTS (SELECT 1 FROM audit_logs a WHERE a.school_id = ${schoolId}
           AND a.entity_id = d.id AND a.action = 'messaging.wallet.discrepancy') AS discrepancy
       FROM messaging_wallet_entries held
@@ -227,8 +227,36 @@ export function getMessagingReconciliation(schoolId: string): Promise<MessagingR
         status: row.resolution === "SETTLE" ? "SETTLED" : row.resolution === "RELEASE" ? "RELEASED"
           : row.discrepancy ? "DISCREPANCY" : "PENDING_EVIDENCE",
         discrepancyRecorded: row.discrepancy, reservedAt: row.created_at.toISOString(),
+        escalatedAt: row.escalated_at?.toISOString() ?? null,
       })),
       truncated: rows.length > 100,
     };
+  });
+}
+
+/** Escalate investigation without changing the wallet, provider outcome or retry state. */
+export function escalateStaleMessagingHolds(schoolId: string, now = new Date()): Promise<number> {
+  return inWallet(schoolId, async (db) => {
+    const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const rows = await db.$queryRaw<{ id: string }[]>`
+      WITH stale AS (
+        SELECT d.id
+        FROM messaging_wallet_entries held
+        JOIN notification_deliveries d ON d.school_id = held.school_id AND held.reference = 'notification:' || d.id
+        WHERE held.school_id = ${schoolId} AND held.kind = 'RESERVE' AND held.created_at <= ${cutoff}
+          AND d.channel = 'SMS' AND d.financial_escalated_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM messaging_wallet_entries r WHERE r.school_id = ${schoolId}
+            AND r.reference = held.reference AND r.kind IN ('SETTLE', 'RELEASE'))
+        ORDER BY held.created_at, d.id LIMIT 100
+      )
+      UPDATE notification_deliveries d SET financial_escalated_at = ${now}
+      FROM stale WHERE d.school_id = ${schoolId} AND d.id = stale.id RETURNING d.id`;
+    if (rows.length) await db.auditLog.createMany({
+      data: rows.map(({ id }) => ({
+        schoolId, action: "messaging.wallet.escalated", entityType: "notification_delivery", entityId: id,
+        metadata: { reason: "PROVIDER_EVIDENCE_NOT_RECONCILED" },
+      })),
+    });
+    return rows.length;
   });
 }

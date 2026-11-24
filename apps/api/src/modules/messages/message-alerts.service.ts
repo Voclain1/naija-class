@@ -117,7 +117,7 @@ export class MessageAlertsService {
       if (!channels.sms || !this.termii.isConfigured || !phone) return "NONE";
       if ((await this.takeSmsPlace(schoolId)) === null) return "NONE";
       try {
-        await this.termii.sendSms(phone, `${school.name} replied to your message. Open the parent portal to read it: ${link}`, smsSenderFor(school));
+        await this.termii.sendSms(phone, `${school.name} replied to your message. Open the parent portal to read it: ${link}`, smsSenderFor(school), { schoolId, eventType: "PARENT_MESSAGE", eventId: messageId });
         return "SMS";
       } catch (err) {
         this.logger.warn(`Message reply SMS to ${redactPhone(guardian.phone)} failed: ${String(err)}`);

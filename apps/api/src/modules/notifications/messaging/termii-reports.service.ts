@@ -6,7 +6,7 @@ import { Cron } from "@nestjs/schedule";
 import { basePrisma, withTenant, type PrismaClient } from "@school-kit/db";
 import { z } from "zod";
 
-import { reconcileNotificationReservation } from "./messaging-wallet";
+import { escalateStaleMessagingHolds, reconcileNotificationReservation } from "./messaging-wallet";
 
 const profileSchema = z.object({
   accountId: z.string().regex(/^[a-z0-9_-]{8,64}$/),
@@ -108,6 +108,25 @@ export class TermiiReportsService {
         await this.reconcile(profile);
       } catch {
         this.logger.error("Termii delivery report reconciliation failed");
+      }
+    }
+  }
+
+  private escalationCursor: string | undefined;
+
+  // This investigation job also runs while the provider callback is disabled.
+  @Cron("*/5 * * * *", { waitForCompletion: true })
+  async escalateHolds(): Promise<void> {
+    const schools = await basePrisma.school.findMany({
+      where: { deletionStartedAt: null, ...(this.escalationCursor && { id: { gt: this.escalationCursor } }) },
+      select: { id: true }, take: 100, orderBy: { id: "asc" },
+    });
+    this.escalationCursor = schools.length === 100 ? schools.at(-1)?.id : undefined;
+    for (const { id } of schools) {
+      try {
+        await escalateStaleMessagingHolds(id);
+      } catch {
+        this.logger.warn("Messaging wallet investigation sweep could not process a school");
       }
     }
   }

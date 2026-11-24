@@ -1026,6 +1026,7 @@ describe("GuardiansService", () => {
         expect.stringMatching(/^234\d{10}$/),
         expect.any(String),
         undefined,
+        expect.objectContaining({ eventType: "GUARDIAN_INVITATION", eventId: expect.any(String) }),
       );
     });
 

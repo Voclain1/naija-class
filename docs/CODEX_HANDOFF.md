@@ -190,6 +190,11 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-24)
 
+Unified messaging remediation continues on draft PR #563. Use the
+[runbook](runbooks/unified-messaging.md) for webhook key rotation, legacy SMS
+migration and payment recovery. Frontend PR #564 remains separate.
+
+
 PR #563 remains a draft on `feat/unified-messaging-infrastructure`. The
 continuation adds shared Termii routing, partial settlement, protected legacy
 SMS egress, atomic paid jobs, emergency controls, gated Meta management, and

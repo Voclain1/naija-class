@@ -73,3 +73,28 @@ The application never attempts another channel after an ambiguous provider
 result. A partly paid invoice is confirmed using the accepted transaction's
 amount in kobo. Its paid delivery jobs commit with the verified payment,
 so a restart after commit leaves the jobs available to the worker.
+
+## Remediation additions for frontend PR #564
+
+The existing checkout request and redirect response keep their original fields.
+The optional checkout `quote` shows charged amount, estimated processing fee,
+and expected net credit as decimal kobo strings. Before initiating checkout,
+read `GET /messaging/wallet/top-ups/availability` and
+`GET /messaging/wallet/top-ups/quote?amountKobo=...`. Owner-only
+`POST /messaging/wallet/top-ups/:reference/recover` checks payment evidence
+when the redirect arrives before a webhook. The actual verified fee controls
+the credited amount. Repeating the redirect or receiving the callback later
+cannot credit the wallet again.
+
+Messaging overview can now include `topUps` and `legacySms` separately from
+the wallet-funded SMS provider. A credential alone does not imply an approved
+release, a funded authorization, or readiness. Paystack mismatch cases and
+unresolved top-ups are available to platform operators through
+`/platform-admin/schools/:id/payments/reconciliation` and
+`/platform-admin/schools/:id/messaging/top-up-reconciliation`.
+Wallet reconciliation adds `escalatedAt`.
+
+Invoice payment-link state can also be `EXPIRED`, `ALREADY_PAID`, or
+`INVALIDATION_PENDING`. These states contain no URL or student details.
+A `LIVE` link can include `expiresAt`. Existing receipt routes continue to
+require the current authenticated staff permission checks.

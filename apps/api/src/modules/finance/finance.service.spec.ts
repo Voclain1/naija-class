@@ -640,6 +640,7 @@ describe("FinanceService (integration)", () => {
         expect.stringMatching(/^234\d{10}$/),
         expect.any(String),
         undefined,
+        expect.objectContaining({ eventType: "FEE_REMINDER", eventId: expect.any(String) }),
       );
     });
 
@@ -686,6 +687,7 @@ describe("FinanceService (integration)", () => {
         expect.any(String),
         expect.stringContaining("850"),
         undefined,
+        expect.objectContaining({ eventType: "FEE_REMINDER", eventId: expect.any(String) }),
       );
       const debtors = await svc.listDebtors(ctx(schoolId, ownerId), termId);
       expect(debtors.map((d) => d.supplementary).sort()).toEqual([false, true]);
