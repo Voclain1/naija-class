@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { DeliveryState, MessagingChannel, MessagingDeliveryPage, MessagingOverview, MessagingPaidPreferences, MessagingWalletPage } from "@school-kit/types";
 import { PageHeader } from "@/components/layout/page-primitives";
 import { Button } from "@/components/ui/button";
+import { WalletFunding } from "@/components/messaging/wallet-funding";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
@@ -76,10 +77,10 @@ export default function CommunicationPage() {
   const allowed = roles.some((role) => role.key === "owner" || role.key === "admin") && hasPermission(permissions, "notification-preferences.read");
   if (status === "loading") return <p role="status" className="p-4 text-sm text-muted-foreground">Loading communication settings…</p>;
   if (!allowed || !school || !user) return <div className="space-y-4"><PageHeader title="Communication centre" subtitle="Manage school notifications." /><p className={panel}>You do not have access to this page.</p></div>;
-  return <Workspace key={school.id + ":" + user.id} canManage={owner && hasPermission(permissions, "messaging-paid.manage")} canCancel={hasPermission(permissions, "notification-preferences.update")} canManageWhatsApp={owner && hasPermission(permissions, "messaging-whatsapp.manage")} />;
+  return <Workspace key={school.id + ":" + user.id} canFund={owner && hasPermission(permissions, "messaging-wallet.top-up")} fundingKey={"sk:messaging-funding:" + school.id + ":" + user.id} canManage={owner && hasPermission(permissions, "messaging-paid.manage")} canCancel={hasPermission(permissions, "notification-preferences.update")} canManageWhatsApp={owner && hasPermission(permissions, "messaging-whatsapp.manage")} />;
 }
 
-function Workspace({ canManage, canCancel, canManageWhatsApp }: { canManage: boolean; canCancel: boolean; canManageWhatsApp: boolean }) {
+function Workspace({ canManage, canCancel, canManageWhatsApp, canFund, fundingKey }: { canManage: boolean; canCancel: boolean; canManageWhatsApp: boolean; canFund: boolean; fundingKey: string }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [overview, setOverview] = useState<MessagingOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -143,6 +144,7 @@ function Workspace({ canManage, canCancel, canManageWhatsApp }: { canManage: boo
             </section>;
           })}
         </div>
+        {overview.legacySms && <section className={panel}><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">Existing SMS service</h2><Status label={overview.legacySms.ready ? "Ready for eligible messages" : "Not ready"} good={overview.legacySms.ready} /></div><p className="mt-2 text-sm text-muted-foreground">Provider: {overview.legacySms.configured ? "configured" : "not configured"} · Release: {overview.legacySms.release} · Spending authorization: {overview.legacySms.financiallyAuthorized ? "configured" : "not configured"}. Each actual send is checked separately.</p></section>}
         <section className={panel}>
           <h2 className="text-lg font-semibold">Automatic paid notifications</h2>
           <p className="mt-1 text-sm text-muted-foreground">Only a school owner can change these preferences. Switching on a preference does not activate a provider or approve a template.</p>
@@ -154,7 +156,7 @@ function Workspace({ canManage, canCancel, canManageWhatsApp }: { canManage: boo
         </section>
         <section className={panel}><h2 className="text-lg font-semibold">Existing communication settings</h2><p className="mt-1 text-sm text-muted-foreground">Manage email, app alerts, legacy SMS and staff who answer parent messages in their existing settings.</p><div className="mt-4 flex flex-wrap gap-2"><Button variant="outline" asChild><Link href="/settings/notifications">Notification settings</Link></Button><Button variant="outline" asChild><Link href="/settings/messaging">Parent inbox roles</Link></Button></div></section>
       </>}
-      {overview && tab === "wallet" && <WalletPanel overview={overview} key={revision} />}
+      {overview && tab === "wallet" && <WalletPanel overview={overview} canFund={canFund} fundingKey={fundingKey} onChecked={() => void refresh()} />}
       {overview && tab === "history" && <HistoryPanel canCancel={canCancel} key={revision} />}
       {overview && tab === "whatsapp" && <WhatsAppPanel overview={overview} canManage={canManageWhatsApp} onChange={() => setRevision((n) => n + 1)} />}
       <p className="flex items-start gap-2 text-xs text-muted-foreground"><ShieldCheck className="h-4 w-4 shrink-0" /> Provider acceptance is not proof of delivery. Unknown outcomes must be reconciled rather than automatically resent.</p>
@@ -162,7 +164,7 @@ function Workspace({ canManage, canCancel, canManageWhatsApp }: { canManage: boo
   );
 }
 
-function WalletPanel({ overview }: { overview: MessagingOverview }) {
+function WalletPanel({ overview, canFund, fundingKey, onChecked }: { overview: MessagingOverview; canFund: boolean; fundingKey: string; onChecked: () => void }) {
   const [page, setPage] = useState<MessagingWalletPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -183,7 +185,7 @@ function WalletPanel({ overview }: { overview: MessagingOverview }) {
       <section className="rounded-2xl bg-[#0E5C43] p-5 text-white"><Wallet className="h-6 w-6" /><p className="mt-4 text-sm text-emerald-100">Available SMS credit</p><p className="mt-1 break-all text-3xl font-semibold tabular-nums">{formatKobo(BigInt(overview.wallet.availableKobo))}</p>{overview.wallet.lowBalance === true && <p className="mt-2 text-sm">Balance is low.</p>}</section>
       <section className={panel}><p className="text-sm text-muted-foreground">Reserved for messages</p><p className="mt-2 break-all text-3xl font-semibold tabular-nums">{formatKobo(BigInt(overview.wallet.reservedKobo))}</p><p className="mt-2 text-sm text-muted-foreground">Held until confirmed provider charges are reconciled.</p></section>
     </div>
-    <section className={panel}><h2 className="font-semibold">Wallet funding</h2><p className="mt-1 text-sm text-muted-foreground">Online funding is not available in this interface yet. School fees and messaging credit are separate. Your school's WhatsApp account is billed by Meta, not this wallet.</p></section>
+    {canFund ? <WalletFunding availability={overview.topUps} storageKey={fundingKey} onChecked={() => { setRevision((n) => n + 1); onChecked(); }} /> : <section className={panel}><h2 className="font-semibold">Wallet funding</h2><p className="mt-1 text-sm text-muted-foreground">Only an authorised school owner can fund this wallet.</p></section>}
     <section className={panel}><h2 className="text-lg font-semibold">Transaction history</h2>
       {error && <div className="mt-3 space-y-2"><Notice>{error}</Notice><Button variant="outline" size="sm" onClick={() => { setError(null); setRevision((n) => n + 1); }}>Reload transactions</Button></div>}
       {!page && !error && <p role="status" className="mt-3 text-sm text-muted-foreground">Loading transactions…</p>}

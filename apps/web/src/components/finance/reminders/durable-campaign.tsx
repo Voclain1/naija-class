@@ -2,8 +2,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import type { ReminderSendOutcome } from "@school-kit/types";
+import type { ReminderCampaignReapprovalQuote, ReminderSendOutcome } from "@school-kit/types";
 import { Button } from "@/components/ui/button";
+import { apiFetch, ApiError } from "@/lib/api-client";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth/use-auth";
 import { hasPermission } from "@/lib/auth/has-permission";
@@ -54,6 +55,7 @@ function Panel({ session, onClose }: { session: DurableCampaignSession; onClose?
     const timer = setTimeout(() => void session.loadCampaign(c.id), c.heldForQuietHours ? 30000 : 3000);
     return () => clearTimeout(timer);
   }, [state.phase, c, session]);
+  const requiresReapproval = c?.haltReason === "PRICE_APPROVAL_REQUIRED" || c?.haltReason === "WHATSAPP_REVIEW_REQUIRED";
   const expired = p ? Date.parse(p.expiresAt) <= now : false;
   const isReview = state.phase === "review";
   const working = ["preparing", "recovering", "confirming", "refreshing", "acting", "status-loading"].includes(state.phase);
@@ -89,7 +91,8 @@ function Panel({ session, onClose }: { session: DurableCampaignSession; onClose?
       {c.counts.UNKNOWN > 0 && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-950">Some sends may have gone out. Unknown sends are never retried automatically; check before contacting those families again.</p>}
       <div className="max-h-72 overflow-auto rounded-lg border"><table className="w-full text-left text-sm"><caption className="sr-only">Per-student send outcomes</caption><thead className="sticky top-0 bg-card"><tr><th className="p-2">Student</th><th className="p-2">Channel and outcome</th></tr></thead><tbody>{c.students.map((s) => <tr className="border-t" key={s.studentId}><td className="min-w-40 p-2">{s.name ?? "Student unavailable"}<p className="text-xs">{s.admissionNumber}</p></td><td className="min-w-48 p-2">{s.sends.map((send) => <p key={`${send.guardianId}:${send.slot}`}>Guardian {[...new Set(s.sends.map((item) => item.guardianId))].indexOf(send.guardianId) + 1} · {send.channelUsed ?? (send.slot === "EMAIL" ? "Email" : "Mobile")} · <strong>{SEND_LABELS[send.outcome]}</strong>{send.reason ? ` · ${reason(send.reason)}` : ""}</p>)}</td></tr>)}</tbody></table></div>
       <p className="text-xs text-muted-foreground">{c.limits}</p>
-      {c.status === "HALTED" && <label className="flex gap-2"><input type="checkbox" checked={resumeChecked} onChange={(e) => setResumeChecked(e.target.checked)} />Resume only sends that were never attempted. Unknown sends will stay unknown.</label>}
+      {c.status === "HALTED" && requiresReapproval && <CampaignReapproval key={c.id + ":" + c.haltedAt} campaignId={c.id} onDone={() => void session.loadCampaign(c.id)} />}
+      {c.status === "HALTED" && !requiresReapproval && <label className="flex gap-2"><input type="checkbox" checked={resumeChecked} onChange={(e) => setResumeChecked(e.target.checked)} />Resume only sends that were never attempted. Unknown sends will stay unknown.</label>}
     </section>}
     <DialogFooter className="flex-wrap gap-2">
       {!working && state.phase !== "unknown" && <Button variant="outline" onClick={close}>Back to reminder selection</Button>}
@@ -99,8 +102,38 @@ function Panel({ session, onClose }: { session: DurableCampaignSession; onClose?
       {isReview && <Button disabled={!checked || !p?.canConfirm || expired} onClick={() => void session.confirm()}>Confirm campaign</Button>}
       {c && state.phase === "live" && <Button variant="outline" onClick={() => void session.loadCampaign(c.id)}>Refresh campaign status</Button>}
       {c?.status === "RUNNING" && state.phase === "live" && <Button variant="outline" onClick={() => void session.act("halt")}>Halt remaining sends</Button>}
-      {c?.status === "HALTED" && state.phase === "live" && <Button disabled={!resumeChecked} onClick={() => void session.act("resume")}>Resume unattempted sends</Button>}
+      {c?.status === "HALTED" && !requiresReapproval && state.phase === "live" && <Button disabled={!resumeChecked} onClick={() => void session.act("resume")}>Resume unattempted sends</Button>}
     </DialogFooter>
     {c && <Link href={`/finance/reminders/runs/${encodeURIComponent(c.id)}`} className="text-xs underline">Permanent link to this campaign (your account only)</Link>}
   </DialogContent></Dialog>;
+}
+
+function CampaignReapproval({ campaignId, onDone }: { campaignId: string; onDone: () => void }) {
+  const [quote, setQuote] = useState<ReminderCampaignReapprovalQuote | null>(null);
+  const [approved, setApproved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const base = "/finance/reminder-campaigns/" + encodeURIComponent(campaignId);
+  const price = (value: string | null) => value === null ? "Unavailable" : formatKobo(BigInt(value));
+  async function load() {
+    if (busy) return;
+    setBusy(true); setError(""); setApproved(false); setQuote(null);
+    try { setQuote(await apiFetch<ReminderCampaignReapprovalQuote>(base + "/reapproval")); }
+    catch (e) { setError(e instanceof ApiError ? e.message : "Could not obtain updated pricing."); }
+    finally { setBusy(false); }
+  }
+  async function apply() {
+    if (busy || !quote || !approved) return;
+    setBusy(true); setError("");
+    try { await apiFetch(base + "/reapprove", { method: "POST", body: { previewHash: quote.previewHash } }); onDone(); }
+    catch (e) { setQuote(null); setApproved(false); setError(e instanceof ApiError ? e.message : "The approval outcome is uncertain. Refresh the saved campaign before taking another action."); }
+    finally { setBusy(false); }
+  }
+  return <div className="space-y-3 rounded-xl border p-4">
+    <h3 className="font-semibold">Review updated delivery costs</h3>
+    <p className="text-muted-foreground">This campaign needs a fresh approval. Previously attempted messages, including unknown sends, are not reopened.</p>
+    <Button variant="outline" disabled={busy} onClick={() => void load()}>Get current quote</Button>
+    {quote && <><dl className="space-y-1"><div>Remaining mobile slots: {quote.remainingMobileSlots}</div><div>SMS per segment: {price(quote.smsUnitKobo)}</div><div>WhatsApp per message: {price(quote.whatsappUnitKobo)}</div><div>Estimated maximum WhatsApp cost: {price(quote.maximumWhatsAppKobo)}</div></dl><p className="text-xs text-muted-foreground">A quote is not a guarantee of live provider template approval. A provider hold may still prevent delivery.</p><label className="flex gap-2"><input type="checkbox" checked={approved} disabled={busy} onChange={(e) => setApproved(e.target.checked)} />I approve these updated costs for unattempted eligible sends.</label><Button disabled={busy || !approved} onClick={() => void apply()}>Approve and continue</Button></>}
+    {error && <p role="alert" className="text-destructive">{error}</p>}
+  </div>;
 }
