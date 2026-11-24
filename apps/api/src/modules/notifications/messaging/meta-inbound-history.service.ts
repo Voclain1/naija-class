@@ -111,15 +111,17 @@ export class MetaInboundHistoryService {
       select: { id: true }, orderBy: { id: "asc" }, take: 100,
     });
     this.cursor = schools.length === 100 ? schools.at(-1)?.id : undefined;
+    for (const { id: schoolId } of schools) await this.purgeSchool(schoolId);
+  }
+
+  async purgeSchool(schoolId: string): Promise<void> {
     const now = new Date();
-    for (const { id: schoolId } of schools) {
-      const days = this.days(schoolId);
-      await withTenant(schoolId, (db) => db.messagingInboundMessage.deleteMany({
-        where: { schoolId, OR: [
-          { expiresAt: { lte: now } },
-          ...(days ? [{ occurredAt: { lte: new Date(now.getTime() - days * 86_400_000) } }] : []),
-        ] },
-      }));
-    }
+    const days = this.days(schoolId);
+    await withTenant(schoolId, (db) => db.messagingInboundMessage.deleteMany({
+      where: { schoolId, OR: [
+        { expiresAt: { lte: now } },
+        ...(days ? [{ occurredAt: { lte: new Date(now.getTime() - days * 86_400_000) } }] : []),
+      ] },
+    }));
   }
 }

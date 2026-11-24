@@ -6,7 +6,7 @@ import { InternalError } from "@school-kit/types";
 
 import { effectiveMessagingSpendLimit } from "../messaging-spend-limits";
 import { messagingEmergencyState } from "../messaging-emergency-control";
-import { reviewedMessagingRates } from "../../modules/notifications/messaging/messaging-review-controls";
+import { messagingProviderActivation, reviewedMessagingRates } from "../../modules/notifications/messaging/messaging-review-controls";
 import { countSmsSegments, quoteDispatchCost } from "../../modules/notifications/messaging/messaging-pricing";
 import { parsePaidPlatformLimit, readVerifiedMessagingRates } from "../../modules/notifications/messaging/paid-messaging-policy";
 
@@ -142,7 +142,8 @@ export class TermiiService {
   private async reservePlatformSpend(message: string): Promise<boolean> {
     if (this.config.get<string>("MESSAGING_LEGACY_SMS_ENABLED") !== "on") return false;
     const configuredLimit = parsePaidPlatformLimit(this.config.get<string>("MESSAGING_PAID_PLATFORM_DAILY_KOBO"));
-    if (!configuredLimit || (await messagingEmergencyState("SMS")).stopped) return false;
+    if (!configuredLimit || (await messagingEmergencyState("SMS")).stopped ||
+        (await messagingProviderActivation("SMS")).enabled === false) return false;
     const limit = await effectiveMessagingSpendLimit("platform", configuredLimit);
     const units = countSmsSegments(message);
     if (!limit || !units) return false;
@@ -160,6 +161,7 @@ export class TermiiService {
 
   private async requestSms(to: string, message: string, senderId?: string): Promise<SmsOutcome> {
     if ((await messagingEmergencyState("SMS")).stopped) return { status: "REJECTED", reason: "SMS_EMERGENCY_STOP" };
+    if ((await messagingProviderActivation("SMS")).enabled === false) return { status: "REJECTED", reason: "SMS_PROVIDER_DISABLED" };
     if (!this.apiKey) return { status: "REJECTED", reason: "SMS_NOT_CONFIGURED" };
     let res: Response;
     try {

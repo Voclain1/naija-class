@@ -1,5 +1,7 @@
+import { z } from "zod";
+
 import { basePrisma, Prisma, type PrismaClient, withTenant } from "@school-kit/db";
-import { NotFoundError, ValidationError, type MessagingRateReviewWrite, type MessagingReviewRevision, type MessagingTemplateReviewWrite } from "@school-kit/types";
+import { NotFoundError, ValidationError, type MessagingRateReviewWrite, type MessagingEmergencyChannel, type MessagingProviderActivationState, type MessagingProviderActivationWrite, type MessagingRateCatalogState, type MessagingReviewRevision, type MessagingTemplateReviewWrite } from "@school-kit/types";
 
 import type { VerifiedMessagingRate } from "./messaging-pricing";
 import { META_TEMPLATE_NAMES, type VerifiedMetaTemplate } from "./meta-provider";
@@ -9,6 +11,35 @@ function latest(db: PrismaClient, scope: string, reviewKey: string) {
   return db.messagingReviewRevision.findFirst({
     where: { scope, reviewKey }, orderBy: { revision: "desc" }, select: { snapshot: true, revision: true },
   });
+}
+
+export async function messagingProviderActivation(channel: MessagingEmergencyChannel): Promise<MessagingProviderActivationState> {
+  const row = await latest(basePrisma, "platform", `provider:${channel}`);
+  return {
+    enabled: row ? row.snapshot === true : null, revision: row?.revision.toString() ?? null,
+  };
+}
+
+export async function writeMessagingProviderActivation(
+  channel: MessagingEmergencyChannel, actorId: string, input: MessagingProviderActivationWrite,
+): Promise<MessagingProviderActivationState> {
+  const result = await basePrisma.messagingReviewRevision.create({
+    data: {
+      scope: "platform", reviewKey: `provider:${channel}`, actorId,
+      evidenceRef: input.evidenceRef, snapshot: input.enabled,
+    },
+    select: { revision: true },
+  });
+  return { enabled: input.enabled, revision: result.revision.toString() };
+}
+
+export async function messagingRateCatalogState(scope: string): Promise<MessagingRateCatalogState> {
+  const row = await latest(basePrisma, scope, "price-catalog");
+  const parsed = z.array(z.record(z.string())).safeParse(row?.snapshot);
+  return {
+    revision: row?.revision.toString() ?? null,
+    rates: parsed.success ? parsed.data as MessagingRateReviewWrite["rates"] : null,
+  };
 }
 
 export async function reviewedMessagingRates(

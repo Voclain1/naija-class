@@ -20,8 +20,9 @@ strings in NGN kobo. A null estimate means the API could not quote the send.
 | GET /messaging/whatsapp/connection/health | Check the current school-owned account and phone without exposing credentials |
 | DELETE /messaging/whatsapp/connection | Implemented. Disconnect the current school and confirm token revocation |
 | GET /platform-admin/messaging/controls | Effective and staged rate versions, release status, and emergency switch revisions |
-| POST /platform-admin/messaging/price-catalog | Replace the effective-dated legacy Termii catalogue with an audited revision |
-| POST /platform-admin/schools/:id/messaging/price-catalog | Replace the school’s complete effective-dated rate catalogue |
+| POST /platform-admin/messaging/provider-activation | Record the operator’s provider activation decision. The release flags and emergency stop still govern dispatch. |
+| GET or POST /platform-admin/messaging/price-catalog | Replace the effective-dated legacy Termii catalogue with an audited revision |
+| GET or POST /platform-admin/schools/:id/messaging/price-catalog | Replace the school’s complete effective-dated rate catalogue |
 | POST /platform-admin/schools/:id/messaging/templates/:name/review | Record a provider-evidenced variant review. Send `review: null` to suspend it. Live dispatch checks Meta again. |
 | POST /platform-admin/messaging/spending-limit | Appends an SMS platform ceiling under the VPS maximum. Use zero to pause or null to restore the VPS ceiling. |
 | GET or POST /platform-admin/schools/:id/messaging/spending-limit | Read or append a school cap under its configured maximum |

@@ -325,6 +325,18 @@ describe("Platform admin access (2026-08-02)", () => {
       .toEqual(result.body);
   });
 
+  it("records provider activation separately from emergency controls", async () => {
+    const url = "/api/v1/platform-admin/messaging/provider-activation";
+    const payload = { channel: "SMS", enabled: true, evidenceRef: "fictional-release" };
+    const post = (token: string) => request(app.getHttpServer()).post(url).set("Authorization", `Bearer ${token}`).send(payload);
+    expect((await post(ownerAToken)).status).toBe(403);
+    const result = await post(platformAdminToken);
+    expect(result.status).toBe(201);
+    expect(result.body).toMatchObject({ enabled: true, revision: expect.any(String) });
+    expect(await basePrisma.messagingReviewRevision.findUnique({ where: { revision: BigInt(result.body.revision) } }))
+      .toMatchObject({ actorId: platformAdminUserId, scope: "platform", reviewKey: "provider:SMS", snapshot: true });
+  });
+
   it("publishes immutable effective prices and can suspend a school template review", async () => {
     const root = `/api/v1/platform-admin/schools/${schoolA}/messaging`;
     const post = (path: string, token: string, body: unknown) => request(app.getHttpServer()).post(`${root}/${path}`)

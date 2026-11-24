@@ -12,7 +12,7 @@ import { NotificationPreferencesService } from "../notification-preferences.serv
 import { isQuietHour } from "../quiet-hours";
 import { GuardianMessagingConsentService } from "./guardian-messaging-consent.service";
 import { countSmsSegments, quoteDispatchCost } from "./messaging-pricing";
-import { reviewedMessagingRates, reviewedMessagingTemplate } from "./messaging-review-controls";
+import { messagingProviderActivation, reviewedMessagingRates, reviewedMessagingTemplate } from "./messaging-review-controls";
 import { getMessagingWallet, reserveMessagingCredit, resolveMessagingCredit } from "./messaging-wallet";
 import { MetaConnectionsService } from "./meta-connections.service";
 import { sendMetaTemplate, type VerifiedMetaTemplate } from "./meta-provider";
@@ -59,6 +59,7 @@ export class PaidMessagingService {
     const whatsapp: MessagingOverview["providers"][number] = { channel: "WHATSAPP", ready: false, blockers: ["CHANNEL_DISABLED"] };
     if (profile?.channel === "SMS") {
       sms.blockers = [];
+      if ((await messagingProviderActivation("SMS")).enabled === false) sms.blockers.push("PROVIDER_DISABLED");
       if ((await messagingEmergencyState("SMS")).stopped) sms.blockers.push("EMERGENCY_STOP");
       const price = quoteDispatchCost(await reviewedMessagingRates(schoolId, profile.rates), "TERMII_SMS", "SCHOOLKIT", 1, now);
       if (!price) sms.blockers.push("PRICE_MISSING");
@@ -75,6 +76,7 @@ export class PaidMessagingService {
     }
     if (profile?.channel === "WHATSAPP") {
       whatsapp.blockers = [];
+      if ((await messagingProviderActivation("WHATSAPP")).enabled === false) whatsapp.blockers.push("PROVIDER_DISABLED");
       if ((await messagingEmergencyState("WHATSAPP")).stopped) whatsapp.blockers.push("EMERGENCY_STOP");
       const template = await this.template(profile, "fee_payment_confirmation", now);
       if (!template) whatsapp.blockers.push("TEMPLATE_NOT_APPROVED");
@@ -297,6 +299,7 @@ export class PaidMessagingService {
         const currentAccount = await this.accounts.activeAccount(schoolId);
         const currentReview = await this.template(profile, templateName, new Date());
         return !(await messagingEmergencyState("WHATSAPP")).stopped &&
+          (await messagingProviderActivation("WHATSAPP")).enabled !== false &&
           currentAccount?.token === account.token && JSON.stringify(template) === JSON.stringify(currentReview) &&
           await currentRecipient();
       });
@@ -327,7 +330,7 @@ export class PaidMessagingService {
     // No fallback and no automatic financial inference. The provider may
     // bill even when the carrier delivers a failed status.
     const outcome = await this.termii.sendWalletReservedSms(schoolId, job.id, recipient.slice(1), preflight.sms, preflight.senderId);
-    if (outcome.status === "REJECTED" && outcome.reason === "SMS_EMERGENCY_STOP") {
+    if (outcome.status === "REJECTED" && ["SMS_EMERGENCY_STOP", "SMS_PROVIDER_DISABLED", "SMS_NOT_CONFIGURED"].includes(outcome.reason)) {
       await resolveMessagingCredit(schoolId, `notification:${job.id}`, "RELEASE");
       return this.finish(job, "SENDING", { state: "BLOCKED", reason: outcome.reason });
     }

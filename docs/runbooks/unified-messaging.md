@@ -264,8 +264,9 @@ disabled. The endpoint currently shows the latest 50 messages per guardian.
   `MESSAGING_META_TEMPLATE_SUBMISSION_ENABLED`. A submitted template
   still needs an independent variant approval and dispatch review.
 - Provider release attestations remain in the private VPS configuration.
-  Price catalogues, template reviews, emergency revisions and spending limits
-  use append-only revisions through the platform API.
+  Price catalogues, template reviews, provider activation, emergency
+  revisions and spending limits use append-only platform API revisions.
+  Provider activation cannot bypass deployment release flags.
   An operator can lower a configured ceiling, set it to zero, or remove the
   override. Operator limits cannot exceed privately configured maxima.
 

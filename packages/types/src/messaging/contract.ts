@@ -4,7 +4,7 @@ export type MessagingBlocker =
   | "CHANNEL_DISABLED" | "PROVIDER_UNAVAILABLE" | "PRICE_MISSING" | "EMERGENCY_STOP"
   | "INSUFFICIENT_CREDIT" | "SPENDING_LIMIT" | "TEMPLATE_NOT_APPROVED"
   | "ONBOARDING_DISABLED" | "SHARED_SENDER_NOT_AUTHORIZED"
-  | "RECIPIENT_UNVERIFIED" | "CONSENT_MISSING" | "OPTED_OUT";
+  | "PROVIDER_DISABLED" | "RECIPIENT_UNVERIFIED" | "CONSENT_MISSING" | "OPTED_OUT";
 
 export type DeliveryState =
   | "QUEUED" | "SENDING" | "ACCEPTED" | "SENT" | "DELIVERED" | "READ"
@@ -58,6 +58,7 @@ export interface MessagingReminderEstimate {
 }
 
 export interface MessagingPlatformControls {
+  providerActivation?: Record<MessagingEmergencyChannel, MessagingProviderActivationState>;
   platformSpendLimit?: MessagingSpendLimitState;
   emergency?: Record<MessagingEmergencyChannel, MessagingEmergencyState>;
   paidSendingEnabled: boolean;
@@ -205,4 +206,19 @@ export interface MessagingTemplateReviewWrite {
 
 export interface MessagingReviewRevision {
   revision: string;
+}
+
+export interface MessagingProviderActivationState {
+  enabled: boolean | null;
+  revision: string | null;
+}
+
+export interface MessagingProviderActivationWrite {
+  enabled: boolean;
+  evidenceRef: string;
+}
+
+export interface MessagingRateCatalogState {
+  revision: string | null;
+  rates: MessagingRateReviewWrite["rates"] | null;
 }

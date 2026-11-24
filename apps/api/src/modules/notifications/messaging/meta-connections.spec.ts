@@ -143,7 +143,7 @@ describe("school-owned Meta connections against PostgreSQL", () => {
       await db.messagingInboundMessage.updateMany({ where: { id: row!.id, schoolId: a.schoolId }, data: { expiresAt: new Date(0) } });
     });
     await expect(history.history(a, guardian.id)).resolves.toEqual({ items: [], truncated: false });
-    await history.purgeExpired();
+    await history.purgeSchool(a.schoolId);
     expect(await withTenant(a.schoolId, (db) => db.messagingInboundMessage.count({ where: { schoolId: a.schoolId } }))).toBe(0);
 
     fetcher.mockRejectedValueOnce(new Error("timeout")).mockRejectedValueOnce(new Error("timeout")).mockRejectedValueOnce(new Error("timeout"));

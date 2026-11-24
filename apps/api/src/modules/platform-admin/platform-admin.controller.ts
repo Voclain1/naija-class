@@ -99,8 +99,8 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AssistantActivationService } from "./assistant-activation.service";
 import { messagingEmergencyState, writeMessagingEmergencyState } from "../../common/messaging-emergency-control";
 import { messagingSpendLimit, writeMessagingSpendLimit } from "../../common/messaging-spend-limits";
-import type { MessagingEmergencyChannel, MessagingEmergencyWrite, MessagingRateReviewWrite, MessagingSpendLimitWrite, MessagingTemplateReviewWrite } from "@school-kit/types";
-import { writeMessagingRateCatalog, writeMessagingTemplateReview } from "../notifications/messaging/messaging-review-controls";
+import type { MessagingEmergencyChannel, MessagingEmergencyWrite, MessagingProviderActivationWrite, MessagingRateReviewWrite, MessagingSpendLimitWrite, MessagingTemplateReviewWrite } from "@school-kit/types";
+import { messagingProviderActivation, messagingRateCatalogState, writeMessagingProviderActivation, writeMessagingRateCatalog, writeMessagingTemplateReview } from "../notifications/messaging/messaging-review-controls";
 import { MetaConnectionsService } from "../notifications/messaging/meta-connections.service";
 import { messagingPlatformControls } from "../notifications/messaging/paid-messaging-policy";
 import { getMessagingReconciliation, getMessagingWallet, reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
@@ -150,10 +150,14 @@ export class PlatformAdminController {
   @Get("messaging/controls")
   @UseGuards(PlatformAdminGuard)
   async messagingControls() {
-    const [SMS, WHATSAPP, platformSpendLimit] = await Promise.all([
+    const [SMS, WHATSAPP, platformSpendLimit, smsActivation, whatsappActivation] = await Promise.all([
       messagingEmergencyState("SMS"), messagingEmergencyState("WHATSAPP"), messagingSpendLimit("platform"),
+      messagingProviderActivation("SMS"), messagingProviderActivation("WHATSAPP"),
     ]);
-    return { ...messagingPlatformControls(process.env), emergency: { SMS, WHATSAPP }, platformSpendLimit };
+    return {
+      ...messagingPlatformControls(process.env), emergency: { SMS, WHATSAPP }, platformSpendLimit,
+      providerActivation: { SMS: smsActivation, WHATSAPP: whatsappActivation },
+    };
   }
 
   @Post("messaging/emergency-controls")
@@ -199,6 +203,30 @@ export class PlatformAdminController {
     }).strict())) body: MessagingSpendLimitWrite,
   ) {
     return writeMessagingSpendLimit(schoolId, admin.userId, body);
+  }
+
+  @Post("messaging/provider-activation")
+  @UseGuards(PlatformAdminGuard)
+  updateMessagingProviderActivation(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(z.object({
+      channel: z.enum(["SMS", "WHATSAPP"]), enabled: z.boolean(), evidenceRef: reviewRef,
+    }).strict())) body: MessagingProviderActivationWrite & { channel: MessagingEmergencyChannel },
+  ) {
+    const { channel, ...activation } = body;
+    return writeMessagingProviderActivation(channel, admin.userId, activation);
+  }
+
+  @Get("messaging/price-catalog")
+  @UseGuards(PlatformAdminGuard)
+  readPlatformMessagingPrices() {
+    return messagingRateCatalogState("platform");
+  }
+
+  @Get("schools/:schoolId/messaging/price-catalog")
+  @UseGuards(PlatformAdminGuard)
+  readSchoolMessagingPrices(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    return messagingRateCatalogState(schoolId);
   }
 
   @Post("messaging/price-catalog")
