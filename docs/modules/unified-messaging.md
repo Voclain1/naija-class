@@ -94,8 +94,9 @@ unresolved top-ups are available to platform operators through
 `/platform-admin/schools/:id/messaging/top-up-reconciliation`.
 Wallet reconciliation adds `escalatedAt`.
 
-Invoice payment-link state can also be `EXPIRED`, `ALREADY_PAID`, or
-`INVALIDATION_PENDING`. These states contain no URL or student details.
+Invoice payment links can include an optional `lifecycle` of `EXPIRED`,
+`ALREADY_PAID`, or `INVALIDATION_PENDING`. The original `state` values remain
+stable for existing clients. These responses contain no URL or student details.
 A `LIVE` link can include `expiresAt`. Existing receipt routes continue to
 require the current authenticated staff permission checks.
 

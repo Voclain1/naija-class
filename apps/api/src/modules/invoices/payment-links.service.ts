@@ -41,7 +41,7 @@ export class PaymentLinksService {
         select: { id: true, studentId: true, status: true, totalDue: true, totalPaid: true },
       });
       if (!invoice) throw new NotFoundError("Invoice not found.");
-      if (invoice.status === "PAID" || invoice.totalPaid >= invoice.totalDue) return { state: "ALREADY_PAID" };
+      if (invoice.status === "PAID" || invoice.totalPaid >= invoice.totalDue) return { state: "NOT_CREATED", lifecycle: "ALREADY_PAID" };
       const studentLabel = await findStudentLabel(db, authCtx.schoolId, invoice.studentId);
 
       const school = await db.school.findUnique({
@@ -67,11 +67,11 @@ export class PaymentLinksService {
       });
       if (active?.status === "CREATING") return { state: "CREATING" };
       if (active?.status === "LIVE") return active.expiresAt && active.expiresAt <= new Date()
-        ? { state: "EXPIRED" } : toLiveDto(active, school.name, studentLabel);
+        ? { state: "RETRYABLE_FAILURE", lifecycle: "EXPIRED", failureCode: "PAYMENT_LINK_EXPIRED" } : toLiveDto(active, school.name, studentLabel);
       const pending = await db.paymentLink.findFirst({
         where: { schoolId: authCtx.schoolId, invoiceId, status: "ARCHIVE_PENDING" }, select: { id: true },
       });
-      if (pending) return { state: "INVALIDATION_PENDING" };
+      if (pending) return { state: "CREATING", lifecycle: "INVALIDATION_PENDING" };
 
       const failed = await db.paymentLink.findFirst({
         where: { schoolId: authCtx.schoolId, invoiceId, status: "CREATE_FAILED" },
@@ -147,8 +147,8 @@ export class PaymentLinksService {
 
     const existing = "existing" in prepared ? prepared.existing : undefined;
     if (existing) {
-      if (existing.status === "ARCHIVE_PENDING") return { state: "INVALIDATION_PENDING" };
-      if (existing.status === "LIVE" && existing.expiresAt && existing.expiresAt <= new Date()) return { state: "EXPIRED" };
+      if (existing.status === "ARCHIVE_PENDING") return { state: "CREATING", lifecycle: "INVALIDATION_PENDING" };
+      if (existing.status === "LIVE" && existing.expiresAt && existing.expiresAt <= new Date()) return { state: "RETRYABLE_FAILURE", lifecycle: "EXPIRED", failureCode: "PAYMENT_LINK_EXPIRED" };
       return existing.status === "LIVE"
         ? toLiveDto(existing, prepared.schoolName, prepared.studentLabel)
         : { state: "CREATING" };
