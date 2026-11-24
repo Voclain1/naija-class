@@ -13,6 +13,8 @@ strings in NGN kobo. A null estimate means the API could not quote the send.
 | PATCH /messaging/preferences | Explicit per-school channel opt-in |
 | POST /messaging/whatsapp/signup | Implemented and gated. Start a school-bound Embedded Signup session |
 | POST /messaging/whatsapp/signup/complete | Implemented and gated. Exchange the code and independently check WABA and phone ownership |
+| GET /messaging/whatsapp/templates | Read the connected WABA’s template IDs, exact languages, categories and provider approval states |
+| GET /messaging/whatsapp/connection/health | Check the current school-owned account and phone without exposing credentials |
 | DELETE /messaging/whatsapp/connection | Implemented. Disconnect the current school and confirm token revocation |
 | GET, PATCH /platform-admin/messaging/controls | Platform price and release controls |
 | POST /messaging/deliveries/:id/cancel | Cancel a queued paid notification without affecting an in-flight send |
@@ -37,7 +39,11 @@ the cost is unknown. Once confirmed, the campaign waits until the scheduled
 time and Lagos quiet hours allow it to proceed. With `options.includeInvoiceLink`,
 an email may include an existing locally live Paystack link. The worker
 requires exactly one outstanding invoice and checks that link's ownership,
-amount, currency and URL at send time. SMS copy is unchanged.
+amount, currency and URL at send time. SMS copy is unchanged. For
+`options.useWhatsApp`, the mobile slot is explicitly WhatsApp. The preview
+includes `whatsappEstimate`, with the number of eligible verified guardians
+and an effective-rate cost ceiling. Use delivery history to cancel a WhatsApp
+job before the provider worker claims it.
 
 Paid sends require explicit school and platform authorization. A WhatsApp
 template requires verified approval for the exact language, account and current

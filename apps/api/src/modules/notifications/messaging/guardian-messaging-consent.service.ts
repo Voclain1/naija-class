@@ -10,7 +10,7 @@ import { normalizeNigerianPhone } from "../../../common/termii/termii.service";
 export const WHATSAPP_CONSENT_VERSION = "whatsapp-transactional-v1";
 export const WHATSAPP_CONSENT_WORDING = "I agree to receive transactional school messages on WhatsApp at this number. I can withdraw in the parent portal or reply STOP.";
 
-function currentPhone(value: string): string | null {
+export function normalizeGuardianWhatsAppPhone(value: string): string | null {
   if (!/^[+0-9 ().-]+$/.test(value)) return null;
   const compact = value.replace(/[ ().-]/g, "");
   if (/^\+[1-9]\d{7,14}$/.test(compact)) return compact.slice(1);
@@ -33,7 +33,7 @@ export class GuardianMessagingConsentService {
         where: { id: auth.guardianId, schoolId: auth.schoolId, portalDisabledAt: null, emailVerified: true },
         select: { phone: true },
       });
-      const phone = guardian && currentPhone(guardian.phone);
+      const phone = guardian && normalizeGuardianWhatsAppPhone(guardian.phone);
       if (!connection?.displayPhone || !phone) throw new ForbiddenError("WhatsApp verification is unavailable for this account.");
       const challenge = randomBytes(16).toString("hex");
       const issuedAt = new Date();
@@ -111,7 +111,7 @@ export class GuardianMessagingConsentService {
         },
         include: { guardian: { select: { phone: true, portalDisabledAt: true } } },
       });
-      if (!pending || pending.guardian.portalDisabledAt || currentPhone(pending.guardian.phone) !== input.from) return;
+      if (!pending || pending.guardian.portalDisabledAt || normalizeGuardianWhatsAppPhone(pending.guardian.phone) !== input.from) return;
       const updated = await db.messagingGuardianConsent.updateMany({
         where: { ...where, guardianId: pending.guardianId, challengeHash: hash(challenge), withdrawnAt: null },
         data: { verifiedAt: input.occurredAt, challengeHash: null, challengeExpiresAt: null },
@@ -131,7 +131,7 @@ export class GuardianMessagingConsentService {
         where: { schoolId, guardianId, consentVersion: WHATSAPP_CONSENT_VERSION, verifiedAt: { not: null }, withdrawnAt: null },
         include: { guardian: { select: { phone: true, portalDisabledAt: true } } },
       });
-      return consent && !consent.guardian.portalDisabledAt && currentPhone(consent.guardian.phone) === consent.phone
+      return consent && !consent.guardian.portalDisabledAt && normalizeGuardianWhatsAppPhone(consent.guardian.phone) === consent.phone
         ? `+${consent.phone}` : null;
     });
   }

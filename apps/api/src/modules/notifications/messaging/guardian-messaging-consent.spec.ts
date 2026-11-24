@@ -72,4 +72,17 @@ it("verifies the number only via an authenticated command and honors STOP and po
   expect(await consents.verifiedRecipient(schoolId, guardian.id)).toBe(`+${phone}`);
   await consents.withdraw(auth);
   expect(await consents.verifiedRecipient(schoolId, guardian.id)).toBeNull();
+
+  await send(await start());
+  expect(await consents.verifiedRecipient(schoolId, guardian.id)).toBe(`+${phone}`);
+  const offboardBody = Buffer.from(JSON.stringify({
+    object: "whatsapp_business_account",
+    entry: [{ id: wabaId, time: Math.floor(Date.now() / 1000), changes: [{
+      field: "account_update", value: { event: "PARTNER_REMOVED", waba_info: { waba_id: wabaId } },
+    }] }],
+  }));
+  const offboardSignature = `sha256=${createHmac("sha256", appSecret).update(offboardBody).digest("hex")}`;
+  await webhook.receive({ rawBody: offboardBody } as Request & { rawBody: Buffer }, offboardSignature);
+  expect(await consents.verifiedRecipient(schoolId, guardian.id)).toBeNull();
+  expect(await basePrisma.messagingMetaAccount.findUnique({ where: { phoneNumberId } })).toBeNull();
 });

@@ -32,14 +32,17 @@ export function readVerifiedMessagingRates(raw: string | undefined): VerifiedMes
 }
 
 const templateSchema = z.object({
-  name: z.literal("fee_payment_confirmation"),
+  name: z.enum(["fee_payment_confirmation", "fee_invoice_issued", "fee_payment_reminder", "fee_payment_overdue", "student_absence_alert", "results_released", "examination_notification", "guardian_invitation"]),
   wabaId: z.string().regex(/^\d{1,32}$/),
   providerTemplateId: z.string().regex(/^\d{1,32}$/),
   approvedBody: z.string().min(1).max(1024),
   language: z.string().regex(/^[a-z]{2,3}(?:_[A-Z]{2})?$/),
   category: z.enum(["UTILITY", "MARKETING", "AUTHENTICATION"]),
   approval: z.literal("APPROVED"),
-  bodyFields: z.array(z.enum(["schoolName", "amountPaid", "balanceLeft", "studentName"])).max(20),
+  bodyFields: z.array(z.enum([
+    "schoolName", "amountPaid", "balanceLeft", "studentName", "absenceDate", "termName", "examTitle", "examStart", "dueDate", "parentPortalUrl",
+  ])).max(20),
+  paymentButtonIndex: z.number().int().nonnegative().max(9).optional(),
   reviewedBy: z.string().trim().min(1).max(120),
   reviewEvidence: z.string().trim().min(1).max(300),
   reviewedAt: date,
@@ -48,9 +51,11 @@ const templateSchema = z.object({
 const profiles = z.array(z.object({
   schoolId: z.string().uuid(),
   schoolDailyKobo: amount,
+  lowBalanceKobo: amount.optional(),
   rates: z.array(rateSchema).max(100),
   channel: z.enum(["WHATSAPP", "SMS"]),
   template: templateSchema.optional(),
+  eventTemplates: z.array(templateSchema).max(10).optional(),
   termiiAccountId: z.string().regex(/^[a-z0-9_-]{8,64}$/).optional(),
 }).strict()).max(100);
 
@@ -67,6 +72,12 @@ export function readPaidMessagingProfiles(enabled: string | undefined, raw: stri
   }
 }
 
-export function reviewedPaymentTemplate(profile: PaidMessagingProfile, at: Date): VerifiedMetaTemplate | undefined {
-  return profile.template && profile.template.reviewedAt <= at ? profile.template : undefined;
+export function reviewedEventTemplate(
+  profile: PaidMessagingProfile,
+  name: VerifiedMetaTemplate["name"],
+  at: Date,
+): VerifiedMetaTemplate | undefined {
+  const templates = [...(profile.template ? [profile.template] : []), ...(profile.eventTemplates ?? [])];
+  const current = templates.filter((template) => template.name === name && template.reviewedAt <= at);
+  return current.length === 1 ? current[0] : undefined;
 }

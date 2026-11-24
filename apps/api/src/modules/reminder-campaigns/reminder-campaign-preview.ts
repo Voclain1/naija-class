@@ -18,6 +18,8 @@ import { normalizeNigerianPhone } from "../../common/termii/termii.service";
 import { fingerprint } from "../../common/workflow/fingerprint";
 import { blockedAddresses } from "../announcements/announcement-email.shared";
 import { buildReminderSms } from "../finance/finance.service";
+import { isPaystackPaymentRequestCode, PAYSTACK_PAYMENT_REQUEST_BASE } from "../../common/paystack/payment-request-code";
+import { normalizeGuardianWhatsAppPhone, WHATSAPP_CONSENT_VERSION } from "../notifications/messaging/guardian-messaging-consent.service";
 import { countSmsSegments } from "../notifications/messaging/messaging-pricing";
 import { isQuietHour } from "../notifications/quiet-hours";
 import type { ReminderSendPort } from "./reminder-send.port";
@@ -36,13 +38,14 @@ export interface PlannedSlots {
   studentId: string;
   emailGuardianIds: string[];
   mobileGuardianId: string | null;
+  mobileInvoiceId?: string;
 }
 
 export interface ReminderPreview {
   students: ReminderCampaignStudentPreview[];
   summary: Pick<
     ReminderCampaignProposalDto,
-    "termId" | "termLabel" | "templateVersion" | "options" | "channels" | "counts" | "smsEstimate" | "batchErrors" | "batchWarnings"
+    "termId" | "termLabel" | "templateVersion" | "options" | "channels" | "counts" | "smsEstimate" | "whatsappEstimate" | "batchErrors" | "batchWarnings"
   >;
   plan: PlannedSlots[];
   previewHash: string;
@@ -131,10 +134,19 @@ export async function computeReminderPreview(
   const termLabel = term ? `${term.academicYear.label} · ${term.name}` : null;
   if (!term) batchErrors.push({ code: "TERM_NOT_FOUND", message: "The chosen term was not found." });
 
-  const school = await db.school.findUniqueOrThrow({ where: { id: schoolId }, select: { name: true, smsSenderId: true, smsSenderStatus: true } });
+  const school = await db.school.findUniqueOrThrow({ where: { id: schoolId }, select: { name: true, smsSenderId: true, smsSenderStatus: true, paystackPaymentsEnabled: true, paystackSplitCode: true } });
   const { state, can } = await attemptableChannels(port, schoolId);
+  const wantsWhatsApp = input.options.useWhatsApp === true;
+  const whatsappRate = wantsWhatsApp ? port.whatsappRate(schoolId, input.options.overdueOnly, now) : null;
+  const whatsappReady = wantsWhatsApp && whatsappRate !== null && school.paystackPaymentsEnabled && !!school.paystackSplitCode &&
+    (await db.messagingSchoolMetaConnection.count({
+      where: { schoolId, disconnectedAt: null, activationPending: false, encryptedToken: { not: null } },
+    })) === 1;
+  if (wantsWhatsApp && !whatsappReady) {
+    batchErrors.push({ code: "WHATSAPP_UNAVAILABLE", message: "A reviewed WhatsApp template, effective rate and connected school are required." });
+  }
   const channels: ReminderChannelState = { ...state, sms: { ...state.sms, sender: smsSenderFor(school) ? "SCHOOL" : "SCHOOLKIT" } };
-  if (!can.email && !can.sms && !can.push) {
+  if (!can.email && (wantsWhatsApp ? !whatsappReady : !can.sms && !can.push)) {
     batchErrors.push({ code: "NO_CHANNEL", message: "Email, SMS and app alerts are all off or not set up. Turn one on in Settings → Notifications." });
   }
   if (!can.email) batchWarnings.push({ code: "EMAIL_UNAVAILABLE", message: "No emails will be sent: email is off or not set up." });
@@ -170,6 +182,23 @@ export async function computeReminderPreview(
   const emails = [...new Set(links.flatMap((l) => (l.guardian.email ? [l.guardian.email.trim().toLowerCase()] : [])))];
   const blocked = can.email ? await blockedAddresses(db, schoolId, emails) : new Map<string, string>();
 
+  const consents = whatsappReady ? await db.messagingGuardianConsent.findMany({
+    where: {
+      schoolId, guardianId: { in: links.map(({ guardian }) => guardian.id) }, consentVersion: WHATSAPP_CONSENT_VERSION,
+      verifiedAt: { not: null }, withdrawnAt: null, guardian: { portalDisabledAt: null },
+    },
+    select: { guardianId: true, phone: true },
+  }) : [];
+  const phoneOf = new Map(consents.map(({ guardianId, phone }) => [guardianId, phone]));
+  const liveLinks = whatsappReady ? await db.paymentLink.findMany({
+    where: { schoolId, invoiceId: { in: [...debt.values()].flatMap((facts) => facts.onlyInvoiceId ? [facts.onlyInvoiceId] : []) },
+      status: "LIVE", archivedAt: null, currency: "NGN" },
+    select: { invoiceId: true, amount: true, requestCode: true, hostedUrl: true },
+  }) : [];
+  const linkOf = new Map(liveLinks.filter(({ requestCode, hostedUrl }) =>
+    isPaystackPaymentRequestCode(requestCode) && hostedUrl === `${PAYSTACK_PAYMENT_REQUEST_BASE}${requestCode}`).map((link) => [link.invoiceId, link]));
+  let whatsappRecipients = 0;
+
   const rows: ReminderCampaignStudentPreview[] = [];
   const plan: PlannedSlots[] = [];
   let segments = 0;
@@ -186,9 +215,13 @@ export async function computeReminderPreview(
           return [g.id];
         })
       : [];
-    const lead = guardians.find((g) => g.phone) ?? guardians[0];
-    const smsOk = can.sms && !!lead?.phone;
-    const mobile: ReminderCampaignStudentPreview["planned"]["mobile"] = !lead
+    const lead = wantsWhatsApp
+      ? guardians.find((g) => !!g.phone && phoneOf.get(g.id)?.startsWith("234") && normalizeGuardianWhatsAppPhone(g.phone) === phoneOf.get(g.id))
+      : guardians.find((g) => g.phone) ?? guardians[0];
+    const invoiceId = facts?.onlyInvoiceId;
+    const whatsapp = whatsappReady && lead && facts && invoiceId && !facts.onPaymentPlan && linkOf.get(invoiceId)?.amount === facts.balance;
+    const smsOk = !wantsWhatsApp && can.sms && !!lead?.phone;
+    const mobile: ReminderCampaignStudentPreview["planned"]["mobile"] = wantsWhatsApp ? (whatsapp ? "WHATSAPP" : "NONE") : !lead
       ? "NONE"
       : can.push && smsOk
         ? "PUSH_OR_SMS"
@@ -219,7 +252,11 @@ export async function computeReminderPreview(
       planned: eligibility === "ELIGIBLE" ? { emailGuardians: emailGuardianIds.length, mobile } : { emailGuardians: 0, mobile: "NONE" },
     });
     if (eligibility === "ELIGIBLE") {
-      plan.push({ studentId: id, emailGuardianIds, mobileGuardianId: mobile === "NONE" ? null : lead!.id });
+      plan.push({
+        studentId: id, emailGuardianIds, mobileGuardianId: mobile === "NONE" ? null : lead!.id,
+        ...(mobile === "WHATSAPP" && invoiceId ? { mobileInvoiceId: invoiceId } : {}),
+      });
+      if (mobile === "WHATSAPP") whatsappRecipients++;
       if (s && facts && smsOk && lead?.phone && normalizeNigerianPhone(lead.phone)) {
         segments += countSmsSegments(buildReminderSms({
           studentName: `${s.firstName} ${s.lastName}`, schoolName: school.name, balance: facts.balance, dueDate: facts.earliestDueDate,
@@ -264,6 +301,10 @@ export async function computeReminderPreview(
   // Quiet hours change nothing that is sent, only when: kept out of the
   // fingerprint so a review at 20:59 can still be confirmed at 21:01.
   const price = port.smsPricePerSegmentKobo();
+  if (wantsWhatsApp) summary.whatsappEstimate = {
+    recipients: whatsappRecipients,
+    maximumKobo: whatsappRate === null ? null : String(whatsappRate * BigInt(whatsappRecipients)) as Kobo,
+  };
   if (price !== null) summary.smsEstimate = { segments, maximumKobo: String(price * BigInt(segments)) as Kobo };
   const previewHash = fingerprint({ v: 1, summary, rows, plan, limits: REMINDER_CAMPAIGN_LIMITS });
   summary.smsEstimate ??= { segments, maximumKobo: segments === 0 ? "0" : null };

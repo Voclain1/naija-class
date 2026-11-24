@@ -794,7 +794,7 @@ export class PaymentsService {
         const applied = await this.applyPaystackSuccess(
           db,
           payment,
-          { reference, status: verifyData.status, amount: verifyData.amount, paid_at: verifyData.paid_at },
+          { reference, status: verifyData.status, amount: verifyData.amount, currency: verifyData.currency, paid_at: verifyData.paid_at },
           paidAt,
         );
         if (applied) {
@@ -1065,7 +1065,8 @@ export class PaymentsService {
     paystackData: Record<string, unknown>,
     paidAt: Date,
   ): Promise<boolean> {
-    if (payment.method !== "PAYSTACK" || !Number.isSafeInteger(paystackData.amount) || paystackData.amount !== payment.amount) {
+    if (payment.method !== "PAYSTACK" || !Number.isSafeInteger(paystackData.amount) || paystackData.amount !== payment.amount ||
+        (paystackData.currency !== undefined && paystackData.currency !== "NGN")) {
       this.logger.warn("Paystack confirmation requires reconciliation: pending transaction amount or method mismatch.");
       return false;
     }

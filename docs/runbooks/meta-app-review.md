@@ -45,8 +45,8 @@ out of recordings and browser logs.
   URIs against the v4 configuration.
 - Verify support for the actual business token and approved Graph version in
   exchange, inspection, phone membership, subscription and revocation.
-  Exercise the required `account_update` event and number registration in
-  rehearsal. Those lifecycle steps require separate engineering coverage.
+  Exercise `account_update` offboarding in rehearsal. Verify number
+  registration and the remaining Meta account events independently.
 - Verify that every template has an exact approved variant on the sending
   WABA, with the actual category, language, ordered placeholders and
   buttons. Treat all unverified mappings as blocked.

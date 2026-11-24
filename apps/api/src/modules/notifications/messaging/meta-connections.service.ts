@@ -7,8 +7,9 @@ import { ConflictError, ForbiddenError, ValidationError } from "@school-kit/type
 
 import type { AuthContext } from "../../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../../common/auth/role-check";
+import { META_TEMPLATE_NAMES } from "./meta-provider";
 import { metaTokenKey, openMetaToken, sealMetaToken } from "./meta-credentials";
-import { manageMetaSubscription, revokeMetaToken, type MetaSignupConfig, verifyMetaSignup } from "./meta-signup-graph";
+import { checkMetaPhone, manageMetaSubscription, readMetaTemplates, revokeMetaToken, type MetaSignupConfig, verifyMetaSignup } from "./meta-signup-graph";
 
 export interface MetaSignupInput {
   code: string;
@@ -151,6 +152,42 @@ export class MetaConnectionsService {
     }
   }
 
+  async health(auth: AuthContext): Promise<{ status: "DISCONNECTED" | "CONNECTED" | "UNHEALTHY"; billing: "SCHOOL_OWNED" | null }> {
+    await assertUserActiveAndHasOneOf(auth, ["owner", "admin"]);
+    const account = await this.activeAccount(auth.schoolId);
+    if (!account) return { status: "DISCONNECTED", billing: null };
+    try {
+      const { graph } = this.settings(false);
+      const valid = await checkMetaPhone(graph, account.wabaId, account.phoneNumberId, account.token);
+      return { status: valid ? "CONNECTED" : "UNHEALTHY", billing: "SCHOOL_OWNED" };
+    } catch {
+      return { status: "UNHEALTHY", billing: "SCHOOL_OWNED" };
+    }
+  }
+
+  async templates(auth: AuthContext) {
+    await assertUserActiveAndHasOneOf(auth, ["owner", "admin"]);
+    const account = await this.activeAccount(auth.schoolId);
+    if (!account) return { connected: false, available: false, templates: [] };
+    try {
+      const { graph } = this.settings(false);
+      const response = await readMetaTemplates(graph, account.wabaId, account.token);
+      const templates = (response.data ?? []).flatMap((item) => {
+        if (!item.id || !validId(item.id) || !item.name || !META_TEMPLATE_NAMES.some((known) => known === item.name) ||
+            !item.language || !/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(item.language) ||
+            !item.category || !["UTILITY", "MARKETING", "AUTHENTICATION"].includes(item.category)) return [];
+        return [{
+          id: item.id, name: item.name, language: item.language, category: item.category,
+          approval: item.status === "APPROVED" || item.status === "PENDING" || item.status === "PAUSED" ||
+            item.status === "REJECTED" ? item.status : "UNKNOWN",
+        }];
+      });
+      return { connected: true, available: true, templates };
+    } catch {
+      return { connected: true, available: false, templates: [] };
+    }
+  }
+
   async disconnect(auth: AuthContext): Promise<{ status: "DISCONNECTED"; revocationPending: boolean }> {
     await assertUserActiveAndHasOneOf(auth, ["owner"]);
     const current = await withTenant(auth.schoolId, async (db) => {
@@ -165,6 +202,10 @@ export class MetaConnectionsService {
       });
       await db.messagingSchoolMetaConnection.updateMany({
         where: { schoolId: auth.schoolId }, data: { disconnectedAt: new Date(), activationPending: false },
+      });
+      await db.notificationDelivery.updateMany({
+        where: { schoolId: auth.schoolId, channel: "WHATSAPP", dispatchState: "QUEUED" },
+        data: { dispatchState: "CANCELLED", dispatchReason: "ACCOUNT_DISCONNECTED" },
       });
       await db.messagingGuardianConsent.updateMany({
         where: { schoolId: auth.schoolId },

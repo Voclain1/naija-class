@@ -16,6 +16,7 @@ import { NotificationPreferencesService } from "../notification-preferences.serv
 import { MessagingTopUpService } from "./messaging-top-up.service";
 import { getMessagingWallet } from "./messaging-wallet";
 import { MetaConnectionsService } from "./meta-connections.service";
+import { PaidMessagingService } from "./paid-messaging.service";
 import { META_TEMPLATE_NAMES } from "./meta-provider";
 
 const PAGE_SIZE = 50;
@@ -39,6 +40,7 @@ export class MessagingController {
     private readonly email: EmailService,
     private readonly topUps: MessagingTopUpService,
     private readonly metaConnections: MetaConnectionsService,
+    private readonly paid?: PaidMessagingService,
   ) {}
 
   @Get("overview")
@@ -51,10 +53,11 @@ export class MessagingController {
         where: { schoolId: auth.schoolId }, select: { disconnectedAt: true, revokedAt: true, activationPending: true },
       })),
     ]);
+    const readiness = await this.paid?.readiness(auth.schoolId, wallet.availableKobo);
     return {
       preferences: {
         EMAIL: preferences.emailEnabled, PUSH: preferences.pushEnabled,
-        SMS: preferences.smsEnabled, WHATSAPP: false,
+        SMS: preferences.smsEnabled, WHATSAPP: readiness ? !readiness.whatsapp.blockers.includes("CHANNEL_DISABLED") : false,
       },
       providers: [
         {
@@ -68,19 +71,31 @@ export class MessagingController {
           channel: "PUSH", ready: preferences.pushEnabled,
           blockers: preferences.pushEnabled ? [] : ["CHANNEL_DISABLED"],
         },
-        { channel: "SMS", ready: false, blockers: ["CHANNEL_DISABLED", "PRICE_MISSING"] },
-        { channel: "WHATSAPP", ready: false, blockers: ["CHANNEL_DISABLED", "ONBOARDING_DISABLED"] },
+        readiness?.sms ?? { channel: "SMS", ready: false, blockers: ["CHANNEL_DISABLED", "PRICE_MISSING"] },
+        readiness?.whatsapp ?? { channel: "WHATSAPP", ready: false, blockers: ["CHANNEL_DISABLED", "ONBOARDING_DISABLED"] },
       ],
       wallet: {
         availableKobo: wallet.availableKobo.toString() as Kobo,
         reservedKobo: wallet.reservedKobo.toString() as Kobo,
-        lowBalance: null,
+        lowBalance: readiness?.lowBalance ?? null,
       },
       templates: META_TEMPLATE_NAMES.map((name) => ({ name, language: null, approval: "UNKNOWN" })),
       whatsapp: connection && !connection.revokedAt
         ? { status: connection.activationPending ? "PENDING" : connection.disconnectedAt ? "DISCONNECTED" : "CONNECTED", billing: "SCHOOL_OWNED" }
         : { status: "DISCONNECTED", billing: null },
     };
+  }
+
+  @Get("whatsapp/connection/health")
+  @Permissions("notification-preferences.read")
+  metaHealth(@CurrentUser() auth: AuthContext) {
+    return this.metaConnections.health(auth);
+  }
+
+  @Get("whatsapp/templates")
+  @Permissions("notification-preferences.read")
+  metaTemplates(@CurrentUser() auth: AuthContext) {
+    return this.metaConnections.templates(auth);
   }
 
   @Post("whatsapp/signup")

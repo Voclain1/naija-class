@@ -96,6 +96,7 @@ interface CampaignRow {
   overdue_only: boolean;
   scheduled_for: Date | null;
   include_invoice_link: boolean;
+  use_whatsapp: boolean;
   created_at: Date;
   halted_at: Date | null;
   completed_at: Date | null;
@@ -105,8 +106,9 @@ interface SendRow {
   id: string;
   student_id: string;
   guardian_id: string;
+  invoice_id: string | null;
   channel: "EMAIL" | "MOBILE";
-  channel_used: "EMAIL" | "PUSH" | "SMS" | null;
+  channel_used: "EMAIL" | "PUSH" | "SMS" | "WHATSAPP" | null;
   status: "PENDING" | "SENDING" | "ACCEPTED" | "SKIPPED" | "FAILED" | "UNKNOWN";
   reason: string | null;
   claim_token: string | null;
@@ -130,6 +132,8 @@ interface Job {
   phone: string | null;
   smsAvailable: boolean;
   paymentUrl?: string;
+  whatsappInvoiceId?: string;
+  whatsappOverdue?: boolean;
 }
 
 export interface RunOptions {
@@ -243,14 +247,14 @@ export class ReminderCampaignsService {
         const { input } = proposal.payload;
         await db.$executeRaw`
           INSERT INTO reminder_campaigns
-            (id, school_id, proposal_id, term_id, requested_by, confirmed_by, template_version, include_payment_plans, overdue_only, scheduled_for, include_invoice_link)
+            (id, school_id, proposal_id, term_id, requested_by, confirmed_by, template_version, include_payment_plans, overdue_only, scheduled_for, include_invoice_link, use_whatsapp)
           VALUES (${cid}, ${auth.schoolId}, ${proposal.id}, ${input.termId}, ${proposal.requested_by}, ${auth.userId},
                   ${REMINDER_TEMPLATE_VERSION}, ${input.options.includePaymentPlans}, ${input.options.overdueOnly},
-                  ${input.options.scheduledFor ? new Date(input.options.scheduledFor) : null}, ${input.options.includeInvoiceLink ?? false})`;
+                  ${input.options.scheduledFor ? new Date(input.options.scheduledFor) : null}, ${input.options.includeInvoiceLink ?? false}, ${input.options.useWhatsApp ?? false})`;
         await db.reminderCampaignSend.createMany({
           data: fresh.plan.flatMap((p) => [
             ...p.emailGuardianIds.map((g) => ({ schoolId: auth.schoolId, campaignId: cid, studentId: p.studentId, guardianId: g, channel: "EMAIL" })),
-            ...(p.mobileGuardianId ? [{ schoolId: auth.schoolId, campaignId: cid, studentId: p.studentId, guardianId: p.mobileGuardianId, channel: "MOBILE" }] : []),
+            ...(p.mobileGuardianId ? [{ schoolId: auth.schoolId, campaignId: cid, studentId: p.studentId, guardianId: p.mobileGuardianId, channel: "MOBILE", invoiceId: p.mobileInvoiceId }] : []),
           ]),
         });
         await db.$executeRaw`
@@ -392,7 +396,8 @@ export class ReminderCampaignsService {
         await this.setHalted(db, campaign, problem === "INACTIVE" ? "CONFIRMER_ACCESS_REVOKED" : problem, null, null);
         return { kind: "HALTED" as const };
       }
-      if (!can.email && !can.sms && !can.push) {
+      const whatsapp = campaign.use_whatsapp && this.port.whatsappRate(schoolId, campaign.overdue_only, now) !== null;
+      if (!can.email && (campaign.use_whatsapp ? !whatsapp : !can.sms && !can.push)) {
         await this.setHalted(db, campaign, "NO_CHANNEL", null, null);
         return { kind: "HALTED" as const };
       }
@@ -460,6 +465,11 @@ export class ReminderCampaignsService {
           if (!can.email) { await skip(row, "CHANNEL_OFF"); continue; }
           if (!email) { await skip(row, "NO_CONTACT"); continue; }
           if (blocked.get(email) === "SUPPRESSED") { await skip(row, "EMAIL_SUPPRESSED"); continue; }
+        } else if (campaign.use_whatsapp) {
+          if (!whatsapp || !row.invoice_id || facts?.onlyInvoiceId !== row.invoice_id || facts.onPaymentPlan) {
+            await skip(row, "WHATSAPP_UNAVAILABLE");
+            continue;
+          }
         } else {
           const smsOk = can.sms && !!g.phone;
           if (!can.push && !smsOk) { await skip(row, can.sms ? "NO_CONTACT" : "CHANNEL_OFF"); continue; }
@@ -474,6 +484,8 @@ export class ReminderCampaignsService {
           balance: facts!.balance, dueDate: facts!.earliestDueDate,
           email: row.channel === "EMAIL" ? { to: email!, firstName: g.firstName } : undefined,
           phone: g.phone, smsAvailable: can.sms && !!g.phone,
+          ...(campaign.use_whatsapp && row.channel === "MOBILE" && row.invoice_id
+            ? { whatsappInvoiceId: row.invoice_id, whatsappOverdue: campaign.overdue_only } : {}),
         });
       }
       await db.$executeRaw`UPDATE reminder_campaigns SET updated_at = ${now} WHERE school_id = ${schoolId} AND id = ${campaignId}`;
@@ -509,13 +521,16 @@ export class ReminderCampaignsService {
         if (!can.email) return "CHANNEL_OFF";
         if (!email || email !== job.email?.to) return "CONTACT_CHANGED";
         if ((await blockedAddresses(db, job.schoolId, [email])).get(email) === "SUPPRESSED") return "EMAIL_SUPPRESSED";
-      } else {
+      } else if (!job.whatsappInvoiceId) {
         job.smsAvailable = can.sms && !!job.phone && link.guardian.phone === job.phone;
         if (!can.push && !job.smsAvailable) return "NO_ROUTE";
       }
       const facts = (await loadDebtFacts(db, job.schoolId, campaign.term_id, [job.studentId])).get(job.studentId);
       const result = debtEligibility(facts, { includePaymentPlans: campaign.include_payment_plans, overdueOnly: campaign.overdue_only });
       if (result !== "ELIGIBLE" || !facts) return result;
+      if (job.whatsappInvoiceId && (facts.onlyInvoiceId !== job.whatsappInvoiceId || facts.onPaymentPlan)) {
+        return "WHATSAPP_INVOICE_CHANGED";
+      }
       if (campaign.include_invoice_link && job.channel === "EMAIL" && facts.onlyInvoiceId) {
         const school = await db.school.findUnique({
           where: { id: job.schoolId },
@@ -565,7 +580,7 @@ export class ReminderCampaignsService {
   }
 
   /** One outbound action. Never throws: an unclassifiable failure is UNKNOWN. */
-  private async send(job: Job): Promise<{ status: "ACCEPTED" | "FAILED" | "UNKNOWN" | "SKIPPED"; reason: string | null; channelUsed: "EMAIL" | "PUSH" | "SMS" | null; providerRef: string | null }> {
+  private async send(job: Job): Promise<{ status: "ACCEPTED" | "FAILED" | "UNKNOWN" | "SKIPPED"; reason: string | null; channelUsed: "EMAIL" | "PUSH" | "SMS" | "WHATSAPP" | null; providerRef: string | null }> {
     const asResult = (o: SendOutcome, channelUsed: "EMAIL" | "SMS") =>
       o.status === "ACCEPTED"
         ? { status: "ACCEPTED" as const, reason: null, channelUsed, providerRef: o.providerRef }
@@ -583,6 +598,15 @@ export class ReminderCampaignsService {
           }),
         });
         return asResult(o, "EMAIL");
+      }
+      if (job.whatsappInvoiceId) {
+        const queued = await this.port.queueWhatsApp({
+          schoolId: job.schoolId, invoiceId: job.whatsappInvoiceId, sendId: job.id,
+          guardianId: job.guardianId, overdue: job.whatsappOverdue === true,
+        });
+        return queued
+          ? { status: "ACCEPTED", reason: "QUEUED_FOR_WHATSAPP", channelUsed: "WHATSAPP", providerRef: null }
+          : { status: "SKIPPED", reason: "WHATSAPP_UNAVAILABLE", channelUsed: null, providerRef: null };
       }
       let channel: "PUSH" | "SMS" | "NONE";
       try {
@@ -737,6 +761,7 @@ export class ReminderCampaignsService {
       options: s.options,
       channels: s.channels,
       smsEstimate: s.smsEstimate,
+      whatsappEstimate: s.whatsappEstimate,
       counts: s.counts,
       batchErrors: s.batchErrors,
       batchWarnings: s.batchWarnings,

@@ -93,7 +93,49 @@ export class MetaWebhookService {
         await db.messagingMetaEvent.createMany({ data, skipDuplicates: true });
       }, { label: "meta-webhook-ingest" });
     }
+    await this.ingestAccountUpdates(payload);
     await this.ingestConsentCommands(payload);
+  }
+
+  private async ingestAccountUpdates(payload: unknown): Promise<void> {
+    const body = record(payload);
+    if (body.object !== "whatsapp_business_account") return;
+    for (const entry of list(body.entry)) {
+      const { id: wabaId, time, changes } = record(entry);
+      if (!providerId(wabaId) || typeof time !== "number" || !Number.isSafeInteger(time) ||
+          time <= 0 || time * 1000 > Date.now() + 300_000) continue;
+      const change = list(changes).map(record).find(({ field, value }) => {
+        const info = record(value);
+        const supplied = record(info.waba_info).waba_id;
+        return field === "account_update" && (supplied === undefined || supplied === wabaId) &&
+          ["ACCOUNT_OFFBOARDED", "PARTNER_APP_UNINSTALLED", "PARTNER_REMOVED"].includes(String(info.event));
+      });
+      if (!change) continue;
+      const accounts = await basePrisma.messagingMetaAccount.findMany({ where: { wabaId }, take: 2 });
+      if (accounts.length !== 1) continue; // refuse an ambiguous shared routing entry
+      const { schoolId, phoneNumberId } = accounts[0]!;
+      await withTenant(schoolId, async (db) => {
+        await db.$queryRaw`SELECT id FROM schools WHERE id = ${schoolId} FOR UPDATE`;
+        // An event older than a newly verified grant cannot offboard that grant.
+        const changed = await db.messagingSchoolMetaConnection.updateMany({
+          where: { schoolId, wabaId, phoneNumberId, connectedAt: { lte: new Date(time * 1000 + 999) }, disconnectedAt: null },
+          data: { disconnectedAt: new Date(), activationPending: false },
+        });
+        if (!changed.count) return;
+        await db.messagingMetaAccount.deleteMany({ where: { schoolId, wabaId, phoneNumberId } });
+        await db.messagingGuardianConsent.updateMany({
+          where: { schoolId },
+          data: { withdrawnAt: new Date(), challengeHash: null, challengeIssuedAt: null, challengeExpiresAt: null },
+        });
+        await db.notificationDelivery.updateMany({
+          where: { schoolId, channel: "WHATSAPP", dispatchState: "QUEUED" },
+          data: { dispatchState: "CANCELLED", dispatchReason: "META_OFFBOARDED" },
+        });
+        await db.auditLog.create({ data: {
+          schoolId, action: "messaging.meta.provider_offboard", entityType: "messaging_meta_connection", entityId: schoolId,
+        } });
+      });
+    }
   }
 
   /** The parser runs only on the exact body authenticated by the controller. */

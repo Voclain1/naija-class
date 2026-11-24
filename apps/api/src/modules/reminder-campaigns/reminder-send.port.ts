@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 
 import { EmailService } from "../../common/email/email.service";
 import { TermiiService } from "../../common/termii/termii.service";
+import { PaidMessagingService } from "../notifications/messaging/paid-messaging.service";
 import { quoteDispatchCost } from "../notifications/messaging/messaging-pricing";
 import { readVerifiedMessagingRates } from "../notifications/messaging/paid-messaging-policy";
 import { NotificationDispatchService, type DeliveryChannel, type NotificationRequest } from "../notifications/notification-dispatch.service";
@@ -15,7 +16,11 @@ export type SendOutcome =
   | { status: "ACCEPTED"; providerRef: string | null }
   | { status: "REJECTED" | "UNKNOWN"; reason: string };
 
+type CampaignWhatsApp = Parameters<PaidMessagingService["queueCampaignReminder"]>[0];
+
 export abstract class ReminderSendPort {
+  whatsappRate(_schoolId: string, _overdue: boolean, _now: Date): bigint | null { return null; }
+  queueWhatsApp(_input: CampaignWhatsApp): Promise<boolean> { return Promise.resolve(false); }
   abstract emailConfigured(): boolean;
   abstract smsConfigured(): boolean;
   smsPricePerSegmentKobo(): bigint | null { return null; }
@@ -35,6 +40,7 @@ export class LiveReminderSendPort extends ReminderSendPort {
     private readonly dispatch: NotificationDispatchService,
     private readonly preferences: NotificationPreferencesService,
     private readonly config: ConfigService,
+    private readonly paid: PaidMessagingService,
   ) {
     super();
   }
@@ -50,6 +56,14 @@ export class LiveReminderSendPort extends ReminderSendPort {
   override smsPricePerSegmentKobo(): bigint | null {
     const rates = readVerifiedMessagingRates(this.config.get<string>("MESSAGING_REMINDER_SMS_RATES"));
     return quoteDispatchCost(rates, "TERMII_SMS", "SCHOOLKIT", 1, new Date())?.estimatedKobo ?? null;
+  }
+
+  override whatsappRate(schoolId: string, overdue: boolean, now: Date): bigint | null {
+    return this.paid.campaignRate(schoolId, overdue, now);
+  }
+
+  override queueWhatsApp(input: CampaignWhatsApp): Promise<boolean> {
+    return this.paid.queueCampaignReminder(input);
   }
 
   override frequencyMinutes(schoolId: string): number {

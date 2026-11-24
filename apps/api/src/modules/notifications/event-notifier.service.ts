@@ -1,9 +1,10 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 
 import { withTenant } from "@school-kit/db";
 
 import { CalendarService } from "../calendar/calendar.service";
 import { computeSchoolDays } from "../reports/school-days";
+import { PaidMessagingService } from "./messaging/paid-messaging.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
 
 // Who hears about what (docs/modules/notifications-v1.md N1).
@@ -50,6 +51,7 @@ export class EventNotifierService {
   constructor(
     private readonly dispatch: NotificationDispatchService,
     private readonly calendar: CalendarService,
+    @Optional() private readonly paid?: PaidMessagingService,
   ) {}
 
   /**
@@ -92,6 +94,7 @@ export class EventNotifierService {
       });
 
       const eventId = `${args.termId}:${args.classArmId}`;
+      if (!pinMode) await this.paid?.queueEvent(args.schoolId, "messaging.results-released", eventId, guardianIds);
       for (const guardianId of guardianIds) {
         await this.dispatch.notifyOfEvent({
           schoolId: args.schoolId,
@@ -318,6 +321,7 @@ export class EventNotifierService {
         return { schoolName: school.name, guardianIds: [...new Set(links.map((l) => l.guardianId))] };
       });
 
+      await this.paid?.queueEvent(args.schoolId, "messaging.absence", args.date, guardianIds, new Date(Date.now() + ABSENCE_GRACE_MS));
       for (const guardianId of guardianIds) {
         await this.dispatch.notifyOfEvent({
           schoolId: args.schoolId,

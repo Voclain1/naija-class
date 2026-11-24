@@ -124,22 +124,29 @@ async function appendResolution(db: PrismaClient, schoolId: string, reference: s
 
 /** Called only by the platform-admin surface after checking the provider's billing evidence. */
 export function reconcileNotificationReservation(input: {
-  schoolId: string; deliveryId: string; operatorId: string; resolution: "SETTLE" | "RELEASE"; evidenceRef: string;
+  schoolId: string; deliveryId: string; operatorId: string; resolution: "SETTLE" | "RELEASE"; evidenceRef: string; providerChargedKobo: bigint;
 }) {
-  const { schoolId, deliveryId, operatorId, resolution, evidenceRef } = input;
+  const { schoolId, deliveryId, operatorId, resolution, evidenceRef, providerChargedKobo } = input;
   return inWallet(schoolId, async (db) => {
     const delivery = await db.notificationDelivery.findFirst({
       where: { schoolId, id: deliveryId, channel: "SMS", dispatchState: { in: ["UNKNOWN", "ACCEPTED"] } },
       select: { id: true },
     });
     if (!delivery) throw new NotFoundError("Reconcilable SMS delivery not found.");
-    const status = await appendResolution(db, schoolId, `notification:${deliveryId}`, resolution);
+    const reference = `notification:${deliveryId}`;
+    const reserve = await db.messagingWalletEntry.findFirst({
+      where: { schoolId, reference, kind: "RESERVE" }, select: { amountKobo: true },
+    });
+    if (!reserve || providerChargedKobo !== (resolution === "SETTLE" ? BigInt(reserve.amountKobo) : 0n)) {
+      throw new ConflictError("MESSAGING_CHARGE_MISMATCH", "Provider billing differs from the expected reservation decision.");
+    }
+    const status = await appendResolution(db, schoolId, reference, resolution);
     if (status === "CONFLICT" || status === "NOT_RESERVED") {
       throw new ConflictError("MESSAGING_RESERVATION_UNAVAILABLE", "The delivery has no reservation available for this decision.");
     }
     if (status === "RESOLVED") await db.auditLog.create({ data: {
       schoolId, userId: operatorId, action: "messaging.wallet.reconcile", entityType: "notification_delivery",
-      entityId: deliveryId, metadata: { resolution, evidenceRef },
+      entityId: deliveryId, metadata: { resolution, evidenceRef, providerChargedKobo: String(providerChargedKobo) },
     } });
     return { status };
   });

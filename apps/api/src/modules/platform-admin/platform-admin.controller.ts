@@ -137,9 +137,10 @@ export class PlatformAdminController {
     @Body(new ZodValidationPipe(z.object({
       resolution: z.enum(["SETTLE", "RELEASE"]),
       evidenceRef: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/),
-    }).strict())) body: { resolution: "SETTLE" | "RELEASE"; evidenceRef: string },
+      providerChargedKobo: z.string().regex(/^(0|[1-9]\d{0,9})$/),
+    }).strict())) body: { resolution: "SETTLE" | "RELEASE"; evidenceRef: string; providerChargedKobo: string },
   ) {
-    return reconcileNotificationReservation({ ...body, schoolId, deliveryId, operatorId: admin.userId });
+    return reconcileNotificationReservation({ ...body, schoolId, deliveryId, operatorId: admin.userId, providerChargedKobo: BigInt(body.providerChargedKobo) });
   }
 
   @Get("schools")

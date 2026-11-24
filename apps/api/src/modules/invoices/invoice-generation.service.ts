@@ -1,3 +1,4 @@
+import { PaidMessagingService } from "../notifications/messaging/paid-messaging.service";
 import { createHash } from "node:crypto";
 import { Injectable, Optional } from "@nestjs/common";
 
@@ -69,6 +70,7 @@ export class InvoiceGenerationService {
     // Phase 9 / CP5.1 — the only writer of student_charges. Defaulted so the
     // many specs that build this service by hand keep working.
     @Optional() private readonly charges: StudentChargeService = new StudentChargeService(),
+    @Optional() private readonly paidNotifications?: PaidMessagingService,
   ) {}
 
   // ─── Generate ──────────────────────────────────────────────────────────────
@@ -78,7 +80,9 @@ export class InvoiceGenerationService {
     dto: GenerateInvoicesInput,
     reqCtx: RequestContext,
   ): Promise<GenerateInvoicesResponseDto> {
-    return withTenant(authCtx.schoolId, (db) => this.generateForArmInTransaction(authCtx, dto, reqCtx, db));
+    const committed = await withTenant(authCtx.schoolId, (db) => this.generateForArmInTransaction(authCtx, dto, reqCtx, db));
+    await this.paidNotifications?.queueInvoices(authCtx.schoolId, committed.invoices.map(({ id }) => id));
+    return committed;
   }
 
   // Internal composition point. Caller owns the tenant transaction and must
@@ -343,7 +347,8 @@ export class InvoiceGenerationService {
     reqCtx: RequestContext,
   ): Promise<BillWaitingChargesResponseDto> {
     await assertUserActiveAndHasOneOf(authCtx, BILLING_ROLES);
-    return withTenant(authCtx.schoolId, async (db) => {
+    const issuedIds: string[] = [];
+    const committed = await withTenant(authCtx.schoolId, async (db) => {
       const term = await this.fetchTerm(db, authCtx.schoolId, dto.termId);
       const { toBill, termInvoices } = await this.waitingCharges(db, authCtx.schoolId, dto.termId);
       const actor = { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress };
@@ -363,6 +368,7 @@ export class InvoiceGenerationService {
           dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
           issuedAt,
         });
+        issuedIds.push(invoice.id);
         created += 1;
         chargesBilled += list.length;
         total += invoice.totalDue;
@@ -370,6 +376,8 @@ export class InvoiceGenerationService {
 
       return { created, chargesBilled, total };
     });
+    await this.paidNotifications?.queueInvoices(authCtx.schoolId, issuedIds);
+    return committed;
   }
 
   /**

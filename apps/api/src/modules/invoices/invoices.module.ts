@@ -5,6 +5,7 @@ import { AiModule } from "../../common/ai/ai.module.js";
 import { Module } from "@nestjs/common";
 import { PaystackModule } from "../../common/paystack/paystack.module.js";
 
+import { PaidMessagingModule } from "../notifications/messaging/paid-messaging.module";
 import { StudentChargeService } from "../finance/student-charge.service.js";
 import { InvoiceGenerationService } from "./invoice-generation.service.js";
 import { InvoicesController } from "./invoices.controller.js";
@@ -12,7 +13,7 @@ import { PaymentLinkInvalidationService } from "./payment-link-invalidation.serv
 import { PaymentLinksService } from "./payment-links.service.js";
 
 @Module({
-  imports: [PaystackModule, FeatureSwitchesModule, AiModule],
+  imports: [PaystackModule, FeatureSwitchesModule, AiModule, PaidMessagingModule],
   controllers: [InvoicesController, BillingRunsController],
   // StudentChargeService is stateless; provided here too so invoices need not
   // import the finance module (which sends reminders and email).

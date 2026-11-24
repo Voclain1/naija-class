@@ -141,7 +141,7 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     await basePrisma.$disconnect();
   });
 
-  const prepare = (ids: string[], opts: { includePaymentPlans?: boolean; overdueOnly?: boolean; scheduledFor?: string; includeInvoiceLink?: boolean } = {}, who = A.bursar.auth, termId = A.termId) =>
+  const prepare = (ids: string[], opts: { includePaymentPlans?: boolean; overdueOnly?: boolean; scheduledFor?: string; includeInvoiceLink?: boolean; useWhatsApp?: boolean } = {}, who = A.bursar.auth, termId = A.termId) =>
     service.prepare(who, { clientRequestId: randomUUID(), termId, studentIds: ids, options: { includePaymentPlans: false, overdueOnly: false, ...opts } }, null);
   const confirm = (p: ReminderCampaignProposalDto, who = A.bursar.auth) => service.confirm(who, p.id, p.previewHash, null);
   const run = (id: string, now = DAY) => service.processCampaign(A.schoolId, id, { now });
@@ -363,6 +363,35 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     expect(port.emails).toHaveLength(1);
     expect(port.emails[0]?.html).not.toContain(url);
     expect(port.emails[0]?.html).toContain("15,000");
+  });
+
+  it("quotes and queues WhatsApp only for the verified guardian and a matching single live invoice", async () => {
+    vi.spyOn(port, "whatsappRate").mockReturnValue(35n);
+    const queued = vi.spyOn(port, "queueWhatsApp").mockResolvedValue(true);
+    await basePrisma.school.update({
+      where: { id: A.schoolId }, data: { paystackPaymentsEnabled: true, paystackSplitCode: "SPL_fictional" },
+    });
+    await withTenant(A.schoolId, async (db) => {
+      await db.messagingSchoolMetaConnection.create({
+        data: { schoolId: A.schoolId, wabaId: "76421", phoneNumberId: "76422", encryptedToken: "fictional" },
+      });
+      await db.messagingGuardianConsent.create({
+        data: { schoolId: A.schoolId, guardianId: A.mum.id, phone: "2348031234567",
+          consentVersion: "whatsapp-transactional-v1", verifiedAt: DAY() },
+      });
+      await db.paymentLink.create({
+        data: { schoolId: A.schoolId, invoiceId: A.boInv.id, amount: 20_000_00, createdBy: A.bursar.auth.userId,
+          status: "LIVE", currency: "NGN", requestCode: "PRQ_fictional", hostedUrl: "https://paystack.com/pay/PRQ_fictional" },
+      });
+    });
+    const prepared = await prepare([A.ada.id, A.bo.id], { useWhatsApp: true });
+    expect(prepared.whatsappEstimate).toEqual({ recipients: 1, maximumKobo: "35" });
+    expect(prepared.students.find((student) => student.studentId === A.ada.id)?.planned.mobile).toBe("NONE");
+    const campaign = await confirm(prepared);
+    await run(campaign.id);
+    expect(port.texts).toHaveLength(0);
+    expect(queued).toHaveBeenCalledTimes(1);
+    expect(queued).toHaveBeenCalledWith(expect.objectContaining({ invoiceId: A.boInv.id, guardianId: A.mum.id }));
   });
 
   it("allows configured repeat intervals while keeping channels in the same campaign together", async () => {

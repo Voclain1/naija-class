@@ -91,16 +91,21 @@ describe("Phase 4 E2E rollup (slice 8)", () => {
   // composition, not re-proving Slice 5's own success/failure branching,
   // which payments.service.spec.ts and portal-payments.controller.spec.ts
   // already cover in depth).
+  const initiatedAmounts = new Map<string, number>();
   const paystackStub = {
-    initializeTransaction: async ({ reference }: { reference: string }) => ({
-      authorization_url: `https://checkout.paystack.com/${reference}`,
-      access_code: `ac_${reference}`,
-      reference,
-    }),
+    initializeTransaction: async ({ reference, amount }: { reference: string; amount: number }) => {
+      initiatedAmounts.set(reference, amount);
+      return {
+        authorization_url: `https://checkout.paystack.com/${reference}`,
+        access_code: `ac_${reference}`,
+        reference,
+      };
+    },
     verifyTransaction: async (reference: string) => ({
       status: "success",
       reference,
-      amount: 0,
+      currency: "NGN",
+      amount: initiatedAmounts.get(reference) ?? 0,
       paid_at: new Date().toISOString(),
     }),
   } as never;

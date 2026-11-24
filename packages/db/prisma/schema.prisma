@@ -3510,6 +3510,7 @@ model NotificationDelivery {
   providerStateAt   DateTime? @map("provider_state_at")
   dispatchState     String?   @map("dispatch_state")
   dispatchClaimedAt DateTime? @map("dispatch_claimed_at")
+  dispatchNotBefore DateTime? @map("dispatch_not_before")
   dispatchReason    String?   @map("dispatch_reason")
   dispatchRateVersion String? @map("dispatch_rate_version")
   dispatchEstimateKobo Int?   @map("dispatch_estimate_kobo")
@@ -5760,6 +5761,7 @@ model ReminderCampaign {
   overdueOnly         Boolean                @map("overdue_only")
   scheduledFor        DateTime?              @map("scheduled_for")
   includeInvoiceLink  Boolean                @default(false) @map("include_invoice_link")
+  useWhatsApp         Boolean                @default(false) @map("use_whatsapp")
   createdAt           DateTime               @default(now()) @map("created_at")
   updatedAt           DateTime               @default(now()) @map("updated_at")
   haltedAt            DateTime?              @map("halted_at")
@@ -5775,6 +5777,7 @@ model ReminderCampaignSend {
   schoolId    String           @map("school_id")
   campaignId  String           @map("campaign_id")
   studentId   String           @map("student_id")
+  invoiceId   String?   @map("invoice_id")
   guardianId  String           @map("guardian_id")
   channel     String
   channelUsed String?          @map("channel_used")

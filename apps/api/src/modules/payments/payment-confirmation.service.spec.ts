@@ -11,7 +11,7 @@ import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage
 import { StorageService } from "../../common/storage/storage.service.js";
 import { AuthService } from "../auth/auth.service.js";
 import { creditVerifiedMessagingTopUp, getMessagingWallet, reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
-import { PAID_PAYMENT_EVENT, PaidPaymentNotificationsService } from "../notifications/messaging/paid-payment-notifications.service";
+import { PAID_PAYMENT_EVENT, PaidMessagingService } from "../notifications/messaging/paid-messaging.service";
 import { buildPaymentConfirmationHtml, PaymentConfirmationService } from "./payment-confirmation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
 import { PaymentsService } from "./payments.service.js";
@@ -180,6 +180,7 @@ describe("online payment confirmation email", () => {
     const sendSmsWithOutcome = vi.fn().mockResolvedValue({ status: "UNKNOWN", reason: "PROVIDER_NO_ANSWER" });
     const config = {
       MESSAGING_PAID_ENABLED: "on", MESSAGING_PAID_PLATFORM_DAILY_KOBO: "100000",
+      MESSAGING_TERMII_PAID_ACCOUNT_ID: "fictional-account",
       MESSAGING_PAID_PAYMENT_PROFILES: JSON.stringify([{
         schoolId, channel: "SMS", schoolDailyKobo: "10000", termiiAccountId: "fictional-account",
         rates: [{
@@ -192,7 +193,7 @@ describe("online payment confirmation email", () => {
     const consent = { verifiedRecipient: async () => "+2348012345678" };
     const preferences = { getEnabledChannels: async () => ({ sms: true }) };
     const termii = { isConfigured: true, sendSmsWithOutcome };
-    const worker = new PaidPaymentNotificationsService(
+    const worker = new PaidMessagingService(
       new ConfigService(config), consent as never, {} as never, preferences as never, termii as never,
     );
     await worker.queue(schoolId, paymentId);
@@ -220,7 +221,12 @@ describe("online payment confirmation email", () => {
     expect(sendSmsWithOutcome).toHaveBeenCalledTimes(1);
     expect(await getMessagingWallet(schoolId)).toEqual(held);
     await expect(reconcileNotificationReservation({
-      schoolId, deliveryId: delivery!.id, operatorId: randomUUID(), resolution: "RELEASE", evidenceRef: "fictional-ledger-report",
+      schoolId, deliveryId: delivery!.id, operatorId: randomUUID(), resolution: "SETTLE", evidenceRef: "fictional-ledger-report",
+      providerChargedKobo: held.reservedKobo + 1n,
+    })).rejects.toMatchObject({ code: "MESSAGING_CHARGE_MISMATCH" });
+    expect(await getMessagingWallet(schoolId)).toEqual(held);
+    await expect(reconcileNotificationReservation({
+      schoolId, deliveryId: delivery!.id, operatorId: randomUUID(), resolution: "RELEASE", evidenceRef: "fictional-ledger-report", providerChargedKobo: 0n,
     })).resolves.toEqual({ status: "RESOLVED" });
     expect(await getMessagingWallet(schoolId)).toEqual({ availableKobo: 500n, reservedKobo: 0n });
   });

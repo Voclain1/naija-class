@@ -79,3 +79,17 @@ export async function revokeMetaToken(
   }, fetchImpl);
   return confirmed.data?.is_valid === false;
 }
+
+export async function checkMetaPhone(config: MetaSignupConfig, wabaId: string, phoneNumberId: string, token: string): Promise<boolean> {
+  const phones = await graph<{ data?: { id?: string }[] }>(config, `${wabaId}/phone_numbers?fields=id`, {
+    headers: bearer(token),
+  }, fetch);
+  return phones.data?.some(({ id }) => id === phoneNumberId) ?? false;
+}
+
+export async function readMetaTemplates(config: MetaSignupConfig, wabaId: string, token: string) {
+  return graph<{ data?: { id?: string; name?: string; language?: string; category?: string; status?: string }[] }>(
+    config, `${wabaId}/message_templates?fields=id,name,language,category,status&limit=100`,
+    { headers: bearer(token) }, fetch,
+  );
+}
