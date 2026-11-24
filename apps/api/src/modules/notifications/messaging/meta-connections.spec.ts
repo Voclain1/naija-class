@@ -5,6 +5,8 @@ import { basePrisma, createPrismaClient, withTenant } from "@school-kit/db";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { MetaConnectionsService } from "./meta-connections.service";
+import { MetaInboundHistoryService } from "./meta-inbound-history.service";
+import { WHATSAPP_CONSENT_VERSION } from "./guardian-messaging-consent.service";
 import { openMetaToken, sealMetaToken } from "./meta-credentials";
 
 const key = randomBytes(32);
@@ -38,6 +40,8 @@ describe("school-owned Meta connections against PostgreSQL", () => {
     const admin = createPrismaClient(process.env.DIRECT_URL!);
     try {
       await admin.auditLog.deleteMany({ where: { schoolId: { in: schools } } });
+      await admin.messagingGuardianConsent.deleteMany({ where: { schoolId: { in: schools } } });
+      await admin.guardian.deleteMany({ where: { schoolId: { in: schools } } });
       await admin.user.deleteMany({ where: { schoolId: { in: schools } } });
       await admin.school.deleteMany({ where: { id: { in: schools } } });
     } finally {
@@ -83,6 +87,64 @@ describe("school-owned Meta connections against PostgreSQL", () => {
     expect(await withTenant(b.schoolId, (db) =>
       db.messagingSchoolMetaConnection.findUnique({ where: { schoolId: a.schoolId } }))).toBeNull();
     expect(() => openMetaToken(key, b.schoolId, wabaId, aConnection.encryptedToken!)).toThrow();
+
+    const management = new MetaConnectionsService(new ConfigService({
+      ...settings, MESSAGING_META_PHONE_REGISTRATION_ENABLED: "on", MESSAGING_META_TEMPLATE_SUBMISSION_ENABLED: "on",
+    }));
+    const template = {
+      name: "fee_invoice_issued", language: "en", category: "UTILITY" as const,
+      body: "School {{1}} issued a new invoice.", bodyExamples: ["Demo School"], paymentButtonText: "Pay invoice",
+    };
+    await expect(svc.registerPhone(a, "123456")).rejects.toThrow("unavailable");
+    await expect(management.registerPhone(b, "123456")).rejects.toThrow("Verify the connected");
+    await expect(management.submitTemplate(a, { ...template, body: "Hello {{2}}" })).rejects.toThrow("Template variables");
+    fetcher.mockResolvedValueOnce(Response.json({ data: [{ id: phoneNumberId }] }))
+      .mockResolvedValueOnce(Response.json({ success: true }))
+      .mockResolvedValueOnce(Response.json({ data: [{ id: phoneNumberId }] }))
+      .mockResolvedValueOnce(Response.json({ id: "1234", status: "PENDING" }));
+    await expect(management.registerPhone(a, "123456")).resolves.toEqual({ status: "REGISTERED" });
+    await expect(management.submitTemplate(a, template)).resolves.toEqual({ status: "SUBMITTED", id: "1234" });
+    const registrations = fetcher.mock.calls.find(([url]) => String(url).endsWith(`/${phoneNumberId}/register`));
+    expect(JSON.parse(String(registrations?.[1]?.body))).toEqual({ messaging_product: "whatsapp", pin: "123456" });
+    const submitted = fetcher.mock.calls.find(([url]) => String(url).endsWith(`/${wabaId}/message_templates`));
+    expect(JSON.parse(String(submitted?.[1]?.body))).toMatchObject({
+      components: [{ type: "BODY" }, { type: "BUTTONS", buttons: [{ url: "https://paystack.com/pay/{{1}}" }] }],
+    });
+
+    const phone = "2348012345678";
+    const guardian = await withTenant(a.schoolId, async (db) => {
+      const guard = await db.guardian.create({ data: {
+        schoolId: a.schoolId, firstName: "Fictional", lastName: "Guardian", phone, relationship: "MOTHER",
+      } });
+      await db.messagingGuardianConsent.create({ data: {
+        schoolId: a.schoolId, guardianId: guard.id, phone, consentVersion: WHATSAPP_CONSENT_VERSION,
+        verifiedAt: new Date(),
+      } });
+      return guard;
+    });
+    const history = new MetaInboundHistoryService(new ConfigService({
+      MESSAGING_META_INBOUND_HISTORY_ENABLED: "on", MESSAGING_META_INBOUND_HISTORY_KEY: key.toString("base64"),
+      MESSAGING_META_INBOUND_RETENTION_DAYS: JSON.stringify({ [a.schoolId]: 14, [b.schoolId]: 14 }),
+    }));
+    const inbound = {
+      schoolId: a.schoolId, wabaId, phoneNumberId, providerRef: "wamid.fixture", from: phone,
+      text: "Fictional message", occurredAt: new Date(),
+    };
+    await history.ingest({ ...inbound, wabaId: "76543" });
+    await history.ingest({ ...inbound, providerRef: "wamid.stop", text: "STOP" });
+    await Promise.all([history.ingest(inbound), history.ingest(inbound)]);
+    await expect(history.history(a, guardian.id)).resolves.toMatchObject({ items: [{ text: inbound.text }], truncated: false });
+    await expect(history.history(b, guardian.id)).resolves.toEqual({ items: [], truncated: false });
+    await withTenant(a.schoolId, async (db) => {
+      const rows = await db.messagingInboundMessage.findMany({ where: { schoolId: a.schoolId, guardianId: guardian.id } });
+      expect(rows).toHaveLength(1);
+      const [row] = rows;
+      expect(row?.encryptedText).not.toContain(inbound.text);
+      await db.messagingInboundMessage.updateMany({ where: { id: row!.id, schoolId: a.schoolId }, data: { expiresAt: new Date(0) } });
+    });
+    await expect(history.history(a, guardian.id)).resolves.toEqual({ items: [], truncated: false });
+    await history.purgeExpired();
+    expect(await withTenant(a.schoolId, (db) => db.messagingInboundMessage.count({ where: { schoolId: a.schoolId } }))).toBe(0);
 
     fetcher.mockRejectedValueOnce(new Error("timeout")).mockRejectedValueOnce(new Error("timeout")).mockRejectedValueOnce(new Error("timeout"));
     expect(await svc.disconnect(a)).toEqual({ status: "DISCONNECTED", revocationPending: true });

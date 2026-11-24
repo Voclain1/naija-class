@@ -353,7 +353,7 @@ export class CbtSittingsService {
   /** DRAFT → PUBLISHED: freeze the candidates and build the pack (D2, D3). */
   async publish(authCtx: AuthContext, id: string, meta: RequestMeta): Promise<CbtSittingDto> {
     const scope = await this.resolveScope(authCtx);
-    const published = await withTenant(authCtx.schoolId, async (db) => {
+    return withTenant(authCtx.schoolId, async (db) => {
       const row = await this.load(db, scope, id);
       this.assertDraft(row);
       if (row.paper.status !== "FINAL") {
@@ -424,12 +424,13 @@ export class CbtSittingsService {
           publishedAt: builtAt,
         },
       });
+      await this.paidNotifications?.queueStudentsInTransaction(
+        db, authCtx.schoolId, "messaging.exam-published", id, candidates.map(({ studentId }) => studentId),
+      );
       await this.audit(db, authCtx, AUDIT.publish, id, meta, { candidateCount: candidates.length });
       const fresh = await this.load(db, scope, id);
       return this.toDto(fresh, undefined);
     }, { timeoutMs: 30_000 });
-    await this.paidNotifications?.queueExam(authCtx.schoolId, id);
-    return published;
   }
 
   /**

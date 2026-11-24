@@ -80,9 +80,7 @@ export class InvoiceGenerationService {
     dto: GenerateInvoicesInput,
     reqCtx: RequestContext,
   ): Promise<GenerateInvoicesResponseDto> {
-    const committed = await withTenant(authCtx.schoolId, (db) => this.generateForArmInTransaction(authCtx, dto, reqCtx, db));
-    await this.paidNotifications?.queueInvoices(authCtx.schoolId, committed.invoices.map(({ id }) => id));
-    return committed;
+    return withTenant(authCtx.schoolId, (db) => this.generateForArmInTransaction(authCtx, dto, reqCtx, db));
   }
 
   // Internal composition point. Caller owns the tenant transaction and must
@@ -177,6 +175,10 @@ export class InvoiceGenerationService {
             issuedBy: authCtx.userId,
           },
         });
+
+        await this.paidNotifications?.queueStudentsInTransaction(
+          db, authCtx.schoolId, "messaging.invoice-issued", invoice.id, [studentId],
+        );
 
         // audit_logs has FORCE RLS — basePrisma without the school GUC set would be
         // blocked. All audit writes in this service must go through withTenant.
@@ -347,8 +349,7 @@ export class InvoiceGenerationService {
     reqCtx: RequestContext,
   ): Promise<BillWaitingChargesResponseDto> {
     await assertUserActiveAndHasOneOf(authCtx, BILLING_ROLES);
-    const issuedIds: string[] = [];
-    const committed = await withTenant(authCtx.schoolId, async (db) => {
+    return withTenant(authCtx.schoolId, async (db) => {
       const term = await this.fetchTerm(db, authCtx.schoolId, dto.termId);
       const { toBill, termInvoices } = await this.waitingCharges(db, authCtx.schoolId, dto.termId);
       const actor = { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress };
@@ -368,7 +369,6 @@ export class InvoiceGenerationService {
           dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
           issuedAt,
         });
-        issuedIds.push(invoice.id);
         created += 1;
         chargesBilled += list.length;
         total += invoice.totalDue;
@@ -376,8 +376,6 @@ export class InvoiceGenerationService {
 
       return { created, chargesBilled, total };
     });
-    await this.paidNotifications?.queueInvoices(authCtx.schoolId, issuedIds);
-    return committed;
   }
 
   /**
@@ -426,6 +424,9 @@ export class InvoiceGenerationService {
         issuedBy: actor.userId,
       },
     });
+    await this.paidNotifications?.queueStudentsInTransaction(
+      db, actor.schoolId, "messaging.invoice-issued", invoice.id, [args.studentId],
+    );
     await db.auditLog.create({
       data: {
         schoolId: actor.schoolId,

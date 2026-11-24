@@ -97,9 +97,13 @@ import type { PlatformAdminContext } from "../../common/auth/platform-admin-cont
 import { PlatformAdminGuard } from "../../common/auth/platform-admin.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AssistantActivationService } from "./assistant-activation.service";
+import { messagingEmergencyState, writeMessagingEmergencyState } from "../../common/messaging-emergency-control";
+import { messagingSpendLimit, writeMessagingSpendLimit } from "../../common/messaging-spend-limits";
+import type { MessagingEmergencyChannel, MessagingEmergencyWrite, MessagingRateReviewWrite, MessagingSpendLimitWrite, MessagingTemplateReviewWrite } from "@school-kit/types";
+import { writeMessagingRateCatalog, writeMessagingTemplateReview } from "../notifications/messaging/messaging-review-controls";
 import { MetaConnectionsService } from "../notifications/messaging/meta-connections.service";
 import { messagingPlatformControls } from "../notifications/messaging/paid-messaging-policy";
-import { getMessagingWallet, reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
+import { getMessagingReconciliation, getMessagingWallet, reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
 import { VoiceAdminService } from "./voice-admin.service";
 import { PlatformAdminService } from "./platform-admin.service";
 
@@ -107,6 +111,17 @@ import { PlatformAdminService } from "./platform-admin.service";
 // super-admin" note. /platform-admin/login is the ONLY public route here
 // (mirrors PortalAuthController's "no guard on the credential endpoint
 // itself" precedent); every other route requires PlatformAdminGuard.
+const reviewRef = z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/);
+const rateReviewInput = z.object({ evidenceRef: reviewRef, rates: z.array(z.record(z.string())).max(100) }).strict();
+const templateReviewInput = z.object({
+  evidenceRef: reviewRef,
+  review: z.object({
+    wabaId: z.string(), providerTemplateId: z.string(), approvedBody: z.string(), language: z.string(),
+    category: z.enum(["UTILITY", "MARKETING", "AUTHENTICATION"]), bodyFields: z.array(z.string()).max(20),
+    paymentButtonIndex: z.number().int().optional(),
+  }).strict().nullable(),
+}).strict();
+
 @Controller("platform-admin")
 export class PlatformAdminController {
   constructor(
@@ -134,8 +149,86 @@ export class PlatformAdminController {
 
   @Get("messaging/controls")
   @UseGuards(PlatformAdminGuard)
-  messagingControls() {
-    return messagingPlatformControls(process.env);
+  async messagingControls() {
+    const [SMS, WHATSAPP, platformSpendLimit] = await Promise.all([
+      messagingEmergencyState("SMS"), messagingEmergencyState("WHATSAPP"), messagingSpendLimit("platform"),
+    ]);
+    return { ...messagingPlatformControls(process.env), emergency: { SMS, WHATSAPP }, platformSpendLimit };
+  }
+
+  @Post("messaging/emergency-controls")
+  @UseGuards(PlatformAdminGuard)
+  updateMessagingEmergencyControls(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(z.object({
+      channel: z.enum(["SMS", "WHATSAPP"]),
+      stopped: z.boolean(),
+      evidenceRef: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/),
+    }).strict())) body: MessagingEmergencyWrite & { channel: MessagingEmergencyChannel },
+  ) {
+    const { channel, ...control } = body;
+    return writeMessagingEmergencyState(channel, admin.userId, control);
+  }
+
+  @Post("messaging/spending-limit")
+  @UseGuards(PlatformAdminGuard)
+  updatePlatformMessagingLimit(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(z.object({
+      dailyKobo: z.string().regex(/^(0|[1-9]\d{0,9})$/).nullable(),
+      evidenceRef: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/),
+    }).strict())) body: MessagingSpendLimitWrite,
+  ) {
+    return writeMessagingSpendLimit("platform", admin.userId, body);
+  }
+
+  @Get("schools/:schoolId/messaging/spending-limit")
+  @UseGuards(PlatformAdminGuard)
+  readSchoolMessagingLimit(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    return messagingSpendLimit(schoolId);
+  }
+
+  @Post("schools/:schoolId/messaging/spending-limit")
+  @UseGuards(PlatformAdminGuard)
+  updateSchoolMessagingLimit(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(z.object({
+      dailyKobo: z.string().regex(/^(0|[1-9]\d{0,9})$/).nullable(),
+      evidenceRef: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/),
+    }).strict())) body: MessagingSpendLimitWrite,
+  ) {
+    return writeMessagingSpendLimit(schoolId, admin.userId, body);
+  }
+
+  @Post("messaging/price-catalog")
+  @UseGuards(PlatformAdminGuard)
+  publishPlatformMessagingPrices(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(rateReviewInput)) body: MessagingRateReviewWrite,
+  ) {
+    return writeMessagingRateCatalog("platform", admin.userId, body);
+  }
+
+  @Post("schools/:schoolId/messaging/price-catalog")
+  @UseGuards(PlatformAdminGuard)
+  publishSchoolMessagingPrices(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(rateReviewInput)) body: MessagingRateReviewWrite,
+  ) {
+    return writeMessagingRateCatalog(schoolId, admin.userId, body);
+  }
+
+  @Post("schools/:schoolId/messaging/templates/:name/review")
+  @UseGuards(PlatformAdminGuard)
+  reviewSchoolMessagingTemplate(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @Param("name") name: string,
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(templateReviewInput)) body: MessagingTemplateReviewWrite,
+  ) {
+    return writeMessagingTemplateReview(schoolId, name, admin.userId, body);
   }
 
   @Get("schools/:schoolId/messaging/wallet")
@@ -143,6 +236,12 @@ export class PlatformAdminController {
   async messagingWallet(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
     const wallet = await getMessagingWallet(schoolId);
     return { availableKobo: String(wallet.availableKobo), reservedKobo: String(wallet.reservedKobo) };
+  }
+
+  @Get("schools/:schoolId/messaging/reconciliation")
+  @UseGuards(PlatformAdminGuard)
+  messagingReconciliation(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    return getMessagingReconciliation(schoolId);
   }
 
   @Delete("schools/:schoolId/messaging/whatsapp")

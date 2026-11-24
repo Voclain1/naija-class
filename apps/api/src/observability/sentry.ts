@@ -22,7 +22,7 @@ function isMetaWebhook(url: string | undefined): boolean {
 
 /** Routes whose request bodies never reach an error report. */
 export function dropsRequestBody(url: string | undefined): boolean {
-  return (typeof url === "string" && /\/webhooks\/termii(?:[/?#]|$)/.test(url)) || (typeof url === "string" && /\/messaging\/whatsapp\/signup(?:[/?#]|$)/.test(url)) || isMetaWebhook(url) || (typeof url === "string" && /\/assistant\//.test(url));
+  return (typeof url === "string" && /\/webhooks\/termii(?:[/?#]|$)/.test(url)) || (typeof url === "string" && /\/messaging\/whatsapp\/(?:signup|connection\/register|templates)(?:[/?#]|$)/.test(url)) || isMetaWebhook(url) || (typeof url === "string" && /\/assistant\//.test(url));
 }
 
 export function initSentry(): void {

@@ -1,9 +1,14 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
+import { basePrisma, withTenant } from "@school-kit/db";
 import { InternalError } from "@school-kit/types";
 
-import { redactPhone } from "../redact.js";
+import { effectiveMessagingSpendLimit } from "../messaging-spend-limits";
+import { messagingEmergencyState } from "../messaging-emergency-control";
+import { reviewedMessagingRates } from "../../modules/notifications/messaging/messaging-review-controls";
+import { countSmsSegments, quoteDispatchCost } from "../../modules/notifications/messaging/messaging-pricing";
+import { parsePaidPlatformLimit, readVerifiedMessagingRates } from "../../modules/notifications/messaging/paid-messaging-policy";
 
 // ---------------------------------------------------------------------------
 // Termii SMS wrapper — Phase 4 / Slice 6 (D3). Mirrors PaystackService's
@@ -13,6 +18,8 @@ import { redactPhone } from "../redact.js";
 // API details confirmed against developers.termii.com (2026-07-18), not
 // assumed — see docs/modules/phase-4.md §8 D6 for the full research note.
 // ---------------------------------------------------------------------------
+
+type SmsOutcome = { status: "ACCEPTED"; providerRef: string | null } | { status: "REJECTED" | "UNKNOWN"; reason: string };
 
 interface TermiiSendResponse {
   code: string; // "ok" on success
@@ -88,34 +95,8 @@ export class TermiiService {
   // modules/schools/sms-sender.service.ts), else the platform's
   // TERMII_SENDER_ID (docs/modules/school-identity.md slice 2).
   async sendSms(to: string, message: string, senderId?: string): Promise<void> {
-    if (!this.apiKey) {
-      throw new InternalError("TERMII_API_KEY is not configured on this server");
-    }
-
-    const res = await fetch(`${this.baseUrl}/api/sms/send`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: this.apiKey,
-        to,
-        from: senderId ?? this.senderId,
-        sms: message,
-        type: "plain",
-        channel: "dnd",
-      }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "<no body>");
-      this.logger.error(`Termii SMS send failed: ${res.status} ${text}`);
-      throw new InternalError(`Termii SMS send failed (HTTP ${res.status}).`);
-    }
-
-    const json = (await res.json()) as TermiiSendResponse;
-    if (json.code !== "ok") {
-      this.logger.error(`Termii SMS send rejected: ${json.message ?? "unknown"} (to=${redactPhone(to)})`);
-      throw new InternalError(`Termii SMS send rejected: ${json.message ?? "unknown reason"}.`);
-    }
+    const outcome = await this.sendSmsWithOutcome(to, message, senderId);
+    if (outcome.status !== "ACCEPTED") throw new InternalError("Termii SMS did not complete.");
   }
 
   /**
@@ -130,7 +111,55 @@ export class TermiiService {
     to: string,
     message: string,
     senderId?: string,
-  ): Promise<{ status: "ACCEPTED"; providerRef: string | null } | { status: "REJECTED" | "UNKNOWN"; reason: string }> {
+  ): Promise<SmsOutcome> {
+    if (!this.apiKey) return { status: "REJECTED", reason: "SMS_NOT_CONFIGURED" };
+    if (!(await this.reservePlatformSpend(message))) return { status: "REJECTED", reason: "PLATFORM_SMS_BUDGET_UNAVAILABLE" };
+    return this.requestSms(to, message, senderId);
+  }
+
+  async sendWalletReservedSms(
+    schoolId: string, deliveryId: string, to: string, message: string, senderId?: string,
+  ): Promise<SmsOutcome> {
+    if (!this.apiKey || this.config.get<string>("MESSAGING_PAID_ENABLED") !== "on") {
+      return { status: "REJECTED", reason: "SMS_NOT_CONFIGURED" };
+    }
+    const reserved = await withTenant(schoolId, async (db) => {
+      const [claim] = await db.$queryRaw<{ id: string }[]>`
+        UPDATE notification_deliveries d SET dispatch_reason = 'PROVIDER_STARTED'
+        WHERE d.school_id = ${schoolId} AND d.id = ${deliveryId} AND d.channel = 'SMS'
+          AND d.dispatch_state = 'SENDING' AND d.dispatch_reason IS NULL
+          AND EXISTS (SELECT 1 FROM messaging_wallet_entries w
+            WHERE w.school_id = ${schoolId} AND w.reference = 'notification:' || d.id AND w.kind = 'RESERVE')
+          AND NOT EXISTS (SELECT 1 FROM messaging_wallet_entries w
+            WHERE w.school_id = ${schoolId} AND w.reference = 'notification:' || d.id AND w.kind IN ('SETTLE', 'RELEASE'))
+        RETURNING d.id`;
+      return !!claim;
+    });
+    if (!reserved) return { status: "REJECTED", reason: "SMS_RESERVATION_REQUIRED" };
+    return this.requestSms(to, message, senderId);
+  }
+
+  private async reservePlatformSpend(message: string): Promise<boolean> {
+    if (this.config.get<string>("MESSAGING_LEGACY_SMS_ENABLED") !== "on") return false;
+    const configuredLimit = parsePaidPlatformLimit(this.config.get<string>("MESSAGING_PAID_PLATFORM_DAILY_KOBO"));
+    if (!configuredLimit || (await messagingEmergencyState("SMS")).stopped) return false;
+    const limit = await effectiveMessagingSpendLimit("platform", configuredLimit);
+    const units = countSmsSegments(message);
+    if (!limit || !units) return false;
+    const rates = await reviewedMessagingRates("platform", readVerifiedMessagingRates(this.config.get<string>("MESSAGING_LEGACY_SMS_RATES")));
+    const cost = quoteDispatchCost(rates, "TERMII_SMS", "SCHOOLKIT", units, new Date());
+    if (!cost || cost.walletKobo > limit) return false;
+    const { walletKobo } = cost;
+    return !!(await basePrisma.$executeRaw`
+      INSERT INTO messaging_platform_reservations_daily (day, reserved_kobo)
+      VALUES ((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Lagos')::date, ${walletKobo}::bigint)
+      ON CONFLICT (day) DO UPDATE SET reserved_kobo =
+        messaging_platform_reservations_daily.reserved_kobo + EXCLUDED.reserved_kobo
+      WHERE messaging_platform_reservations_daily.reserved_kobo + EXCLUDED.reserved_kobo <= ${limit}::bigint`);
+  }
+
+  private async requestSms(to: string, message: string, senderId?: string): Promise<SmsOutcome> {
+    if ((await messagingEmergencyState("SMS")).stopped) return { status: "REJECTED", reason: "SMS_EMERGENCY_STOP" };
     if (!this.apiKey) return { status: "REJECTED", reason: "SMS_NOT_CONFIGURED" };
     let res: Response;
     try {
@@ -139,6 +168,7 @@ export class TermiiService {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ api_key: this.apiKey, to, from: senderId ?? this.senderId, sms: message, type: "plain", channel: "dnd" }),
         signal: AbortSignal.timeout(30_000),
+        redirect: "error",
       });
     } catch {
       this.logger.warn("Termii send uncertain: no answer");

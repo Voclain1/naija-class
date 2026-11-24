@@ -88,8 +88,37 @@ export async function checkMetaPhone(config: MetaSignupConfig, wabaId: string, p
 }
 
 export async function readMetaTemplates(config: MetaSignupConfig, wabaId: string, token: string) {
-  return graph<{ data?: { id?: string; name?: string; language?: string; category?: string; status?: string }[] }>(
-    config, `${wabaId}/message_templates?fields=id,name,language,category,status&limit=100`,
-    { headers: bearer(token) }, fetch,
-  );
+  type Template = { id?: string; name?: string; language?: string; category?: string; status?: string };
+  const data: Template[] = [];
+  const cursors = new Set<string>();
+  let after: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const query = new URLSearchParams({ fields: "id,name,language,category,status", limit: "100" });
+    if (after) query.set("after", after);
+    const result = await graph<{ data?: Template[]; paging?: { next?: string; cursors?: { after?: string } } }>(
+      config, `${wabaId}/message_templates?${query}`, { headers: bearer(token) }, fetch,
+    );
+    data.push(...(result.data ?? []));
+    if (!result.paging?.next) return { data };
+    after = result.paging.cursors?.after;
+    if (!after || after.length > 4096 || cursors.has(after)) throw new Error("Meta template catalog cursor was invalid");
+    cursors.add(after);
+  }
+  return { data, truncated: true };
+}
+
+export function registerMetaPhone(config: MetaSignupConfig, phoneNumberId: string, token: string, pin: string) {
+  return graph<{ success?: boolean }>(config, `${phoneNumberId}/register`, {
+    method: "POST", headers: { ...bearer(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", pin }),
+  }, fetch);
+}
+
+export function submitMetaTemplate(
+  config: MetaSignupConfig, wabaId: string, token: string, template: object,
+) {
+  return graph<{ id?: string; status?: string }>(config, `${wabaId}/message_templates`, {
+    method: "POST", headers: { ...bearer(token), "Content-Type": "application/json" },
+    body: JSON.stringify(template),
+  }, fetch);
 }

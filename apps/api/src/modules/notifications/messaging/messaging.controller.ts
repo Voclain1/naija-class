@@ -1,7 +1,7 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Optional, Param, ParseUUIDPipe, Patch, Post, Query, ServiceUnavailableException, UseGuards } from "@nestjs/common";
 import { withTenant } from "@school-kit/db";
 import { NotFoundError } from "@school-kit/types";
-import type { DeliveryState, Kobo, MessagingDeliveryPage, MessagingMetaDisconnectResult, MessagingMetaSignupCompletion, MessagingMetaSignupSession, MessagingOverview, MessagingPaidPreferences, MessagingTopUpCheckout, MessagingTopUpRequest, MessagingWalletEntry, MessagingWalletPage } from "@school-kit/types";
+import type { DeliveryState, Kobo, MessagingDeliveryPage, MessagingMetaDisconnectResult, MessagingMetaRegistrationRequest, MessagingMetaTemplateSubmission, MessagingMetaSignupCompletion, MessagingMetaSignupSession, MessagingOverview, MessagingPaidPreferences, MessagingTopUpCheckout, MessagingTopUpRequest, MessagingWalletEntry, MessagingWalletPage } from "@school-kit/types";
 import { z } from "zod";
 
 import type { AuthContext } from "../../../common/auth/auth-context";
@@ -15,6 +15,7 @@ import { ZodValidationPipe } from "../../../common/zod-validation.pipe";
 import { NotificationPreferencesService } from "../notification-preferences.service";
 import { MessagingTopUpService } from "./messaging-top-up.service";
 import { getMessagingWallet } from "./messaging-wallet";
+import { MetaInboundHistoryService } from "./meta-inbound-history.service";
 import { MetaConnectionsService } from "./meta-connections.service";
 import { PaidMessagingService } from "./paid-messaging.service";
 import { META_TEMPLATE_NAMES } from "./meta-provider";
@@ -41,6 +42,7 @@ export class MessagingController {
     private readonly topUps: MessagingTopUpService,
     private readonly metaConnections: MetaConnectionsService,
     private readonly paid?: PaidMessagingService,
+    @Optional() private readonly inboundHistory?: MetaInboundHistoryService,
   ) {}
 
   @Get("overview")
@@ -111,6 +113,30 @@ export class MessagingController {
     return this.metaConnections.templates(auth);
   }
 
+  @Post("whatsapp/connection/register")
+  @Permissions("messaging-whatsapp.manage")
+  registerMetaPhone(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(z.object({ registrationSecret: z.string().regex(/^\d{6}$/) }).strict()))
+    body: MessagingMetaRegistrationRequest,
+  ) {
+    return this.metaConnections.registerPhone(auth, body.registrationSecret);
+  }
+
+  @Post("whatsapp/templates")
+  @Permissions("messaging-whatsapp.manage")
+  submitMetaTemplate(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(z.object({
+      name: z.string().regex(/^[a-z_]{1,80}$/), language: z.string().regex(/^[a-z]{2,3}(?:_[A-Z]{2})?$/),
+      category: z.enum(["UTILITY", "MARKETING"]), body: z.string().trim().min(1).max(1024),
+      bodyExamples: z.array(z.string().trim().min(1).max(100)).max(20),
+      paymentButtonText: z.string().trim().min(1).max(25).optional(),
+    }).strict())) body: MessagingMetaTemplateSubmission,
+  ) {
+    return this.metaConnections.submitTemplate(auth, body);
+  }
+
   @Post("whatsapp/signup")
   @Permissions("messaging-whatsapp.manage")
   beginMetaSignup(@CurrentUser() auth: AuthContext): Promise<MessagingMetaSignupSession> {
@@ -130,6 +156,16 @@ export class MessagingController {
   @Permissions("messaging-whatsapp.manage")
   disconnectMeta(@CurrentUser() auth: AuthContext): Promise<MessagingMetaDisconnectResult> {
     return this.metaConnections.disconnect(auth);
+  }
+
+  @Get("whatsapp/conversations/:guardianId")
+  @Permissions("messaging-whatsapp.manage")
+  whatsappHistory(
+    @CurrentUser() auth: AuthContext,
+    @Param("guardianId", new ParseUUIDPipe()) guardianId: string,
+  ) {
+    if (!this.inboundHistory) throw new ServiceUnavailableException("WhatsApp history is unavailable.");
+    return this.inboundHistory.history(auth, guardianId);
   }
 
   @Get("deliveries")
@@ -218,13 +254,15 @@ export class MessagingController {
             { createdAt: anchor.createdAt, id: { lt: anchor.id } },
           ] } : {}),
         },
-        select: { id: true, kind: true, amountKobo: true, createdAt: true },
+        select: { id: true, kind: true, amountKobo: true, releasedKobo: true, createdAt: true },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: PAGE_SIZE + 1,
       });
       const items: MessagingWalletEntry[] = entries.slice(0, PAGE_SIZE).map((entry) => ({
         id: entry.id, kind: entry.kind as MessagingWalletEntry["kind"],
-        amountKobo: String(entry.amountKobo) as Kobo, createdAt: entry.createdAt.toISOString(),
+        amountKobo: String(entry.amountKobo) as Kobo,
+        ...(entry.releasedKobo > 0 && { releasedKobo: String(entry.releasedKobo) as Kobo }),
+        createdAt: entry.createdAt.toISOString(),
       }));
       return { items, nextCursor: entries.length > PAGE_SIZE ? items.at(-1)!.id : null };
     });

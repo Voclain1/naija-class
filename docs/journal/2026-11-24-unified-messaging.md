@@ -16,3 +16,13 @@ default-off paid payment confirmation worker. Payment confirmation checks
 the expected transaction amount in kobo. Provider reclassification blocks
 automated Meta sends until reviewed again. Uncertain SMS reservations remain
 held for provider-evidenced operator reconciliation.
+
+## Engineering continuation
+
+Added signed central-account Termii routing from exact provider references,
+atomic paid event jobs for invoice generation and the academic and guardian
+workflows, partial settlement with discrepancy reporting, and budget guards
+on legacy SMS. Added append-only platform emergency controls, gated Meta
+number registration and template submission, and encrypted inbound history
+with configured retention. All changes remain on draft PR #563. See the
+rollout runbook for remaining engineering and external checks.

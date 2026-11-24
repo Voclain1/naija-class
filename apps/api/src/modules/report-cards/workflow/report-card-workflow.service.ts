@@ -206,6 +206,9 @@ export class ReportCardWorkflowService {
         enqueuedCount,
         accessMode,
       });
+      if (accessMode === "FREE") await this.events?.queuePaidResults?.(
+        db, authCtx.schoolId, input.termId, input.classArmId, cards.map(({ studentId }) => studentId),
+      );
       return { status: "RELEASED", cardCount: cards.length };
     });
 
@@ -462,7 +465,7 @@ export class ReportCardWorkflowService {
   private loadArmCards(db: TenantDb, input: { termId: string; classArmId: string }) {
     return db.reportCard.findMany({
       where: { termId: input.termId, classArmId: input.classArmId },
-      select: { id: true, status: true, promotionStatus: true },
+      select: { id: true, status: true, promotionStatus: true, studentId: true },
     });
   }
 

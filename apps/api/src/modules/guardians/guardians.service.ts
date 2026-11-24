@@ -392,8 +392,11 @@ export class GuardiansService {
         select: { name: true, smsSenderId: true, smsSenderStatus: true },
       });
 
+      await this.paidNotifications?.queueEventInTransaction(
+        db, authCtx.schoolId, "messaging.guardian-invitation", invitation.id, [id],
+      );
+
       return {
-        invitationId: invitation.id,
         portalInvitedAt: updated.portalInvitedAt as Date,
         email: existing.email,
         phone: existing.phone,
@@ -407,7 +410,6 @@ export class GuardiansService {
     // caller for the existing copy panel and legacy delivery. The WhatsApp
     // journal only takes the internal invitation ID.
     const acceptUrl = parentSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
-    await this.paidNotifications?.queueEvent(authCtx.schoolId, "messaging.guardian-invitation", result.invitationId, [id]);
 
     await this.deliverInvitation({
       schoolId: authCtx.schoolId,
@@ -528,8 +530,11 @@ export class GuardiansService {
         select: { name: true, smsSenderId: true, smsSenderStatus: true },
       });
 
+      await this.paidNotifications?.queueEventInTransaction(
+        db, authCtx.schoolId, "messaging.guardian-invitation", invitation.id, [id],
+      );
+
       return {
-        invitationId: invitation.id,
         portalInvitedAt: updated.portalInvitedAt as Date,
         email: existing.email,
         phone: existing.phone,
@@ -541,7 +546,6 @@ export class GuardiansService {
     });
 
     const acceptUrl = parentSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
-    await this.paidNotifications?.queueEvent(authCtx.schoolId, "messaging.guardian-invitation", result.invitationId, [id]);
 
     await this.deliverInvitation({
       schoolId: authCtx.schoolId,

@@ -4,6 +4,7 @@ import { ConfigService } from "@nestjs/config";
 import { EmailService } from "../../common/email/email.service";
 import { TermiiService } from "../../common/termii/termii.service";
 import { PaidMessagingService } from "../notifications/messaging/paid-messaging.service";
+import { reviewedMessagingRates } from "../notifications/messaging/messaging-review-controls";
 import { quoteDispatchCost } from "../notifications/messaging/messaging-pricing";
 import { readVerifiedMessagingRates } from "../notifications/messaging/paid-messaging-policy";
 import { NotificationDispatchService, type DeliveryChannel, type NotificationRequest } from "../notifications/notification-dispatch.service";
@@ -19,11 +20,11 @@ export type SendOutcome =
 type CampaignWhatsApp = Parameters<PaidMessagingService["queueCampaignReminder"]>[0];
 
 export abstract class ReminderSendPort {
-  whatsappRate(_schoolId: string, _overdue: boolean, _now: Date): bigint | null { return null; }
+  async whatsappRate(_schoolId: string, _overdue: boolean, _now: Date): Promise<bigint | null> { return null; }
   queueWhatsApp(_input: CampaignWhatsApp): Promise<boolean> { return Promise.resolve(false); }
   abstract emailConfigured(): boolean;
   abstract smsConfigured(): boolean;
-  smsPricePerSegmentKobo(): bigint | null { return null; }
+  async smsPricePerSegmentKobo(): Promise<bigint | null> { return null; }
   frequencyMinutes(_schoolId: string): number { return 0; }
   abstract enabledChannels(schoolId: string): Promise<{ email: boolean; sms: boolean; push: boolean }>;
   abstract sendEmail(p: { to: string; subject: string; html: string; schoolName: string; idempotencyKey: string }): Promise<SendOutcome>;
@@ -53,12 +54,14 @@ export class LiveReminderSendPort extends ReminderSendPort {
     return this.termii.isConfigured;
   }
 
-  override smsPricePerSegmentKobo(): bigint | null {
-    const rates = readVerifiedMessagingRates(this.config.get<string>("MESSAGING_REMINDER_SMS_RATES"));
+  override async smsPricePerSegmentKobo(): Promise<bigint | null> {
+    const rates = await reviewedMessagingRates("platform", readVerifiedMessagingRates(
+      this.config.get<string>("MESSAGING_LEGACY_SMS_RATES") ?? this.config.get<string>("MESSAGING_REMINDER_SMS_RATES"),
+    ));
     return quoteDispatchCost(rates, "TERMII_SMS", "SCHOOLKIT", 1, new Date())?.estimatedKobo ?? null;
   }
 
-  override whatsappRate(schoolId: string, overdue: boolean, now: Date): bigint | null {
+  override whatsappRate(schoolId: string, overdue: boolean, now: Date): Promise<bigint | null> {
     return this.paid.campaignRate(schoolId, overdue, now);
   }
 

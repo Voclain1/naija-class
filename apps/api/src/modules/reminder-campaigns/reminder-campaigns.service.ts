@@ -396,7 +396,7 @@ export class ReminderCampaignsService {
         await this.setHalted(db, campaign, problem === "INACTIVE" ? "CONFIRMER_ACCESS_REVOKED" : problem, null, null);
         return { kind: "HALTED" as const };
       }
-      const whatsapp = campaign.use_whatsapp && this.port.whatsappRate(schoolId, campaign.overdue_only, now) !== null;
+      const whatsapp = campaign.use_whatsapp && await this.port.whatsappRate(schoolId, campaign.overdue_only, now) !== null;
       if (!can.email && (campaign.use_whatsapp ? !whatsapp : !can.sms && !can.push)) {
         await this.setHalted(db, campaign, "NO_CHANNEL", null, null);
         return { kind: "HALTED" as const };

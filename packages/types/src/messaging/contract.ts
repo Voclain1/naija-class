@@ -1,7 +1,7 @@
 export type Kobo = `${bigint}`;
 export type MessagingChannel = "EMAIL" | "PUSH" | "SMS" | "WHATSAPP";
 export type MessagingBlocker =
-  | "CHANNEL_DISABLED" | "PROVIDER_UNAVAILABLE" | "PRICE_MISSING"
+  | "CHANNEL_DISABLED" | "PROVIDER_UNAVAILABLE" | "PRICE_MISSING" | "EMERGENCY_STOP"
   | "INSUFFICIENT_CREDIT" | "SPENDING_LIMIT" | "TEMPLATE_NOT_APPROVED"
   | "ONBOARDING_DISABLED" | "SHARED_SENDER_NOT_AUTHORIZED"
   | "RECIPIENT_UNVERIFIED" | "CONSENT_MISSING" | "OPTED_OUT";
@@ -46,6 +46,7 @@ export interface MessagingWalletEntry {
   id: string;
   kind: "TOP_UP" | "RESERVE" | "SETTLE" | "RELEASE";
   amountKobo: Kobo;
+  releasedKobo?: Kobo;
   createdAt: string;
 }
 
@@ -57,6 +58,8 @@ export interface MessagingReminderEstimate {
 }
 
 export interface MessagingPlatformControls {
+  platformSpendLimit?: MessagingSpendLimitState;
+  emergency?: Record<MessagingEmergencyChannel, MessagingEmergencyState>;
   paidSendingEnabled: boolean;
   embeddedSignupEnabled: boolean;
   dailyLimitKobo: Kobo;
@@ -115,4 +118,91 @@ export interface MessagingDeliveryPage {
 export interface MessagingPaidPreferences {
   paidWhatsAppEnabled: boolean;
   walletSmsEnabled: boolean;
+}
+
+export interface MessagingReconciliationReport {
+  items: Array<{
+    deliveryId: string;
+    reservedKobo: Kobo;
+    chargedKobo: Kobo | null;
+    releasedKobo: Kobo | null;
+    status: "PENDING_EVIDENCE" | "DISCREPANCY" | "SETTLED" | "RELEASED";
+    discrepancyRecorded: boolean;
+    reservedAt: string;
+  }>;
+  truncated: boolean;
+}
+
+export type MessagingEmergencyChannel = "SMS" | "WHATSAPP";
+
+export interface MessagingEmergencyState {
+  stopped: boolean;
+  revision: string | null;
+}
+
+export interface MessagingEmergencyWrite {
+  stopped: boolean;
+  evidenceRef: string;
+}
+
+export interface MessagingMetaRegistrationRequest {
+  registrationSecret: string;
+}
+
+export interface MessagingMetaTemplateSubmission {
+  name: string;
+  language: string;
+  category: "UTILITY" | "MARKETING";
+  body: string;
+  bodyExamples: string[];
+  paymentButtonText?: string;
+}
+
+export interface MessagingInboundHistory {
+  items: Array<{ id: string; occurredAt: string; text: string }>;
+  truncated: boolean;
+}
+
+export interface MessagingSpendLimitState {
+  dailyKobo: Kobo | null;
+  revision: string | null;
+}
+
+export interface MessagingSpendLimitWrite {
+  dailyKobo: Kobo | null;
+  evidenceRef: string;
+}
+
+export interface MessagingRateReviewWrite {
+  evidenceRef: string;
+  rates: Array<{
+    key: "TERMII_SMS" | "META_UTILITY" | "META_MARKETING" | "META_AUTHENTICATION";
+    version: string;
+    evidence: string;
+    effectiveFrom: string;
+    effectiveUntil: string;
+    verifiedAt: string;
+    providerAmount: string;
+    rateNumerator: string;
+    rateDenominator: string;
+    taxBasisPoints: string;
+    marginBasisPoints: string;
+  }>;
+}
+
+export interface MessagingTemplateReviewWrite {
+  evidenceRef: string;
+  review: null | {
+    wabaId: string;
+    providerTemplateId: string;
+    approvedBody: string;
+    language: string;
+    category: "UTILITY" | "MARKETING" | "AUTHENTICATION";
+    bodyFields: Array<"schoolName" | "amountPaid" | "balanceLeft" | "studentName" | "absenceDate" | "termName" | "examTitle" | "examStart" | "dueDate" | "parentPortalUrl">;
+    paymentButtonIndex?: number;
+  };
+}
+
+export interface MessagingReviewRevision {
+  revision: string;
 }

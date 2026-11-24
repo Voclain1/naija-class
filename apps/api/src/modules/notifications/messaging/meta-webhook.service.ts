@@ -5,6 +5,7 @@ import { ConfigService } from "@nestjs/config";
 import { Cron } from "@nestjs/schedule";
 import { basePrisma, withTenant } from "@school-kit/db";
 
+import { MetaInboundHistoryService } from "./meta-inbound-history.service";
 import { GuardianMessagingConsentService } from "./guardian-messaging-consent.service";
 
 type State = "SENT" | "DELIVERED" | "READ" | "FAILED";
@@ -69,6 +70,7 @@ export class MetaWebhookService {
   constructor(
     private readonly config: ConfigService,
     @Optional() private readonly consent?: GuardianMessagingConsentService,
+    @Optional() private readonly history?: MetaInboundHistoryService,
   ) {}
 
   /** Invoked only after raw-body authentication. Persists status data without message content or contacts. */
@@ -140,7 +142,7 @@ export class MetaWebhookService {
 
   /** The parser runs only on the exact body authenticated by the controller. */
   private async ingestConsentCommands(payload: unknown): Promise<void> {
-    if (!this.consent) return;
+    if (!this.consent && !this.history) return;
     const body = record(payload);
     if (body.object !== "whatsapp_business_account") return;
     for (const entry of list(body.entry)) {
@@ -155,15 +157,15 @@ export class MetaWebhookService {
         const account = await basePrisma.messagingMetaAccount.findUnique({ where: { phoneNumberId } });
         if (account?.wabaId !== wabaId) continue;
         for (const message of list(event.messages)) {
-          const { type, from, timestamp, text } = record(message);
+          const { type, from, timestamp, text, id } = record(message);
           const command = record(text).body;
           if (type !== "text" || typeof from !== "string" || typeof command !== "string" ||
-              command.length > 100 || typeof timestamp !== "string" || !/^\d{9,10}$/.test(timestamp)) continue;
+              command.length > 1600 || typeof timestamp !== "string" || !/^\d{9,10}$/.test(timestamp)) continue;
           const time = Number(timestamp) * 1000;
           if (time > Date.now() + 300_000) continue;
-          await this.consent.applyVerifiedInbound({
-            schoolId: account.schoolId, wabaId, phoneNumberId, from, text: command, occurredAt: new Date(time),
-          });
+          const input = { schoolId: account.schoolId, wabaId, phoneNumberId, from, text: command, occurredAt: new Date(time) };
+          if (command.length <= 100) await this.consent?.applyVerifiedInbound(input);
+          await this.history?.ingest({ ...input, providerRef: id });
         }
       }
     }

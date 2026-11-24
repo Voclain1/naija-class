@@ -69,20 +69,38 @@ describe("TermiiService", () => {
 
 // The school's own sender name (docs/modules/school-identity.md slice 2).
 describe("TermiiService.sendSms — whose name the SMS goes out under", () => {
-  function sentFrom(senderId?: string) {
-    const config = {
-      get: (key: string) =>
-        key === "TERMII_API_KEY" ? "tk_test" : key === "TERMII_SENDER_ID" ? "SchoolKit" : undefined,
-    } as never;
-    const svc = new TermiiService(config);
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ code: "ok", message_id: "m1", message: "Successfully Sent" }), { status: 200 }));
+  async function sentFrom(senderId?: string) {
+    const rate = {
+      key: "TERMII_SMS", version: "fixture", evidence: "fixture",
+      effectiveFrom: "2020-01-01T00:00:00Z", effectiveUntil: "2099-01-01T00:00:00Z", verifiedAt: "2020-01-01T00:00:00Z",
+      providerAmount: "1", rateNumerator: "1", rateDenominator: "1", marginBasisPoints: "0", taxBasisPoints: "0",
+    };
+    const values: Record<string, string> = {
+      TERMII_API_KEY: "tk_test", TERMII_SENDER_ID: "SchoolKit", MESSAGING_LEGACY_SMS_ENABLED: "on",
+      MESSAGING_PAID_PLATFORM_DAILY_KOBO: "10000", MESSAGING_LEGACY_SMS_RATES: JSON.stringify([rate]),
+    };
+    const svc = new TermiiService({ get: (key: string) => values[key] } as never);
+    const reserve = vi.spyOn(svc as unknown as { reservePlatformSpend(message: string): Promise<boolean> }, "reservePlatformSpend").mockResolvedValueOnce(true);
+    const fetchMock = vi.fn(async (_url: string, _options: RequestInit) =>
+      new Response(JSON.stringify({ code: "ok", message_id: "m1" }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    return svc.sendSms("2348012345678", "hello", senderId).then(() => {
+    try {
+      await svc.sendSms("2348012345678", "hello", senderId);
+      expect(reserve).toHaveBeenCalledOnce();
+      return JSON.parse(fetchMock.mock.calls[0]![1].body as string).from as string;
+    } finally {
       vi.unstubAllGlobals();
-      const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
-      return body.from as string;
-    });
+      reserve.mockRestore();
+    }
   }
+
+  it("refuses both legacy entry points before provider egress without a budget", async () => {
+    const svc = new TermiiService({ get: (key: string) => key === "TERMII_API_KEY" ? "fixture" : undefined } as never);
+    await expect(svc.sendSmsWithOutcome("2348012345678", "fixture")).resolves.toMatchObject({
+      status: "REJECTED", reason: "PLATFORM_SMS_BUDGET_UNAVAILABLE",
+    });
+    await expect(svc.sendSms("2348012345678", "fixture")).rejects.toThrow();
+  });
 
   it("uses the school's approved name when given one", async () => {
     await expect(sentFrom("DIVYSIXTH")).resolves.toBe("DIVYSIXTH");

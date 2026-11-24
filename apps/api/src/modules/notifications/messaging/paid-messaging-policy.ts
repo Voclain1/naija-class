@@ -32,7 +32,7 @@ export function readVerifiedMessagingRates(raw: string | undefined): VerifiedMes
   }
 }
 
-const templateSchema = z.object({
+export const paidTemplateReviewSchema = z.object({
   name: z.enum(["fee_payment_confirmation", "fee_invoice_issued", "fee_payment_reminder", "fee_payment_overdue", "student_absence_alert", "results_released", "examination_notification", "guardian_invitation"]),
   wabaId: z.string().regex(/^\d{1,32}$/),
   providerTemplateId: z.string().regex(/^\d{1,32}$/),
@@ -49,14 +49,16 @@ const templateSchema = z.object({
   reviewedAt: date,
 }).strict();
 
+export const paidRateCatalogSchema = z.array(rateSchema).max(100);
+
 const profiles = z.array(z.object({
   schoolId: z.string().uuid(),
   schoolDailyKobo: amount,
   lowBalanceKobo: amount.optional(),
   rates: z.array(rateSchema).max(100),
   channel: z.enum(["WHATSAPP", "SMS"]),
-  template: templateSchema.optional(),
-  eventTemplates: z.array(templateSchema).max(10).optional(),
+  template: paidTemplateReviewSchema.optional(),
+  eventTemplates: z.array(paidTemplateReviewSchema).max(10).optional(),
   termiiAccountId: z.string().regex(/^[a-z0-9_-]{8,64}$/).optional(),
 }).strict()).max(100);
 

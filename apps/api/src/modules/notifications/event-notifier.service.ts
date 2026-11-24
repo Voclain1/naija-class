@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from "@nestjs/common";
 
-import { withTenant } from "@school-kit/db";
+import { withTenant, type PrismaClient } from "@school-kit/db";
 
 import { CalendarService } from "../calendar/calendar.service";
 import { computeSchoolDays } from "../reports/school-days";
@@ -94,7 +94,6 @@ export class EventNotifierService {
       });
 
       const eventId = `${args.termId}:${args.classArmId}`;
-      if (!pinMode) await this.paid?.queueEvent(args.schoolId, "messaging.results-released", eventId, guardianIds);
       for (const guardianId of guardianIds) {
         await this.dispatch.notifyOfEvent({
           schoolId: args.schoolId,
@@ -321,7 +320,6 @@ export class EventNotifierService {
         return { schoolName: school.name, guardianIds: [...new Set(links.map((l) => l.guardianId))] };
       });
 
-      await this.paid?.queueEvent(args.schoolId, "messaging.absence", args.date, guardianIds, new Date(Date.now() + ABSENCE_GRACE_MS));
       for (const guardianId of guardianIds) {
         await this.dispatch.notifyOfEvent({
           schoolId: args.schoolId,
@@ -336,6 +334,22 @@ export class EventNotifierService {
         });
       }
     });
+  }
+
+  async queuePaidAbsence(
+    db: PrismaClient, schoolId: string, date: string, today: string, students: readonly string[],
+  ): Promise<void> {
+    if (date === today) await this.paid?.queueStudentsInTransaction(
+      db, schoolId, "messaging.absence", date, students, new Date(Date.now() + ABSENCE_GRACE_MS),
+    );
+  }
+
+  async queuePaidResults(
+    db: PrismaClient, schoolId: string, termId: string, classArmId: string, students: readonly string[],
+  ): Promise<void> {
+    await this.paid?.queueStudentsInTransaction(
+      db, schoolId, "messaging.results-released", `${termId}:${classArmId}`, students,
+    );
   }
 
   private async schoolDay(

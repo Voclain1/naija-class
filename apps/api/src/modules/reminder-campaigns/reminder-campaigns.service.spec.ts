@@ -174,7 +174,7 @@ describe("fee reminder campaigns against PostgreSQL", () => {
   it("shows a configured cost ceiling for all potential campaign SMS segments", async () => {
     const unpriced = await prepare([A.bo.id]);
     expect(unpriced.smsEstimate).toMatchObject({ maximumKobo: null });
-    vi.spyOn(port, "smsPricePerSegmentKobo").mockReturnValue(12n);
+    vi.spyOn(port, "smsPricePerSegmentKobo").mockResolvedValue(12n);
     const priced = await prepare([A.bo.id]);
     expect(priced.smsEstimate?.segments).toBeGreaterThan(0);
     expect(priced.smsEstimate?.maximumKobo).toBe(String(12 * priced.smsEstimate!.segments));
@@ -366,7 +366,7 @@ describe("fee reminder campaigns against PostgreSQL", () => {
   });
 
   it("quotes and queues WhatsApp only for the verified guardian and a matching single live invoice", async () => {
-    vi.spyOn(port, "whatsappRate").mockReturnValue(35n);
+    vi.spyOn(port, "whatsappRate").mockResolvedValue(35n);
     const queued = vi.spyOn(port, "queueWhatsApp").mockResolvedValue(true);
     await basePrisma.school.update({
       where: { id: A.schoolId }, data: { paystackPaymentsEnabled: true, paystackSplitCode: "SPL_fictional" },

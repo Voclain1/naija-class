@@ -3,17 +3,26 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Cron } from "@nestjs/schedule";
-import { withTenant } from "@school-kit/db";
+import { basePrisma, withTenant, type PrismaClient } from "@school-kit/db";
 import { z } from "zod";
+
+import { reconcileNotificationReservation } from "./messaging-wallet";
 
 const profileSchema = z.object({
   accountId: z.string().regex(/^[a-z0-9_-]{8,64}$/),
-  schoolId: z.string().uuid(),
+  schoolId: z.string().uuid().optional(), // Legacy profile field, ignored for routing.
   signatureHeader: z.string().regex(/^x-[a-z0-9-]{1,62}$/),
   algorithm: z.enum(["sha256", "sha512"]),
   secret: z.string().min(16),
   verificationEvidence: z.string().trim().min(1),
   verifiedAt: z.string().datetime({ offset: true }),
+  billing: z.object({
+    currency: z.literal("NGN"),
+    unit: z.enum(["KOBO", "NAIRA"]),
+    finalStates: z.array(z.enum(["DELIVERED", "FAILED"])).min(1).max(2),
+    zeroIsFinal: z.boolean(),
+    contractRef: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/),
+  }).strict().optional(),
 }).strict();
 
 export type TermiiReportProfile = z.infer<typeof profileSchema>;
@@ -30,7 +39,18 @@ const reportSchema = z.object({
   message_id: z.string().regex(/^[A-Za-z0-9_-]{1,160}$/),
   channel: z.enum(["dnd", "generic"]),
   status: z.string().trim().max(120),
+  cost: z.unknown().optional(),
 });
+
+function billingCharge(profile: TermiiReportProfile, state: State, cost: unknown): number | null {
+  const billing = profile.billing;
+  if (!billing || state === "SENT" || !billing.finalStates.includes(state) || typeof cost !== "string") return null;
+  const match = (billing.unit === "KOBO" ? /^(0|[1-9]\d{0,9})$/ : /^(0|[1-9]\d{0,9})(?:\.(\d{1,2}))?$/).exec(cost);
+  if (!match) return null;
+  const amount = billing.unit === "KOBO" ? BigInt(match[1]!)
+    : BigInt(match[1]!) * 100n + BigInt((match[2] ?? "").padEnd(2, "0"));
+  return amount <= 2_147_483_647n && (amount > 0n || billing.zeroIsFinal) ? Number(amount) : null;
+}
 
 export function termiiReportSignatureMatches(
   profile: TermiiReportProfile,
@@ -71,13 +91,14 @@ export class TermiiReportsService {
     if (!parsed.success) return;
     const state = states.get(parsed.data.status.toLowerCase());
     if (!state) return;
-    await withTenant(profile.schoolId, (db) => db.messagingTermiiEvent.createMany({
+    const chargedKobo = billingCharge(profile, state, parsed.data.cost);
+    await basePrisma.messagingTermiiInbox.createMany({
       skipDuplicates: true,
       data: {
-        id: randomUUID(), schoolId: profile.schoolId, accountId: profile.accountId,
-        reportId: parsed.data.id, providerRef: parsed.data.message_id, state,
+        accountId: profile.accountId, reportId: parsed.data.id, providerRef: parsed.data.message_id, state, chargedKobo,
+        billingContractRef: chargedKobo === null ? null : profile.billing?.contractRef,
       },
-    }));
+    });
   }
 
   @Cron("*/1 * * * *", { waitForCompletion: true })
@@ -92,24 +113,69 @@ export class TermiiReportsService {
   }
 
   async reconcile(profile: TermiiReportProfile): Promise<void> {
-    const { schoolId, accountId } = profile;
-    await withTenant(schoolId, async (db) => {
-      const rows = await db.$queryRaw<{ id: string; provider_ref: string; state: State; received_at: Date }[]>`
-        SELECT e.id, e.provider_ref, e.state, e.received_at FROM messaging_termii_events e
-        WHERE e.school_id = ${schoolId} AND e.account_id = ${accountId} AND e.processed_at IS NULL
-          AND EXISTS (
-            SELECT 1 FROM notification_deliveries d WHERE d.school_id = ${schoolId} AND d.channel = 'SMS'
-              AND d.provider_account_id = ${accountId} AND d.provider_ref = e.provider_ref
-          )
-        ORDER BY e.provider_ref, e.received_at, e.id LIMIT 100 FOR UPDATE OF e SKIP LOCKED`;
-      for (const row of rows) {
-        await db.$executeRaw`
-          UPDATE notification_deliveries SET provider_state = ${row.state}, provider_state_at = ${row.received_at}
-          WHERE school_id = ${schoolId} AND channel = 'SMS' AND provider_account_id = ${accountId}
-            AND provider_ref = ${row.provider_ref}
-            AND (CASE provider_state WHEN 'SENT' THEN 1 WHEN 'FAILED' THEN 2 WHEN 'DELIVERED' THEN 3 ELSE 0 END) < ${ranks[row.state]}`;
-        await db.messagingTermiiEvent.updateMany({ where: { schoolId, id: row.id }, data: { processedAt: new Date() } });
+    const { accountId } = profile;
+    const inbox = await basePrisma.messagingTermiiInbox.findMany({
+      where: { accountId, nextAttemptAt: { lte: new Date() } },
+      orderBy: [{ nextAttemptAt: "asc" }, { receivedAt: "asc" }],
+      take: 100,
+    });
+    for (const event of inbox) {
+      const { reportId, providerRef, state, receivedAt, chargedKobo, billingContractRef } = event;
+      const key = { accountId, reportId, providerRef, state };
+      const [match] = await basePrisma.$queryRaw<{ school_id: string | null }[]>`
+        SELECT school_id FROM messaging_resolve_termii_school(${accountId}, ${providerRef})`;
+      if (!match?.school_id) {
+        // A recorded collision is final for this event even if one of the
+        // deliveries is later deleted. A missing reference may still appear.
+        const nextAttemptAt = match ? new Date("9999-01-01T00:00:00Z") : new Date(Date.now() + 60_000);
+        await basePrisma.messagingTermiiInbox.updateMany({
+          where: key, data: { nextAttemptAt },
+        });
+        continue;
       }
-    }, { label: "termii-report-reconcile", timeoutMs: 15_000 });
+      const schoolId = match.school_id;
+      await withTenant(schoolId, async (db) => {
+        await db.messagingTermiiEvent.createMany({
+          skipDuplicates: true,
+          data: { ...key, id: randomUUID(), schoolId, receivedAt },
+        });
+        await this.applyReports(db, accountId, schoolId, providerRef);
+      });
+      if (chargedKobo !== null && billingContractRef && profile.billing?.contractRef === billingContractRef) {
+        const delivery = await withTenant(schoolId, (db) => db.notificationDelivery.findFirst({
+          where: { schoolId, channel: "SMS", providerAccountId: accountId, providerRef, dispatchState: { in: ["ACCEPTED", "UNKNOWN"] } },
+          select: { id: true },
+        }));
+        if (delivery) await reconcileNotificationReservation({
+          schoolId, deliveryId: delivery.id, operatorId: null, resolution: chargedKobo === 0 ? "RELEASE" : "SETTLE",
+          providerChargedKobo: BigInt(chargedKobo), evidenceRef: `termii:${accountId}:${reportId}:${state}`,
+          verifiedTermiiReport: { accountId, providerRef, contractRef: billingContractRef },
+        });
+      }
+      await basePrisma.messagingTermiiInbox.deleteMany({ where: key });
+    }
+    // Drain already-routed rows after a restart and support legacy profiles.
+    const legacySchoolId = profile.schoolId;
+    if (legacySchoolId) await withTenant(legacySchoolId, (db) => this.applyReports(db, accountId, legacySchoolId));
+  }
+
+  private async applyReports(db: PrismaClient, accountId: string, schoolId: string, providerRef: string | null = null): Promise<void> {
+    const rows = await db.$queryRaw<{ id: string; provider_ref: string; state: State; received_at: Date }[]>`
+      SELECT e.id, e.provider_ref, e.state, e.received_at FROM messaging_termii_events e
+      WHERE e.school_id = ${schoolId} AND e.account_id = ${accountId} AND e.processed_at IS NULL
+        AND (${providerRef}::text IS NULL OR e.provider_ref = ${providerRef})
+        AND EXISTS (
+          SELECT 1 FROM notification_deliveries d WHERE d.school_id = ${schoolId} AND d.channel = 'SMS'
+            AND d.provider_account_id = ${accountId} AND d.provider_ref = e.provider_ref
+        )
+      ORDER BY e.provider_ref, e.received_at, e.id LIMIT 100 FOR UPDATE OF e SKIP LOCKED`;
+    for (const row of rows) {
+      await db.$executeRaw`
+        UPDATE notification_deliveries SET provider_state = ${row.state}, provider_state_at = ${row.received_at}
+        WHERE school_id = ${schoolId} AND channel = 'SMS' AND provider_account_id = ${accountId}
+          AND provider_ref = ${row.provider_ref}
+          AND (CASE provider_state WHEN 'SENT' THEN 1 WHEN 'FAILED' THEN 2 WHEN 'DELIVERED' THEN 3 ELSE 0 END) < ${ranks[row.state]}`;
+      await db.messagingTermiiEvent.updateMany({ where: { schoolId, id: row.id }, data: { processedAt: new Date() } });
+    }
   }
 }

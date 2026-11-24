@@ -3,13 +3,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma, type PrismaClient, withTenant } from "@school-kit/db";
-import { ConflictError, ForbiddenError, ValidationError } from "@school-kit/types";
+import { ConflictError, ForbiddenError, ValidationError, type MessagingMetaTemplateSubmission } from "@school-kit/types";
 
 import type { AuthContext } from "../../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../../common/auth/role-check";
 import { META_TEMPLATE_NAMES } from "./meta-provider";
 import { metaTokenKey, openMetaToken, sealMetaToken } from "./meta-credentials";
-import { checkMetaPhone, manageMetaSubscription, readMetaTemplates, revokeMetaToken, type MetaSignupConfig, verifyMetaSignup } from "./meta-signup-graph";
+import { checkMetaPhone, manageMetaSubscription, readMetaTemplates, registerMetaPhone, revokeMetaToken, submitMetaTemplate, type MetaSignupConfig, verifyMetaSignup } from "./meta-signup-graph";
 
 export interface MetaSignupInput {
   code: string;
@@ -182,10 +182,49 @@ export class MetaConnectionsService {
             item.status === "REJECTED" ? item.status : "UNKNOWN",
         }];
       });
-      return { connected: true, available: true, templates };
+      return { connected: true, available: true, templates, ...(response.truncated && { truncated: true }) };
     } catch {
       return { connected: true, available: false, templates: [] };
     }
+  }
+
+  async registerPhone(auth: AuthContext, registrationSecret: string): Promise<{ status: "REGISTERED" }> {
+    await assertUserActiveAndHasOneOf(auth, ["owner"]);
+    if (!/^\d{6}$/.test(registrationSecret)) throw new ValidationError("Invalid registration request.");
+    const { graph, account } = await this.verifyManagementAccount(auth, "MESSAGING_META_PHONE_REGISTRATION_ENABLED");
+    await this.auditManagementAttempt(auth, "messaging.meta.register_requested", account.phoneNumberId);
+    const result = await registerMetaPhone(graph, account.phoneNumberId, account.token, registrationSecret).catch(() => null);
+    if (!result?.success) throw new ConflictError("META_REGISTRATION_UNCONFIRMED", "Check the number in WhatsApp Manager before trying again.");
+    return { status: "REGISTERED" };
+  }
+
+  async submitTemplate(auth: AuthContext, input: MessagingMetaTemplateSubmission): Promise<{ status: "SUBMITTED"; id: string }> {
+    await assertUserActiveAndHasOneOf(auth, ["owner"]);
+    const components = schoolTemplateComponents(input);
+    const { graph, account } = await this.verifyManagementAccount(auth, "MESSAGING_META_TEMPLATE_SUBMISSION_ENABLED");
+    await this.auditManagementAttempt(auth, "messaging.meta.template_submission_requested", input.name);
+    const result = await submitMetaTemplate(graph, account.wabaId, account.token, {
+      name: input.name, language: input.language, category: input.category, components,
+    }).catch(() => null);
+    const id = result?.id;
+    if (!validId(id)) throw new ConflictError("META_TEMPLATE_SUBMISSION_UNCONFIRMED", "Check the template in WhatsApp Manager before trying again.");
+    return { status: "SUBMITTED", id };
+  }
+
+  private async verifyManagementAccount(auth: AuthContext, releaseFlag: string) {
+    const { graph } = this.settings(true);
+    if (this.config.get<string>(releaseFlag) !== "on") throw new ForbiddenError("This Meta operation is unavailable.");
+    const account = await this.activeAccount(auth.schoolId);
+    if (!account || !(await checkMetaPhone(graph, account.wabaId, account.phoneNumberId, account.token).catch(() => false))) {
+      throw new ConflictError("META_ACCOUNT_UNVERIFIED", "Verify the connected WhatsApp account.");
+    }
+    return { graph, account };
+  }
+
+  private async auditManagementAttempt(auth: AuthContext, action: string, entityId: string) {
+    await withTenant(auth.schoolId, (db) => db.auditLog.create({ data: {
+      schoolId: auth.schoolId, userId: auth.userId, action, entityType: "messaging_meta_connection", entityId,
+    } }));
   }
 
   async disconnect(auth: AuthContext): Promise<{ status: "DISCONNECTED"; revocationPending: boolean }> {
@@ -249,4 +288,22 @@ export class MetaConnectionsService {
         AND (NOT ${active} OR (status = 'ACTIVE' AND suspended_at IS NULL)) FOR UPDATE`;
     if (!school) throw new ForbiddenError("School account management is unavailable.");
   }
+}
+
+export function schoolTemplateComponents(input: MessagingMetaTemplateSubmission): object[] {
+  const { name, body, bodyExamples, paymentButtonText } = input;
+  const ids = [...body.matchAll(/\{\{(\d+)\}\}/g)].map(([, value]) => value);
+  const paymentRequired = ["fee_payment_reminder", "fee_invoice_issued", "fee_payment_overdue"].includes(name);
+  if (!META_TEMPLATE_NAMES.some((item) => item === name && item !== "setup_call_booked") ||
+      ids.length !== bodyExamples.length || !ids.every((value, index) => value === String(index + 1)) ||
+      /[{}]/.test(body.replace(/\{\{\d+\}\}/g, "")) || paymentRequired !== !!paymentButtonText) {
+    throw new ValidationError("Template variables or payment button do not match the messaging contract.");
+  }
+  const components: object[] = [{
+    type: "BODY", text: body, ...(ids.length && { example: { body_text: [bodyExamples] } }),
+  }];
+  if (paymentButtonText) components.push({
+    type: "BUTTONS", buttons: [{ type: "URL", text: paymentButtonText, url: "https://paystack.com/pay/{{1}}", example: ["https://paystack.com/pay/example-code"] }],
+  });
+  return components;
 }

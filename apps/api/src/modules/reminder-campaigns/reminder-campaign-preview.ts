@@ -137,7 +137,7 @@ export async function computeReminderPreview(
   const school = await db.school.findUniqueOrThrow({ where: { id: schoolId }, select: { name: true, smsSenderId: true, smsSenderStatus: true, paystackPaymentsEnabled: true, paystackSplitCode: true } });
   const { state, can } = await attemptableChannels(port, schoolId);
   const wantsWhatsApp = input.options.useWhatsApp === true;
-  const whatsappRate = wantsWhatsApp ? port.whatsappRate(schoolId, input.options.overdueOnly, now) : null;
+  const whatsappRate = wantsWhatsApp ? await port.whatsappRate(schoolId, input.options.overdueOnly, now) : null;
   const whatsappReady = wantsWhatsApp && whatsappRate !== null && school.paystackPaymentsEnabled && !!school.paystackSplitCode &&
     (await db.notificationPreference.count({ where: { schoolId, paidWhatsAppEnabled: true } })) === 1 &&
     (await db.messagingSchoolMetaConnection.count({
@@ -301,7 +301,7 @@ export async function computeReminderPreview(
   };
   // Quiet hours change nothing that is sent, only when: kept out of the
   // fingerprint so a review at 20:59 can still be confirmed at 21:01.
-  const price = port.smsPricePerSegmentKobo();
+  const price = await port.smsPricePerSegmentKobo();
   if (wantsWhatsApp) summary.whatsappEstimate = {
     recipients: whatsappRecipients,
     maximumKobo: whatsappRate === null ? null : String(whatsappRate * BigInt(whatsappRecipients)) as Kobo,

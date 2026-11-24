@@ -10,7 +10,7 @@ import { basePrisma, withTenant } from "@school-kit/db";
 import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import { AuthService } from "../auth/auth.service.js";
-import { creditVerifiedMessagingTopUp, getMessagingWallet, reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
+import { creditVerifiedMessagingTopUp, getMessagingReconciliation, getMessagingWallet, reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
 import { PAID_PAYMENT_EVENT, PaidMessagingService } from "../notifications/messaging/paid-messaging.service";
 import { buildPaymentConfirmationHtml, PaymentConfirmationService } from "./payment-confirmation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
@@ -177,7 +177,7 @@ describe("online payment confirmation email", () => {
 
   it("queues once from committed payment, waits through quiet hours, and holds an ambiguous SMS reservation", async () => {
     const { schoolId, ownerId, paymentId, reference, guardianIds } = await setUp("paid-outbound", [{ email: null }]);
-    const sendSmsWithOutcome = vi.fn().mockResolvedValue({ status: "UNKNOWN", reason: "PROVIDER_NO_ANSWER" });
+    const sendWalletReservedSms = vi.fn().mockResolvedValue({ status: "UNKNOWN", reason: "PROVIDER_NO_ANSWER" });
     const config = {
       MESSAGING_PAID_ENABLED: "on", MESSAGING_PAID_PLATFORM_DAILY_KOBO: "100000",
       MESSAGING_TERMII_PAID_ACCOUNT_ID: "fictional-account",
@@ -192,7 +192,7 @@ describe("online payment confirmation email", () => {
     };
     const consent = { verifiedRecipient: async () => "+2348012345678" };
     const preferences = { getEnabledChannels: async () => ({ sms: true }), getPaidChannels: async () => ({ walletSmsEnabled: true }) };
-    const termii = { isConfigured: true, sendSmsWithOutcome };
+    const termii = { isConfigured: true, sendWalletReservedSms };
     const worker = new PaidMessagingService(
       new ConfigService(config), consent as never, {} as never, preferences as never, termii as never,
     );
@@ -223,26 +223,36 @@ describe("online payment confirmation email", () => {
     const night = new Date(day);
     night.setUTCHours(22);
     await worker.processPending(night);
-    expect(sendSmsWithOutcome).not.toHaveBeenCalled();
+    expect(sendWalletReservedSms).not.toHaveBeenCalled();
     await creditVerifiedMessagingTopUp(schoolId, randomUUID(), 500n);
     await Promise.all([worker.processPending(day), worker.processPending(day)]);
-    expect(sendSmsWithOutcome).toHaveBeenCalledTimes(1);
+    expect(sendWalletReservedSms).toHaveBeenCalledTimes(1);
     const [delivery] = await deliveries();
     expect(delivery).toMatchObject({ dispatchState: "UNKNOWN", dispatchRateVersion: "fixture-1", principalId: guardianIds[0] });
     const held = await getMessagingWallet(schoolId);
     expect(held.reservedKobo).toBeGreaterThan(0n);
     await worker.processPending(new Date(day.getTime() + 3600_000));
-    expect(sendSmsWithOutcome).toHaveBeenCalledTimes(1);
+    expect(sendWalletReservedSms).toHaveBeenCalledTimes(1);
     expect(await getMessagingWallet(schoolId)).toEqual(held);
     await expect(reconcileNotificationReservation({
       schoolId, deliveryId: delivery!.id, operatorId: randomUUID(), resolution: "SETTLE", evidenceRef: "fictional-ledger-report",
       providerChargedKobo: held.reservedKobo + 1n,
     })).rejects.toMatchObject({ code: "MESSAGING_CHARGE_MISMATCH" });
     expect(await getMessagingWallet(schoolId)).toEqual(held);
-    await expect(reconcileNotificationReservation({
-      schoolId, deliveryId: delivery!.id, operatorId: randomUUID(), resolution: "RELEASE", evidenceRef: "fictional-ledger-report", providerChargedKobo: 0n,
-    })).resolves.toEqual({ status: "RESOLVED" });
-    expect(await getMessagingWallet(schoolId)).toEqual({ availableKobo: 500n, reservedKobo: 0n });
+    expect((await getMessagingReconciliation(schoolId)).items[0]).toMatchObject({
+      status: "DISCREPANCY", chargedKobo: null, releasedKobo: null,
+    });
+    const charge = held.reservedKobo - 1n;
+    const settle = () => reconcileNotificationReservation({
+      schoolId, deliveryId: delivery!.id, operatorId: randomUUID(), resolution: "SETTLE",
+      evidenceRef: "fictional-ledger-report", providerChargedKobo: charge,
+    });
+    const outcomes = await Promise.all([settle(), settle()]);
+    expect(outcomes.map(({ status }) => status).sort()).toEqual(["ALREADY_RESOLVED", "RESOLVED"]);
+    expect(await getMessagingWallet(schoolId)).toEqual({ availableKobo: 500n - charge, reservedKobo: 0n });
+    expect((await getMessagingReconciliation(schoolId)).items[0]).toMatchObject({
+      status: "SETTLED", discrepancyRecorded: true, chargedKobo: String(charge), releasedKobo: "1",
+    });
   });
 
   it("skips a guardian with no email and one whose address bounced or complained", async () => {

@@ -190,6 +190,13 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-24)
 
+PR #563 remains a draft on `feat/unified-messaging-infrastructure`. The
+continuation adds shared Termii routing, partial settlement, protected legacy
+SMS egress, atomic paid jobs, emergency controls, gated Meta management, and
+inbound retention. See the [messaging runbook](runbooks/unified-messaging.md)
+and [journal](journal/2026-11-24-unified-messaging.md) for remaining scope.
+
+
 Unified messaging foundations are on `feat/unified-messaging-infrastructure`.
 See [the contract](modules/unified-messaging.md) and [the rollout
 runbook](runbooks/unified-messaging.md). Paid payment confirmations now have a default-off worker. School-owned Meta

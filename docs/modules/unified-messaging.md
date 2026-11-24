@@ -13,14 +13,24 @@ strings in NGN kobo. A null estimate means the API could not quote the send.
 | PATCH /messaging/preferences | Implemented. Owner-only, audited WhatsApp and wallet-backed SMS opt-in with both flags false by default |
 | POST /messaging/whatsapp/signup | Implemented and gated. Start a school-bound Embedded Signup session |
 | POST /messaging/whatsapp/signup/complete | Implemented and gated. Exchange the code and independently check WABA and phone ownership |
+| POST /messaging/whatsapp/templates | Submit a supported template for the connected school WABA, behind a separate release flag. This does not approve it for dispatch. |
+| POST /messaging/whatsapp/connection/register | Register the connected school phone with Meta, behind a separate release flag |
+| GET /messaging/whatsapp/conversations/:guardianId | Owner-only encrypted inbound text history, behind school retention configuration |
 | GET /messaging/whatsapp/templates | Read the connected WABA’s template IDs, exact languages, categories and provider approval states |
 | GET /messaging/whatsapp/connection/health | Check the current school-owned account and phone without exposing credentials |
 | DELETE /messaging/whatsapp/connection | Implemented. Disconnect the current school and confirm token revocation |
-| GET /platform-admin/messaging/controls | Effective and staged rate versions plus release status. Write controls are pending. |
+| GET /platform-admin/messaging/controls | Effective and staged rate versions, release status, and emergency switch revisions |
+| POST /platform-admin/messaging/price-catalog | Replace the effective-dated legacy Termii catalogue with an audited revision |
+| POST /platform-admin/schools/:id/messaging/price-catalog | Replace the school’s complete effective-dated rate catalogue |
+| POST /platform-admin/schools/:id/messaging/templates/:name/review | Record a provider-evidenced variant review. Send `review: null` to suspend it. Live dispatch checks Meta again. |
+| POST /platform-admin/messaging/spending-limit | Appends an SMS platform ceiling under the VPS maximum. Use zero to pause or null to restore the VPS ceiling. |
+| GET or POST /platform-admin/schools/:id/messaging/spending-limit | Read or append a school cap under its configured maximum |
+| POST /platform-admin/messaging/emergency-controls | Appends an audited SMS or WhatsApp stop/resume revision. Resume still requires normal authorization and provider gates. |
 | POST /messaging/deliveries/:id/cancel | Cancel a queued paid notification without affecting an in-flight send |
 | GET /portal/messaging/whatsapp-consent | Current consent wording, version and grant status |
 | POST /portal/messaging/whatsapp-consent/challenge | Request a time-limited link to verify the guardian's current number and grant consent |
 | POST /portal/messaging/whatsapp-consent/withdraw | Withdraw consent without sending a message |
+| GET /platform-admin/schools/:id/messaging/reconciliation | Reports open and resolved wallet holds, charges, partial releases and recorded discrepancies |
 | GET /platform-admin/schools/:id/messaging/wallet | Read school wallet balance and held funds |
 | DELETE /platform-admin/schools/:id/messaging/whatsapp | Offboard an account when the school owner cannot access it |
 | POST /platform-admin/schools/:id/messaging/deliveries/:deliveryId/reconcile | Audited, provider-evidenced settlement or release of an SMS reservation |

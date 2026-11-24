@@ -366,6 +366,7 @@ model School {
   reportExports           ReportExport[]
   previousAddresses       SchoolPreviousAddress[]
 
+  messagingInboundMessages MessagingInboundMessage[]
   messagingWalletEntries  MessagingWalletEntry[]
   messagingWalletTopUps   MessagingWalletTopUp[]
   metaSignupSession       MessagingMetaSignupSession?
@@ -5977,6 +5978,7 @@ model SchoolAiTermsEvent {
 }
 
 model MessagingWalletEntry {
+  releasedKobo Int    @default(0) @map("released_kobo")
   id         String   @id
   schoolId   String   @map("school_id")
   reference  String
@@ -6116,4 +6118,75 @@ model MessagingReminderFrequency {
 
   @@id([schoolId, studentId, guardianId])
   @@map("messaging_reminder_frequency")
+}
+
+/// Account-scoped authenticated callback inbox. Tenant routing uses the exact provider reference.
+model MessagingTermiiInbox {
+  chargedKobo Int? @map("charged_kobo")
+  billingContractRef String? @map("billing_contract_ref")
+  accountId   String   @map("account_id")
+  reportId    String   @map("report_id")
+  providerRef String   @map("provider_ref")
+  state       String
+  receivedAt  DateTime @default(now()) @map("received_at")
+
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at")
+
+  @@id([accountId, reportId, providerRef, state])
+  @@index([accountId, nextAttemptAt, receivedAt], map: "messaging_termii_inbox_account_attempt_idx")
+  @@map("messaging_termii_inbox")
+}
+
+model MessagingEmergencyControl {
+  revision    BigInt   @id @default(autoincrement())
+  channel     String
+  stopped     Boolean
+  actorId     String   @map("actor_id")
+  evidenceRef String   @map("evidence_ref")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([channel, revision(sort: Desc)], map: "messaging_emergency_controls_latest_idx")
+  @@map("messaging_emergency_controls")
+}
+
+model MessagingInboundMessage {
+  id            String   @id
+  schoolId      String   @map("school_id")
+  guardianId    String   @map("guardian_id")
+  providerRef   String   @map("provider_ref")
+  encryptedText String   @map("encrypted_text")
+  occurredAt    DateTime @map("occurred_at")
+  expiresAt     DateTime @map("expires_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, providerRef])
+  @@index([schoolId, guardianId, occurredAt(sort: Desc), id(sort: Desc)], map: "messaging_inbound_history_idx")
+  @@index([schoolId, expiresAt], map: "messaging_inbound_expiry_idx")
+  @@map("messaging_inbound_messages")
+}
+
+model MessagingSpendLimitRevision {
+  revision    BigInt   @id @default(autoincrement())
+  scope       String
+  dailyKobo   Int?     @map("daily_kobo")
+  actorId     String   @map("actor_id")
+  evidenceRef String   @map("evidence_ref")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([scope, revision(sort: Desc)], map: "messaging_spend_limit_latest_idx")
+  @@map("messaging_spend_limit_revisions")
+}
+
+model MessagingReviewRevision {
+  revision    BigInt   @id @default(autoincrement())
+  scope       String
+  reviewKey   String   @map("review_key")
+  snapshot    Json
+  actorId     String   @map("actor_id")
+  evidenceRef String   @map("evidence_ref")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([scope, reviewKey, revision(sort: Desc)], map: "messaging_review_latest_idx")
+  @@map("messaging_review_revisions")
 }
