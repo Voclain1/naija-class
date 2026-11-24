@@ -1288,7 +1288,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
     }
 
     const { payments, invoice, overpayments, exceptions } = await withTenant(schoolId, async (db) => ({
-      payments: await db.payment.findMany({ where: { invoiceId }, select: { status: true } }),
+      payments: await db.payment.findMany({ where: { invoiceId }, select: { status: true, id: true, amount: true, allocatedKobo: true } }),
       invoice: await db.invoice.findUniqueOrThrow({ where: { id: invoiceId }, select: { status: true, totalPaid: true } }),
       exceptions: await db.paystackPaymentException.findMany({ where: { schoolId, invoiceId } }),
       overpayments: await db.auditLog.findMany({

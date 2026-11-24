@@ -29,7 +29,7 @@ export class PaystackWebhookGuard implements CanActivate {
         (mode === "test" && apiKey?.startsWith("sk_test_"));
       // Transitional compatibility. Never run this branch after a modern
       // header was supplied, including malformed or unknown key IDs.
-      if (matchesMode && apiKey && typeof legacy === "string" && /^[0-9a-f]{128}$/.test(legacy) &&
+      if (matchesMode && apiKey && !apiKey.endsWith("_replace_me") && typeof legacy === "string" && /^[0-9a-f]{128}$/.test(legacy) &&
           this.paystack.verifyWebhookSignature(rawBody, legacy)) return true;
     }
 
