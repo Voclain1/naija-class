@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquare,
   Rocket,
   ScanLine,
   School,
@@ -40,6 +41,7 @@ export const CONSOLE_NAV = [
     icon: ScanLine,
   },
   { href: "/super-admin/dashboard/people", label: "People", icon: Users },
+  { href: "/super-admin/dashboard/communications", label: "Communications", icon: MessageSquare },
   { href: "/super-admin/dashboard/activity", label: "Activity", icon: History },
 ] as const;
 
