@@ -19,7 +19,7 @@ strings in NGN kobo. A null estimate means the API could not quote the send.
 
 The overview and wallet history require an active school owner or admin with
 `notification-preferences.read`. The top-up route requires an active owner
-with `notification-preferences.update` and a verified staff email. Wallet transactions
+with `messaging-wallet.top-up` and a verified staff email. Wallet transactions
 accept an optional opaque `cursor`. An invalid or foreign cursor returns
 HTTP 400. In the overview, paid-channel readiness refers to unified sending,
 while the SMS preference reflects the existing rail. A null wallet threshold

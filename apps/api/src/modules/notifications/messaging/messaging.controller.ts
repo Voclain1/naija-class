@@ -67,7 +67,7 @@ export class MessagingController {
   }
 
   @Post("wallet/top-ups")
-  @Permissions("notification-preferences.update")
+  @Permissions("messaging-wallet.top-up")
   checkout(
     @CurrentUser() auth: AuthContext,
     @Body(new ZodValidationPipe(TOP_UP_REQUEST)) body: MessagingTopUpRequest,
