@@ -14,7 +14,7 @@ import { getMessagingWallet, reserveMessagingCredit, resolveMessagingCredit } fr
 import { MetaConnectionsService } from "./meta-connections.service";
 import { sendMetaTemplate } from "./meta-provider";
 import { PAID_EVENTS, PAID_PAYMENT_EVENT, readPaidEventFacts, type OtherPaidEvent, type PaidEvent } from "./paid-event-context";
-import { readPaidMessagingProfiles, reviewedEventTemplate, type PaidMessagingProfile } from "./paid-messaging-policy";
+import { parsePaidPlatformLimit, readPaidMessagingProfiles, reviewedEventTemplate, type PaidMessagingProfile } from "./paid-messaging-policy";
 
 export { PAID_PAYMENT_EVENT } from "./paid-event-context";
 
@@ -37,6 +37,15 @@ export class PaidMessagingService {
     return readPaidMessagingProfiles(this.config.get("MESSAGING_PAID_ENABLED"), this.config.get("MESSAGING_PAID_PAYMENT_PROFILES"));
   }
 
+  private platformLimitKobo(): bigint {
+    return parsePaidPlatformLimit(this.config.get<string>("MESSAGING_PAID_PLATFORM_DAILY_KOBO"));
+  }
+
+  private async paidEnabled(schoolId: string, channel: string): Promise<boolean> {
+    const flags = await this.preferences.getPaidChannels(schoolId);
+    return channel === "WHATSAPP" ? flags.paidWhatsAppEnabled : channel === "SMS" && flags.walletSmsEnabled;
+  }
+
   async readiness(schoolId: string, availableKobo: bigint, now = new Date()) {
     const profile = this.profiles().find((item) => item.schoolId === schoolId);
     const sms: MessagingOverview["providers"][number] = { channel: "SMS", ready: false, blockers: ["CHANNEL_DISABLED"] };
@@ -46,10 +55,13 @@ export class PaidMessagingService {
       const price = quoteDispatchCost(profile.rates, "TERMII_SMS", "SCHOOLKIT", 1, now);
       if (!price) sms.blockers.push("PRICE_MISSING");
       else if (availableKobo < price.walletKobo) sms.blockers.push("INSUFFICIENT_CREDIT");
+      if (this.platformLimitKobo() === 0n) sms.blockers.push("SPENDING_LIMIT");
       if (!this.termii.isConfigured || !profile.termiiAccountId || profile.termiiAccountId !== this.config.get("MESSAGING_TERMII_PAID_ACCOUNT_ID")) {
         sms.blockers.push("PROVIDER_UNAVAILABLE");
       }
-      if (!(await this.preferences.getEnabledChannels(schoolId)).sms) sms.blockers.push("CHANNEL_DISABLED");
+      if (!(await this.paidEnabled(schoolId, "SMS")) || !(await this.preferences.getEnabledChannels(schoolId)).sms) {
+        sms.blockers.push("CHANNEL_DISABLED");
+      }
       sms.ready = sms.blockers.length === 0;
     }
     if (profile?.channel === "WHATSAPP") {
@@ -58,6 +70,7 @@ export class PaidMessagingService {
       if (!template) whatsapp.blockers.push("TEMPLATE_NOT_APPROVED");
       else if (!quoteDispatchCost(profile.rates, `META_${template.category}`, "SCHOOL_OWNED", 1, now)) whatsapp.blockers.push("PRICE_MISSING");
       if (!(await this.accounts.activeAccount(schoolId))) whatsapp.blockers.push("PROVIDER_UNAVAILABLE");
+      if (!(await this.paidEnabled(schoolId, "WHATSAPP"))) whatsapp.blockers.push("CHANNEL_DISABLED");
       whatsapp.ready = whatsapp.blockers.length === 0;
     }
     return { sms, whatsapp, lowBalance: profile?.lowBalanceKobo !== undefined ? availableKobo < profile.lowBalanceKobo : null };
@@ -121,7 +134,7 @@ export class PaidMessagingService {
     schoolId: string; invoiceId: string; sendId: string; guardianId: string; overdue: boolean;
   }): Promise<boolean> {
     const { schoolId, invoiceId, sendId, guardianId, overdue } = input;
-    if (this.campaignRate(schoolId, overdue, new Date()) === null) return false;
+    if (this.campaignRate(schoolId, overdue, new Date()) === null || !(await this.paidEnabled(schoolId, "WHATSAPP"))) return false;
     await withTenant(schoolId, (db) => db.notificationDelivery.createMany({
       skipDuplicates: true,
       data: [{
@@ -265,6 +278,7 @@ export class PaidMessagingService {
       (await this.preferences.getEnabledChannels(schoolId)).sms;
     const block = (reason: string) => this.finish(job, "QUEUED", { state: "BLOCKED", reason });
     if (channel !== profile.channel) return block("CHANNEL_CHANGED");
+    if (!(await this.paidEnabled(schoolId, channel))) return block("CHANNEL_DISABLED");
     if (now.getTime() - job.sentAt.getTime() > 48 * 60 * 60_000) return block("EXPIRED");
     if (preflight === "WAIT_LINK") {
       await withTenant(schoolId, (db) => db.notificationDelivery.updateMany({
@@ -309,7 +323,7 @@ export class PaidMessagingService {
     if (claimed !== "CLAIMED") return block(claimed);
 
     const currentRecipient = async () => {
-      if ((await verified()) !== recipient) return false;
+      if (!(await this.paidEnabled(schoolId, channel)) || (await verified()) !== recipient) return false;
       const latest = await readPaidEventFacts(job, now);
       return !!latest && latest !== "WAIT_LINK" && latest.paymentCode === preflight.paymentCode &&
         JSON.stringify(latest.fields) === JSON.stringify(preflight.fields);
@@ -326,9 +340,8 @@ export class PaidMessagingService {
         ? { state: "BLOCKED", reason: outcome.reason } : { state: "UNKNOWN", reason: "PROVIDER_UNCERTAIN" });
     }
 
-    const configured = this.config.get<string>("MESSAGING_PAID_PLATFORM_DAILY_KOBO");
-    const platformDailyKobo = configured && /^[1-9]\d{0,9}$/.test(configured) ? BigInt(configured) : 0n;
-    if (platformDailyKobo > 2_147_483_647n || !(await currentRecipient())) {
+    const platformDailyKobo = this.platformLimitKobo();
+    if (platformDailyKobo === 0n || !(await currentRecipient())) {
       return this.finish(job, "SENDING", { state: "BLOCKED", reason: "INVALID_SPEND_CONFIGURATION_OR_RECIPIENT" });
     }
     const reserved = await reserveMessagingCredit(schoolId, `notification:${job.id}`, cost.walletKobo, {

@@ -34,6 +34,7 @@ describe("messaging wallet with PostgreSQL and runtime RLS", () => {
         await tx.messagingWalletEntry.deleteMany({ where: { schoolId: { in: ids } } });
         await tx.$executeRaw`ALTER TABLE messaging_wallet_entries ENABLE TRIGGER messaging_wallet_entry_immutable`;
         await tx.messagingWalletTopUp.deleteMany({ where: { schoolId: { in: ids } } });
+        await tx.notificationPreference.deleteMany({ where: { schoolId: { in: ids } } });
         await tx.auditLog.deleteMany({ where: { schoolId: { in: ids } } });
         await tx.user.deleteMany({ where: { schoolId: { in: ids } } });
         await tx.school.deleteMany({ where: { id: { in: ids } } });
@@ -105,6 +106,12 @@ describe("messaging wallet with PostgreSQL and runtime RLS", () => {
     expect(page.nextCursor).toBeNull();
     await expect(controller.walletHistory(auth, bEntry.id)).rejects.toThrow("Invalid wallet cursor");
     const overview = await controller.overview(auth);
+    expect(overview.paidPreferences).toEqual({ paidWhatsAppEnabled: false, walletSmsEnabled: false });
+    await controller.updatePaidPreferences(auth, { paidWhatsAppEnabled: true, walletSmsEnabled: false });
+    const preferences = await controller.overview(auth);
+    expect(preferences.paidPreferences).toEqual({ paidWhatsAppEnabled: true, walletSmsEnabled: false });
+    expect(preferences.preferences.EMAIL).toBe(overview.preferences.EMAIL);
+    expect(preferences.preferences.SMS).toBe(overview.preferences.SMS);
     expect(overview.wallet.availableKobo).toBe("100");
     expect(overview.templates).toHaveLength(9);
     expect(overview.templates.every((template) => template.approval === "UNKNOWN")).toBe(true);

@@ -139,6 +139,7 @@ export async function computeReminderPreview(
   const wantsWhatsApp = input.options.useWhatsApp === true;
   const whatsappRate = wantsWhatsApp ? port.whatsappRate(schoolId, input.options.overdueOnly, now) : null;
   const whatsappReady = wantsWhatsApp && whatsappRate !== null && school.paystackPaymentsEnabled && !!school.paystackSplitCode &&
+    (await db.notificationPreference.count({ where: { schoolId, paidWhatsAppEnabled: true } })) === 1 &&
     (await db.messagingSchoolMetaConnection.count({
       where: { schoolId, disconnectedAt: null, activationPending: false, encryptedToken: { not: null } },
     })) === 1;

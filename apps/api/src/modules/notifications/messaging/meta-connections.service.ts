@@ -190,25 +190,30 @@ export class MetaConnectionsService {
 
   async disconnect(auth: AuthContext): Promise<{ status: "DISCONNECTED"; revocationPending: boolean }> {
     await assertUserActiveAndHasOneOf(auth, ["owner"]);
-    const current = await withTenant(auth.schoolId, async (db) => {
-      await this.lockSchool(db, auth.schoolId, false);
-      await db.messagingMetaSignupSession.deleteMany({ where: { schoolId: auth.schoolId } });
-      const connection = await db.messagingSchoolMetaConnection.findUnique({ where: { schoolId: auth.schoolId } });
+    return this.disconnectSchool(auth.schoolId, auth.userId);
+  }
+
+  /** Invoked after a school owner or platform operator has been authorized. */
+  async disconnectSchool(schoolId: string, actorId: string): Promise<{ status: "DISCONNECTED"; revocationPending: boolean }> {
+    const current = await withTenant(schoolId, async (db) => {
+      await this.lockSchool(db, schoolId, false);
+      await db.messagingMetaSignupSession.deleteMany({ where: { schoolId: schoolId } });
+      const connection = await db.messagingSchoolMetaConnection.findUnique({ where: { schoolId: schoolId } });
       // Leave legacy manually provisioned bindings intact. This endpoint
       // owns only bindings created by Embedded Signup.
       if (!connection) return null;
       await db.messagingMetaAccount.deleteMany({
-        where: { schoolId: auth.schoolId, wabaId: connection.wabaId, phoneNumberId: connection.phoneNumberId },
+        where: { schoolId: schoolId, wabaId: connection.wabaId, phoneNumberId: connection.phoneNumberId },
       });
       await db.messagingSchoolMetaConnection.updateMany({
-        where: { schoolId: auth.schoolId }, data: { disconnectedAt: new Date(), activationPending: false },
+        where: { schoolId: schoolId }, data: { disconnectedAt: new Date(), activationPending: false },
       });
       await db.notificationDelivery.updateMany({
-        where: { schoolId: auth.schoolId, channel: "WHATSAPP", dispatchState: "QUEUED" },
+        where: { schoolId: schoolId, channel: "WHATSAPP", dispatchState: "QUEUED" },
         data: { dispatchState: "CANCELLED", dispatchReason: "ACCOUNT_DISCONNECTED" },
       });
       await db.messagingGuardianConsent.updateMany({
-        where: { schoolId: auth.schoolId },
+        where: { schoolId: schoolId },
         data: { withdrawnAt: new Date(), challengeHash: null, challengeExpiresAt: null, challengeIssuedAt: null },
       });
       return connection;
@@ -217,18 +222,18 @@ export class MetaConnectionsService {
 
     try {
       const { graph, key } = this.settings(false);
-      const token = openMetaToken(key, auth.schoolId, current.wabaId, current.encryptedToken);
+      const token = openMetaToken(key, schoolId, current.wabaId, current.encryptedToken);
       await manageMetaSubscription(graph, current.wabaId, token, "DELETE").catch(() => false);
       if (!(await revokeMetaToken(graph, token))) return { status: "DISCONNECTED", revocationPending: true };
-      await withTenant(auth.schoolId, async (db) => {
+      await withTenant(schoolId, async (db) => {
         const updated = await db.messagingSchoolMetaConnection.updateMany({
-          where: { schoolId: auth.schoolId, encryptedToken: current.encryptedToken, disconnectedAt: { not: null } },
+          where: { schoolId: schoolId, encryptedToken: current.encryptedToken, disconnectedAt: { not: null } },
           data: { encryptedToken: null, revokedAt: new Date() },
         });
         if (updated.count) {
           await db.auditLog.create({ data: {
-            schoolId: auth.schoolId, userId: auth.userId, action: "messaging.meta.revoke",
-            entityType: "messaging_meta_connection", entityId: auth.schoolId,
+            schoolId: schoolId, userId: actorId, action: "messaging.meta.revoke",
+            entityType: "messaging_meta_connection", entityId: schoolId,
           } });
         }
       });

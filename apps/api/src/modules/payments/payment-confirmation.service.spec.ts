@@ -191,7 +191,7 @@ describe("online payment confirmation email", () => {
       }]),
     };
     const consent = { verifiedRecipient: async () => "+2348012345678" };
-    const preferences = { getEnabledChannels: async () => ({ sms: true }) };
+    const preferences = { getEnabledChannels: async () => ({ sms: true }), getPaidChannels: async () => ({ walletSmsEnabled: true }) };
     const termii = { isConfigured: true, sendSmsWithOutcome };
     const worker = new PaidMessagingService(
       new ConfigService(config), consent as never, {} as never, preferences as never, termii as never,

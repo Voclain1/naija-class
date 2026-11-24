@@ -1,7 +1,7 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { withTenant } from "@school-kit/db";
 import { NotFoundError } from "@school-kit/types";
-import type { DeliveryState, Kobo, MessagingDeliveryPage, MessagingMetaDisconnectResult, MessagingMetaSignupCompletion, MessagingMetaSignupSession, MessagingOverview, MessagingTopUpCheckout, MessagingTopUpRequest, MessagingWalletEntry, MessagingWalletPage } from "@school-kit/types";
+import type { DeliveryState, Kobo, MessagingDeliveryPage, MessagingMetaDisconnectResult, MessagingMetaSignupCompletion, MessagingMetaSignupSession, MessagingOverview, MessagingPaidPreferences, MessagingTopUpCheckout, MessagingTopUpRequest, MessagingWalletEntry, MessagingWalletPage } from "@school-kit/types";
 import { z } from "zod";
 
 import type { AuthContext } from "../../../common/auth/auth-context";
@@ -53,12 +53,14 @@ export class MessagingController {
         where: { schoolId: auth.schoolId }, select: { disconnectedAt: true, revokedAt: true, activationPending: true },
       })),
     ]);
+    const paidPreferences = await this.preferences.getPaidChannels(auth.schoolId);
     const readiness = await this.paid?.readiness(auth.schoolId, wallet.availableKobo);
     return {
       preferences: {
         EMAIL: preferences.emailEnabled, PUSH: preferences.pushEnabled,
-        SMS: preferences.smsEnabled, WHATSAPP: readiness ? !readiness.whatsapp.blockers.includes("CHANNEL_DISABLED") : false,
+        SMS: preferences.smsEnabled, WHATSAPP: paidPreferences.paidWhatsAppEnabled,
       },
+      paidPreferences,
       providers: [
         {
           channel: "EMAIL", ready: preferences.emailEnabled && this.email.isConfigured,
@@ -84,6 +86,17 @@ export class MessagingController {
         ? { status: connection.activationPending ? "PENDING" : connection.disconnectedAt ? "DISCONNECTED" : "CONNECTED", billing: "SCHOOL_OWNED" }
         : { status: "DISCONNECTED", billing: null },
     };
+  }
+
+  @Patch("preferences")
+  @Permissions("messaging-paid.manage")
+  updatePaidPreferences(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(z.object({
+      paidWhatsAppEnabled: z.boolean(), walletSmsEnabled: z.boolean(),
+    }).strict())) body: MessagingPaidPreferences,
+  ): Promise<MessagingPaidPreferences> {
+    return this.preferences.updatePaid(auth, body);
   }
 
   @Get("whatsapp/connection/health")

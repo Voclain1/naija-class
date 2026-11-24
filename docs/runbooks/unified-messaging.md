@@ -175,6 +175,8 @@ template stays blocked until reviewed. School-owned Meta billing does not
 use wallet funds. An uncertain Termii attempt keeps its reservation until a
 platform operator checks provider billing evidence and reconciles it.
 
+School owners separately opt the school into WhatsApp or wallet-backed SMS.
+Both settings default off and leave legacy preferences intact.
 School owners can initiate and complete school-owned Embedded Signup, then
 disconnect and retry revocation. Guardians grant consent by sending the
 one-time challenge from their recorded phone and can withdraw in the

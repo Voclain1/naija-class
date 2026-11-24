@@ -372,6 +372,7 @@ describe("fee reminder campaigns against PostgreSQL", () => {
       where: { id: A.schoolId }, data: { paystackPaymentsEnabled: true, paystackSplitCode: "SPL_fictional" },
     });
     await withTenant(A.schoolId, async (db) => {
+      await db.notificationPreference.update({ where: { schoolId: A.schoolId }, data: { paidWhatsAppEnabled: true } });
       await db.messagingSchoolMetaConnection.create({
         data: { schoolId: A.schoolId, wabaId: "76421", phoneNumberId: "76422", encryptedToken: "fictional" },
       });

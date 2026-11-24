@@ -10,17 +10,19 @@ strings in NGN kobo. A null estimate means the API could not quote the send.
 | GET /messaging/deliveries | Implemented for paid notifications. Cursor-paginated delivery history |
 | GET /messaging/wallet/transactions | Implemented. Cursor-paginated wallet history, including top-ups when they are wired |
 | POST /messaging/wallet/top-ups | Implemented behind a configuration gate. An active school owner submits `MessagingTopUpRequest` and receives `MessagingTopUpCheckout`. |
-| PATCH /messaging/preferences | Explicit per-school channel opt-in |
+| PATCH /messaging/preferences | Implemented. Owner-only, audited WhatsApp and wallet-backed SMS opt-in with both flags false by default |
 | POST /messaging/whatsapp/signup | Implemented and gated. Start a school-bound Embedded Signup session |
 | POST /messaging/whatsapp/signup/complete | Implemented and gated. Exchange the code and independently check WABA and phone ownership |
 | GET /messaging/whatsapp/templates | Read the connected WABA’s template IDs, exact languages, categories and provider approval states |
 | GET /messaging/whatsapp/connection/health | Check the current school-owned account and phone without exposing credentials |
 | DELETE /messaging/whatsapp/connection | Implemented. Disconnect the current school and confirm token revocation |
-| GET, PATCH /platform-admin/messaging/controls | Platform price and release controls |
+| GET /platform-admin/messaging/controls | Effective and staged rate versions plus release status. Write controls are pending. |
 | POST /messaging/deliveries/:id/cancel | Cancel a queued paid notification without affecting an in-flight send |
 | GET /portal/messaging/whatsapp-consent | Current consent wording, version and grant status |
 | POST /portal/messaging/whatsapp-consent/challenge | Request a time-limited link to verify the guardian's current number and grant consent |
 | POST /portal/messaging/whatsapp-consent/withdraw | Withdraw consent without sending a message |
+| GET /platform-admin/schools/:id/messaging/wallet | Read school wallet balance and held funds |
+| DELETE /platform-admin/schools/:id/messaging/whatsapp | Offboard an account when the school owner cannot access it |
 | POST /platform-admin/schools/:id/messaging/deliveries/:deliveryId/reconcile | Audited, provider-evidenced settlement or release of an SMS reservation |
 | Existing reminder campaign endpoints | Keep the existing progress and preview DTOs, extending preview with an estimate when wired |
 

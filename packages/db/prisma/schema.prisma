@@ -1293,6 +1293,8 @@ model NotificationPreference {
   emailEnabled Boolean  @default(true) @map("email_enabled")
   smsEnabled   Boolean  @default(false) @map("sms_enabled")
   pushEnabled  Boolean  @default(false) @map("push_enabled")
+  paidWhatsAppEnabled Boolean @default(false) @map("paid_whatsapp_enabled")
+  walletSmsEnabled Boolean @default(false) @map("wallet_sms_enabled")
   updatedBy    String   @map("updated_by")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

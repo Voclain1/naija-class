@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Ip,
@@ -96,7 +97,9 @@ import type { PlatformAdminContext } from "../../common/auth/platform-admin-cont
 import { PlatformAdminGuard } from "../../common/auth/platform-admin.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AssistantActivationService } from "./assistant-activation.service";
-import { reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
+import { MetaConnectionsService } from "../notifications/messaging/meta-connections.service";
+import { messagingPlatformControls } from "../notifications/messaging/paid-messaging-policy";
+import { getMessagingWallet, reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
 import { VoiceAdminService } from "./voice-admin.service";
 import { PlatformAdminService } from "./platform-admin.service";
 
@@ -110,6 +113,7 @@ export class PlatformAdminController {
     private readonly platformAdminService: PlatformAdminService,
     private readonly assistantActivation: AssistantActivationService,
     private readonly voiceAdmin: VoiceAdminService,
+    private readonly metaConnections: MetaConnectionsService,
   ) {}
 
   // POST /platform-admin/login — same tighter-than-global throttle as
@@ -126,6 +130,28 @@ export class PlatformAdminController {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });
+  }
+
+  @Get("messaging/controls")
+  @UseGuards(PlatformAdminGuard)
+  messagingControls() {
+    return messagingPlatformControls(process.env);
+  }
+
+  @Get("schools/:schoolId/messaging/wallet")
+  @UseGuards(PlatformAdminGuard)
+  async messagingWallet(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    const wallet = await getMessagingWallet(schoolId);
+    return { availableKobo: String(wallet.availableKobo), reservedKobo: String(wallet.reservedKobo) };
+  }
+
+  @Delete("schools/:schoolId/messaging/whatsapp")
+  @UseGuards(PlatformAdminGuard)
+  disconnectSchoolWhatsApp(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+  ) {
+    return this.metaConnections.disconnectSchool(schoolId, admin.userId);
   }
 
   @Post("schools/:schoolId/messaging/deliveries/:deliveryId/reconcile")

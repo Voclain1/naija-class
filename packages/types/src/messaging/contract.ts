@@ -17,6 +17,7 @@ export interface MessagingOverview {
     blockers: MessagingBlocker[];
   }>;
   preferences: Record<MessagingChannel, boolean>;
+  paidPreferences?: MessagingPaidPreferences;
   wallet: { availableKobo: Kobo; reservedKobo: Kobo; lowBalance: boolean | null };
   whatsapp: {
     status: "DISCONNECTED" | "PENDING" | "CONNECTED" | "UNHEALTHY";
@@ -59,7 +60,16 @@ export interface MessagingPlatformControls {
   paidSendingEnabled: boolean;
   embeddedSignupEnabled: boolean;
   dailyLimitKobo: Kobo;
-  prices: Array<{ channel: "SMS" | "WHATSAPP"; unitPriceKobo: Kobo }>;
+  prices: Array<{
+    schoolId: string;
+    key: "TERMII_SMS" | "META_UTILITY" | "META_MARKETING" | "META_AUTHENTICATION";
+    version: string;
+    effectiveFrom: string;
+    effectiveUntil: string;
+    verifiedAt: string;
+    unitPriceKobo: Kobo;
+    effective: boolean;
+  }>;
 }
 
 export interface MessagingWalletPage {
@@ -100,4 +110,9 @@ export interface MessagingMetaDisconnectResult {
 export interface MessagingDeliveryPage {
   items: MessagingDelivery[];
   nextCursor: string | null;
+}
+
+export interface MessagingPaidPreferences {
+  paidWhatsAppEnabled: boolean;
+  walletSmsEnabled: boolean;
 }
