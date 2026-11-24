@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { Kobo } from "../messaging/contract.js";
+
 // Durable fee reminder campaigns (2026-11-09, docs/modules/reminder-campaigns.md).
 //
 //   PREPARE  POST /finance/reminder-campaigns/proposals              -> a reviewed preview
@@ -41,6 +43,10 @@ export const prepareReminderCampaignSchema = z
          * confirm, by class ID (two levels can both have an arm called "A").
          */
         classArmIds: z.array(z.string().uuid()).min(1).max(20).optional(),
+        /** An optional explicit send time. Quiet hours can delay it further. */
+        scheduledFor: z.string().datetime({ offset: true }).optional(),
+        /** Include an existing, live link only for a single matching outstanding invoice. */
+        includeInvoiceLink: z.boolean().optional(),
       })
       .strict()
       .default({ includePaymentPlans: false, overdueOnly: false }),
@@ -72,7 +78,7 @@ export const REMINDER_ELIGIBILITY = [
 ] as const;
 export type ReminderEligibility = (typeof REMINDER_ELIGIBILITY)[number];
 
-export const REMINDER_BATCH_ERROR_CODES = ["TERM_NOT_FOUND", "NO_CHANNEL", "NOTHING_TO_SEND"] as const;
+export const REMINDER_BATCH_ERROR_CODES = ["TERM_NOT_FOUND", "NO_CHANNEL", "NOTHING_TO_SEND", "SCHEDULE_ELAPSED"] as const;
 export type ReminderBatchErrorCode = (typeof REMINDER_BATCH_ERROR_CODES)[number];
 
 export const REMINDER_BATCH_WARNING_CODES = [
@@ -129,8 +135,10 @@ export interface ReminderCampaignProposalDto {
   termId: string;
   termLabel: string | null;
   templateVersion: string;
-  options: { includePaymentPlans: boolean; overdueOnly: boolean };
+  options: { includePaymentPlans: boolean; overdueOnly: boolean; scheduledFor?: string; includeInvoiceLink?: boolean };
   channels: ReminderChannelState;
+  /** Includes every potential SMS fallback. Null price means no rate is configured. */
+  smsEstimate?: { segments: number; maximumKobo: Kobo | null };
   counts: { selected: number; eligible: number; excluded: Record<Exclude<ReminderEligibility, "ELIGIBLE">, number>; plannedSends: number };
   batchErrors: ReminderProblem<ReminderBatchErrorCode>[];
   batchWarnings: ReminderProblem<ReminderBatchWarningCode>[];
@@ -192,6 +200,7 @@ export interface ReminderCampaignDto {
   createdAt: string;
   haltedAt: string | null;
   completedAt: string | null;
+  scheduledFor?: string | null;
   /** True while sends are held for quiet hours (21:00–06:00 Lagos). */
   heldForQuietHours: boolean;
   counts: Record<ReminderSendOutcome, number>;

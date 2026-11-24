@@ -141,7 +141,7 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     await basePrisma.$disconnect();
   });
 
-  const prepare = (ids: string[], opts: { includePaymentPlans?: boolean; overdueOnly?: boolean } = {}, who = A.bursar.auth, termId = A.termId) =>
+  const prepare = (ids: string[], opts: { includePaymentPlans?: boolean; overdueOnly?: boolean; scheduledFor?: string; includeInvoiceLink?: boolean } = {}, who = A.bursar.auth, termId = A.termId) =>
     service.prepare(who, { clientRequestId: randomUUID(), termId, studentIds: ids, options: { includePaymentPlans: false, overdueOnly: false, ...opts } }, null);
   const confirm = (p: ReminderCampaignProposalDto, who = A.bursar.auth) => service.confirm(who, p.id, p.previewHash, null);
   const run = (id: string, now = DAY) => service.processCampaign(A.schoolId, id, { now });
@@ -169,6 +169,16 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     expect(withPlans.students.find((s) => s.studentId === A.plan.id)!.eligibility).toBe("ELIGIBLE");
     const overdue = await prepare(all(), { overdueOnly: true });
     expect(overdue.students.find((s) => s.studentId === A.bo.id)!.eligibility).toBe("NOT_OVERDUE");
+  });
+
+  it("shows a configured cost ceiling for all potential campaign SMS segments", async () => {
+    const unpriced = await prepare([A.bo.id]);
+    expect(unpriced.smsEstimate).toMatchObject({ maximumKobo: null });
+    vi.spyOn(port, "smsPricePerSegmentKobo").mockReturnValue(12n);
+    const priced = await prepare([A.bo.id]);
+    expect(priced.smsEstimate?.segments).toBeGreaterThan(0);
+    expect(priced.smsEstimate?.maximumKobo).toBe(String(12 * priced.smsEstimate!.segments));
+    await expect(confirm(unpriced)).rejects.toMatchObject({ code: "REMINDER_PREVIEW_STALE" });
   });
 
   it("scopes by class IDENTITY on the server: two levels both with an arm called \"A\", only the requested one is reminded", async () => {
@@ -324,6 +334,61 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     expect(port.texts).toHaveLength(0);
     expect((await service.getCampaign(A.bursar.auth, c.id, DAY())).students[0]?.sends)
       .toEqual([expect.objectContaining({ outcome: "ACCEPTED" }), expect.objectContaining({ outcome: "SKIPPED", reason: "NO_BALANCE" })]);
+  });
+
+  it("attaches only the opted-in live link matching a single current invoice balance", async () => {
+    await basePrisma.school.update({
+      where: { id: A.schoolId },
+      data: { paystackPaymentsEnabled: true, paystackSplitCode: "SPL_fictional", paystackSubaccountCode: "ACCT_fictional" },
+    });
+    const code = `PRQ_${randomUUID().replace(/-/g, "")}`;
+    const url = `https://paystack.com/pay/${code}`;
+    await withTenant(A.schoolId, (db) => db.paymentLink.create({
+      data: {
+        schoolId: A.schoolId, invoiceId: A.boInv.id, amount: 20_000_00,
+        createdBy: A.bursar.auth.userId, status: "LIVE", requestCode: code, hostedUrl: url,
+      },
+    }));
+    const withLink = await confirm(await prepare([A.ada.id, A.bo.id], { includeInvoiceLink: true }));
+    await run(withLink.id);
+    expect(port.emails.filter((email) => email.html.includes(url))).toHaveLength(1);
+    expect(port.emails.find((email) => email.html.includes(url))?.html).toContain("Bo Debtor");
+    expect(port.texts.every((sms) => !sms.text.includes(url))).toBe(true);
+    port.emails.length = 0;
+    const stale = await confirm(await prepare([A.bo.id], { includeInvoiceLink: true }));
+    await withTenant(A.schoolId, (db) => db.invoice.update({
+      where: { id: A.boInv.id }, data: { status: "PARTIALLY_PAID", totalPaid: 5_000_00 },
+    }));
+    await run(stale.id);
+    expect(port.emails).toHaveLength(1);
+    expect(port.emails[0]?.html).not.toContain(url);
+    expect(port.emails[0]?.html).toContain("15,000");
+  });
+
+  it("holds a durable schedule until the scheduled date and rechecks eligibility when due", async () => {
+    const due = new Date();
+    due.setUTCDate(due.getUTCDate() + 1);
+    due.setUTCHours(10, 0, 0, 0);
+    const c = await confirm(await prepare([A.bo.id], { scheduledFor: due.toISOString() }));
+    expect(c.scheduledFor).toBe(due.toISOString());
+    expect(await run(c.id, () => new Date(due.getTime() - 60_000))).toBe("HELD");
+    expect(port.emails).toHaveLength(0);
+    const runner = new ReminderCampaignRunnerService(service);
+    const process = service.processCampaign.bind(service);
+    const attempted = vi.spyOn(service, "processCampaign").mockImplementation((schoolId, campaignId, options) =>
+      campaignId === c.id ? process(schoolId, campaignId, options) : Promise.resolve("DONE"));
+    await runner.runOnce({ now: () => new Date(due.getTime() - 60_000) });
+    expect(attempted).not.toHaveBeenCalledWith(A.schoolId, c.id, expect.anything());
+    await withTenant(A.schoolId, (db) => db.invoice.update({
+      where: { id: A.boInv.id }, data: { status: "PAID", totalPaid: 20_000_00 },
+    }));
+    await runner.runOnce({ now: () => due });
+    expect(attempted).toHaveBeenCalledWith(A.schoolId, c.id, expect.anything());
+    expect(port.emails).toHaveLength(0);
+    expect((await service.getCampaign(A.bursar.auth, c.id, due)).counts.SKIPPED).toBe(2);
+    const stale = await prepare([A.ada.id], { scheduledFor: new Date(Date.now() - 60_000).toISOString() });
+    expect(stale.batchErrors.map((error) => error.code)).toContain("SCHEDULE_ELAPSED");
+    expect(stale.canConfirm).toBe(false);
   });
 
   it("two confirmations at once make one campaign; two workers at once send each slot once", async () => {

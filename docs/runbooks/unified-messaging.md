@@ -1,7 +1,8 @@
 # Unified messaging rollout
 
-The new Meta transport and wallet operations are backend foundations. They
-have no production caller or configuration switch in this change. Keep the
+The Meta transport and wallet reservations have no live sending caller.
+The Meta status webhook and wallet top-up checkout have explicit switches
+that default to off. Keep the
 existing internal WhatsApp alert configuration in its current VPS API env
 file. See [Internal WhatsApp alerts](whatsapp-alerts.md).
 
@@ -74,6 +75,30 @@ consent changes, Termii reporting, retention automation and SMS fallback
 are pending. Unmatched authenticated statuses remain in the inbox until
 a corresponding provider reference is recorded on the notification.
 
+## Wallet checkout and campaign scheduling
+
+Keep `MESSAGING_TOP_UPS_ENABLED=off` until sending and financial
+reconciliation are ready. For a Paystack test-mode rehearsal, configure
+`MESSAGING_TOP_UP_MIN_KOBO` and `MESSAGING_TOP_UP_MAX_KOBO` as integer kobo
+and use the existing signed callback
+`https://api.schoolkit.ng/api/v1/payments/paystack/webhook` on the appropriate
+test host. Keep wallet funds in the platform account, separate from school
+fee splits. Replay the successful webhook and verify it creates one credit.
+Turning the checkout switch off blocks new checkouts and still honors
+valid payment callbacks for an outstanding top-up.
+
+The wallet reservation function requires explicit school and platform spending
+authorization. The daily caps count all reservations during the Lagos day,
+including released ones. A release restores wallet credit immediately. It
+does not reopen that day's allowance. There is no API to set policy in this
+change. Keep top-ups disabled for real schools until reconciliation and spend
+configuration can be managed.
+
+Set the optional `REMINDER_SMS_SEGMENT_PRICE_KOBO` to the verified all-in
+price per legacy Termii segment if staff need a quote. The preview totals
+eligible potential SMS fallback segments. A quote does not activate a channel
+or reserve wallet funds for an existing SMS rail.
+
 ## App Review demonstration checklist
 
 - Demonstrate authorized school initiation, consent, server-side code exchange
@@ -102,16 +127,18 @@ a corresponding provider reference is recorded on the notification.
 ## Implementation status
 
 Implemented here: fresh per-recipient campaign checks, stale Paystack link
-protection during creation, Meta template payload construction and raw-body
+protection during creation and opt-in invoice-specific links for email campaigns, Meta template payload construction and raw-body
 signature verification, wallet journal and concurrency-safe operations, and
-integer cost estimates. The read-only overview and wallet history are available
+integer cost estimates. The campaign runner also supports an optional
+confirmed schedule. Wallet top-ups reuse the signed Paystack webhook and
+independent verification. The overview and wallet history are available
 to authorized staff. The Meta status callback has a durable, deduplicated
 inbox and reconciles existing notification journal rows without fallback.
 
 Pending: live template approvals and the account-specific registry, consent
 and verified phone lifecycle, incoming message and Termii callbacks, durable
-unified dispatch and wallet settlement on delivery, spending controls and wallet top-up
-checkout/webhooks, automatic finance and school event messaging, Embedded
+unified dispatch and wallet settlement on delivery, operator spending-policy
+configuration and reporting, automatic finance and school event messaging, Embedded
 Signup, and the remaining frontend endpoints. The contract in
 [Unified messaging](../modules/unified-messaging.md) describes the intended
 surface.

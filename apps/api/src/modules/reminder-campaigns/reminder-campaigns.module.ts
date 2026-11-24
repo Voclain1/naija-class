@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ConfigModule } from "@nestjs/config";
 
 import { EmailModule } from "../../common/email/email.module";
 import { FeatureSwitchesModule } from "../../common/features/feature-switches.module";
@@ -12,7 +13,7 @@ import { LiveReminderSendPort, ReminderSendPort } from "./reminder-send.port";
 
 // No AiModule, deliberately: nothing here calls a model.
 @Module({
-  imports: [AuthModule, FeatureSwitchesModule, EmailModule, TermiiModule, NotificationDispatchModule],
+  imports: [ConfigModule, AuthModule, FeatureSwitchesModule, EmailModule, TermiiModule, NotificationDispatchModule],
   controllers: [ReminderCampaignsController],
   providers: [ReminderCampaignsService, ReminderCampaignRunnerService, { provide: ReminderSendPort, useClass: LiveReminderSendPort }],
   // The SchoolKit Assistant reads campaigns through it (requester-checked).

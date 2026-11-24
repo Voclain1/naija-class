@@ -9,7 +9,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
-import { isPaystackPaymentRequestCode } from "../../common/paystack/payment-request-code.js";
+import { isPaystackPaymentRequestCode, PAYSTACK_PAYMENT_REQUEST_BASE } from "../../common/paystack/payment-request-code.js";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
 
 interface RequestContext {
@@ -211,7 +211,7 @@ export class PaymentLinksService {
         if (!current || current.outstanding !== link.amount || ["PAID", "CANCELLED", "REFUNDED"].includes(current.status)) {
           throw new ConflictError("PAYMENT_LINK_BALANCE_CHANGED", "The outstanding invoice changed during payment link creation.");
         }
-        const hostedUrl = `https://paystack.com/pay/${fetched.request_code}`;
+        const hostedUrl = `${PAYSTACK_PAYMENT_REQUEST_BASE}${fetched.request_code}`;
         const live = await db.paymentLink.update({
           where: { id: link.id },
           data: {

@@ -367,6 +367,7 @@ model School {
   previousAddresses       SchoolPreviousAddress[]
 
   messagingWalletEntries  MessagingWalletEntry[]
+  messagingWalletTopUps   MessagingWalletTopUp[]
   metaMessagingAccount    MessagingMetaAccount?
   metaMessagingEvents     MessagingMetaEvent[]
 
@@ -5744,6 +5745,8 @@ model ReminderCampaign {
   templateVersion     String                 @map("template_version")
   includePaymentPlans Boolean                @map("include_payment_plans")
   overdueOnly         Boolean                @map("overdue_only")
+  scheduledFor        DateTime?              @map("scheduled_for")
+  includeInvoiceLink  Boolean                @default(false) @map("include_invoice_link")
   createdAt           DateTime               @default(now()) @map("created_at")
   updatedAt           DateTime               @default(now()) @map("updated_at")
   haltedAt            DateTime?              @map("halted_at")
@@ -5996,4 +5999,26 @@ model MessagingMetaEvent {
   @@unique([schoolId, wabaId, phoneNumberId, providerRef, state, occurredAt], map: "messaging_meta_events_dedup_key")
   @@index([schoolId, processedAt, createdAt], map: "messaging_meta_events_pending_idx")
   @@map("messaging_meta_events")
+}
+
+model MessagingWalletTopUp {
+  reference       String   @id
+  schoolId        String   @map("school_id")
+  clientRequestId String   @map("client_request_id")
+  createdBy       String   @map("created_by")
+  amountKobo      Int      @map("amount_kobo")
+  checkoutUrl     String?  @map("checkout_url")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([schoolId, clientRequestId])
+  @@map("messaging_wallet_top_ups")
+}
+
+model MessagingPlatformReservationDaily {
+  day          DateTime @id @db.Date
+  reservedKobo BigInt   @map("reserved_kobo")
+
+  @@map("messaging_platform_reservations_daily")
 }

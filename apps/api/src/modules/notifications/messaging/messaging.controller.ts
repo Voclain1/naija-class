@@ -1,6 +1,7 @@
-import { BadRequestException, Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Post, Query, UseGuards } from "@nestjs/common";
 import { withTenant } from "@school-kit/db";
-import type { Kobo, MessagingOverview, MessagingWalletEntry, MessagingWalletPage } from "@school-kit/types";
+import type { Kobo, MessagingOverview, MessagingTopUpCheckout, MessagingTopUpRequest, MessagingWalletEntry, MessagingWalletPage } from "@school-kit/types";
+import { z } from "zod";
 
 import type { AuthContext } from "../../../common/auth/auth-context";
 import { AuthGuard } from "../../../common/auth/auth.guard";
@@ -9,11 +10,17 @@ import { Permissions } from "../../../common/auth/permissions.decorator";
 import { PermissionsGuard } from "../../../common/auth/permissions.guard";
 import { assertUserActiveAndHasOneOf } from "../../../common/auth/role-check";
 import { EmailService } from "../../../common/email/email.service";
+import { ZodValidationPipe } from "../../../common/zod-validation.pipe";
 import { NotificationPreferencesService } from "../notification-preferences.service";
+import { MessagingTopUpService } from "./messaging-top-up.service";
 import { getMessagingWallet } from "./messaging-wallet";
 import { META_TEMPLATE_NAMES } from "./meta-provider";
 
 const PAGE_SIZE = 50;
+const TOP_UP_REQUEST = z.object({
+  clientRequestId: z.string().uuid(),
+  amountKobo: z.string().regex(/^[1-9]\d{0,9}$/),
+});
 
 @Controller("messaging")
 @UseGuards(AuthGuard, PermissionsGuard)
@@ -21,6 +28,7 @@ export class MessagingController {
   constructor(
     private readonly preferences: NotificationPreferencesService,
     private readonly email: EmailService,
+    private readonly topUps: MessagingTopUpService,
   ) {}
 
   @Get("overview")
@@ -56,6 +64,15 @@ export class MessagingController {
       templates: META_TEMPLATE_NAMES.map((name) => ({ name, language: null, approval: "UNKNOWN" })),
       whatsapp: { status: "DISCONNECTED", billing: null },
     };
+  }
+
+  @Post("wallet/top-ups")
+  @Permissions("notification-preferences.update")
+  checkout(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(TOP_UP_REQUEST)) body: MessagingTopUpRequest,
+  ): Promise<MessagingTopUpCheckout> {
+    return this.topUps.checkout(auth, body.clientRequestId, body.amountKobo);
   }
 
   @Get("wallet/transactions")

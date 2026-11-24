@@ -8,6 +8,7 @@ import { AnnouncementsModule } from "../announcements/announcements.module";
 import { AuthModule } from "../auth/auth.module";
 import { MetaWebhookController } from "./messaging/meta-webhook.controller";
 import { MetaWebhookService } from "./messaging/meta-webhook.service";
+import { MessagingWalletModule } from "./messaging/messaging-wallet.module";
 import { MessagingController } from "./messaging/messaging.controller";
 import { NotificationDispatchModule } from "./notification-dispatch.module";
 import { NotificationPreferencesController } from "./notification-preferences.controller";
@@ -28,6 +29,7 @@ import { PushProcessor } from "./push.processor";
   imports: [
     AuthModule,
     EmailModule,
+    MessagingWalletModule,
     AnnouncementsModule,
     PushModule,
     NotificationDispatchModule,

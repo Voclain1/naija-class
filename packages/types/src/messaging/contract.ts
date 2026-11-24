@@ -63,3 +63,13 @@ export interface MessagingWalletPage {
   items: MessagingWalletEntry[];
   nextCursor: string | null;
 }
+
+export interface MessagingTopUpRequest {
+  clientRequestId: string;
+  amountKobo: Kobo;
+}
+
+export interface MessagingTopUpCheckout {
+  reference: string;
+  checkoutUrl: string;
+}

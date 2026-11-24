@@ -35,9 +35,12 @@ export class ReminderCampaignRunnerService {
     const schools = await basePrisma.$queryRaw<{ id: string }[]>`
       SELECT id FROM schools WHERE feature_switches ->> 'reminder-campaigns' = 'true'`;
     let processed = 0;
+    const dueAt = (opts.now ?? (() => new Date()))();
     for (const { id: schoolId } of schools) {
       const running = await withTenant(schoolId, (db) =>
-        db.reminderCampaign.findMany({ where: { schoolId, status: "RUNNING" }, select: { id: true }, orderBy: { createdAt: "asc" } }),
+        db.reminderCampaign.findMany({ where: {
+          schoolId, status: "RUNNING", OR: [{ scheduledFor: null }, { scheduledFor: { lte: dueAt } }],
+        }, select: { id: true }, orderBy: { createdAt: "asc" } }),
       );
       for (const c of running) {
         try {

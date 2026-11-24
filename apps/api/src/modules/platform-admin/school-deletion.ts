@@ -32,7 +32,8 @@ export async function readDeletionFacts(tx: TxClient, schoolId: string): Promise
   >`
     SELECT
       (SELECT count(*) FROM payments WHERE school_id = ${schoolId}) AS payments,
-      EXISTS (SELECT 1 FROM messaging_wallet_entries WHERE school_id = ${schoolId}) AS wallet_activity,
+      (EXISTS (SELECT 1 FROM messaging_wallet_entries WHERE school_id = ${schoolId})
+        OR EXISTS (SELECT 1 FROM messaging_wallet_top_ups WHERE school_id = ${schoolId})) AS wallet_activity,
       (SELECT count(*) FROM students  WHERE school_id = ${schoolId}) AS students,
       (SELECT count(*) FROM users     WHERE school_id = ${schoolId}) AS staff,
       (SELECT count(*) FROM guardians WHERE school_id = ${schoolId}) AS guardians,

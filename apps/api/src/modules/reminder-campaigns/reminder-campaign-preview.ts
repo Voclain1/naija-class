@@ -2,6 +2,7 @@ import type { PrismaClient } from "@school-kit/db";
 import {
   REMINDER_CAMPAIGN_LIMITS,
   REMINDER_TEMPLATE_VERSION,
+  type Kobo,
   type PrepareReminderCampaignInput,
   type ReminderBatchErrorCode,
   type ReminderBatchWarningCode,
@@ -13,8 +14,11 @@ import {
 } from "@school-kit/types";
 
 import { smsSenderFor } from "../../common/termii/sms-sender";
+import { normalizeNigerianPhone } from "../../common/termii/termii.service";
 import { fingerprint } from "../../common/workflow/fingerprint";
 import { blockedAddresses } from "../announcements/announcement-email.shared";
+import { buildReminderSms } from "../finance/finance.service";
+import { countSmsSegments } from "../notifications/messaging/messaging-pricing";
 import { isQuietHour } from "../notifications/quiet-hours";
 import type { ReminderSendPort } from "./reminder-send.port";
 
@@ -38,7 +42,7 @@ export interface ReminderPreview {
   students: ReminderCampaignStudentPreview[];
   summary: Pick<
     ReminderCampaignProposalDto,
-    "termId" | "termLabel" | "templateVersion" | "options" | "channels" | "counts" | "batchErrors" | "batchWarnings"
+    "termId" | "termLabel" | "templateVersion" | "options" | "channels" | "counts" | "smsEstimate" | "batchErrors" | "batchWarnings"
   >;
   plan: PlannedSlots[];
   previewHash: string;
@@ -65,6 +69,7 @@ export async function attemptableChannels(port: ReminderSendPort, schoolId: stri
 interface StudentFacts {
   balance: number;
   invoiceCount: number;
+  onlyInvoiceId: string | null;
   earliestDueDate: string | null;
   onPaymentPlan: boolean;
   overdue: boolean;
@@ -83,11 +88,12 @@ export async function loadDebtFacts(db: PrismaClient, schoolId: string, termId: 
   const planned = new Set(plans.map((p) => p.invoiceId));
   const out = new Map<string, StudentFacts>();
   for (const inv of invoices) {
-    const f = out.get(inv.studentId) ?? { balance: 0, invoiceCount: 0, earliestDueDate: null, onPaymentPlan: false, overdue: false };
+    const f = out.get(inv.studentId) ?? { balance: 0, invoiceCount: 0, onlyInvoiceId: null, earliestDueDate: null, onPaymentPlan: false, overdue: false };
     const owed = inv.totalDue - inv.totalPaid;
     if (owed <= 0) continue;
     f.balance += owed;
     f.invoiceCount += 1;
+    f.onlyInvoiceId = f.invoiceCount === 1 ? inv.id : null;
     const due = inv.dueDate ? inv.dueDate.toISOString().slice(0, 10) : null;
     if (due && (!f.earliestDueDate || due < f.earliestDueDate)) f.earliestDueDate = due;
     if (planned.has(inv.id)) f.onPaymentPlan = true;
@@ -114,6 +120,9 @@ export async function computeReminderPreview(
 ): Promise<ReminderPreview> {
   const batchErrors: ReminderProblem<ReminderBatchErrorCode>[] = [];
   const batchWarnings: ReminderProblem<ReminderBatchWarningCode>[] = [];
+  if (input.options.scheduledFor && new Date(input.options.scheduledFor).getTime() <= now.getTime()) {
+    batchErrors.push({ code: "SCHEDULE_ELAPSED", message: "Choose a future time for the reminder." });
+  }
 
   const term = await db.term.findFirst({
     where: { id: input.termId, schoolId },
@@ -122,7 +131,7 @@ export async function computeReminderPreview(
   const termLabel = term ? `${term.academicYear.label} · ${term.name}` : null;
   if (!term) batchErrors.push({ code: "TERM_NOT_FOUND", message: "The chosen term was not found." });
 
-  const school = await db.school.findUniqueOrThrow({ where: { id: schoolId }, select: { smsSenderId: true, smsSenderStatus: true } });
+  const school = await db.school.findUniqueOrThrow({ where: { id: schoolId }, select: { name: true, smsSenderId: true, smsSenderStatus: true } });
   const { state, can } = await attemptableChannels(port, schoolId);
   const channels: ReminderChannelState = { ...state, sms: { ...state.sms, sender: smsSenderFor(school) ? "SCHOOL" : "SCHOOLKIT" } };
   if (!can.email && !can.sms && !can.push) {
@@ -163,6 +172,7 @@ export async function computeReminderPreview(
 
   const rows: ReminderCampaignStudentPreview[] = [];
   const plan: PlannedSlots[] = [];
+  let segments = 0;
   for (const id of ids) {
     const s = byId.get(id);
     const facts = debt.get(id);
@@ -208,7 +218,14 @@ export async function computeReminderPreview(
       eligibility,
       planned: eligibility === "ELIGIBLE" ? { emailGuardians: emailGuardianIds.length, mobile } : { emailGuardians: 0, mobile: "NONE" },
     });
-    if (eligibility === "ELIGIBLE") plan.push({ studentId: id, emailGuardianIds, mobileGuardianId: mobile === "NONE" ? null : lead!.id });
+    if (eligibility === "ELIGIBLE") {
+      plan.push({ studentId: id, emailGuardianIds, mobileGuardianId: mobile === "NONE" ? null : lead!.id });
+      if (s && facts && smsOk && lead?.phone && normalizeNigerianPhone(lead.phone)) {
+        segments += countSmsSegments(buildReminderSms({
+          studentName: `${s.firstName} ${s.lastName}`, schoolName: school.name, balance: facts.balance, dueDate: facts.earliestDueDate,
+        }));
+      }
+    }
   }
 
   // A guardian of several selected children gets one reminder per child.
@@ -246,7 +263,10 @@ export async function computeReminderPreview(
   };
   // Quiet hours change nothing that is sent, only when: kept out of the
   // fingerprint so a review at 20:59 can still be confirmed at 21:01.
+  const price = port.smsPricePerSegmentKobo();
+  if (price !== null) summary.smsEstimate = { segments, maximumKobo: String(price * BigInt(segments)) as Kobo };
   const previewHash = fingerprint({ v: 1, summary, rows, plan, limits: REMINDER_CAMPAIGN_LIMITS });
+  summary.smsEstimate ??= { segments, maximumKobo: segments === 0 ? "0" : null };
   if (isQuietHour(now)) {
     summary.batchWarnings = [
       ...batchWarnings,

@@ -26,6 +26,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { FeatureSwitchesService } from "../../common/features/feature-switches.service";
+import { isPaystackPaymentRequestCode, PAYSTACK_PAYMENT_REQUEST_BASE } from "../../common/paystack/payment-request-code";
 import { smsSenderFor } from "../../common/termii/sms-sender";
 import { normalizeNigerianPhone } from "../../common/termii/termii.service";
 import { fingerprint } from "../../common/workflow/fingerprint";
@@ -93,6 +94,8 @@ interface CampaignRow {
   template_version: string;
   include_payment_plans: boolean;
   overdue_only: boolean;
+  scheduled_for: Date | null;
+  include_invoice_link: boolean;
   created_at: Date;
   halted_at: Date | null;
   completed_at: Date | null;
@@ -126,6 +129,7 @@ interface Job {
   email?: { to: string; firstName: string | null };
   phone: string | null;
   smsAvailable: boolean;
+  paymentUrl?: string;
 }
 
 export interface RunOptions {
@@ -160,7 +164,12 @@ export class ReminderCampaignsService {
   // ---------------------------------------------------------------------
 
   async prepare(auth: AuthContext, input: PrepareReminderCampaignInput, ip: string | null): Promise<ReminderCampaignProposalDto> {
-    const stored: ReminderInput = { termId: input.termId, studentIds: input.studentIds, options: input.options };
+    const scheduledFor = input.options.scheduledFor;
+    const stored: ReminderInput = {
+      termId: input.termId, studentIds: input.studentIds, options: {
+        ...input.options, ...(scheduledFor ? { scheduledFor: new Date(scheduledFor).toISOString() } : {}),
+      },
+    };
     const requestHash = fingerprint(stored);
     try {
       return await withTenant(auth.schoolId, async (db) => {
@@ -234,9 +243,10 @@ export class ReminderCampaignsService {
         const { input } = proposal.payload;
         await db.$executeRaw`
           INSERT INTO reminder_campaigns
-            (id, school_id, proposal_id, term_id, requested_by, confirmed_by, template_version, include_payment_plans, overdue_only)
+            (id, school_id, proposal_id, term_id, requested_by, confirmed_by, template_version, include_payment_plans, overdue_only, scheduled_for, include_invoice_link)
           VALUES (${cid}, ${auth.schoolId}, ${proposal.id}, ${input.termId}, ${proposal.requested_by}, ${auth.userId},
-                  ${REMINDER_TEMPLATE_VERSION}, ${input.options.includePaymentPlans}, ${input.options.overdueOnly})`;
+                  ${REMINDER_TEMPLATE_VERSION}, ${input.options.includePaymentPlans}, ${input.options.overdueOnly},
+                  ${input.options.scheduledFor ? new Date(input.options.scheduledFor) : null}, ${input.options.includeInvoiceLink ?? false})`;
         await db.reminderCampaignSend.createMany({
           data: fresh.plan.flatMap((p) => [
             ...p.emailGuardianIds.map((g) => ({ schoolId: auth.schoolId, campaignId: cid, studentId: p.studentId, guardianId: g, channel: "EMAIL" })),
@@ -361,7 +371,7 @@ export class ReminderCampaignsService {
     campaignId: string,
     now: Date,
     batchStudents: number,
-  ): Promise<{ kind: "JOBS"; jobs: Job[] } | { kind: "DONE" | "HALTED" | "BUSY" }> {
+  ): Promise<{ kind: "JOBS"; jobs: Job[] } | { kind: "DONE" | "HALTED" | "BUSY" | "HELD" }> {
     const { can } = await attemptableChannels(this.port, schoolId);
     return withTenant(schoolId, async (db) => {
       const [campaign] = await db.$queryRaw<CampaignRow[]>`
@@ -369,6 +379,7 @@ export class ReminderCampaignsService {
       if (!campaign) return { kind: "DONE" as const };
       if (campaign.status === "HALTED") return { kind: "HALTED" as const };
       if (campaign.status === "COMPLETED") return { kind: "DONE" as const };
+      if (campaign.scheduled_for && campaign.scheduled_for > now) return { kind: "HELD" as const };
 
       // A claim older than the lease: the worker died or lost the answer.
       await db.$executeRaw`
@@ -505,6 +516,25 @@ export class ReminderCampaignsService {
       const facts = (await loadDebtFacts(db, job.schoolId, campaign.term_id, [job.studentId])).get(job.studentId);
       const result = debtEligibility(facts, { includePaymentPlans: campaign.include_payment_plans, overdueOnly: campaign.overdue_only });
       if (result !== "ELIGIBLE" || !facts) return result;
+      if (campaign.include_invoice_link && job.channel === "EMAIL" && facts.onlyInvoiceId) {
+        const school = await db.school.findUnique({
+          where: { id: job.schoolId },
+          select: { paystackPaymentsEnabled: true, paystackSubaccountCode: true, paystackSplitCode: true },
+        });
+        if (school?.paystackPaymentsEnabled && school.paystackSubaccountCode && school.paystackSplitCode) {
+          const link = await db.paymentLink.findFirst({
+            where: {
+              schoolId: job.schoolId, invoiceId: facts.onlyInvoiceId, status: "LIVE", archivedAt: null,
+              amount: facts.balance, currency: "NGN",
+            },
+            select: { requestCode: true, hostedUrl: true },
+          });
+          if (isPaystackPaymentRequestCode(link?.requestCode)) {
+            const expected = `${PAYSTACK_PAYMENT_REQUEST_BASE}${link.requestCode}`;
+            if (link.hostedUrl === expected) job.paymentUrl = expected;
+          }
+        }
+      }
       job.balance = facts.balance;
       job.dueDate = facts.earliestDueDate;
       job.studentName = `${link.student.firstName} ${link.student.lastName}`;
@@ -534,7 +564,7 @@ export class ReminderCampaignsService {
           idempotencyKey: `reminder-send/${job.id}`,
           html: buildReminderHtml({
             guardianFirstName: job.email!.firstName ?? "Parent/Guardian",
-            studentName: job.studentName, schoolName: job.schoolName, balance: job.balance, dueDate: job.dueDate,
+            studentName: job.studentName, schoolName: job.schoolName, balance: job.balance, dueDate: job.dueDate, paymentUrl: job.paymentUrl,
           }),
         });
         return asResult(o, "EMAIL");
@@ -691,6 +721,7 @@ export class ReminderCampaignsService {
       templateVersion: s.templateVersion,
       options: s.options,
       channels: s.channels,
+      smsEstimate: s.smsEstimate,
       counts: s.counts,
       batchErrors: s.batchErrors,
       batchWarnings: s.batchWarnings,
@@ -729,6 +760,7 @@ export class ReminderCampaignsService {
       createdAt: c.created_at.toISOString(),
       haltedAt: c.halted_at?.toISOString() ?? null,
       completedAt: c.completed_at?.toISOString() ?? null,
+      scheduledFor: c.scheduled_for?.toISOString() ?? null,
       heldForQuietHours: c.status === "RUNNING" && isQuietHour(now),
       counts,
       students: ids.map((id) => {

@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 
 import { EmailService } from "../../common/email/email.service";
 import { TermiiService } from "../../common/termii/termii.service";
@@ -15,6 +16,7 @@ export type SendOutcome =
 export abstract class ReminderSendPort {
   abstract emailConfigured(): boolean;
   abstract smsConfigured(): boolean;
+  smsPricePerSegmentKobo(): bigint | null { return null; }
   abstract enabledChannels(schoolId: string): Promise<{ email: boolean; sms: boolean; push: boolean }>;
   abstract sendEmail(p: { to: string; subject: string; html: string; schoolName: string; idempotencyKey: string }): Promise<SendOutcome>;
   abstract sendSms(to: string, text: string, sender: string | undefined): Promise<SendOutcome>;
@@ -29,6 +31,7 @@ export class LiveReminderSendPort extends ReminderSendPort {
     private readonly termii: TermiiService,
     private readonly dispatch: NotificationDispatchService,
     private readonly preferences: NotificationPreferencesService,
+    private readonly config: ConfigService,
   ) {
     super();
   }
@@ -39,6 +42,11 @@ export class LiveReminderSendPort extends ReminderSendPort {
 
   smsConfigured(): boolean {
     return this.termii.isConfigured;
+  }
+
+  override smsPricePerSegmentKobo(): bigint | null {
+    const amount = this.config.get<string>("REMINDER_SMS_SEGMENT_PRICE_KOBO");
+    return amount && /^[1-9]\d{0,9}$/.test(amount) ? BigInt(amount) : null;
   }
 
   enabledChannels(schoolId: string) {

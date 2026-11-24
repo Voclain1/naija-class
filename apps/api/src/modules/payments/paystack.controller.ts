@@ -22,6 +22,7 @@ import { Permissions } from "../../common/auth/permissions.decorator.js";
 import { PermissionsGuard } from "../../common/auth/permissions.guard.js";
 import { PaystackWebhookGuard } from "../../common/paystack/paystack-webhook.guard.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
+import { MessagingTopUpService } from "../notifications/messaging/messaging-top-up.service";
 import { PayrollService } from "../payroll/payroll.service.js";
 import { PaymentsService } from "./payments.service.js";
 
@@ -38,6 +39,7 @@ export class PaystackController {
   constructor(
     private readonly service: PaymentsService,
     private readonly payrollService: PayrollService,
+    private readonly messagingTopUps: MessagingTopUpService,
   ) {}
 
   // POST /payments/paystack/init
@@ -67,7 +69,10 @@ export class PaystackController {
   @HttpCode(200)
   @UseGuards(PaystackWebhookGuard)
   async handleWebhook(@Body() event: PaystackWebhookEvent): Promise<{ status: string }> {
-    if (event.event.startsWith("paymentrequest.")) {
+    const reference = event.data?.reference;
+    if (event.event.startsWith("charge.") && typeof reference === "string" && reference.startsWith("mwallet-")) {
+      if (event.event === "charge.success") await this.messagingTopUps.acceptVerifiedCharge(reference);
+    } else if (event.event.startsWith("paymentrequest.")) {
       await this.service.handlePaymentRequestWebhook(event);
     } else if (event.event.startsWith("transfer.")) {
       await this.payrollService.handleTransferWebhook(event);

@@ -276,11 +276,11 @@ export class PaystackService {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!res.ok) {
-      const text = await res.text().catch(() => "<no body>");
-      this.logger.error(`Paystack init failed: ${res.status} ${text}`);
+      this.logger.error(`Paystack init failed: HTTP ${res.status}`);
       throw new InternalError(
         "PAYSTACK_INIT_FAILED",
         `Paystack transaction initialization failed (HTTP ${res.status}).`,
@@ -289,8 +289,8 @@ export class PaystackService {
 
     const json = (await res.json()) as PaystackInitResponse;
     if (!json.status) {
-      this.logger.error(`Paystack init rejected: ${json.message}`);
-      throw new InternalError("PAYSTACK_INIT_FAILED", json.message);
+      this.logger.error("Paystack init rejected");
+      throw new InternalError("PAYSTACK_INIT_FAILED", "Paystack rejected the transaction request.");
     }
 
     return json.data;
@@ -305,11 +305,11 @@ export class PaystackService {
     const encodedRef = encodeURIComponent(reference);
     const res = await fetch(`${this.baseUrl}/transaction/verify/${encodedRef}`, {
       headers: { Authorization: `Bearer ${this.secretKey}` },
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!res.ok) {
-      const text = await res.text().catch(() => "<no body>");
-      this.logger.error(`Paystack verify failed: ${res.status} ${text}`);
+      this.logger.error(`Paystack verify failed: HTTP ${res.status}`);
       throw new InternalError(
         "PAYSTACK_VERIFY_FAILED",
         `Paystack transaction verification failed (HTTP ${res.status}).`,
@@ -318,8 +318,8 @@ export class PaystackService {
 
     const json = (await res.json()) as PaystackVerifyResponse;
     if (!json.status) {
-      this.logger.error(`Paystack verify rejected: ${json.message}`);
-      throw new InternalError("PAYSTACK_VERIFY_FAILED", json.message);
+      this.logger.error("Paystack verify rejected");
+      throw new InternalError("PAYSTACK_VERIFY_FAILED", "Paystack rejected the transaction request.");
     }
 
     return json.data;

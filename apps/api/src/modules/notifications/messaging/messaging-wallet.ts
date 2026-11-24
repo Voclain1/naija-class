@@ -8,6 +8,12 @@ type Balances = { availableKobo: bigint; reservedKobo: bigint };
 
 const MAX_ENTRY_KOBO = 2_147_483_647n;
 
+export interface MessagingSpendPolicy {
+  paidSendingEnabled: boolean;
+  schoolDailyKobo: bigint;
+  platformDailyKobo: bigint;
+}
+
 function validAmount(amountKobo: bigint): void {
   if (amountKobo <= 0n || amountKobo > MAX_ENTRY_KOBO) throw new RangeError("Invalid wallet amount");
 }
@@ -55,8 +61,18 @@ export function creditVerifiedMessagingTopUp(schoolId: string, reference: string
   });
 }
 
-export function reserveMessagingCredit(schoolId: string, reference: string, amountKobo: bigint) {
+export function reserveMessagingCredit(
+  schoolId: string,
+  reference: string,
+  amountKobo: bigint,
+  policy?: MessagingSpendPolicy,
+) {
   validAmount(amountKobo);
+  if (!policy?.paidSendingEnabled || policy.schoolDailyKobo <= 0n || policy.platformDailyKobo <= 0n) {
+    return Promise.resolve("SPENDING_DISABLED");
+  }
+  validAmount(policy.schoolDailyKobo);
+  validAmount(policy.platformDailyKobo);
   return inWallet(schoolId, async (db) => {
     const entries = await db.$queryRaw<Entry[]>`
       SELECT kind, amount_kobo FROM messaging_wallet_entries
@@ -66,6 +82,23 @@ export function reserveMessagingCredit(schoolId: string, reference: string, amou
       return entries.length === 1 && BigInt(reserve.amount_kobo) === amountKobo ? "ALREADY_RESERVED" : "CONFLICT";
     }
     if ((await balances(db, schoolId)).availableKobo < amountKobo) return "INSUFFICIENT_CREDIT";
+    const [daily] = await db.$queryRaw<{ day: string; schoolReserved: bigint }[]>`
+      WITH today AS (SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Lagos')::date AS day)
+      SELECT today.day::text AS day, COALESCE((
+        SELECT SUM(amount_kobo) FROM messaging_wallet_entries
+        WHERE school_id = ${schoolId} AND kind = 'RESERVE' AND
+          (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Lagos')::date = today.day
+      ), 0) AS "schoolReserved"
+      FROM today`;
+    if (!daily || daily.schoolReserved + amountKobo > policy.schoolDailyKobo) return "SPENDING_LIMIT";
+    const consumed = await db.$executeRaw`
+      INSERT INTO messaging_platform_reservations_daily (day, reserved_kobo)
+      SELECT ${daily.day}::date, ${amountKobo}::bigint
+      WHERE ${amountKobo}::bigint <= ${policy.platformDailyKobo}::bigint
+      ON CONFLICT (day) DO UPDATE SET reserved_kobo =
+        messaging_platform_reservations_daily.reserved_kobo + EXCLUDED.reserved_kobo
+      WHERE messaging_platform_reservations_daily.reserved_kobo + EXCLUDED.reserved_kobo <= ${policy.platformDailyKobo}::bigint`;
+    if (!consumed) return "SPENDING_LIMIT";
     await append(db, schoolId, "RESERVE", reference, amountKobo);
     return "RESERVED";
   });
