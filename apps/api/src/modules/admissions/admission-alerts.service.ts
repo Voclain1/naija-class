@@ -90,7 +90,7 @@ export class AdmissionAlertsService {
     }
 
     // SMS: switchable, and capped per day.
-    if (!settings.smsAlerts || !this.termii.isConfigured) return;
+    if (!settings.smsAlerts || !(await this.termii.legacyReadiness(schoolId, "ADMISSION")).ready) return;
     const sender = smsSenderFor(school);
     for (const user of staff) {
       const phone = user.phone ? normalizeNigerianPhone(user.phone) : null;

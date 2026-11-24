@@ -383,9 +383,9 @@ export class FinanceService implements OnModuleInit {
         db.payment.findMany({
           where: {
             status: "SUCCESS",
-            invoice: { termId, status: { notIn: [...BILLED_EXCLUDED_STATUSES] } },
+            invoice: { termId },
           },
-          select: { amount: true, paidAt: true, createdAt: true },
+          select: { amount: true, allocatedKobo: true, paidAt: true, createdAt: true, invoice: { select: { status: true } } },
         }),
         // Deliberately the SAME source getDashboard() uses (invoice-level
         // sums), not a sum of the rows above. If the payment-level series ever
@@ -399,6 +399,10 @@ export class FinanceService implements OnModuleInit {
 
       const totalInvoiced = totalsAgg._sum.totalDue ?? 0;
       const totalCollected = totalsAgg._sum.totalPaid ?? 0;
+
+      const grossCashCollected = payments.reduce((total, payment) => total + payment.amount, 0);
+      const unappliedCashCollected = payments.reduce((total, payment) =>
+        total + payment.amount - (payment.allocatedKobo ?? payment.amount), 0);
 
       // In-term weeks, snapped to Mondays, derived from the stored dates.
       // A term starting mid-week has its first bucket begin on the Monday
@@ -450,9 +454,10 @@ export class FinanceService implements OnModuleInit {
         );
       }
       for (const pay of payments) {
+        if (BILLED_EXCLUDED_STATUSES.some((status) => status === pay.invoice.status)) continue;
         place(
           pay.paidAt ?? pay.createdAt,
-          pay.amount,
+          pay.allocatedKobo ?? pay.amount,
           collectedDelta,
           (n) => {
             collectedBefore += n;
@@ -541,6 +546,8 @@ export class FinanceService implements OnModuleInit {
         buckets,
         totalInvoiced,
         totalCollected,
+        grossCashCollected,
+        unappliedCashCollected,
       };
     });
   }
@@ -565,7 +572,7 @@ export class FinanceService implements OnModuleInit {
   ): Promise<SendRemindersResult> {
     const channels = await this.notificationPreferences.getEnabledChannels(authCtx.schoolId);
     const emailAttemptable = channels.email && this.email.isConfigured;
-    const smsAttemptable = channels.sms && this.termii.isConfigured;
+    const smsAttemptable = channels.sms && (await this.termii.legacyReadiness(authCtx.schoolId, "FEE_REMINDER")).ready;
     // Phase 6 / Slice 5. Push needs no configuration check of its own: Expo
     // requires no API key (possession of a token is the authorization), so
     // unlike email and SMS there is no "configured" state that can be false.
@@ -580,7 +587,7 @@ export class FinanceService implements OnModuleInit {
       this.logger.warn(
         `Reminders skipped for school ${authCtx.schoolId} — no enabled/configured channel ` +
           `(emailEnabled=${channels.email}, emailConfigured=${this.email.isConfigured}, ` +
-          `smsEnabled=${channels.sms}, smsConfigured=${this.termii.isConfigured}, ` +
+          `smsEnabled=${channels.sms}, smsReady=${smsAttemptable}, ` +
           `pushEnabled=${channels.push})`,
       );
       return { sent: 0, skipped: dto.studentIds.length, skippedBy: { ...NO_SKIPS }, noChannel: true };

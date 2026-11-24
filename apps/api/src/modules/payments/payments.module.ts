@@ -29,6 +29,6 @@ import { RefundsService } from "./refunds.service.js";
   imports: [PaystackModule, MessagingWalletModule, PaidMessagingModule, PayrollModule, InvoicesModule, NotificationDispatchModule, EmailModule],
   controllers: [PaymentsController, PaystackController, PaymentPlansController, RefundsController],
   providers: [PaymentsService, PaymentPlanService, RefundsService, PaymentConfirmationService, PaystackWebhookInboxService],
-  exports: [PaymentsService, PaymentPlanService, RefundsService],
+  exports: [PaymentsService, PaymentPlanService, RefundsService, PaystackWebhookInboxService],
 })
 export class PaymentsModule {}

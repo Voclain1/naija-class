@@ -53,8 +53,8 @@ export class PaidMessagingService {
     return channel === "WHATSAPP" ? flags.paidWhatsAppEnabled : channel === "SMS" && flags.walletSmsEnabled;
   }
 
-  legacySmsReadiness() {
-    return this.termii.legacyReadiness();
+  legacySmsReadiness(schoolId: string) {
+    return this.termii.legacyReadiness(schoolId);
   }
 
   async readiness(schoolId: string, availableKobo: bigint, now = new Date()) {
@@ -261,9 +261,11 @@ export class PaidMessagingService {
     if (channel === "WHATSAPP" && (!template || !account || account.wabaId !== template.wabaId)) return block("TEMPLATE_OR_ACCOUNT_UNAVAILABLE");
     if (channel === "SMS" && !sms) return block("SMS_UNAVAILABLE");
 
+    const units = template ? 1 : countSmsSegments(preflight.sms);
+    if (!units) return block("SMS_CONTENT_NOT_CONFIGURED");
     const priceKey = template ? `META_${template.category}` as const : "TERMII_SMS";
     const cost = quoteDispatchCost(await reviewedMessagingRates(schoolId, profile.rates), priceKey, template ? "SCHOOL_OWNED" : "SCHOOLKIT",
-      template ? 1 : countSmsSegments(preflight.sms), now);
+      units, now);
     if (!cost || cost.estimatedKobo > 2_147_483_647n) return block("PRICE_MISSING");
     if (preflight.campaign && (template?.category !== "UTILITY" || preflight.campaign.approvedUnitKobo == null ||
         cost.estimatedKobo > BigInt(preflight.campaign.approvedUnitKobo))) {

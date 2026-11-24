@@ -64,6 +64,7 @@ export class PaymentConfirmationService {
           invoiceId: true,
           studentId: true,
           amount: true,
+          allocatedKobo: true,
           method: true,
           status: true,
           paidAt: true,
@@ -121,13 +122,16 @@ export class PaymentConfirmationService {
           to: recipient.email,
           purpose: "payment-confirmation",
           schoolName: ctx.schoolName,
-          subject: `Payment received: ${studentName}'s school fees`,
+          subject: ctx.payment.allocatedKobo === 0
+            ? "Funds received and awaiting reconciliation"
+            : `Payment received: ${studentName}'s school fees`,
           html: buildPaymentConfirmationHtml({
             schoolName: ctx.schoolName,
             guardianFirstName: recipient.firstName,
             studentName,
             termName: ctx.termName,
             amount: ctx.payment.amount,
+            allocatedKobo: ctx.payment.allocatedKobo ?? ctx.payment.amount,
             balance: Math.max(0, ctx.invoice.totalDue - ctx.invoice.totalPaid),
             paidAt: ctx.payment.paidAt ?? new Date(),
             reference: ctx.payment.paystackReference,
@@ -146,6 +150,7 @@ export function buildPaymentConfirmationHtml(opts: {
   studentName: string;
   termName: string | null;
   amount: number;
+  allocatedKobo?: number;
   balance: number;
   paidAt: Date;
   reference: string | null;
@@ -154,6 +159,8 @@ export function buildPaymentConfirmationHtml(opts: {
   const cell = "padding:8px;border:1px solid #e5e7eb";
   const row = (label: string, value: string) =>
     `<tr><td style="${cell}">${label}</td><td style="${cell};font-weight:600">${value}</td></tr>`;
+  const allocated = opts.allocatedKobo ?? opts.amount;
+  const unapplied = opts.amount - allocated;
   const date = opts.paidAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" });
   return `<!DOCTYPE html>
 <html lang="en">
@@ -163,13 +170,15 @@ export function buildPaymentConfirmationHtml(opts: {
   <p>Dear ${e(opts.guardianFirstName)},</p>
   <p>${e(opts.schoolName)} has received your online payment for <strong>${e(opts.studentName)}</strong>'s school fees.</p>
   <table style="border-collapse:collapse;width:100%">
-    ${row("Amount paid", e(formatKobo(opts.amount)))}
+    ${row(unapplied > 0 ? "Funds received" : "Amount paid", e(formatKobo(opts.amount)))}
+    ${unapplied > 0 ? row("Applied to this invoice", e(formatKobo(allocated))) : ""}
+    ${unapplied > 0 ? row("Awaiting reconciliation", e(formatKobo(unapplied))) : ""}
     ${opts.termName ? row("For", e(opts.termName)) : ""}
     ${row("Date", e(date))}
     ${opts.reference ? row("Payment reference", e(opts.reference)) : ""}
-    ${row("Balance left", opts.balance > 0 ? e(formatKobo(opts.balance)) : "Nothing. This bill is fully paid.")}
+    ${allocated > 0 ? row("Balance left", opts.balance > 0 ? e(formatKobo(opts.balance)) : "Nothing. This bill is fully paid.") : ""}
   </table>
-  <p>${e(opts.schoolName)} will issue your receipt.</p>
+  <p>${allocated > 0 ? `${e(opts.schoolName)} will issue your receipt${unapplied > 0 ? " for the applied amount" : ""}.` : "Your school will review these funds. This email acknowledges receipt of funds and does not change the invoice."}</p>
   <p style="color:#6b7280;font-size:13px">Online payments are processed by Paystack for SchoolKit, which ${e(opts.schoolName)} uses for school fees. Your bank statement may show SchoolKit.</p>
 </body>
 </html>`;

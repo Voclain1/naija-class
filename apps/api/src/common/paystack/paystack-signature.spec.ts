@@ -42,6 +42,8 @@ describe("Paystack signed webhook authentication", () => {
     }) as ExecutionContext;
     const config = new ConfigService({ PAYSTACK_SECRET_KEY: key, PAYSTACK_WEBHOOK_MODE: "test" });
     const guard = new PaystackWebhookGuard(new PaystackService(config), config);
+    expect(() => guard.canActivate(ctx())).toThrow();
+    config.set("PAYSTACK_WEBHOOK_REQUIRE_MODERN", "off");
     expect(guard.canActivate(ctx())).toBe(true);
     expect(() => guard.canActivate(ctx("bad"))).toThrow();
     config.set("PAYSTACK_WEBHOOK_REQUIRE_MODERN", "on");

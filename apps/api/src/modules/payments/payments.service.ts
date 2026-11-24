@@ -607,36 +607,48 @@ export class PaymentsService {
       this.logger.error("Payment Request webhook rejected: stored link correlation failed");
       return;
     }
-    if (link.status === "PAID") return;
 
-    const request = await this.paystack.getPaymentRequest(link.requestCode);
-    const requestMetadata = request.metadata;
-    if (
-      BigInt(request.id) !== link.requestId ||
-      request.request_code !== link.requestCode ||
-      request.amount !== link.amount ||
-      request.currency !== link.currency ||
-      request.status !== "success" ||
-      request.split_code === null ||
-      request.customer.customer_code !== link.paystackCustomerCode ||
-      requestMetadata?.schoolId !== schoolId ||
-      requestMetadata?.invoiceId !== invoiceId ||
-      requestMetadata?.schoolKitPaymentLinkId !== linkId
-    ) {
-      this.logger.error("Payment Request webhook rejected: Paystack request verification mismatch");
-      return;
-    }
-
+    const providerEvent = asRecord(event.data);
     const eventTransaction = asRecord(event.data.transaction);
     const hinted = typeof eventTransaction?.reference === "string" ? eventTransaction.reference : undefined;
-    const embedded = request.transactions?.find((transaction) => transaction.status === "success" &&
-      (hinted === undefined || transaction.reference === hinted));
-    const reference = embedded?.reference;
+    let reference: string | undefined;
+    let expectedSplit: string | null = null;
+
+    // Paystack documents that archive can hide a request from Verify.
+    // On an archived link, use the authenticated request identity and
+    // independently verify the nested transaction before recording funds.
+    if (link.archivedAt && hinted && Number.isSafeInteger(providerEvent?.id) &&
+        BigInt(providerEvent!.id as number) === link.requestId && providerEvent?.request_code === link.requestCode) {
+      reference = hinted;
+      const school = await withTenant(schoolId, (db) => db.school.findUnique({
+        where: { id: schoolId }, select: { paystackSplitCode: true },
+      }));
+      expectedSplit = school?.paystackSplitCode ?? null;
+    } else {
+      const request = await this.paystack.getPaymentRequest(link.requestCode);
+      const requestMetadata = request.metadata;
+      if (
+        BigInt(request.id) !== link.requestId ||
+        request.request_code !== link.requestCode ||
+        request.amount !== link.amount ||
+        request.currency !== link.currency ||
+        request.status !== "success" ||
+        request.split_code === null ||
+        request.customer.customer_code !== link.paystackCustomerCode ||
+        requestMetadata?.schoolId !== schoolId ||
+        requestMetadata?.invoiceId !== invoiceId ||
+        requestMetadata?.schoolKitPaymentLinkId !== linkId
+      ) {
+        throw new Error("Paystack payment request correlation could not be verified.");
+      }
+      expectedSplit = request.split_code;
+      reference = request.transactions?.find((transaction) => transaction.status === "success" &&
+        (hinted === undefined || transaction.reference === hinted))?.reference;
+    }
     if (!reference) {
       if (hinted) await withTenant(schoolId, (db) =>
         recordPaystackException(db, schoolId, invoiceId, hinted, "REQUEST_TRANSACTION_UNBOUND", link.amount, null, null));
-      this.logger.error("Payment Request webhook rejected: successful transaction missing");
-      return;
+      throw new Error("Paystack payment request transaction could not be bound.");
     }
     const transaction = await this.paystack.verifyTransaction(reference);
     if (
@@ -644,16 +656,17 @@ export class PaymentsService {
       transaction.reference !== reference ||
       transaction.amount !== link.amount ||
       transaction.currency !== link.currency ||
-      transaction.split?.split_code !== request.split_code
+      expectedSplit === null || transaction.split?.split_code !== expectedSplit
     ) {
       if (transaction.status === "success") await withTenant(schoolId, (db) =>
         recordPaystackException(db, schoolId, invoiceId, reference, "VERIFICATION_MISMATCH",
           link.amount, transaction.amount, transaction.currency));
-      this.logger.error("Payment Request webhook rejected: transaction verification mismatch");
+      if (transaction.status !== "success") throw new Error("Paystack payment request charge is awaiting verification.");
       return;
     }
 
-    const paidAt = transaction.paid_at ? new Date(transaction.paid_at) : new Date();
+    const providerPaidAt = transaction.paid_at ? new Date(transaction.paid_at) : null;
+    const paidAt = providerPaidAt && Number.isFinite(providerPaidAt.getTime()) ? providerPaidAt : null;
     const applied = await withTenant(schoolId, async (db) => {
       await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${schoolId} AND id = ${invoiceId} FOR UPDATE`;
       const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
@@ -666,20 +679,28 @@ export class PaymentsService {
           link.amount, transaction.amount, transaction.currency);
         return null;
       }
-      if (invoice.status === "CANCELLED" || invoice.status === "REFUNDED") {
-        await recordPaystackException(db, schoolId, invoiceId, reference, "CLOSED_INVOICE",
-          link.amount, transaction.amount, transaction.currency, transaction.amount);
-        return null;
-      }
-      const allocated = Math.min(link.amount, Math.max(0, invoice.totalDue - invoice.totalPaid));
+      const [currentLink] = await db.$queryRaw<{
+        status: string; expires_at: Date | null; archived_at: Date | null; invalidated_at: Date | null;
+      }[]>`
+        SELECT status, expires_at, archived_at, invalidated_at FROM payment_links
+         WHERE id = ${linkId} AND school_id = ${schoolId} AND invoice_id = ${invoiceId} FOR UPDATE`;
+      if (!currentLink) return null;
+      const archiveCutoff = currentLink.invalidated_at ?? currentLink.archived_at;
+      const reason = !paidAt ? "PAYMENT_TIME_UNVERIFIED"
+        : currentLink.expires_at && paidAt >= currentLink.expires_at ? "PAYMENT_LINK_EXPIRED"
+        : (archiveCutoff && paidAt >= archiveCutoff) ||
+          (!archiveCutoff && ["ARCHIVE_PENDING", "ARCHIVED"].includes(currentLink.status)) ? "PAYMENT_LINK_INVALIDATED"
+        : ["CANCELLED", "REFUNDED"].includes(invoice.status) ? "CLOSED_INVOICE"
+        : currentLink.status === "PAID" ? "PAYMENT_LINK_ALREADY_PAID"
+        : null;
+      const allocated = reason ? 0 : Math.min(link.amount, Math.max(0, invoice.totalDue - invoice.totalPaid));
       const surplus = link.amount - allocated;
-      if (surplus) await recordPaystackException(db, schoolId, invoiceId, reference, "INVOICE_OVERPAYMENT",
+      if (surplus) await recordPaystackException(db, schoolId, invoiceId, reference, reason ?? "INVOICE_OVERPAYMENT",
         link.amount, transaction.amount, transaction.currency, surplus);
-      const claim = await db.paymentLink.updateMany({
-        where: { id: linkId, schoolId, invoiceId, status: { in: ["LIVE", "ARCHIVE_PENDING", "ARCHIVED"] } },
+      if (!reason) await db.paymentLink.updateMany({
+        where: { id: linkId, schoolId, invoiceId, status: { in: ["LIVE", "ARCHIVE_PENDING"] } },
         data: { status: "PAID", paidAt, hostedUrl: null, failureCode: null },
       });
-      if (claim.count === 0) return null;
 
       const payment = await db.payment.create({
           data: {
@@ -696,6 +717,16 @@ export class PaymentsService {
             paidAt,
           },
       });
+      if (allocated === 0) {
+        await db.auditLog.create({
+          data: {
+            schoolId, userId: null, action: "payment.funds-received-unapplied",
+            entityType: "payment", entityId: payment.id,
+            metadata: { invoiceId, receivedKobo: link.amount, allocatedKobo: 0, reason: reason ?? "INVOICE_OVERPAYMENT" },
+          },
+        });
+        return { id: payment.id, allocated };
+      }
       const newTotalPaid = allocated ? await invoiceAllocatedTotal(db, schoolId, invoiceId) : invoice.totalPaid;
       const newStatus = computeInvoiceStatus(newTotalPaid, invoice.totalDue);
       await db.invoice.update({
@@ -725,13 +756,14 @@ export class PaymentsService {
       });
       await this.paymentPlan.recomputeInstallmentsPaid(db, invoiceId, newTotalPaid);
       await this.confirmations?.queuePaidConfirmation(db, schoolId, payment.id, invoice.studentId);
-      return payment.id;
+      return { id: payment.id, allocated };
     });
     if (applied) {
-      await this.paymentLinkInvalidation?.archivePending(schoolId, invoiceId);
-      // Payment-link payments had no receipt at all before 2026-09-22.
-      await this.tryIssueReceipt(schoolId, applied);
-      await this.confirmations?.onlinePaymentSucceeded(schoolId, applied);
+      if (applied.allocated > 0) {
+        await this.paymentLinkInvalidation?.archivePending(schoolId, invoiceId);
+        await this.tryIssueReceipt(schoolId, applied.id);
+      }
+      await this.confirmations?.onlinePaymentSucceeded(schoolId, applied.id);
     }
   }
 
@@ -1022,6 +1054,7 @@ export class PaymentsService {
             status: true,
             receiptNumber: true,
             receiptUrl: true,
+            allocatedKobo: true,
             createdAt: true,
           },
         });
@@ -1030,6 +1063,9 @@ export class PaymentsService {
         }
         if (payment.status !== "SUCCESS") {
           throw new ConflictError("RECEIPT_NOT_AVAILABLE", "Only a successful payment has a receipt.");
+        }
+        if (payment.allocatedKobo === 0) {
+          throw new ConflictError("RECEIPT_NOT_AVAILABLE", "These funds were received and are awaiting invoice allocation.");
         }
         if (!opts.force && payment.receiptNumber && payment.receiptUrl) {
           return { receiptNumber: payment.receiptNumber, receiptUrl: payment.receiptUrl };
@@ -1100,13 +1136,8 @@ export class PaymentsService {
         "VERIFICATION_MISMATCH", payment.amount, paystackData.amount, paystackData.currency);
       return false;
     }
-    if (invoice.status === "CANCELLED" || invoice.status === "REFUNDED") {
-      await recordPaystackException(db, payment.schoolId, payment.invoiceId, `PSK-${payment.schoolId}-${payment.id}`,
-        "CLOSED_INVOICE", payment.amount, paystackData.amount, paystackData.currency, payment.amount);
-      return false;
-    }
-
-    const allocated = Math.min(payment.amount, Math.max(0, invoice.totalDue - invoice.totalPaid));
+    const closed = invoice.status === "CANCELLED" || invoice.status === "REFUNDED";
+    const allocated = closed ? 0 : Math.min(payment.amount, Math.max(0, invoice.totalDue - invoice.totalPaid));
     // 1. Transition payment to SUCCESS and store Paystack payload — an
     // ATOMIC conditional update (updateMany + a status: "PENDING" filter),
     // not a plain update. This is what actually closes the race window
@@ -1140,20 +1171,17 @@ export class PaymentsService {
     // 3. The receipt is issued AFTER this transaction commits, by the caller
     //    (issueReceiptFor) — never inside it.
 
-    const newStatus = computeInvoiceStatus(newTotalPaid, invoice.totalDue);
-
-    // 4. Update invoice.
-    await db.invoice.update({
-      where: { id: payment.invoiceId },
-      data: { totalPaid: newTotalPaid, status: newStatus },
-    });
+    const newStatus = allocated ? computeInvoiceStatus(newTotalPaid, invoice.totalDue) : invoice.status;
+    if (allocated) {
+      await db.invoice.update({ where: { id: payment.invoiceId }, data: { totalPaid: newTotalPaid, status: newStatus } });
+    }
 
     // Keep receipt and provider amounts intact. Only the outstanding balance
     // is applied to the invoice and the surplus remains in reconciliation.
     const excess = payment.amount - allocated;
     if (excess > 0) {
       await recordPaystackException(db, payment.schoolId, payment.invoiceId, `PSK-${payment.schoolId}-${payment.id}`,
-        "INVOICE_OVERPAYMENT", payment.amount, paystackData.amount, paystackData.currency, excess);
+        closed ? "CLOSED_INVOICE" : "INVOICE_OVERPAYMENT", payment.amount, paystackData.amount, paystackData.currency, excess);
       await db.auditLog.create({
         data: {
           schoolId: payment.schoolId,
@@ -1198,8 +1226,10 @@ export class PaymentsService {
     });
 
     // 7. Update installment paid flags if an installment plan exists.
-    await this.paymentPlan.recomputeInstallmentsPaid(db, payment.invoiceId, newTotalPaid);
-    await this.confirmations?.queuePaidConfirmation(db, payment.schoolId, payment.id, payment.studentId);
+    if (allocated) {
+      await this.paymentPlan.recomputeInstallmentsPaid(db, payment.invoiceId, newTotalPaid);
+      await this.confirmations?.queuePaidConfirmation(db, payment.schoolId, payment.id, payment.studentId);
+    }
     return true;
   }
 
@@ -1233,12 +1263,18 @@ async function recordPaystackException(
   db: PrismaClient, schoolId: string, invoiceId: string, reference: string, reason: string,
   expectedKobo: number, observed: unknown, currency: unknown, unappliedKobo?: number,
 ): Promise<void> {
-  await db.paystackPaymentException.createMany({
+  const result = await db.paystackPaymentException.createMany({
     skipDuplicates: true,
     data: {
       schoolId, invoiceId, reference, reason, expectedKobo, unappliedKobo,
       observedKobo: typeof observed === "number" && Number.isSafeInteger(observed) ? BigInt(observed) : null,
       observedCurrency: typeof currency === "string" && /^[A-Z]{3}$/.test(currency) ? currency : null,
+    },
+  });
+  if (result.count) await db.auditLog.create({
+    data: {
+      schoolId, userId: null, action: "payment.reconciliation.opened", entityType: "invoice", entityId: invoiceId,
+      metadata: { reference, reason, expectedKobo, unappliedKobo: unappliedKobo ?? null },
     },
   });
 }

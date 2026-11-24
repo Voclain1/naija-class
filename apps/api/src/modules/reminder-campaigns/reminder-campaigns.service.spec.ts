@@ -150,6 +150,18 @@ describe("fee reminder campaigns against PostgreSQL", () => {
   const sendsOf = (id: string) => withTenant(A.schoolId, (db) => db.reminderCampaignSend.findMany({ where: { campaignId: id }, orderBy: [{ studentId: "asc" }, { channel: "asc" }] }));
 
   // ---------------------------------------------------------------------
+  it("sends independently reviewed email when the selected WhatsApp channel has no eligible recipients", async () => {
+    const review = await prepare([A.bo.id], { useWhatsApp: true });
+    expect(review.canConfirm).toBe(true);
+    expect(review.students[0]?.planned).toMatchObject({ emailGuardians: 1, mobile: "NONE" });
+    const campaign = await confirm(review);
+    await run(campaign.id);
+    expect(port.emails).toHaveLength(1);
+    expect(port.texts).toHaveLength(0);
+    expect(port.pushes).toHaveLength(0);
+    expect((await service.getCampaign(A.bursar.auth, campaign.id)).status).toBe("COMPLETED");
+  });
+
   it("previews per student with server figures and exclusions, and sends nothing", async () => {
     const p = await prepare([...all(), B.ada.id]);
     expect(p.canConfirm).toBe(true);

@@ -2733,6 +2733,7 @@ model PaymentLink {
   lastAttemptAt        DateTime          @default(now()) @map("last_attempt_at")
   createdAt            DateTime          @default(now()) @map("created_at")
   updatedAt            DateTime          @updatedAt @map("updated_at")
+  invalidatedAt        DateTime?         @map("invalidated_at")
   archivedAt           DateTime?         @map("archived_at")
   paidAt               DateTime?         @map("paid_at")
 
@@ -6230,6 +6231,8 @@ model PaystackPaymentException {
   observedCurrency String?  @map("observed_currency")
   unappliedKobo    Int?     @map("unapplied_kobo")
   createdAt        DateTime @default(now()) @map("created_at")
+  reviewStatus     String   @default("OPEN") @map("review_status")
+  reviewedAt       DateTime? @map("reviewed_at")
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
 

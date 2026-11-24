@@ -67,5 +67,7 @@ export interface RevenueTrajectoryDto {
    * rather than inferring it, and so the spec has something to assert on.
    */
   totalInvoiced: number; // kobo
-  totalCollected: number; // kobo
+  totalCollected: number; // kobo allocated to invoices
+  grossCashCollected?: number; // kobo, before fees, includes unapplied cash
+  unappliedCashCollected?: number; // kobo awaiting allocation
 }

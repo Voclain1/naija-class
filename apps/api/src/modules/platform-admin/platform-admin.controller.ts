@@ -16,6 +16,7 @@ import {
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import {
+  NotFoundError,
   platformAdminAuditLogQuerySchema,
   platformAdminCreateSchoolSchema,
   platformAdminListUsersQuerySchema,
@@ -102,6 +103,8 @@ import { messagingEmergencyState, writeMessagingEmergencyState } from "../../com
 import { messagingSpendLimit, writeMessagingSpendLimit } from "../../common/messaging-spend-limits";
 import type { MessagingEmergencyChannel, MessagingEmergencyWrite, MessagingProviderActivationWrite, MessagingRateReviewWrite, MessagingSpendLimitWrite, MessagingTemplateReviewWrite } from "@school-kit/types";
 import { messagingProviderActivation, messagingRateCatalogState, writeMessagingProviderActivation, writeMessagingRateCatalog, writeMessagingTemplateReview } from "../notifications/messaging/messaging-review-controls";
+import { PaystackWebhookInboxService } from "../payments/paystack-webhook-inbox.service";
+import { MessagingTopUpService } from "../notifications/messaging/messaging-top-up.service";
 import { MetaConnectionsService } from "../notifications/messaging/meta-connections.service";
 import { messagingPlatformControls } from "../notifications/messaging/paid-messaging-policy";
 import { getMessagingReconciliation, getMessagingWallet, reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
@@ -130,6 +133,8 @@ export class PlatformAdminController {
     private readonly assistantActivation: AssistantActivationService,
     private readonly voiceAdmin: VoiceAdminService,
     private readonly metaConnections: MetaConnectionsService,
+    private readonly paystackInbox: PaystackWebhookInboxService,
+    private readonly messagingTopUps: MessagingTopUpService,
   ) {}
 
   // POST /platform-admin/login — same tighter-than-global throttle as
@@ -279,6 +284,37 @@ export class PlatformAdminController {
     });
   }
 
+  @Post("schools/:schoolId/messaging/top-up-reconciliation/:reference/recover")
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(PlatformAdminGuard)
+  recoverMessagingTopUp(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @Param("reference", new ZodValidationPipe(z.string().min(1).max(120))) reference: string,
+    @Body(new ZodValidationPipe(z.object({ evidenceRef: reviewRef }).strict())) input: { evidenceRef: string },
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+  ) {
+    return this.messagingTopUps.recoverForOperator(schoolId, reference, admin.userId, input.evidenceRef);
+  }
+
+  @Get("payments/webhooks/dead-letters")
+  @UseGuards(PlatformAdminGuard)
+  paystackWebhookDeadLetters() {
+    return this.paystackInbox.listDeadLetters();
+  }
+
+  @Post("payments/webhooks/dead-letters/:eventKey/replay")
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(PlatformAdminGuard)
+  replayPaystackWebhook(
+    @Param("eventKey", new ZodValidationPipe(z.string().regex(/^[0-9a-f]{64}$/))) eventKey: string,
+    @Body(new ZodValidationPipe(z.object({ evidenceRef: reviewRef }).strict())) input: { evidenceRef: string },
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+  ) {
+    return this.paystackInbox.replayDeadLetter(eventKey, admin.userId, input.evidenceRef);
+  }
+
   @Get("schools/:schoolId/payments/reconciliation")
   @UseGuards(PlatformAdminGuard)
   paystackPaymentReconciliation(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
@@ -287,7 +323,7 @@ export class PlatformAdminController {
         where: { schoolId }, take: 100, orderBy: { createdAt: "desc" },
         select: {
           reference: true, invoiceId: true, reason: true, expectedKobo: true, observedKobo: true,
-          observedCurrency: true, unappliedKobo: true, createdAt: true,
+          observedCurrency: true, unappliedKobo: true, createdAt: true, reviewStatus: true, reviewedAt: true,
         },
       });
       return { items: rows.map((row) => ({
@@ -296,6 +332,39 @@ export class PlatformAdminController {
         observedKobo: row.observedKobo === null ? null : String(row.observedKobo),
         unappliedKobo: row.unappliedKobo === null ? null : String(row.unappliedKobo),
       })) };
+    });
+  }
+
+  @Post("schools/:schoolId/payments/reconciliation/review")
+  @UseGuards(PlatformAdminGuard)
+  @HttpCode(200)
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
+  reviewPaymentException(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @Body(new ZodValidationPipe(z.object({
+      reference: z.string().min(1).max(220),
+      reason: z.string().regex(/^[A-Z_]{1,64}$/),
+      status: z.enum(["ACKNOWLEDGED", "PROVIDER_ESCALATED", "EVIDENCE_RECORDED"]),
+      evidenceRef: reviewRef,
+    }).strict())) input: {
+      reference: string; reason: string; status: "ACKNOWLEDGED" | "PROVIDER_ESCALATED" | "EVIDENCE_RECORDED"; evidenceRef: string;
+    },
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+  ) {
+    return withTenant(schoolId, async (db) => {
+      const reviewedAt = new Date();
+      const result = await db.paystackPaymentException.updateMany({
+        where: { schoolId, reference: input.reference, reason: input.reason },
+        data: { reviewStatus: input.status, reviewedAt },
+      });
+      if (!result.count) throw new NotFoundError("Payment exception not found.");
+      await db.auditLog.create({
+        data: {
+          schoolId, userId: admin.userId, action: "payment.reconciliation.review", entityType: "paystack_exception",
+          entityId: input.reference, metadata: { reason: input.reason, status: input.status, evidenceRef: input.evidenceRef },
+        },
+      });
+      return { status: input.status, reviewedAt };
     });
   }
 

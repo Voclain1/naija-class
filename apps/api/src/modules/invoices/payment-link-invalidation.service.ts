@@ -26,6 +26,8 @@ export class PaymentLinkInvalidationService {
       select: { id: true },
     });
     if (links.length === 0) return 0;
+    await db.$executeRaw`UPDATE payment_links SET invalidated_at = COALESCE(invalidated_at, now())
+      WHERE school_id = ${schoolId} AND id = ANY(${links.map(({ id }) => id)}::text[]) AND status = 'LIVE'`;
     await db.paymentLink.updateMany({
       where: { id: { in: links.map(({ id }) => id) }, status: "LIVE" },
       data: { status: "ARCHIVE_PENDING", hostedUrl: null, lastAttemptAt: new Date() },

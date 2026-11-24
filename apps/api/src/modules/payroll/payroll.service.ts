@@ -630,6 +630,7 @@ export class PayrollService {
     const { schoolId, payrollItemId } = parsed;
 
     await withTenant(schoolId, async (db) => {
+      await db.$queryRaw`SELECT id FROM payroll_items WHERE school_id = ${schoolId} AND id = ${payrollItemId} FOR UPDATE`;
       const item = await db.payrollItem.findUnique({
         where: { id: payrollItemId },
         select: { id: true, schoolId: true, status: true },

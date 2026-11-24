@@ -361,7 +361,7 @@ export class SickbayService {
         title: ctx.school.name,
         body: SICKBAY_PUSH_BODY,
         data: { kind: "sickbay-visit", studentId: ctx.visit.studentId },
-        smsAvailable: ctx.visit.sentHome && this.termii.isConfigured && !!phone,
+        smsAvailable: ctx.visit.sentHome && !!phone && (await this.termii.legacyReadiness(authCtx.schoolId, "SICKBAY")).ready,
       });
       if (channel === "SMS" && phone && ctx.visit.sentHome) {
         try {

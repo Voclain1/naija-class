@@ -805,7 +805,7 @@ export class GuardiansService {
       }
     }
 
-    if (smsEnabled && params.phone) {
+    if (smsEnabled && params.phone && (await this.termii.legacyReadiness(params.schoolId, "GUARDIAN_INVITATION")).ready) {
       const normalized = normalizeNigerianPhone(params.phone);
       if (!normalized) {
         this.logger.warn(`Guardian invite SMS skipped — unrecognized phone format (${redactPhone(params.phone)})`);

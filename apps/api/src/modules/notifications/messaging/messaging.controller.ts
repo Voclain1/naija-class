@@ -59,7 +59,7 @@ export class MessagingController {
     const readiness = await this.paid?.readiness(auth.schoolId, wallet.availableKobo);
     return {
       topUps: this.topUps.availability?.(),
-      legacySms: await this.paid?.legacySmsReadiness(),
+      legacySms: await this.paid?.legacySmsReadiness(auth.schoolId),
       preferences: {
         EMAIL: preferences.emailEnabled, PUSH: preferences.pushEnabled,
         SMS: preferences.smsEnabled, WHATSAPP: paidPreferences.paidWhatsAppEnabled,

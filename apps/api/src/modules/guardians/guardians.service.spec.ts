@@ -20,7 +20,7 @@ function makeEmailStub(overrides: Partial<EmailService> = {}): EmailService {
   return { send: vi.fn(async () => undefined), ...overrides } as EmailService;
 }
 function makeTermiiStub(overrides: Partial<TermiiService> = {}): TermiiService {
-  return { sendSms: vi.fn(async () => undefined), ...overrides } as TermiiService;
+  return { legacyReadiness: async () => ({ ready: true }), sendSms: vi.fn(async () => undefined), ...overrides } as TermiiService;
 }
 function makeNotificationPreferencesStub(
   overrides: Partial<NotificationPreferencesService> = {},

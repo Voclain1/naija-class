@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+
+import { basePrisma } from "@school-kit/db";
 import { describe, expect, it, vi } from "vitest";
 
 import { smsSenderFor } from "./sms-sender.js";
@@ -58,6 +61,14 @@ describe("TermiiService", () => {
     expect(() => makeService(undefined)).not.toThrow();
   });
 
+  it("preflight rejects an implicit production cutover with an existing Termii credential", async () => {
+    const config = { NODE_ENV: "production", TERMII_API_KEY: "fixture", MESSAGING_LEGACY_SMS_MIGRATION_MODE: "" };
+    const service = new TermiiService({ get: (key: keyof typeof config) => config[key] } as never);
+    await expect(service.onApplicationBootstrap()).rejects.toThrow(/explicit legacy SMS release/);
+    config.MESSAGING_LEGACY_SMS_MIGRATION_MODE = "off";
+    await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+  });
+
   it("sendSms throws when TERMII_API_KEY is absent", async () => {
     await expect(makeService(undefined).sendSms("2348012345678", "hi")).rejects.toThrow();
   });
@@ -100,6 +111,45 @@ describe("TermiiService.sendSms — whose name the SMS goes out under", () => {
       status: "REJECTED", reason: "PLATFORM_SMS_BUDGET_UNAVAILABLE",
     });
     await expect(svc.sendSms("2348012345678", "fixture")).rejects.toThrow();
+  });
+
+  it("authorizes only configured schools and producers and serializes the school's last available kobo", async () => {
+    const school = await basePrisma.school.create({
+      data: { name: "Legacy SMS fixture", slug: `legacy-sms-${randomUUID()}`, status: "ACTIVE" },
+    });
+    const rate = {
+      key: "TERMII_SMS", version: "fixture", evidence: "fixture",
+      effectiveFrom: "2020-01-01T00:00:00Z", effectiveUntil: "2099-01-01T00:00:00Z", verifiedAt: "2020-01-01T00:00:00Z",
+      providerAmount: "1", rateNumerator: "1", rateDenominator: "1", marginBasisPoints: "0", taxBasisPoints: "0",
+    };
+    const config: Record<string, string> = {
+      TERMII_API_KEY: "fixture",
+      MESSAGING_LEGACY_SMS_MIGRATION_MODE: "existing-authorized",
+      MESSAGING_LEGACY_SMS_AUTHORIZATIONS: JSON.stringify({ [school.id]: { producers: ["ADMISSION"], dailyKobo: "1" } }),
+      MESSAGING_LEGACY_SMS_RATES: JSON.stringify([rate]),
+      MESSAGING_PAID_PLATFORM_DAILY_KOBO: "2000000000",
+    };
+    const service = new TermiiService({ get: (key: string) => config[key] } as never);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ code: "ok", message_id: "fictional" })));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      expect(await service.legacyReadiness(school.id, "FEE_REMINDER")).toMatchObject({ ready: false });
+      expect(await service.legacyReadiness(school.id, "ADMISSION")).toMatchObject({ ready: true });
+      const [foreign, unrelated, ...remaining] = await Promise.all([
+        service.sendSmsWithOutcome("2348012345678", "fixture", undefined, { schoolId: randomUUID(), eventType: "ADMISSION", eventId: "foreign" }),
+        service.sendSmsWithOutcome("2348012345678", "fixture", undefined, { schoolId: school.id, eventType: "FEE_REMINDER", eventId: "reminder" }),
+        ...["first", "second"].map((eventId) =>
+          service.sendSmsWithOutcome("2348012345678", "fixture", undefined, { schoolId: school.id, eventType: "ADMISSION", eventId })),
+      ]);
+      expect(foreign).toMatchObject({ status: "REJECTED" });
+      expect(unrelated).toMatchObject({ status: "REJECTED" });
+      expect(remaining.map(({ status }) => status).sort()).toEqual(["ACCEPTED", "REJECTED"]);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(await service.legacyReadiness(school.id, "ADMISSION")).toMatchObject({ ready: false });
+    } finally {
+      vi.unstubAllGlobals();
+      await basePrisma.school.delete({ where: { id: school.id } });
+    }
   });
 
   it("uses the school's approved name when given one", async () => {

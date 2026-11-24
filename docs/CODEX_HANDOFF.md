@@ -190,6 +190,12 @@ those; it doesn't replace them.
 
 ## Latest state (updated 2026-11-24)
 
+The closing sprint on draft PR #563 adds producer-scoped legacy SMS budgets,
+local payment-link cutoffs, zero-allocation acknowledgments and audited Paystack
+inbox operations. The [disposition report](reviews/unified-messaging-closing-sprint.md)
+and [62-scenario matrix](reviews/unified-messaging-muse-acceptance.md) describe
+the verified behavior and remaining merge gates. PR #564 is separate.
+
 Unified messaging remediation continues on draft PR #563. Use the
 [runbook](runbooks/unified-messaging.md) for webhook key rotation, legacy SMS
 migration and payment recovery. Frontend PR #564 remains separate.

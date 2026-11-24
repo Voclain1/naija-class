@@ -133,16 +133,16 @@ export async function readPaidEventFacts(job: NotificationDelivery, now: Date): 
     if (job.eventType !== PAID_PAYMENT_EVENT) return null;
     const payment = await db.payment.findFirst({
       where: { schoolId, id: eventId, status: "SUCCESS", method: "PAYSTACK", paidAt: { not: null }, studentId: { in: studentIds } },
-      select: { studentId: true, invoiceId: true, amount: true },
+      select: { studentId: true, invoiceId: true, amount: true, allocatedKobo: true },
     });
-    if (!payment) return null;
+    if (!payment || payment.allocatedKobo === 0) return null;
     const student = links.find(({ studentId }) => studentId === payment.studentId)?.student;
     const invoice = await db.invoice.findFirst({
       where: { schoolId, id: payment.invoiceId }, select: { totalDue: true, totalPaid: true },
     });
     if (!invoice || !student) return null;
     fields.studentName = `${student.firstName} ${student.lastName}`;
-    fields.amountPaid = formatKobo(payment.amount);
+    fields.amountPaid = formatKobo(payment.allocatedKobo ?? payment.amount);
     fields.balanceLeft = formatKobo(Math.max(0, invoice.totalDue - invoice.totalPaid));
     return { fields, sms: `${school.name}: We received a school fees payment of ${fields.amountPaid}. Check your parent portal.`, senderId: smsSenderFor(school) };
   });

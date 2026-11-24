@@ -64,6 +64,33 @@ export class MessagingTopUpService {
     await this.acceptVerifiedCharge(reference);
   }
 
+  async recoverForOperator(schoolId: string, reference: string, operatorId: string, evidenceRef: string) {
+    if (TOP_UP_REFERENCE.exec(reference)?.[1] !== schoolId) throw new ForbiddenError("Top-up is unavailable.");
+    await withTenant(schoolId, async (db) => {
+      const pending = await db.messagingWalletTopUp.findFirst({ where: { schoolId, reference }, select: { reference: true } });
+      if (!pending) throw new ForbiddenError("Top-up is unavailable.");
+      await db.auditLog.create({
+        data: {
+          schoolId, userId: operatorId, action: "messaging.wallet.top-up-recovery",
+          entityType: "messaging_wallet_top_up", entityId: pending.reference, metadata: { evidenceRef },
+        },
+      });
+    });
+    await this.acceptVerifiedCharge(reference);
+    return withTenant(schoolId, async (db) => {
+      const row = await db.messagingWalletTopUp.findFirstOrThrow({
+        where: { schoolId, reference }, select: { amountKobo: true, actualFeeKobo: true, verifiedAt: true, reconciliationCode: true },
+      });
+      return {
+        reference, amountKobo: String(row.amountKobo) as Kobo,
+        actualFeeKobo: row.actualFeeKobo == null ? null : String(row.actualFeeKobo) as Kobo,
+        creditedKobo: row.verifiedAt && row.actualFeeKobo != null
+          ? String(BigInt(row.amountKobo) - BigInt(row.actualFeeKobo)) as Kobo : null,
+        reconciliationCode: row.reconciliationCode, verifiedAt: row.verifiedAt?.toISOString() ?? null,
+      };
+    });
+  }
+
   async checkout(auth: AuthContext, clientRequestId: string, amount: string): Promise<MessagingTopUpCheckout> {
     await assertUserActiveAndHasOneOf(auth, ["owner"]);
     const quote = this.quote(amount);

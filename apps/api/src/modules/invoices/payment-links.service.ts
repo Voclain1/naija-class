@@ -28,10 +28,12 @@ const PAYMENT_LINK_CUSTOMER_EMAIL = "parent@schoolkit.ng";
 export class PaymentLinksService {
   constructor(private readonly paystack: PaystackService, @Optional() private readonly config?: ConfigService) {}
 
-  private expiresAt(): Date | null {
+  private expiresAt(): Date {
     const configured = this.config?.get<string>("PAYSTACK_PAYMENT_LINK_VALIDITY_MINUTES");
-    if (!configured || !/^[1-9]\d{0,4}$/.test(configured) || Number(configured) > 43_200) return null;
-    return new Date(Date.now() + Number(configured) * 60_000);
+    const minutes = configured && /^[1-9]\d{0,4}$/.test(configured) && Number(configured) <= 43_200
+      ? Number(configured)
+      : 10_080;
+    return new Date(Date.now() + minutes * 60_000);
   }
 
   async get(authCtx: AuthContext, invoiceId: string): Promise<PaymentLinkStateDto> {
@@ -132,9 +134,32 @@ export class PaymentLinksService {
         );
       }
 
+      const now = new Date();
+      const expired = await db.paymentLink.findFirst({
+        where: { schoolId: authCtx.schoolId, invoiceId, status: "LIVE", expiresAt: { lte: now } },
+        select: { id: true },
+      });
+      if (expired) {
+        await db.$executeRaw`UPDATE payment_links SET invalidated_at = COALESCE(invalidated_at, expires_at)
+          WHERE id = ${expired.id} AND school_id = ${authCtx.schoolId}`;
+        await db.paymentLink.updateMany({
+          where: { id: expired.id, schoolId: authCtx.schoolId, status: "LIVE" },
+          data: { status: "ARCHIVE_PENDING", hostedUrl: null, failureCode: "PAYSTACK_PAYMENT_REQUEST_ARCHIVE_FAILED" },
+        });
+        await db.auditLog.create({
+          data: {
+            schoolId: authCtx.schoolId, userId: authCtx.userId, action: "payment-link.expired",
+            entityType: "payment_link", entityId: expired.id, metadata: { invoiceId },
+          },
+        });
+      }
       const existing = await db.paymentLink.findFirst({
         where: {
-          schoolId: authCtx.schoolId, invoiceId, status: { in: ["CREATING", "LIVE", "ARCHIVE_PENDING"] },
+          schoolId: authCtx.schoolId, invoiceId,
+          OR: [
+            { status: { in: ["CREATING", "LIVE"] } },
+            { status: "ARCHIVE_PENDING", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+          ],
         },
         orderBy: { createdAt: "desc" },
       });
@@ -304,6 +329,8 @@ export class PaymentLinksService {
           "This payment link is already being archived.",
         );
       }
+      await db.$executeRaw`UPDATE payment_links SET invalidated_at = COALESCE(invalidated_at, now())
+        WHERE id = ${active.id} AND school_id = ${authCtx.schoolId}`;
       return {
         id: active.id,
         requestCode: active.requestCode,

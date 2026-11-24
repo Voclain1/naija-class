@@ -36,3 +36,12 @@ Legacy SMS remains subject to the shared spending ceiling and writes a
 tenant-scoped authorization event. The original Muse report was unavailable
 in the workspace, so audit and acceptance claims are limited to supplied
 findings and executed tests.
+
+### Closing sprint
+
+Reviewed the attached Muse criteria against the backend continuation. Added
+bounded legacy SMS migration controls, payment time cutoffs and replacement,
+operator review and replay, and independently approved email continuation.
+The isolated focused run passed 593 tests. Track exact-head CI and unresolved
+provider and financial approval gates in the disposition report. Keep PR #563
+in draft and leave PR #564 unchanged.

@@ -242,7 +242,7 @@ export class HostelExeatService {
         title: ctx.school.name,
         body: message,
         data: { kind: "hostel-exeat", studentId: exeat.studentId },
-        smsAvailable: this.termii.isConfigured && !!phone,
+        smsAvailable: !!phone && (await this.termii.legacyReadiness(authCtx.schoolId, "HOSTEL_EXEAT")).ready,
       });
       if (channel === "SMS" && phone) {
         try {

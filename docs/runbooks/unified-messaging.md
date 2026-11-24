@@ -282,23 +282,31 @@ tenant delivery is disabled. The existing internal alert is separate.
 
 Before deploying this branch to an environment that already sends authorized
 Termii SMS, configure the verified legacy rate catalogue and an explicit
-platform daily ceiling. Use `MESSAGING_LEGACY_SMS_MIGRATION_MODE=existing-authorized`
-for already authorized producers during migration, or the regular
-`MESSAGING_LEGACY_SMS_ENABLED=on` release. Both modes require a valid rate and
-use the same atomic budget. Each attempt writes its school, business event,
-segments and reserved cost before the provider request. Validate the legacy
-readiness field before cutover. Leave new paid features and recovery off
-unless separately authorized.
+platform daily ceiling. Before a cutover, inventory each school's existing
+SMS producer authorization and set `MESSAGING_LEGACY_SMS_AUTHORIZATIONS`
+to a JSON object keyed by school UUID. Each entry has a quoted integer
+`dailyKobo` and an explicit `producers` array. Supported producer keys are
+`ADMISSION`, `PARENT_MESSAGE`, `GUARDIAN_INVITATION`, `SICKBAY`,
+`FEE_REMINDER`, `REMINDER_CAMPAIGN`, `HOSTEL_EXEAT`, and `DISCIPLINE`.
+Both `existing-authorized` and the regular legacy release require these
+entries, a verified rate and both spending ceilings. Use explicit `off`
+only for an intentional shutdown. Boot the candidate in an isolated stack
+with mocked providers before swapping the service. A production candidate
+with existing Termii credentials and no explicit legacy decision fails
+startup. Check tenant readiness, a permitted and denied producer, budget
+exhaustion and emergency stop before traffic moves. Roll back the application
+to the prior release if readiness differs from the approved inventory.
 
 For Paystack, deploy the inbox migration before running the new worker. Its
 public endpoint stays `/api/v1/payments/paystack/webhook`. Configure
 `PAYSTACK_WEBHOOK_MODE` as either `test` or `live`, and provide the matching
 keyring JSON mapping `whk_` IDs to `whsec_` secrets. Keep the existing API
-secret and legacy compatibility while providers send legacy-only events.
+secret. Legacy-only integrations require explicit, time-boxed authorization
+with `PAYSTACK_WEBHOOK_REQUIRE_MODERN=off` before cutover. New configurations
+use modern verification by default.
 A malformed modern header is rejected even during this transition. During
 rotation install both key IDs and remove the retired entry after the overlap
-is verified. Set `PAYSTACK_WEBHOOK_REQUIRE_MODERN=on` only after confirming
-delivery in that mode. Never mix modes on one deployment. The inbox retains
+is verified. Before moving existing production integrations to modern-only, confirm modern header delivery and the matching keyring in that environment. Never mix modes on one deployment. The inbox retains
 an idempotency key after processing and discards processed payloads. Failed
 processing retries with backoff and then leaves a dead letter for investigation.
 Keep the inbox and its keys on rollback. Drain outstanding work or record
@@ -326,3 +334,21 @@ verified provider billing or an audited operator decision can resolve a hold.
 
 [Paystack webhook signing](https://paystack.com/docs/payments/webhooks/) ·
 [Paystack Payment Requests API](https://paystack.com/docs/api/payment-request/)
+
+### Closing sprint schema and recovery
+
+Apply the four `20270121` migrations before traffic moves. The pre-existing
+binary cannot read or write the inbox after the new FORCE RLS policy is
+installed. If rollback is necessary, stop all workers, retain the table and
+keys, record its outstanding work, and restore the previous inbox policy in a
+reviewed forward migration before restarting the older worker. Keep the new
+cutoff and exception review columns and preserve their history. Do not reset
+processed event identities or reopen already verified wallet credits.
+
+Seven days is the default validity for new payment links. Previously issued
+links with no recorded expiry retain their validity unless invalidated.
+Superseded expired links are hidden and pending archival. An archived hosted
+link may still require financial reconciliation. The verified provider payment
+time determines eligibility. Funds received outside the cutoff are unapplied.
+Use the audited payment exception queue. Never refund or apply surplus from a
+support note or webhook replay alone.

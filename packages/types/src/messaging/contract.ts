@@ -239,3 +239,37 @@ export interface MessagingTopUpAvailability {
   maxKobo: Kobo | null;
   estimatedFeeKobo: Kobo | null;
 }
+
+/** Platform-only sanitized Paystack inbox view. Financial review entries
+ * require separate verification and cannot be replayed as charges. */
+export interface PaystackWebhookDeadLetterPage {
+  items: {
+    eventKey: string;
+    eventType: string;
+    attempts: number;
+    receivedAt: string;
+    deadAt: string;
+    reference: string | null;
+    providerResourceId: number | null;
+    requiresFinancialReview: boolean;
+  }[];
+  truncated: boolean;
+}
+
+export interface PaystackWebhookReplayRequest {
+  evidenceRef: string;
+}
+
+export interface PaystackWebhookReplayResult {
+  eventKey: string;
+  status: "QUEUED";
+}
+
+export type PaystackPaymentExceptionStatus = "OPEN" | "ACKNOWLEDGED" | "PROVIDER_ESCALATED" | "EVIDENCE_RECORDED";
+
+export interface PaystackPaymentExceptionReview {
+  reference: string;
+  reason: string;
+  status: Exclude<PaystackPaymentExceptionStatus, "OPEN">;
+  evidenceRef: string;
+}

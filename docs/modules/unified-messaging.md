@@ -105,3 +105,18 @@ Successful online payment DTOs can include optional `allocatedKobo` and
 Only the allocated portion reduces the invoice. Surplus stays visible for
 authorized reconciliation and does not trigger a refund. Campaigns now report
 `PRICE_APPROVAL_REQUIRED` and `WHATSAPP_REVIEW_REQUIRED` halt reasons.
+
+### Closing sprint contract additions
+
+All operator endpoints below require a platform administration session. School-facing payment and mobile response states remain compatible.
+
+| Endpoint | Contract and behavior |
+|---|---|
+| GET /platform-admin/payments/webhooks/dead-letters | `PaystackWebhookDeadLetterPage` exposes safe event metadata and a financial-review marker. The list is capped at 100 with an explicit truncation indicator. |
+| POST /platform-admin/payments/webhooks/dead-letters/:eventKey/replay | `PaystackWebhookReplayRequest` requires an evidence reference. `PaystackWebhookReplayResult` confirms queueing. Financial review entries cannot replay as charges. |
+| GET /platform-admin/schools/:schoolId/payments/reconciliation | Adds `reviewStatus` and `reviewedAt` beside reason and expected, observed and unapplied amounts. |
+| POST /platform-admin/schools/:schoolId/payments/reconciliation/review | `PaystackPaymentExceptionReview` acknowledges a case, records evidence or escalates it. It has no financial side effects. |
+| POST /platform-admin/schools/:schoolId/messaging/top-up-reconciliation/:reference/recover | Evidence-reference body. Returns gross, actual verified fee, credited amount, reconciliation code and verification time. A missing fee retains the pending state. |
+| Existing reminder campaign Resume | `CAMPAIGN_REAPPROVAL_REQUIRED` directs users to prepare and approve a fresh proposal for unsent recipients after a price or WhatsApp review halt. |
+| Existing payment link GET/create | Existing `state` remains stable. `lifecycle` supplies local validity, expiry, paid and invalidation information. The API never promises that a Paystack-hosted URL is inaccessible. |
+| Existing finance revenue trajectory | `totalCollected` remains allocated invoice revenue. Additive `grossCashCollected` and `unappliedCashCollected` retain the gross and outstanding reconciliation figures. |

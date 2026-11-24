@@ -229,6 +229,7 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
       ),
     ).toBe(1);
     expect(await service.get(authA, invoiceA)).toEqual(created);
+    expect(created.state === "LIVE" && new Date(created.expiresAt ?? "").getTime()).toBeGreaterThan(Date.now());
 
     expect(await service.archive(authA, invoiceA, { ipAddress: "127.0.0.1" })).toEqual({
       state: "NOT_CREATED",
@@ -250,6 +251,46 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
         }),
       ),
     ).toBe(1);
+  });
+
+  it("supersedes an expired live link once under concurrent replacement requests", async () => {
+    const cutoff = new Date(Date.now() - 60_000);
+    const old = await withTenant(schoolA, (db) => db.paymentLink.create({
+      data: {
+        schoolId: schoolA, invoiceId: invoiceA, createdBy: userA, amount: 250_000, status: "LIVE",
+        expiresAt: cutoff, requestCode: `PRQ_old_${runId}`, hostedUrl: `https://paystack.com/pay/PRQ_old_${runId}`,
+      },
+    }));
+    const replacementCode = `PRQ_new_${runId}`;
+    let metadata: Record<string, unknown> = {};
+    const paystack = {
+      createCustomer: vi.fn(async ({ email }: { email: string }) => ({ customer_code: "CUS_cp2", email })),
+      createPaymentRequest: vi.fn(async (input: { metadata: Record<string, unknown> }) => {
+        metadata = input.metadata;
+        return { request_code: replacementCode };
+      }),
+      getPaymentRequest: vi.fn(async () => ({
+        id: 123461, request_code: replacementCode, amount: 250_000, currency: "NGN",
+        status: "pending", archived: false, split_code: "SPL_test_a", metadata,
+        customer: { customer_code: "CUS_cp2", email: "parent@schoolkit.ng" },
+      })),
+      archivePaymentRequest: vi.fn(async () => undefined),
+    };
+    const service = new PaymentLinksService(paystack as never);
+    try {
+      expect(await service.get(authA, invoiceA)).toMatchObject({ lifecycle: "EXPIRED" });
+      await Promise.all([service.create(authA, invoiceA, { ipAddress: null }), service.create(authA, invoiceA, { ipAddress: null })]);
+      expect(await service.get(authA, invoiceA)).toMatchObject({
+        state: "LIVE", url: `https://paystack.com/pay/${replacementCode}`,
+      });
+      expect(paystack.createPaymentRequest).toHaveBeenCalledTimes(1);
+      const prior = await withTenant(schoolA, (db) => db.paymentLink.findUniqueOrThrow({ where: { id: old.id } }));
+      expect(prior).toMatchObject({ status: "ARCHIVE_PENDING", hostedUrl: null, invalidatedAt: cutoff });
+    } finally {
+      await withTenant(schoolA, (db) => db.paymentLink.deleteMany({
+        where: { schoolId: schoolA, invoiceId: invoiceA, requestCode: { in: [old.requestCode!, replacementCode] } },
+      }));
+    }
   });
 
   it("rejects a provider link when a partial payment commits during creation", async () => {

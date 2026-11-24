@@ -165,7 +165,13 @@ export class TermiiReportsService {
           where: { schoolId, channel: "SMS", providerAccountId: accountId, providerRef, dispatchState: { in: ["ACCEPTED", "UNKNOWN"] } },
           select: { id: true },
         }));
-        if (delivery) await reconcileNotificationReservation({
+        if (!delivery) {
+          await basePrisma.messagingTermiiInbox.updateMany({
+            where: key, data: { nextAttemptAt: new Date(Date.now() + 60_000) },
+          });
+          continue;
+        }
+        await reconcileNotificationReservation({
           schoolId, deliveryId: delivery.id, operatorId: null, resolution: chargedKobo === 0 ? "RELEASE" : "SETTLE",
           providerChargedKobo: BigInt(chargedKobo), evidenceRef: `termii:${accountId}:${reportId}:${state}`,
           verifiedTermiiReport: { accountId, providerRef, contractRef: billingContractRef },

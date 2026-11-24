@@ -23,7 +23,7 @@ export abstract class ReminderSendPort {
   async whatsappRate(_schoolId: string, _overdue: boolean, _now: Date): Promise<bigint | null> { return null; }
   queueWhatsApp(_input: CampaignWhatsApp): Promise<boolean> { return Promise.resolve(false); }
   abstract emailConfigured(): boolean;
-  abstract smsConfigured(): boolean;
+  abstract smsConfigured(schoolId: string): boolean | Promise<boolean>;
   async smsPricePerSegmentKobo(): Promise<bigint | null> { return null; }
   frequencyMinutes(_schoolId: string): number { return 0; }
   abstract enabledChannels(schoolId: string): Promise<{ email: boolean; sms: boolean; push: boolean }>;
@@ -50,8 +50,8 @@ export class LiveReminderSendPort extends ReminderSendPort {
     return this.email.isConfigured;
   }
 
-  smsConfigured(): boolean {
-    return this.termii.isConfigured;
+  async smsConfigured(schoolId: string): Promise<boolean> {
+    return (await this.termii.legacyReadiness(schoolId, "REMINDER_CAMPAIGN")).ready;
   }
 
   override async smsPricePerSegmentKobo(): Promise<bigint | null> {

@@ -63,7 +63,7 @@ export async function attemptableChannels(port: ReminderSendPort, schoolId: stri
   const on = await port.enabledChannels(schoolId);
   const state = {
     email: { enabled: on.email, configured: port.emailConfigured() },
-    sms: { enabled: on.sms, configured: port.smsConfigured() },
+    sms: { enabled: on.sms, configured: await port.smsConfigured(schoolId) },
     push: { enabled: on.push },
   };
   return { state, can: { email: on.email && state.email.configured, sms: on.sms && state.sms.configured, push: on.push } };
@@ -143,7 +143,7 @@ export async function computeReminderPreview(
     (await db.messagingSchoolMetaConnection.count({
       where: { schoolId, disconnectedAt: null, activationPending: false, encryptedToken: { not: null } },
     })) === 1;
-  if (wantsWhatsApp && !whatsappReady) {
+  if (wantsWhatsApp && !whatsappReady && !can.email) {
     batchErrors.push({ code: "WHATSAPP_UNAVAILABLE", message: "A reviewed WhatsApp template, effective rate and connected school are required." });
   }
   const channels: ReminderChannelState = { ...state, sms: { ...state.sms, sender: smsSenderFor(school) ? "SCHOOL" : "SCHOOLKIT" } };

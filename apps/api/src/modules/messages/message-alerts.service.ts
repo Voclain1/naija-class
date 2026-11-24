@@ -114,7 +114,7 @@ export class MessageAlertsService {
       }
 
       const phone = normalizeNigerianPhone(guardian.phone);
-      if (!channels.sms || !this.termii.isConfigured || !phone) return "NONE";
+      if (!channels.sms || !(await this.termii.legacyReadiness(schoolId, "PARENT_MESSAGE")).ready || !phone) return "NONE";
       if ((await this.takeSmsPlace(schoolId)) === null) return "NONE";
       try {
         await this.termii.sendSms(phone, `${school.name} replied to your message. Open the parent portal to read it: ${link}`, smsSenderFor(school), { schoolId, eventType: "PARENT_MESSAGE", eventId: messageId });

@@ -329,6 +329,9 @@ export class ReminderCampaignsService {
         const campaign = await this.loadCampaign(db, auth, id, true);
         if (campaign.status === "RUNNING") return;
         if (campaign.status === "COMPLETED") throw new ConflictError(C.notHalted, "This campaign has finished: nothing is left to send.");
+        if (campaign.halt_reason === "PRICE_APPROVAL_REQUIRED" || campaign.halt_reason === "WHATSAPP_REVIEW_REQUIRED") {
+          throw new ConflictError("CAMPAIGN_REAPPROVAL_REQUIRED", "Prepare and approve a fresh review for the unsent recipients.");
+        }
         await db.$executeRaw`
           UPDATE reminder_campaigns SET status = 'RUNNING', halt_reason = NULL, halted_at = NULL, updated_at = CURRENT_TIMESTAMP
            WHERE school_id = ${auth.schoolId} AND id = ${campaign.id}`;
@@ -403,14 +406,17 @@ export class ReminderCampaignsService {
         await this.setHalted(db, campaign, problem === "INACTIVE" ? "CONFIRMER_ACCESS_REVOKED" : problem, null, null);
         return { kind: "HALTED" as const };
       }
-      const currentWa = campaign.use_whatsapp ? await this.port.whatsappRate(schoolId, campaign.overdue_only, now) : null;
+      const hasPendingWhatsApp = campaign.use_whatsapp && (await db.reminderCampaignSend.count({
+        where: { schoolId, campaignId, status: "PENDING", channel: "MOBILE" },
+      })) > 0;
+      const currentWa = hasPendingWhatsApp ? await this.port.whatsappRate(schoolId, campaign.overdue_only, now) : null;
       const whatsapp = currentWa !== null;
-      if (campaign.use_whatsapp && (!whatsapp || campaign.approved_whatsapp_unit_kobo == null ||
+      if (hasPendingWhatsApp && (!whatsapp || campaign.approved_whatsapp_unit_kobo == null ||
           currentWa > BigInt(campaign.approved_whatsapp_unit_kobo))) {
         await this.setHalted(db, campaign, whatsapp ? "PRICE_APPROVAL_REQUIRED" : "WHATSAPP_REVIEW_REQUIRED", null, null);
         return { kind: "HALTED" as const };
       }
-      if (!can.email && (campaign.use_whatsapp ? !whatsapp : !can.sms && !can.push)) {
+      if (!can.email && (campaign.use_whatsapp ? hasPendingWhatsApp && !whatsapp : !can.sms && !can.push)) {
         await this.setHalted(db, campaign, "NO_CHANNEL", null, null);
         return { kind: "HALTED" as const };
       }
@@ -542,6 +548,9 @@ export class ReminderCampaignsService {
             return "PRICE_APPROVAL_REQUIRED";
           }
           job.smsAvailable = false;
+          await this.audit(db, job.schoolId, null, campaign.id, "reminder-campaign.channel-changed", null, {
+            sendId: job.id, from: "SMS", to: "PUSH", reason: "PRICE_APPROVAL_REQUIRED",
+          });
         } else {
           job.smsAvailable = can.sms && !!job.phone && link.guardian.phone === job.phone;
         }
