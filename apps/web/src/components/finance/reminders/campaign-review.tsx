@@ -21,6 +21,7 @@ export function CampaignReview(props: { request: CampaignRequest; onClose: () =>
   }, [attempt]);
   if (mode === "loading") return <p role="status">Checking saved campaign availability…</p>;
   if (mode === "error") return <div role="alert"><p>Could not check campaign availability. No reminders were requested.</p><Button onClick={() => setAttempt((n) => n + 1)}>Retry availability check</Button><Button variant="outline" onClick={props.onClose}>Cancel review</Button></div>;
+  if (mode === "off" && (props.request.deliveryOptions?.scheduledFor || props.request.deliveryOptions?.includeInvoiceLink || props.request.deliveryOptions?.useWhatsApp)) return <div role="alert" className="space-y-3 rounded-xl border p-4"><p>These delivery options require saved campaigns, which are currently unavailable. No reminders were requested. Return to the selection to change your options.</p><Button variant="outline" onClick={props.onClose}>Back to selection</Button></div>;
   return mode === "on" ? <DurableCampaignPanel {...props} /> : <LegacyCampaignReview {...props} />;
 }
 
