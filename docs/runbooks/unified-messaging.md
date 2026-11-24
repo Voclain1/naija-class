@@ -75,6 +75,29 @@ consent changes, Termii reporting, retention automation and SMS fallback
 are pending. Unmatched authenticated statuses remain in the inbox until
 a corresponding provider reference is recorded on the notification.
 
+## Template verification
+
+The approval state of the listed tenant variants is **unknown**. Confirm
+the language code, Meta category, approved component schema, ordered
+body variables and button indexes on the actual sending WABA. A provider
+submission or an approval on another WABA cannot satisfy this check.
+
+| Template | Language, category and ordered body | Button to verify |
+| --- | --- | --- |
+| `fee_payment_reminder` | Unverified on the sending WABA | Dynamic Paystack request code |
+| `fee_payment_confirmation` | Unverified on the sending WABA | Verify against submitted components |
+| `fee_invoice_issued` | Unverified on the sending WABA | Dynamic Paystack request code |
+| `fee_payment_overdue` | Unverified on the sending WABA | Dynamic Paystack request code |
+| `guardian_invitation` | Unverified on the sending WABA | Verify against submitted components |
+| `student_absence_alert` | Unverified on the sending WABA | Verify against submitted components |
+| `examination_notification` | Unverified on the sending WABA | Verify against submitted components |
+| `results_released` | Unverified on the sending WABA | Verify against submitted components |
+| `setup_call_booked` | Existing internal rail uses `en`, Utility, with school, Lagos slot, contact name and contact phone in that order | Existing internal payload has a body only |
+
+The internal template details come from the existing sender and its
+[configuration guide](whatsapp-alerts.md). Verify them separately before
+considering any account binding or rollout change.
+
 ## Wallet checkout and campaign scheduling
 
 Keep `MESSAGING_TOP_UPS_ENABLED=off` until sending and financial

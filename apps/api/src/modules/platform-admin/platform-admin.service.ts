@@ -1635,11 +1635,20 @@ export class PlatformAdminService {
     const deletedRowCount = await basePrisma.$transaction(
       async (tx) => {
         await tx.$executeRaw`SELECT set_config('app.current_school_id', ${schoolId}, true)`;
+        // Wallet checkout and reservations lock this same row before recording activity.
+        const [locked] = await tx.$queryRaw<{ slug: string }[]>`
+          SELECT slug FROM schools WHERE id = ${schoolId} FOR UPDATE`;
+        if (!locked) throw new NotFoundError("School not found.");
+        if (input.confirmSlug !== locked.slug) {
+          throw new ValidationError("CONFIRM_SLUG_MISMATCH", `Type the school's slug, ${locked.slug}, to confirm.`);
+        }
         const facts = await readDeletionFacts(tx, schoolId);
         if (facts.blockers.includes("HAS_PAYMENTS")) {
           throw new ConflictError(
             "SCHOOL_HAS_PAYMENTS",
-            `This school has recorded ${facts.paymentCount} payment${facts.paymentCount === 1 ? "" : "s"}, so it can't be deleted. Suspend it instead.`,
+            facts.paymentCount > 0
+              ? `This school has recorded ${facts.paymentCount} payment${facts.paymentCount === 1 ? "" : "s"}, so it can't be deleted. Suspend it instead.`
+              : "This school has messaging wallet activity and cannot be deleted. Suspend it instead.",
           );
         }
         if (facts.blockers.includes("HAS_PLATFORM_ADMIN")) {
