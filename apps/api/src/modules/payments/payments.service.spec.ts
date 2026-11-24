@@ -1351,7 +1351,9 @@ describe("PaymentsService — Paystack methods (integration)", () => {
 
   it("verifyPaystack: PENDING → SUCCESS when Paystack returns success", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("verify-success");
-    const stub = makePaystackStub();
+    const stub = makePaystackStub({
+      verifyTransaction: async (reference: string) => ({ status: "success", reference, amount: 40_000_00 }),
+    });
     const svc = new PaymentsService(storage, stub as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool2("verify-success");

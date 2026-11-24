@@ -4,20 +4,27 @@ import { describe, expect, it, vi } from "vitest";
 
 import { sendMetaTemplate, validMetaSignature, type VerifiedMetaTemplate } from "./meta-provider";
 
-const account = { token: "fictional", wabaId: "12", phoneNumberId: "34", graphVersion: "v27.0" };
+const account = { token: "fictional", wabaId: "12", phoneNumberId: "34", graphVersion: "v27.0", billing: "SCHOOL_OWNED" as const };
 const template: VerifiedMetaTemplate = {
   name: "fee_payment_reminder", wabaId: account.wabaId, language: "en_US", category: "UTILITY",
-  approval: "APPROVED", bodyFields: ["school", "amount"], paymentButtonIndex: 0,
+  approval: "APPROVED", providerTemplateId: "99", approvedBody: "{{1}}: {{2}}", bodyFields: ["school", "amount"], paymentButtonIndex: 0,
 };
 const recipient = "+15550100123";
 const fields = { amount: "NGN 25", school: "Fictional School" };
 
+function review(category = "UTILITY", body = template.approvedBody) {
+  return Response.json({ data: [{
+    id: template.providerTemplateId, name: template.name, language: template.language, status: "APPROVED", category,
+    components: [{ type: "BODY", text: body }, { type: "BUTTONS", buttons: [{ type: "URL", url: "https://paystack.com/pay/{{1}}" }] }],
+  }] });
+}
+
 describe("Meta template transport", () => {
   it("uses verified body order and keeps the dynamic button to a bare payment code", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ messages: [{ id: "wamid.fictional" }] }));
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(review()).mockResolvedValue(Response.json({ messages: [{ id: "wamid.fictional" }] }));
     expect(await sendMetaTemplate(account, template, recipient, fields, "PRQ_fictional", fetcher))
       .toEqual({ status: "ACCEPTED", providerRef: "wamid.fictional" });
-    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)).template).toEqual({
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body)).template).toEqual({
       name: template.name, language: { code: "en_US" }, components: [
         { type: "body", parameters: [{ type: "text", text: "Fictional School" }, { type: "text", text: "NGN 25" }] },
         { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: "PRQ_fictional" }] },
@@ -36,10 +43,27 @@ describe("Meta template transport", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("never retries uncertain provider outcomes", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new Error("fictional timeout"));
-    expect(await sendMetaTemplate(account, template, recipient, fields, "PRQ_fictional", fetcher)).toEqual({ status: "UNKNOWN" });
+  it("suspends automation when Meta reclassifies its approved template", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(review("MARKETING"));
+    expect(await sendMetaTemplate(account, template, recipient, fields, "PRQ_fictional", fetcher))
+      .toEqual({ status: "BLOCKED", reason: "CATEGORY_REVIEW_REQUIRED" });
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks changed component mappings and unavailable management reads before posting", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(review("UTILITY", "Changed {{1}} and {{2}}"))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect(await sendMetaTemplate(account, template, recipient, fields, "PRQ_fictional", fetcher))
+        .toEqual({ status: "BLOCKED", reason: "TEMPLATE" });
+    }
+    expect(fetcher.mock.calls.every(([, init]) => !init?.method)).toBe(true);
+  });
+
+  it("never retries uncertain provider outcomes", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(review()).mockRejectedValue(new Error("fictional timeout"));
+    expect(await sendMetaTemplate(account, template, recipient, fields, "PRQ_fictional", fetcher)).toEqual({ status: "UNKNOWN" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });
 

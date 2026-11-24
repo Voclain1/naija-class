@@ -1,0 +1,72 @@
+import { z } from "zod";
+
+import type { VerifiedMessagingRate } from "./messaging-pricing";
+import type { VerifiedMetaTemplate } from "./meta-provider";
+
+const amount = z.string().regex(/^[1-9]\d{0,9}$/).transform((value) => BigInt(value)).refine((value) => value <= 2_147_483_647n);
+const basisPoints = z.string().regex(/^\d{1,6}$/).transform((value) => BigInt(value));
+const date = z.string().datetime({ offset: true }).transform((value) => new Date(value));
+
+const rateSchema: z.ZodType<VerifiedMessagingRate, z.ZodTypeDef, unknown> = z.object({
+  key: z.enum(["TERMII_SMS", "META_UTILITY", "META_MARKETING", "META_AUTHENTICATION"]),
+  version: z.string().trim().min(1).max(100),
+  evidence: z.string().trim().min(1).max(300),
+  effectiveFrom: date,
+  effectiveUntil: date,
+  verifiedAt: date,
+  providerAmount: amount,
+  rateNumerator: amount,
+  rateDenominator: amount,
+  taxBasisPoints: basisPoints,
+  marginBasisPoints: basisPoints,
+}).strict();
+
+export function readVerifiedMessagingRates(raw: string | undefined): VerifiedMessagingRate[] {
+  if (!raw) return [];
+  try {
+    const result = z.array(rateSchema).max(100).safeParse(JSON.parse(raw));
+    return result.success ? result.data : [];
+  } catch {
+    return [];
+  }
+}
+
+const templateSchema = z.object({
+  name: z.literal("fee_payment_confirmation"),
+  wabaId: z.string().regex(/^\d{1,32}$/),
+  providerTemplateId: z.string().regex(/^\d{1,32}$/),
+  approvedBody: z.string().min(1).max(1024),
+  language: z.string().regex(/^[a-z]{2,3}(?:_[A-Z]{2})?$/),
+  category: z.enum(["UTILITY", "MARKETING", "AUTHENTICATION"]),
+  approval: z.literal("APPROVED"),
+  bodyFields: z.array(z.enum(["schoolName", "amountPaid", "balanceLeft", "studentName"])).max(20),
+  reviewedBy: z.string().trim().min(1).max(120),
+  reviewEvidence: z.string().trim().min(1).max(300),
+  reviewedAt: date,
+}).strict();
+
+const profiles = z.array(z.object({
+  schoolId: z.string().uuid(),
+  schoolDailyKobo: amount,
+  rates: z.array(rateSchema).max(100),
+  channel: z.enum(["WHATSAPP", "SMS"]),
+  template: templateSchema.optional(),
+  termiiAccountId: z.string().regex(/^[a-z0-9_-]{8,64}$/).optional(),
+}).strict()).max(100);
+
+export type PaidMessagingProfile = z.infer<typeof profiles>[number];
+
+export function readPaidMessagingProfiles(enabled: string | undefined, raw: string | undefined): PaidMessagingProfile[] {
+  if (enabled !== "on" || !raw) return [];
+  try {
+    const result = profiles.safeParse(JSON.parse(raw));
+    if (!result.success || new Set(result.data.map(({ schoolId }) => schoolId)).size !== result.data.length) return [];
+    return result.data;
+  } catch {
+    return [];
+  }
+}
+
+export function reviewedPaymentTemplate(profile: PaidMessagingProfile, at: Date): VerifiedMetaTemplate | undefined {
+  return profile.template && profile.template.reviewedAt <= at ? profile.template : undefined;
+}

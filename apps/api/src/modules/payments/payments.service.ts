@@ -555,10 +555,11 @@ export class PaymentsService {
 
       if (eventType === "charge.success") {
         const paidAt = data.paid_at ? new Date(data.paid_at) : new Date();
-        await this.applyPaystackSuccess(db, payment, data as Record<string, unknown>, paidAt);
-        await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId);
-        balanceChanged = true;
-        succeeded = true;
+        succeeded = await this.applyPaystackSuccess(db, payment, data as Record<string, unknown>, paidAt);
+        if (succeeded) {
+          await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId);
+          balanceChanged = true;
+        }
       } else {
         await this.applyPaystackFailed(db, payment);
       }
@@ -641,6 +642,7 @@ export class PaymentsService {
 
     const paidAt = transaction.paid_at ? new Date(transaction.paid_at) : new Date();
     const applied = await withTenant(schoolId, async (db) => {
+      await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${schoolId} AND id = ${invoiceId} FOR UPDATE`;
       const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
       if (!invoice || invoice.schoolId !== schoolId) return null;
       const claim = await db.paymentLink.updateMany({
@@ -756,6 +758,7 @@ export class PaymentsService {
     // Call Paystack verify outside a DB transaction (avoids holding connection during network I/O).
     const verifyData = await this.paystack.verifyTransaction(reference);
 
+    let changedInvoiceId: string | undefined;
     return withTenant(schoolId, async (db) => {
       const payment = await db.payment.findUnique({
         where: { id: parsed.paymentId },
@@ -786,15 +789,19 @@ export class PaymentsService {
         return toDto(row as PaymentRow);
       }
 
-      if (verifyData.status === "success") {
+      if (verifyData.status === "success" && verifyData.reference === reference) {
         const paidAt = verifyData.paid_at ? new Date(verifyData.paid_at) : new Date();
-        await this.applyPaystackSuccess(
+        const applied = await this.applyPaystackSuccess(
           db,
           payment,
           { reference, status: verifyData.status, amount: verifyData.amount, paid_at: verifyData.paid_at },
           paidAt,
         );
-      } else {
+        if (applied) {
+          await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId);
+          changedInvoiceId = payment.invoiceId;
+        }
+      } else if (["failed", "abandoned"].includes(verifyData.status) && verifyData.reference === reference) {
         await this.applyPaystackFailed(db, payment);
       }
 
@@ -802,6 +809,7 @@ export class PaymentsService {
       return toDto(row as PaymentRow);
     }).then(async (dto) => {
       if (dto.status !== "SUCCESS") return dto;
+      if (changedInvoiceId) await this.paymentLinkInvalidation?.archivePending(schoolId, changedInvoiceId);
       // Sent once per guardian whichever path got here first, so a poll that
       // lost the race to the webhook adds nothing.
       await this.confirmations?.onlinePaymentSucceeded(schoolId, dto.id);
@@ -1056,7 +1064,16 @@ export class PaymentsService {
     payment: PaymentCore,
     paystackData: Record<string, unknown>,
     paidAt: Date,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    if (payment.method !== "PAYSTACK" || !Number.isSafeInteger(paystackData.amount) || paystackData.amount !== payment.amount) {
+      this.logger.warn("Paystack confirmation requires reconciliation: pending transaction amount or method mismatch.");
+      return false;
+    }
+
+    // Use the same invoice-first lock as hosted payment requests so two
+    // distinct partial confirmations cannot overwrite each other's aggregate.
+    await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${payment.schoolId} AND id = ${payment.invoiceId} FOR UPDATE`;
+
     // 1. Transition payment to SUCCESS and store Paystack payload — an
     // ATOMIC conditional update (updateMany + a status: "PENDING" filter),
     // not a plain update. This is what actually closes the race window
@@ -1080,7 +1097,7 @@ export class PaymentsService {
     });
     if (claim.count === 0) {
       this.logger.log(`Payment ${payment.id} already claimed by a concurrent apply — skipping`);
-      return;
+      return false;
     }
 
     // 2. Recompute totalPaid aggregate (idempotent — includes this payment now it's SUCCESS).
@@ -1163,6 +1180,7 @@ export class PaymentsService {
 
     // 7. Update installment paid flags if an installment plan exists.
     await this.paymentPlan.recomputeInstallmentsPaid(db, payment.invoiceId, newTotalPaid);
+    return true;
   }
 
   // ─── Private: apply Paystack failed ───────────────────────────────────────

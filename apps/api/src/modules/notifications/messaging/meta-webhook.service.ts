@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Cron } from "@nestjs/schedule";
 import { basePrisma, withTenant } from "@school-kit/db";
+
+import { GuardianMessagingConsentService } from "./guardian-messaging-consent.service";
 
 type State = "SENT" | "DELIVERED" | "READ" | "FAILED";
 interface Status {
@@ -64,7 +66,10 @@ export class MetaWebhookService {
   private readonly logger = new Logger(MetaWebhookService.name);
   private accountCursor: string | undefined;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @Optional() private readonly consent?: GuardianMessagingConsentService,
+  ) {}
 
   /** Invoked only after raw-body authentication. Persists status data without message content or contacts. */
   async ingest(payload: unknown): Promise<void> {
@@ -87,6 +92,38 @@ export class MetaWebhookService {
         if (binding?.phoneNumberId !== phoneNumberId || binding.wabaId !== account.wabaId) return;
         await db.messagingMetaEvent.createMany({ data, skipDuplicates: true });
       }, { label: "meta-webhook-ingest" });
+    }
+    await this.ingestConsentCommands(payload);
+  }
+
+  /** The parser runs only on the exact body authenticated by the controller. */
+  private async ingestConsentCommands(payload: unknown): Promise<void> {
+    if (!this.consent) return;
+    const body = record(payload);
+    if (body.object !== "whatsapp_business_account") return;
+    for (const entry of list(body.entry)) {
+      const { id: wabaId, changes } = record(entry);
+      if (!providerId(wabaId)) continue;
+      for (const change of list(changes)) {
+        const { field, value } = record(change);
+        if (field !== "messages") continue;
+        const event = record(value);
+        const phoneNumberId = record(event.metadata).phone_number_id;
+        if (event.messaging_product !== "whatsapp" || !providerId(phoneNumberId) || !list(event.messages).length) continue;
+        const account = await basePrisma.messagingMetaAccount.findUnique({ where: { phoneNumberId } });
+        if (account?.wabaId !== wabaId) continue;
+        for (const message of list(event.messages)) {
+          const { type, from, timestamp, text } = record(message);
+          const command = record(text).body;
+          if (type !== "text" || typeof from !== "string" || typeof command !== "string" ||
+              command.length > 100 || typeof timestamp !== "string" || !/^\d{9,10}$/.test(timestamp)) continue;
+          const time = Number(timestamp) * 1000;
+          if (time > Date.now() + 300_000) continue;
+          await this.consent.applyVerifiedInbound({
+            schoolId: account.schoolId, wabaId, phoneNumberId, from, text: command, occurredAt: new Date(time),
+          });
+        }
+      }
     }
   }
 

@@ -3,6 +3,8 @@ import { ConfigService } from "@nestjs/config";
 
 import { EmailService } from "../../common/email/email.service";
 import { TermiiService } from "../../common/termii/termii.service";
+import { quoteDispatchCost } from "../notifications/messaging/messaging-pricing";
+import { readVerifiedMessagingRates } from "../notifications/messaging/paid-messaging-policy";
 import { NotificationDispatchService, type DeliveryChannel, type NotificationRequest } from "../notifications/notification-dispatch.service";
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service";
 
@@ -17,6 +19,7 @@ export abstract class ReminderSendPort {
   abstract emailConfigured(): boolean;
   abstract smsConfigured(): boolean;
   smsPricePerSegmentKobo(): bigint | null { return null; }
+  frequencyMinutes(_schoolId: string): number { return 0; }
   abstract enabledChannels(schoolId: string): Promise<{ email: boolean; sms: boolean; push: boolean }>;
   abstract sendEmail(p: { to: string; subject: string; html: string; schoolName: string; idempotencyKey: string }): Promise<SendOutcome>;
   abstract sendSms(to: string, text: string, sender: string | undefined): Promise<SendOutcome>;
@@ -45,8 +48,18 @@ export class LiveReminderSendPort extends ReminderSendPort {
   }
 
   override smsPricePerSegmentKobo(): bigint | null {
-    const amount = this.config.get<string>("REMINDER_SMS_SEGMENT_PRICE_KOBO");
-    return amount && /^[1-9]\d{0,9}$/.test(amount) ? BigInt(amount) : null;
+    const rates = readVerifiedMessagingRates(this.config.get<string>("MESSAGING_REMINDER_SMS_RATES"));
+    return quoteDispatchCost(rates, "TERMII_SMS", "SCHOOLKIT", 1, new Date())?.estimatedKobo ?? null;
+  }
+
+  override frequencyMinutes(schoolId: string): number {
+    try {
+      const schools = JSON.parse(this.config.get<string>("REMINDER_FREQUENCY_MINUTES_BY_SCHOOL") ?? "{}") as Record<string, unknown>;
+      const minutes = schools[schoolId];
+      return typeof minutes === "number" && Number.isInteger(minutes) && minutes >= 1 && minutes <= 43_200 ? minutes : 0;
+    } catch {
+      return 0;
+    }
   }
 
   enabledChannels(schoolId: string) {

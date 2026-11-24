@@ -6,6 +6,7 @@ import {
   Ip,
   Param,
   Patch,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -88,12 +89,14 @@ import {
   type PlatformAdminVoiceStatusDto,
 } from "@school-kit/types";
 import type { Request } from "express";
+import { z } from "zod";
 
 import { CurrentPlatformAdmin } from "../../common/auth/current-platform-admin.decorator";
 import type { PlatformAdminContext } from "../../common/auth/platform-admin-context";
 import { PlatformAdminGuard } from "../../common/auth/platform-admin.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AssistantActivationService } from "./assistant-activation.service";
+import { reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
 import { VoiceAdminService } from "./voice-admin.service";
 import { PlatformAdminService } from "./platform-admin.service";
 
@@ -123,6 +126,20 @@ export class PlatformAdminController {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });
+  }
+
+  @Post("schools/:schoolId/messaging/deliveries/:deliveryId/reconcile")
+  @UseGuards(PlatformAdminGuard)
+  reconcileMessagingDelivery(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @Param("deliveryId", new ParseUUIDPipe()) deliveryId: string,
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(z.object({
+      resolution: z.enum(["SETTLE", "RELEASE"]),
+      evidenceRef: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/),
+    }).strict())) body: { resolution: "SETTLE" | "RELEASE"; evidenceRef: string },
+  ) {
+    return reconcileNotificationReservation({ ...body, schoolId, deliveryId, operatorId: admin.userId });
   }
 
   @Get("schools")

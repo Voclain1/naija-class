@@ -6,6 +6,7 @@ import { formatKobo } from "@school-kit/types";
 import { EmailService } from "../../common/email/email.service.js";
 import { isSuppressedForAll } from "../announcements/announcement-email.shared.js";
 import { escapeHtml } from "../admissions/admissions.shared.js";
+import { PaidPaymentNotificationsService } from "../notifications/messaging/paid-payment-notifications.service";
 import { EventNotifierService } from "../notifications/event-notifier.service.js";
 
 // The family's confirmation of an ONLINE payment, in the school's name
@@ -36,11 +37,17 @@ export class PaymentConfirmationService {
   constructor(
     @Optional() private readonly email?: EmailService,
     @Optional() private readonly events?: EventNotifierService,
+    @Optional() private readonly paid?: PaidPaymentNotificationsService,
   ) {}
 
   async onlinePaymentSucceeded(schoolId: string, paymentId: string): Promise<void> {
     // The app's "payment recorded" push, which cash payments already send.
     await this.events?.paymentRecorded({ schoolId, paymentId });
+    try {
+      await this.paid?.queue(schoolId, paymentId);
+    } catch {
+      this.logger.error("Could not queue paid payment confirmation; the payment stands");
+    }
     try {
       await this.sendEmails(schoolId, paymentId);
     } catch (err) {

@@ -22,7 +22,7 @@ export interface PlatformAdminSchoolSuspensionResponse {
 }
 
 // Why a school cannot be deleted (or suspended, for the first one).
-export const SCHOOL_DELETION_BLOCKERS = ["HAS_PAYMENTS", "HAS_PLATFORM_ADMIN"] as const;
+export const SCHOOL_DELETION_BLOCKERS = ["HAS_PAYMENTS", "HAS_PLATFORM_ADMIN", "HAS_ACTIVE_WHATSAPP"] as const;
 export type SchoolDeletionBlocker = (typeof SCHOOL_DELETION_BLOCKERS)[number];
 
 // GET /platform-admin/schools/:schoolId/deletion-check — what a delete would

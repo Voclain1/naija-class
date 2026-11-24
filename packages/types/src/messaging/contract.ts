@@ -8,7 +8,7 @@ export type MessagingBlocker =
 
 export type DeliveryState =
   | "QUEUED" | "SENDING" | "ACCEPTED" | "SENT" | "DELIVERED" | "READ"
-  | "FAILED" | "UNKNOWN" | "CANCELLED" | "DEAD_LETTER";
+  | "FAILED" | "UNKNOWN" | "CANCELLED" | "DEAD_LETTER" | "BLOCKED";
 
 export interface MessagingOverview {
   providers: Array<{
@@ -36,6 +36,9 @@ export interface MessagingDelivery {
   createdAt: string;
   updatedAt: string;
   blocker: MessagingBlocker | null;
+  reasonCode?: string;
+  rateVersion?: string;
+  estimatedKobo?: Kobo;
 }
 
 export interface MessagingWalletEntry {
@@ -72,4 +75,29 @@ export interface MessagingTopUpRequest {
 export interface MessagingTopUpCheckout {
   reference: string;
   checkoutUrl: string;
+}
+
+export interface MessagingMetaSignupSession {
+  appId: string;
+  configId: string;
+  graphVersion: string;
+  state: string;
+  expiresAt: string;
+}
+
+export interface MessagingMetaSignupCompletion {
+  code: string;
+  state: string;
+  wabaId: string;
+  phoneNumberId: string;
+}
+
+export interface MessagingMetaDisconnectResult {
+  status: "DISCONNECTED";
+  revocationPending: boolean;
+}
+
+export interface MessagingDeliveryPage {
+  items: MessagingDelivery[];
+  nextCursor: string | null;
 }

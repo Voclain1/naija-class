@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { type PrismaClient, withTenant } from "@school-kit/db";
+import { ConflictError, NotFoundError } from "@school-kit/types";
 
 type EntryKind = "TOP_UP" | "RESERVE" | "SETTLE" | "RELEASE";
 type Entry = { kind: EntryKind; amount_kobo: number };
@@ -106,15 +107,40 @@ export function reserveMessagingCredit(
 
 /** Leave the reservation open while a provider outcome is uncertain. */
 export function resolveMessagingCredit(schoolId: string, reference: string, resolution: "SETTLE" | "RELEASE") {
+  return inWallet(schoolId, (db) => appendResolution(db, schoolId, reference, resolution));
+}
+
+async function appendResolution(db: PrismaClient, schoolId: string, reference: string, resolution: "SETTLE" | "RELEASE") {
+  const entries = await db.$queryRaw<Entry[]>`
+    SELECT kind, amount_kobo FROM messaging_wallet_entries
+    WHERE school_id = ${schoolId} AND reference = ${reference} AND kind <> 'TOP_UP'`;
+  const reserve = entries.find((entry) => entry.kind === "RESERVE");
+  if (!reserve) return "NOT_RESERVED";
+  const previous = entries.find((entry) => entry.kind !== "RESERVE");
+  if (previous) return previous.kind === resolution ? "ALREADY_RESOLVED" : "CONFLICT";
+  await append(db, schoolId, resolution, reference, BigInt(reserve.amount_kobo));
+  return "RESOLVED";
+}
+
+/** Called only by the platform-admin surface after checking the provider's billing evidence. */
+export function reconcileNotificationReservation(input: {
+  schoolId: string; deliveryId: string; operatorId: string; resolution: "SETTLE" | "RELEASE"; evidenceRef: string;
+}) {
+  const { schoolId, deliveryId, operatorId, resolution, evidenceRef } = input;
   return inWallet(schoolId, async (db) => {
-    const entries = await db.$queryRaw<Entry[]>`
-      SELECT kind, amount_kobo FROM messaging_wallet_entries
-      WHERE school_id = ${schoolId} AND reference = ${reference} AND kind <> 'TOP_UP'`;
-    const reserve = entries.find((entry) => entry.kind === "RESERVE");
-    if (!reserve) return "NOT_RESERVED";
-    const previous = entries.find((entry) => entry.kind !== "RESERVE");
-    if (previous) return previous.kind === resolution ? "ALREADY_RESOLVED" : "CONFLICT";
-    await append(db, schoolId, resolution, reference, BigInt(reserve.amount_kobo));
-    return "RESOLVED";
+    const delivery = await db.notificationDelivery.findFirst({
+      where: { schoolId, id: deliveryId, channel: "SMS", dispatchState: { in: ["UNKNOWN", "ACCEPTED"] } },
+      select: { id: true },
+    });
+    if (!delivery) throw new NotFoundError("Reconcilable SMS delivery not found.");
+    const status = await appendResolution(db, schoolId, `notification:${deliveryId}`, resolution);
+    if (status === "CONFLICT" || status === "NOT_RESERVED") {
+      throw new ConflictError("MESSAGING_RESERVATION_UNAVAILABLE", "The delivery has no reservation available for this decision.");
+    }
+    if (status === "RESOLVED") await db.auditLog.create({ data: {
+      schoolId, userId: operatorId, action: "messaging.wallet.reconcile", entityType: "notification_delivery",
+      entityId: deliveryId, metadata: { resolution, evidenceRef },
+    } });
+    return { status };
   });
 }

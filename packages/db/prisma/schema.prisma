@@ -368,8 +368,13 @@ model School {
 
   messagingWalletEntries  MessagingWalletEntry[]
   messagingWalletTopUps   MessagingWalletTopUp[]
+  metaSignupSession       MessagingMetaSignupSession?
+  metaSchoolConnection    MessagingSchoolMetaConnection?
   metaMessagingAccount    MessagingMetaAccount?
   metaMessagingEvents     MessagingMetaEvent[]
+  termiiMessagingEvents   MessagingTermiiEvent[]
+  messagingGuardianConsents MessagingGuardianConsent[]
+  reminderFrequency         MessagingReminderFrequency[]
 
   @@map("schools")
 }
@@ -1174,6 +1179,8 @@ model Guardian {
   @@unique([schoolId, email])
   @@index([schoolId])
   @@index([schoolId, phone]) // backs the link-existing picker's phone search
+  messagingConsents MessagingGuardianConsent[]
+
   @@map("guardians")
 }
 
@@ -3501,10 +3508,16 @@ model NotificationDelivery {
   providerAccountId String?   @map("provider_account_id")
   providerState     String?   @map("provider_state")
   providerStateAt   DateTime? @map("provider_state_at")
+  dispatchState     String?   @map("dispatch_state")
+  dispatchClaimedAt DateTime? @map("dispatch_claimed_at")
+  dispatchReason    String?   @map("dispatch_reason")
+  dispatchRateVersion String? @map("dispatch_rate_version")
+  dispatchEstimateKobo Int?   @map("dispatch_estimate_kobo")
 
   @@unique([schoolId, eventType, eventId, principalType, principalId])
   @@index([schoolId, sentAt])
   @@unique([schoolId, providerAccountId, providerRef], map: "notification_deliveries_provider_ref_idx")
+  @@index([schoolId, dispatchState, sentAt], map: "notification_deliveries_dispatch_idx")
   @@map("notification_deliveries")
 }
 
@@ -6021,4 +6034,81 @@ model MessagingPlatformReservationDaily {
   reservedKobo BigInt   @map("reserved_kobo")
 
   @@map("messaging_platform_reservations_daily")
+}
+
+model MessagingMetaSignupSession {
+  schoolId  String    @id @map("school_id")
+  ownerId   String    @map("owner_id")
+  stateHash String    @map("state_hash")
+  expiresAt DateTime  @map("expires_at")
+  claimedAt DateTime? @map("claimed_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@map("messaging_meta_signup_sessions")
+}
+
+model MessagingSchoolMetaConnection {
+  schoolId       String    @id @map("school_id")
+  wabaId         String    @unique @map("waba_id")
+  phoneNumberId  String    @unique @map("phone_number_id")
+  encryptedToken String?   @map("encrypted_token")
+  activationPending Boolean @default(false) @map("activation_pending")
+  displayPhone String? @map("display_phone")
+  connectedAt    DateTime  @default(now()) @map("connected_at")
+  disconnectedAt DateTime? @map("disconnected_at")
+  revokedAt      DateTime? @map("revoked_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@map("messaging_school_meta_connections")
+}
+
+model MessagingTermiiEvent {
+  id          String    @id
+  schoolId    String    @map("school_id")
+  accountId   String    @map("account_id")
+  reportId    String    @map("report_id")
+  providerRef String    @map("provider_ref")
+  state       String
+  receivedAt  DateTime  @default(now()) @map("received_at")
+  processedAt DateTime? @map("processed_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, accountId, reportId, providerRef, state], map: "messaging_termii_event_dedup")
+  @@index([schoolId, processedAt, receivedAt], map: "messaging_termii_events_pending_idx")
+  @@map("messaging_termii_events")
+}
+
+model MessagingGuardianConsent {
+  schoolId           String    @map("school_id")
+  guardianId         String    @map("guardian_id")
+  phone              String
+  consentVersion     String    @map("consent_version")
+  challengeHash      String?   @map("challenge_hash")
+  challengeExpiresAt DateTime? @map("challenge_expires_at")
+  challengeIssuedAt  DateTime? @map("challenge_issued_at")
+  verifiedAt         DateTime? @map("verified_at")
+  withdrawnAt        DateTime? @map("withdrawn_at")
+
+  school   School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+
+  @@id([schoolId, guardianId])
+  @@index([schoolId, phone], map: "messaging_guardian_consents_school_phone_idx")
+  @@map("messaging_guardian_consents")
+}
+
+model MessagingReminderFrequency {
+  schoolId    String   @map("school_id")
+  studentId   String   @map("student_id")
+  guardianId  String   @map("guardian_id")
+  campaignId  String   @map("campaign_id")
+  attemptedAt DateTime @map("attempted_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@id([schoolId, studentId, guardianId])
+  @@map("messaging_reminder_frequency")
 }

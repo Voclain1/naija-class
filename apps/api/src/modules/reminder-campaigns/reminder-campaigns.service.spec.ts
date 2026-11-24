@@ -365,6 +365,21 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     expect(port.emails[0]?.html).toContain("15,000");
   });
 
+  it("allows configured repeat intervals while keeping channels in the same campaign together", async () => {
+    vi.spyOn(port, "frequencyMinutes").mockReturnValue(90);
+    const first = await confirm(await prepare([A.bo.id]));
+    const second = await confirm(await prepare([A.bo.id]));
+    await run(first.id);
+    expect(port.emails).toHaveLength(1);
+    expect(port.texts).toHaveLength(1);
+    await run(second.id);
+    expect(port.emails).toHaveLength(1);
+    expect(port.texts).toHaveLength(1);
+    const skipped = await service.getCampaign(A.bursar.auth, second.id, DAY());
+    expect(skipped.counts.SKIPPED).toBe(2);
+    expect(skipped.students.flatMap((student) => student.sends).every((send) => send.reason === "FREQUENCY_LIMIT")).toBe(true);
+  });
+
   it("holds a durable schedule until the scheduled date and rechecks eligibility when due", async () => {
     const due = new Date();
     due.setUTCDate(due.getUTCDate() + 1);

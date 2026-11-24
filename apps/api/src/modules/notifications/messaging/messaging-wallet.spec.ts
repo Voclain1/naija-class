@@ -96,7 +96,7 @@ describe("messaging wallet with PostgreSQL and runtime RLS", () => {
       return owner;
     });
     const auth = { schoolId: a, userId: user.id, sessionId: "test" };
-    const controller = new MessagingController(new NotificationPreferencesService(), new EmailService(new ConfigService({ RESEND_API_KEY: "" })), {} as never);
+    const controller = new MessagingController(new NotificationPreferencesService(), new EmailService(new ConfigService({ RESEND_API_KEY: "" })), {} as never, {} as never);
     await creditVerifiedMessagingTopUp(a, randomUUID(), 100n);
     await creditVerifiedMessagingTopUp(b, randomUUID(), 200n);
     const bEntry = await withTenant(b, (db) => db.messagingWalletEntry.findFirstOrThrow({ where: { schoolId: b } }));

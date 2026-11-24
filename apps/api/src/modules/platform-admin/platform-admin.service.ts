@@ -1657,6 +1657,9 @@ export class PlatformAdminService {
             "This school holds a platform admin account, so it can't be deleted from here.",
           );
         }
+        if (facts.blockers.includes("HAS_ACTIVE_WHATSAPP")) {
+          throw new ConflictError("SCHOOL_HAS_ACTIVE_WHATSAPP", "Disconnect the school's WhatsApp account and confirm credential revocation first.");
+        }
         const n = await deleteSchoolRows(tx, schoolId);
         // schoolId null and the school named in metadata: the school row is
         // gone, and this row must outlive it.

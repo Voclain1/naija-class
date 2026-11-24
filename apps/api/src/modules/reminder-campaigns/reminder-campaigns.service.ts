@@ -343,7 +343,7 @@ export class ReminderCampaignsService {
       const claimed = await this.claimBatch(schoolId, campaignId, now(), opts.batchStudents ?? 10);
       if (claimed.kind !== "JOBS") return claimed.kind;
       for (const job of claimed.jobs) {
-        const readiness = isQuietHour(now()) ? null : await this.refreshBeforeSend(campaignId, job);
+        const readiness = isQuietHour(now()) ? null : await this.refreshBeforeSend(campaignId, job, now());
         if (readiness === null) {
           await this.releaseUnsentClaim(job);
           continue;
@@ -481,7 +481,7 @@ export class ReminderCampaignsService {
     }, { timeoutMs: 30_000, label: "reminder-campaign-claim" });
   }
 
-  private async refreshBeforeSend(campaignId: string, job: Job): Promise<string | null> {
+  private async refreshBeforeSend(campaignId: string, job: Job, now: Date): Promise<string | null> {
     const { can } = await attemptableChannels(this.port, job.schoolId);
     return withTenant(job.schoolId, async (db) => {
       const [campaign] = await db.$queryRaw<CampaignRow[]>`
@@ -534,6 +534,21 @@ export class ReminderCampaignsService {
             if (link.hostedUrl === expected) job.paymentUrl = expected;
           }
         }
+      }
+      const frequency = this.port.frequencyMinutes(job.schoolId);
+      if (frequency > 0) {
+        const cutoff = new Date(now.getTime() - frequency * 60_000);
+        const marked = await db.$executeRaw`
+          INSERT INTO messaging_reminder_frequency (school_id, student_id, guardian_id, campaign_id, attempted_at)
+          VALUES (${job.schoolId}, ${job.studentId}, ${job.guardianId}, ${campaignId}, ${now})
+          ON CONFLICT (school_id, student_id, guardian_id) DO UPDATE SET
+            campaign_id = EXCLUDED.campaign_id,
+            attempted_at = CASE
+              WHEN messaging_reminder_frequency.campaign_id = EXCLUDED.campaign_id
+              THEN messaging_reminder_frequency.attempted_at ELSE EXCLUDED.attempted_at END
+          WHERE messaging_reminder_frequency.campaign_id = EXCLUDED.campaign_id
+             OR messaging_reminder_frequency.attempted_at <= ${cutoff}`;
+        if (!marked) return "FREQUENCY_LIMIT";
       }
       job.balance = facts.balance;
       job.dueDate = facts.earliestDueDate;

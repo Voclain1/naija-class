@@ -1,8 +1,8 @@
 # Unified messaging rollout
 
-The Meta transport and wallet reservations have no live sending caller.
-The Meta status webhook and wallet top-up checkout have explicit switches
-that default to off. Keep the
+Paid payment confirmations, school-owned Meta signup, delivery webhooks and
+wallet checkout have explicit switches that default to off. The external
+schools' WhatsApp path accepts school-owned connections only. Keep the
 existing internal WhatsApp alert configuration in its current VPS API env
 file. See [Internal WhatsApp alerts](whatsapp-alerts.md).
 
@@ -70,9 +70,10 @@ alert rail.
    gates are satisfied. Set it back to `off` to stop callback processing
    and leave the journal intact for reconciliation.
 
-The callback handles delivery statuses. Inbound conversation messages,
-consent changes, Termii reporting, retention automation and SMS fallback
-are pending. Unmatched authenticated statuses remain in the inbox until
+The callback handles delivery statuses and the explicit WhatsApp consent
+and STOP commands. General conversation handling and retention automation
+remain open. The Termii callback is independently gated. No callback
+triggers SMS fallback. Unmatched authenticated statuses remain in the inbox until
 a corresponding provider reference is recorded on the notification.
 
 ## Template verification
@@ -117,20 +118,37 @@ does not reopen that day's allowance. There is no API to set policy in this
 change. Keep top-ups disabled for real schools until reconciliation and spend
 configuration can be managed.
 
-Set the optional `REMINDER_SMS_SEGMENT_PRICE_KOBO` to the verified all-in
-price per legacy Termii segment if staff need a quote. The preview totals
+Set the optional `MESSAGING_REMINDER_SMS_RATES` to a JSON list of verified,
+versioned Termii rate rows if staff need a quote. Each row carries the
+provider's amount in its smallest unit, an FX ratio, tax and margin in basis
+points, evidence and an effective interval. The preview totals
 eligible potential SMS fallback segments. A quote does not activate a channel
 or reserve wallet funds for an existing SMS rail.
 
-## App Review demonstration checklist
+## App Review
 
-- Demonstrate authorized school initiation, consent, server-side code exchange
-  and rejection of WABA or phone identifiers outside the returned business.
-- Show account-specific template synchronization, opt-in, opt-out, an approved
-  test send, signed status processing, and token rotation and disconnect.
-- Show that browser responses, client bundles and logs carry no tokens or
-  message or student data intended only for backend processing.
-- Demonstrate how school-owned billing avoids debiting the school wallet.
+Use the separate [App Review runbook](meta-app-review.md) for the messaging
+and management demonstrations.
+
+## Termii account-specific verification
+
+The staged callback is `https://api.schoolkit.ng/api/v1/webhooks/termii/<accountId>`.
+Keep `MESSAGING_TERMII_REPORTS_ENABLED=off` until Termii confirms the
+wire format for the specific account. Its Events and Reports page specifies
+SHA-512. The QA report identifies conflicting SHA-256 guidance, so a
+production profile must explicitly record the confirmed algorithm, header,
+hex encoding, and verification evidence. Do not test signatures by trying
+both algorithms.
+
+Store `MESSAGING_TERMII_REPORT_PROFILES` as a private API environment JSON
+array with one exclusive account ID, school ID, signing secret, signature
+header, algorithm, verification reference and verification time per account.
+The route ignores any tenant field in the payload. Use a separately scoped
+credential per profile. Signed statuses update only matching SMS delivery
+records. Carrier delivery alone cannot justify settling or releasing a
+financial reservation.
+
+[Termii Events and Reports](https://developers.termii.com/events-and-reports)
 
 ## Virgo Fidelis Montessori School acceptance checklist
 
@@ -149,19 +167,35 @@ or reserve wallet funds for an existing SMS rail.
 
 ## Implementation status
 
-Implemented here: fresh per-recipient campaign checks, stale Paystack link
-protection during creation and opt-in invoice-specific links for email campaigns, Meta template payload construction and raw-body
-signature verification, wallet journal and concurrency-safe operations, and
-integer cost estimates. The campaign runner also supports an optional
-confirmed schedule. Wallet top-ups reuse the signed Paystack webhook and
-independent verification. The overview and wallet history are available
-to authorized staff. The Meta status callback has a durable, deduplicated
-inbox and reconciles existing notification journal rows without fallback.
+The finance campaign and wallet changes share the existing notification
+journal. Committed Paystack payments can queue a paid confirmation for an
+explicitly configured school and channel. A prepared per-school profile
+pins a rate version, effective dates and reviewer evidence. Meta status and
+category are checked immediately before dispatch and a reclassified
+template stays blocked until reviewed. School-owned Meta billing does not
+use wallet funds. An uncertain Termii attempt keeps its reservation until a
+platform operator checks provider billing evidence and reconciles it.
 
-Pending: live template approvals and the account-specific registry, consent
-and verified phone lifecycle, incoming message and Termii callbacks, durable
-unified dispatch and wallet settlement on delivery, operator spending-policy
-configuration and reporting, automatic finance and school event messaging, Embedded
-Signup, and the remaining frontend endpoints. The contract in
-[Unified messaging](../modules/unified-messaging.md) describes the intended
-surface.
+School owners can initiate and complete school-owned Embedded Signup, then
+disconnect and retry revocation. Guardians grant consent by sending the
+one-time challenge from their recorded phone and can withdraw in the
+portal or via STOP. Disconnection removes webhook routing and invalidates
+existing grants. The original internal sender still defaults to Graph
+v21.0 and honors `WHATSAPP_GRAPH_VERSION`. Tenant signup requires its own
+explicit `MESSAGING_META_GRAPH_VERSION` and does not reuse internal tokens.
+
+New paid payment profiles are supplied through
+`MESSAGING_PAID_PAYMENT_PROFILES`. Each contains the school's ID, one
+channel, a daily allowance and rate entries. A Meta profile contains its
+school's reviewed payment-confirmation template and exact provider variant.
+A managed SMS profile requires a Termii account ID, the existing school SMS
+preference and a funded wallet. `MESSAGING_PAID_PLATFORM_DAILY_KOBO` caps
+SchoolKit-managed SMS. Keep `MESSAGING_PAID_ENABLED=off` in production.
+
+Remaining engineering includes broader automated event hooks, an admin
+rate and template management surface, account-update and phone-registration
+lifecycle handling, automated billing reconciliation, and general inbound
+conversation handling. Current template mappings for other flows remain
+unverified. Separately, real rollout requires Meta approvals and verified
+production templates, display name and billing, confirmed provider rates,
+and account-specific Termii signature evidence.

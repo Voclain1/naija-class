@@ -7,3 +7,12 @@ Tests use local PostgreSQL and fictional provider fixtures. No production creden
 
 The [rollout runbook](../runbooks/unified-messaging.md) records the pending
 integrations and acceptance gates.
+
+## Muse QA continuation
+
+Added school-owned Embedded Signup with tenant-bound encrypted credentials,
+verified consent and STOP handling, a signed Termii report inbox, and a
+default-off paid payment confirmation worker. Payment confirmation checks
+the expected transaction amount in kobo. Provider reclassification blocks
+automated Meta sends until reviewed again. Uncertain SMS reservations remain
+held for provider-evidenced operator reconciliation.

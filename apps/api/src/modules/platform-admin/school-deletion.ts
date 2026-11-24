@@ -28,12 +28,14 @@ export interface SchoolDeletionFacts {
 // Must run inside a transaction that has already set the school's GUC.
 export async function readDeletionFacts(tx: TxClient, schoolId: string): Promise<SchoolDeletionFacts> {
   const [row] = await tx.$queryRaw<
-    { payments: bigint; wallet_activity: boolean; students: bigint; staff: bigint; guardians: bigint; platform_admins: bigint }[]
+    { payments: bigint; wallet_activity: boolean; meta_credential: boolean; students: bigint; staff: bigint; guardians: bigint; platform_admins: bigint }[]
   >`
     SELECT
       (SELECT count(*) FROM payments WHERE school_id = ${schoolId}) AS payments,
       (EXISTS (SELECT 1 FROM messaging_wallet_entries WHERE school_id = ${schoolId})
         OR EXISTS (SELECT 1 FROM messaging_wallet_top_ups WHERE school_id = ${schoolId})) AS wallet_activity,
+      (EXISTS (SELECT 1 FROM messaging_school_meta_connections
+        WHERE school_id = ${schoolId} AND encrypted_token IS NOT NULL)) AS meta_credential,
       (SELECT count(*) FROM students  WHERE school_id = ${schoolId}) AS students,
       (SELECT count(*) FROM users     WHERE school_id = ${schoolId}) AS staff,
       (SELECT count(*) FROM guardians WHERE school_id = ${schoolId}) AS guardians,
@@ -42,6 +44,7 @@ export async function readDeletionFacts(tx: TxClient, schoolId: string): Promise
   const blockers: SchoolDeletionBlocker[] = [];
   if (row!.payments > 0n || row!.wallet_activity) blockers.push("HAS_PAYMENTS");
   if (Number(row!.platform_admins) > 0) blockers.push("HAS_PLATFORM_ADMIN");
+  if (row!.meta_credential) blockers.push("HAS_ACTIVE_WHATSAPP");
   return {
     blockers,
     paymentCount: Number(row!.payments),

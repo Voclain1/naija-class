@@ -6,9 +6,13 @@ import { PushModule } from "../../common/push/push.module";
 import { PUSH_QUEUE } from "../../common/queue";
 import { AnnouncementsModule } from "../announcements/announcements.module";
 import { AuthModule } from "../auth/auth.module";
+import { GuardianMessagingConsentController } from "./messaging/guardian-messaging-consent.controller";
 import { MetaWebhookController } from "./messaging/meta-webhook.controller";
 import { MetaWebhookService } from "./messaging/meta-webhook.service";
+import { TermiiReportsController } from "./messaging/termii-reports.controller";
+import { TermiiReportsService } from "./messaging/termii-reports.service";
 import { MessagingWalletModule } from "./messaging/messaging-wallet.module";
+import { PaidMessagingModule } from "./messaging/paid-messaging.module";
 import { MessagingController } from "./messaging/messaging.controller";
 import { NotificationDispatchModule } from "./notification-dispatch.module";
 import { NotificationPreferencesController } from "./notification-preferences.controller";
@@ -30,13 +34,14 @@ import { PushProcessor } from "./push.processor";
     AuthModule,
     EmailModule,
     MessagingWalletModule,
+    PaidMessagingModule,
     AnnouncementsModule,
     PushModule,
     NotificationDispatchModule,
     BullModule.registerQueue({ name: PUSH_QUEUE }),
   ],
-  controllers: [MessagingController, MetaWebhookController, NotificationPreferencesController],
-  providers: [PushProcessor, MetaWebhookService],
+  controllers: [GuardianMessagingConsentController, MessagingController, MetaWebhookController, NotificationPreferencesController, TermiiReportsController],
+  providers: [PushProcessor, MetaWebhookService, TermiiReportsService],
   exports: [NotificationDispatchModule],
 })
 export class NotificationsModule {}
