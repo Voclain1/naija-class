@@ -169,6 +169,9 @@ describe("online payment confirmation email", () => {
     const event = success(reference);
     await svc.handleWebhook({ ...event, data: { ...event.data, amount: 50_000_00 } });
     const payment = await withTenant(schoolId, (db) => db.payment.findUniqueOrThrow({ where: { id: paymentId } }));
+    expect(await withTenant(schoolId, (db) => db.paystackPaymentException.findFirst({
+      where: { schoolId, reference, reason: "VERIFICATION_MISMATCH" },
+    }))).toMatchObject({ expectedKobo: 30_000_00, observedKobo: 50_000_00n });
     expect(payment.status).toBe("PENDING");
     expect(email.sent).toEqual([]);
     await svc.handleWebhook(event);

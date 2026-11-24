@@ -98,3 +98,9 @@ Invoice payment-link state can also be `EXPIRED`, `ALREADY_PAID`, or
 `INVALIDATION_PENDING`. These states contain no URL or student details.
 A `LIVE` link can include `expiresAt`. Existing receipt routes continue to
 require the current authenticated staff permission checks.
+
+Successful online payment DTOs can include optional `allocatedKobo` and
+`unappliedKobo`. The existing `amount` remains the gross receipt amount.
+Only the allocated portion reduces the invoice. Surplus stays visible for
+authorized reconciliation and does not trigger a refund. Campaigns now report
+`PRICE_APPROVAL_REQUIRED` and `WHATSAPP_REVIEW_REQUIRED` halt reasons.

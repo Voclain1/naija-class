@@ -35,6 +35,8 @@ export interface PaymentDto {
   paidAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  allocatedKobo?: number;
+  unappliedKobo?: number;
 }
 
 export interface PaginatedPaymentsDto {

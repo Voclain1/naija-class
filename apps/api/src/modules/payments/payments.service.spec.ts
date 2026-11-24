@@ -1287,9 +1287,10 @@ describe("PaymentsService — Paystack methods (integration)", () => {
       });
     }
 
-    const { payments, invoice, overpayments } = await withTenant(schoolId, async (db) => ({
+    const { payments, invoice, overpayments, exceptions } = await withTenant(schoolId, async (db) => ({
       payments: await db.payment.findMany({ where: { invoiceId }, select: { status: true } }),
       invoice: await db.invoice.findUniqueOrThrow({ where: { id: invoiceId }, select: { status: true, totalPaid: true } }),
+      exceptions: await db.paystackPaymentException.findMany({ where: { schoolId, invoiceId } }),
       overpayments: await db.auditLog.findMany({
         where: { action: "payment.paystack-overpayment" },
         select: { entityId: true, metadata: true },
@@ -1297,11 +1298,13 @@ describe("PaymentsService — Paystack methods (integration)", () => {
     }));
     // The parent's money really left their account, so both payments stand.
     expect(payments.map((p) => p.status)).toEqual(["SUCCESS", "SUCCESS"]);
-    expect(invoice).toEqual({ status: "PAID", totalPaid: 100_000_00 });
+    expect(invoice).toEqual({ status: "PAID", totalPaid: 50_000_00 });
     // Only the payment that tipped the invoice over is flagged, by its excess.
     expect(overpayments).toHaveLength(1);
     expect(overpayments[0]!.entityId).toBe(second.paymentId);
-    expect(overpayments[0]!.metadata).toMatchObject({ excess: 50_000_00, totalDue: 50_000_00, newTotalPaid: 100_000_00 });
+    expect(overpayments[0]!.metadata).toMatchObject({ excess: 50_000_00, totalDue: 50_000_00, newTotalPaid: 50_000_00 });
+    expect(exceptions).toEqual([expect.objectContaining({ reason: "INVOICE_OVERPAYMENT", unappliedKobo: 50_000_00 })]);
+    expect(payments.find(({ id }) => id === second.paymentId)).toMatchObject({ amount: 50_000_00, allocatedKobo: 0 });
   });
 
   it("handleWebhook charge.success: an exact payment raises no overpayment flag", async () => {

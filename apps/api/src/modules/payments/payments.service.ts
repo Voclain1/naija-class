@@ -27,6 +27,7 @@ import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalidation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
+import { invoiceAllocatedTotal } from "./payment-invoice-allocations.js";
 import { issueReceipt, loadReceiptLogo } from "./receipt.js";
 import { EventNotifierService } from "../notifications/event-notifier.service.js";
 import { PaymentConfirmationService } from "./payment-confirmation.service.js";
@@ -154,6 +155,7 @@ type PaymentRow = {
   invoiceId: string;
   studentId: string;
   amount: number;
+  allocatedKobo?: number | null;
   method: string;
   status: string;
   paystackReference: string | null;
@@ -193,6 +195,7 @@ function toDto(row: PaymentRow): PaymentDto {
     invoiceId: row.invoiceId,
     studentId: row.studentId,
     amount: row.amount,
+    ...(row.allocatedKobo == null ? {} : { allocatedKobo: row.allocatedKobo, unappliedKobo: row.amount - row.allocatedKobo }),
     method: row.method as PaymentMethod,
     status: row.status as PaymentStatus,
     paystackReference: row.paystackReference,
@@ -350,11 +353,7 @@ export class PaymentsService {
 
       // 4. Recompute totalPaid from all SUCCESS rows (D2 — idempotent, self-heals on
       //    the next write if this invoice update below fails).
-      const { _sum } = await db.payment.aggregate({
-        where: { invoiceId: dto.invoiceId, status: "SUCCESS" },
-        _sum: { amount: true },
-      });
-      const newTotalPaid = _sum.amount ?? 0;
+      const newTotalPaid = await invoiceAllocatedTotal(db, authCtx.schoolId, dto.invoiceId);
       const newStatus = computeInvoiceStatus(newTotalPaid, invoice.totalDue);
 
       // 5. Update invoice. Sequential write — no wrapping transaction by design.
@@ -628,12 +627,14 @@ export class PaymentsService {
       return;
     }
 
-    const embedded = request.transactions?.find((transaction) => transaction.status === "success");
     const eventTransaction = asRecord(event.data.transaction);
-    const reference =
-      (typeof eventTransaction?.reference === "string" ? eventTransaction.reference : undefined) ??
-      embedded?.reference;
+    const hinted = typeof eventTransaction?.reference === "string" ? eventTransaction.reference : undefined;
+    const embedded = request.transactions?.find((transaction) => transaction.status === "success" &&
+      (hinted === undefined || transaction.reference === hinted));
+    const reference = embedded?.reference;
     if (!reference) {
+      if (hinted) await withTenant(schoolId, (db) =>
+        recordPaystackException(db, schoolId, invoiceId, hinted, "REQUEST_TRANSACTION_UNBOUND", link.amount, null, null));
       this.logger.error("Payment Request webhook rejected: successful transaction missing");
       return;
     }
@@ -670,7 +671,8 @@ export class PaymentsService {
           link.amount, transaction.amount, transaction.currency, transaction.amount);
         return null;
       }
-      const surplus = Math.max(0, link.amount - Math.max(0, invoice.totalDue - invoice.totalPaid));
+      const allocated = Math.min(link.amount, Math.max(0, invoice.totalDue - invoice.totalPaid));
+      const surplus = link.amount - allocated;
       if (surplus) await recordPaystackException(db, schoolId, invoiceId, reference, "INVOICE_OVERPAYMENT",
         link.amount, transaction.amount, transaction.currency, surplus);
       const claim = await db.paymentLink.updateMany({
@@ -685,6 +687,7 @@ export class PaymentsService {
             invoiceId,
             studentId: invoice.studentId,
             amount: link.amount,
+            allocatedKobo: allocated,
             method: "PAYSTACK",
             status: "SUCCESS",
             paystackReference: reference,
@@ -693,11 +696,7 @@ export class PaymentsService {
             paidAt,
           },
       });
-      const aggregate = await db.payment.aggregate({
-          where: { invoiceId, status: "SUCCESS" },
-          _sum: { amount: true },
-      });
-      const newTotalPaid = aggregate._sum.amount ?? 0;
+      const newTotalPaid = allocated ? await invoiceAllocatedTotal(db, schoolId, invoiceId) : invoice.totalPaid;
       const newStatus = computeInvoiceStatus(newTotalPaid, invoice.totalDue);
       await db.invoice.update({
           where: { id: invoiceId },
@@ -1035,14 +1034,11 @@ export class PaymentsService {
         if (!opts.force && payment.receiptNumber && payment.receiptUrl) {
           return { receiptNumber: payment.receiptNumber, receiptUrl: payment.receiptUrl };
         }
-        const { _sum } = await db.payment.aggregate({
-          where: { invoiceId: payment.invoiceId, status: "SUCCESS", createdAt: { lte: payment.createdAt } },
-          _sum: { amount: true },
-        });
+        const totalPaidAfter = await invoiceAllocatedTotal(db, schoolId, payment.invoiceId, payment.createdAt);
         const issued = await issueReceipt(db, this.storage, {
           schoolId,
           paymentId,
-          totalPaidAfter: _sum.amount ?? 0,
+          totalPaidAfter,
           logoDataUri,
           ...(payment.receiptNumber ? { receiptNumber: payment.receiptNumber } : {}),
         });
@@ -1110,6 +1106,7 @@ export class PaymentsService {
       return false;
     }
 
+    const allocated = Math.min(payment.amount, Math.max(0, invoice.totalDue - invoice.totalPaid));
     // 1. Transition payment to SUCCESS and store Paystack payload — an
     // ATOMIC conditional update (updateMany + a status: "PENDING" filter),
     // not a plain update. This is what actually closes the race window
@@ -1127,6 +1124,7 @@ export class PaymentsService {
       where: { id: payment.id, status: "PENDING" },
       data: {
         status: "SUCCESS",
+        allocatedKobo: allocated,
         paidAt,
         paystackData: paystackData as object,
       },
@@ -1137,11 +1135,7 @@ export class PaymentsService {
     }
 
     // 2. Recompute totalPaid aggregate (idempotent — includes this payment now it's SUCCESS).
-    const { _sum } = await db.payment.aggregate({
-      where: { invoiceId: payment.invoiceId, status: "SUCCESS" },
-      _sum: { amount: true },
-    });
-    const newTotalPaid = _sum.amount ?? 0;
+    const newTotalPaid = allocated ? await invoiceAllocatedTotal(db, payment.schoolId, payment.invoiceId) : invoice.totalPaid;
 
     // 3. The receipt is issued AFTER this transaction commits, by the caller
     //    (issueReceiptFor) — never inside it.
@@ -1154,18 +1148,9 @@ export class PaymentsService {
       data: { totalPaid: newTotalPaid, status: newStatus },
     });
 
-    // 5. Overpayment backstop. By the time Paystack confirms, the parent's
-    //    money has LEFT their account: refusing to record it would leave
-    //    real money in the school's subaccount that the books say never
-    //    arrived, which is worse than an overpaid invoice. So the payment
-    //    stands, and the excess is made loud instead of silent: its own audit
-    //    row and a Sentry warning (ids and amounts only, never names). The
-    //    invoice page then shows it as overpaid, and the bursar refunds the
-    //    duplicate payment (refunds are full-payment, which is exactly the
-    //    shape of a duplicate). Excess is capped at this payment's amount: an
-    //    invoice that was ALREADY over (e.g. a fee later reduced) is not this
-    //    payment's doing.
-    const excess = Math.min(payment.amount, newTotalPaid - invoice.totalDue);
+    // Keep receipt and provider amounts intact. Only the outstanding balance
+    // is applied to the invoice and the surplus remains in reconciliation.
+    const excess = payment.amount - allocated;
     if (excess > 0) {
       await recordPaystackException(db, payment.schoolId, payment.invoiceId, `PSK-${payment.schoolId}-${payment.id}`,
         "INVOICE_OVERPAYMENT", payment.amount, paystackData.amount, paystackData.currency, excess);
@@ -1186,7 +1171,7 @@ export class PaymentsService {
         },
       });
       this.logger.warn(
-        `Paystack payment ${payment.id} overpaid invoice ${payment.invoiceId} by ${excess} kobo (school ${payment.schoolId}); refund the duplicate.`,
+        `Paystack payment ${payment.id} overpaid invoice ${payment.invoiceId} by ${excess} kobo (school ${payment.schoolId}); review unapplied funds.`,
       );
       Sentry.captureMessage("Paystack payment overpaid an invoice", {
         level: "warning",

@@ -2770,6 +2770,7 @@ enum PaymentStatus {
 }
 
 model Payment {
+  allocatedKobo Int? @map("allocated_kobo")
   id                String        @id @default(uuid())
   schoolId          String        @map("school_id")
   invoiceId         String        @map("invoice_id")
