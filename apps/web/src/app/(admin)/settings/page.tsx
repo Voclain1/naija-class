@@ -54,6 +54,13 @@ const LINKS: SettingsLink[] = [
     icon: Inbox,
   },
   {
+    label: "Communication centre",
+    href: "/settings/communication",
+    description: "Message delivery, WhatsApp accounts, SMS credits and automated notification preferences.",
+    icon: MessagesSquare,
+    requiredPermission: "notification-preferences.read",
+  },
+  {
     label: "Messaging",
     href: "/settings/messaging",
     description: "Appoint the principal, head teacher and Inbox officers parents can write to.",
