@@ -252,6 +252,44 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
     ).toBe(1);
   });
 
+  it("rejects a provider link when a partial payment commits during creation", async () => {
+    const invoice = await withTenant(schoolA, async (db) => {
+      const original = await db.invoice.findUniqueOrThrow({ where: { id: invoiceA } });
+      return db.invoice.create({
+        data: {
+          schoolId: schoolA, studentId: original.studentId, termId: original.termId,
+          academicYearId: original.academicYearId, sequence: 100, items: [],
+          totalAmount: 250_000, totalDiscount: 0, totalDue: 250_000, status: "ISSUED",
+        },
+      });
+    });
+    const requestCode = `PRQ_stale_${runId}`;
+    const fake = {
+      createCustomer: vi.fn(async () => ({ customer_code: "CUS_fictional" })),
+      createPaymentRequest: vi.fn(async () => ({ request_code: requestCode })),
+      getPaymentRequest: vi.fn(async () => {
+        const link = await withTenant(schoolA, async (db) => {
+          await db.invoice.update({ where: { id: invoice.id }, data: { status: "PARTIALLY_PAID", totalPaid: 50_000 } });
+          return db.paymentLink.findFirstOrThrow({ where: { schoolId: schoolA, invoiceId: invoice.id } });
+        });
+        return {
+          id: 23456, request_code: requestCode, amount: 250_000, currency: "NGN",
+          archived: false, split_code: "SPL_test_a",
+          metadata: { schoolId: schoolA, invoiceId: invoice.id, schoolKitPaymentLinkId: link.id },
+          customer: { customer_code: "CUS_fictional", email: "parent@schoolkit.ng" },
+        };
+      }),
+      archivePaymentRequest: vi.fn(async () => undefined),
+    };
+    const service = new PaymentLinksService(fake as never);
+    await expect(service.create(authA, invoice.id, { ipAddress: null }))
+      .rejects.toMatchObject({ code: "PAYMENT_LINK_BALANCE_CHANGED" });
+    expect(fake.archivePaymentRequest).toHaveBeenCalledWith(requestCode);
+    expect(await service.get(authA, invoice.id)).toEqual({
+      state: "RETRYABLE_FAILURE", failureCode: "PAYMENT_LINK_BALANCE_CHANGED",
+    });
+  });
+
   it("restores the live link when Paystack rejects a manual archive and denies cross-tenant targets", async () => {
     const link = await withTenant(schoolA, (db) =>
       db.paymentLink.create({

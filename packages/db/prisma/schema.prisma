@@ -367,6 +367,8 @@ model School {
   previousAddresses       SchoolPreviousAddress[]
 
   @@map("schools")
+  messagingWalletEntries MessagingWalletEntry[]
+
 }
 
 // A school's earlier web addresses (docs/modules/school-addresses.md,
@@ -5943,4 +5945,18 @@ model SchoolAiTermsEvent {
 
   @@index([schoolId, recordedAt(sort: Desc)])
   @@map("school_ai_terms_events")
+}
+
+model MessagingWalletEntry {
+  id         String   @id
+  schoolId   String   @map("school_id")
+  reference  String
+  kind       String
+  amountKobo Int      @map("amount_kobo")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([schoolId, kind, reference], map: "messaging_wallet_entries_school_id_kind_reference_key")
+  @@map("messaging_wallet_entries")
 }

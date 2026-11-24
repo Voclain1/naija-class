@@ -9,6 +9,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
+import { isPaystackPaymentRequestCode } from "../../common/paystack/payment-request-code.js";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
 
 interface RequestContext {
@@ -179,9 +180,13 @@ export class PaymentLinksService {
         splitCode: prepared.splitCode,
         metadata,
       });
+      if (!isPaystackPaymentRequestCode(created.request_code)) {
+        throw new ConflictError("PAYSTACK_PAYMENT_REQUEST_MISMATCH", "Paystack returned an invalid payment request code.");
+      }
       requestCode = created.request_code;
-      const fetched = await this.paystack.getPaymentRequest(created.request_code);
+      const fetched = await this.paystack.getPaymentRequest(requestCode);
       if (
+        fetched.request_code !== requestCode ||
         fetched.archived ||
         fetched.amount !== link.amount ||
         fetched.currency !== "NGN" ||
@@ -198,7 +203,14 @@ export class PaymentLinksService {
         );
       }
 
-      return withTenant(authCtx.schoolId, async (db) => {
+      return await withTenant(authCtx.schoolId, async (db) => {
+        // Serialize publication of the link with invoice updates and invalidation.
+        const [current] = await db.$queryRaw<{ outstanding: number; status: string }[]>`
+          SELECT total_due - total_paid AS outstanding, status::text
+          FROM invoices WHERE school_id = ${authCtx.schoolId} AND id = ${invoiceId} FOR UPDATE`;
+        if (!current || current.outstanding !== link.amount || ["PAID", "CANCELLED", "REFUNDED"].includes(current.status)) {
+          throw new ConflictError("PAYMENT_LINK_BALANCE_CHANGED", "The outstanding invoice changed during payment link creation.");
+        }
         const hostedUrl = `https://paystack.com/pay/${fetched.request_code}`;
         const live = await db.paymentLink.update({
           where: { id: link.id },
@@ -225,12 +237,20 @@ export class PaymentLinksService {
         return toLiveDto(live, prepared.schoolName, prepared.studentLabel);
       });
     } catch (error) {
-      if (requestCode) await this.paystack.archivePaymentRequest(requestCode).catch(() => undefined);
+      let archivePending = false;
+      if (requestCode) {
+        try {
+          await this.paystack.archivePaymentRequest(requestCode);
+        } catch {
+          archivePending = true;
+        }
+      }
       await withTenant(authCtx.schoolId, (db) =>
         db.paymentLink.update({
           where: { id: link.id },
           data: {
-            status: "CREATE_FAILED",
+            status: archivePending ? "ARCHIVE_PENDING" : "CREATE_FAILED",
+            ...(archivePending ? { requestCode } : {}),
             failureCode: domainFailureCode(error),
             retryCount: { increment: 1 },
             lastAttemptAt: new Date(),

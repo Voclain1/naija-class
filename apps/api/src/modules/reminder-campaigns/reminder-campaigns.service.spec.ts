@@ -310,6 +310,22 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     expect(dto2.students[0]!.sends.every((s) => s.reason === "ON_PAYMENT_PLAN")).toBe(true);
   });
 
+  it("excludes later slots in the same batch when the first send is followed by a full payment", async () => {
+    const c = await confirm(await prepare([A.bo.id]));
+    vi.spyOn(port, "sendEmail").mockImplementationOnce(async (message) => {
+      port.emails.push(message);
+      await withTenant(A.schoolId, (db) => db.invoice.update({
+        where: { id: A.boInv.id }, data: { totalPaid: 20_000_00, status: "PAID" },
+      }));
+      return { status: "ACCEPTED", providerRef: "fictional-email" };
+    });
+    expect(await run(c.id)).toBe("DONE");
+    expect(port.emails).toHaveLength(1);
+    expect(port.texts).toHaveLength(0);
+    expect((await service.getCampaign(A.bursar.auth, c.id, DAY())).students[0]?.sends)
+      .toEqual([expect.objectContaining({ outcome: "ACCEPTED" }), expect.objectContaining({ outcome: "SKIPPED", reason: "NO_BALANCE" })]);
+  });
+
   it("two confirmations at once make one campaign; two workers at once send each slot once", async () => {
     const p = await prepare(all());
     const [x, y] = await Promise.all([confirm(p), confirm(p)]);

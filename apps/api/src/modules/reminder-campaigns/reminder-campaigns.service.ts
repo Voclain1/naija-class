@@ -117,6 +117,7 @@ interface Job {
   channel: "EMAIL" | "MOBILE";
   schoolId: string;
   guardianId: string;
+  studentId: string;
   schoolName: string;
   smsSender: string | undefined;
   studentName: string;
@@ -332,7 +333,14 @@ export class ReminderCampaignsService {
       const claimed = await this.claimBatch(schoolId, campaignId, now(), opts.batchStudents ?? 10);
       if (claimed.kind !== "JOBS") return claimed.kind;
       for (const job of claimed.jobs) {
-        const outcome = await this.send(job);
+        const readiness = isQuietHour(now()) ? null : await this.refreshBeforeSend(campaignId, job);
+        if (readiness === null) {
+          await this.releaseUnsentClaim(job);
+          continue;
+        }
+        const outcome = readiness === "ELIGIBLE"
+          ? await this.send(job)
+          : { status: "SKIPPED" as const, reason: readiness, channelUsed: null, providerRef: null };
         await this.finish(job, outcome);
       }
     }
@@ -354,6 +362,7 @@ export class ReminderCampaignsService {
     now: Date,
     batchStudents: number,
   ): Promise<{ kind: "JOBS"; jobs: Job[] } | { kind: "DONE" | "HALTED" | "BUSY" }> {
+    const { can } = await attemptableChannels(this.port, schoolId);
     return withTenant(schoolId, async (db) => {
       const [campaign] = await db.$queryRaw<CampaignRow[]>`
         SELECT * FROM reminder_campaigns WHERE school_id = ${schoolId} AND id = ${campaignId} FOR UPDATE`;
@@ -372,7 +381,6 @@ export class ReminderCampaignsService {
         await this.setHalted(db, campaign, problem === "INACTIVE" ? "CONFIRMER_ACCESS_REVOKED" : problem, null, null);
         return { kind: "HALTED" as const };
       }
-      const { can } = await attemptableChannels(this.port, schoolId);
       if (!can.email && !can.sms && !can.push) {
         await this.setHalted(db, campaign, "NO_CHANNEL", null, null);
         return { kind: "HALTED" as const };
@@ -450,7 +458,7 @@ export class ReminderCampaignsService {
           UPDATE reminder_campaign_sends SET status = 'SENDING', claim_token = ${token}, claimed_at = ${now}
            WHERE school_id = ${schoolId} AND id = ${row.id} AND status = 'PENDING'`;
         jobs.push({
-          id: row.id, claimToken: token, channel: row.channel, schoolId, guardianId: g.id,
+          id: row.id, claimToken: token, channel: row.channel, schoolId, guardianId: g.id, studentId: row.student_id,
           schoolName: school.name, smsSender: smsSenderFor(school), studentName: nameOf.get(row.student_id)!,
           balance: facts!.balance, dueDate: facts!.earliestDueDate,
           email: row.channel === "EMAIL" ? { to: email!, firstName: g.firstName } : undefined,
@@ -460,6 +468,55 @@ export class ReminderCampaignsService {
       await db.$executeRaw`UPDATE reminder_campaigns SET updated_at = ${now} WHERE school_id = ${schoolId} AND id = ${campaignId}`;
       return { kind: "JOBS" as const, jobs };
     }, { timeoutMs: 30_000, label: "reminder-campaign-claim" });
+  }
+
+  private async refreshBeforeSend(campaignId: string, job: Job): Promise<string | null> {
+    const { can } = await attemptableChannels(this.port, job.schoolId);
+    return withTenant(job.schoolId, async (db) => {
+      const [campaign] = await db.$queryRaw<CampaignRow[]>`
+        SELECT c.* FROM reminder_campaigns c
+        JOIN reminder_campaign_sends s ON s.school_id = c.school_id AND s.campaign_id = c.id
+        WHERE c.school_id = ${job.schoolId} AND c.id = ${campaignId} AND c.status = 'RUNNING'
+          AND s.id = ${job.id} AND s.status = 'SENDING' AND s.claim_token = ${job.claimToken}
+        FOR UPDATE OF c`;
+      if (!campaign) return null;
+      const problem = await this.accessProblem(db, job.schoolId, campaign.confirmed_by, true);
+      if (problem) {
+        await this.setHalted(db, campaign, problem === "INACTIVE" ? "CONFIRMER_ACCESS_REVOKED" : problem, null, null);
+        return null;
+      }
+      const link = await db.studentGuardian.findFirst({
+        where: { schoolId: job.schoolId, studentId: job.studentId, guardianId: job.guardianId },
+        select: {
+          guardian: { select: { email: true, phone: true } },
+          student: { select: { firstName: true, lastName: true } },
+        },
+      });
+      if (!link) return "GUARDIAN_UNLINKED";
+      if (job.channel === "EMAIL") {
+        const email = link.guardian.email?.trim().toLowerCase();
+        if (!can.email) return "CHANNEL_OFF";
+        if (!email || email !== job.email?.to) return "CONTACT_CHANGED";
+        if ((await blockedAddresses(db, job.schoolId, [email])).get(email) === "SUPPRESSED") return "EMAIL_SUPPRESSED";
+      } else {
+        job.smsAvailable = can.sms && !!job.phone && link.guardian.phone === job.phone;
+        if (!can.push && !job.smsAvailable) return "NO_ROUTE";
+      }
+      const facts = (await loadDebtFacts(db, job.schoolId, campaign.term_id, [job.studentId])).get(job.studentId);
+      const result = debtEligibility(facts, { includePaymentPlans: campaign.include_payment_plans, overdueOnly: campaign.overdue_only });
+      if (result !== "ELIGIBLE" || !facts) return result;
+      job.balance = facts.balance;
+      job.dueDate = facts.earliestDueDate;
+      job.studentName = `${link.student.firstName} ${link.student.lastName}`;
+      return "ELIGIBLE";
+    }, { label: "reminder-campaign-preflight" });
+  }
+
+  private async releaseUnsentClaim(job: Job): Promise<void> {
+    await withTenant(job.schoolId, (db) => db.$executeRaw`
+      UPDATE reminder_campaign_sends SET status = 'PENDING', claim_token = NULL, claimed_at = NULL
+       WHERE school_id = ${job.schoolId} AND id = ${job.id} AND claim_token = ${job.claimToken} AND status = 'SENDING'`,
+    { label: "reminder-campaign-release-unsent" });
   }
 
   /** One outbound action. Never throws: an unclassifiable failure is UNKNOWN. */

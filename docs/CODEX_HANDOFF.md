@@ -188,7 +188,13 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-17)
+## Latest state (updated 2026-11-24)
+
+Unified messaging foundations are on `feat/unified-messaging-infrastructure`.
+See [the contract](modules/unified-messaging.md) and [the rollout
+runbook](runbooks/unified-messaging.md). The Meta and wallet foundations have
+no live callers. The campaign preflight and Paystack link race fixes extend
+existing entry points.
 
 - **UX simplification Sprint 4 validation is in progress on
   `feat/ux-complete-journey-validation`.** The existing browser suite proves
