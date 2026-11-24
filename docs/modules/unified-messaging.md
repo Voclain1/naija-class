@@ -60,4 +60,5 @@ must select one channel and carry one effective, verified rate for that
 provider and category. Missing data or a category change blocks the send.
 The application never attempts another channel after an ambiguous provider
 result. A partly paid invoice is confirmed using the accepted transaction's
-amount in kobo.
+amount in kobo. Its paid delivery jobs commit with the verified payment,
+so a restart after commit leaves the jobs available to the worker.

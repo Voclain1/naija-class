@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from "@nestjs/common";
 
-import { withTenant } from "@school-kit/db";
+import { withTenant, type PrismaClient } from "@school-kit/db";
 import { formatKobo } from "@school-kit/types";
 
 import { EmailService } from "../../common/email/email.service.js";
@@ -40,14 +40,13 @@ export class PaymentConfirmationService {
     @Optional() private readonly paid?: PaidMessagingService,
   ) {}
 
+  async queuePaidConfirmation(db: PrismaClient, schoolId: string, paymentId: string, studentId: string): Promise<void> {
+    await this.paid?.queueVerifiedPayment(db, schoolId, paymentId, studentId);
+  }
+
   async onlinePaymentSucceeded(schoolId: string, paymentId: string): Promise<void> {
     // The app's "payment recorded" push, which cash payments already send.
     await this.events?.paymentRecorded({ schoolId, paymentId });
-    try {
-      await this.paid?.queue(schoolId, paymentId);
-    } catch {
-      this.logger.error("Could not queue paid payment confirmation; the payment stands");
-    }
     try {
       await this.sendEmails(schoolId, paymentId);
     } catch (err) {

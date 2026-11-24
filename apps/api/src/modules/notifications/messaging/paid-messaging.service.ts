@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Cron } from "@nestjs/schedule";
-import { withTenant, type NotificationDelivery } from "@school-kit/db";
+import { withTenant, type NotificationDelivery, type PrismaClient } from "@school-kit/db";
 import type { MessagingOverview } from "@school-kit/types";
 
 import { EmailService } from "../../../common/email/email.service";
@@ -101,24 +101,22 @@ export class PaidMessagingService {
     }
   }
 
-  async queue(schoolId: string, paymentId: string): Promise<void> {
+  async queueVerifiedPayment(db: PrismaClient, schoolId: string, paymentId: string, studentId: string): Promise<void> {
     const profile = this.profiles().find((item) => item.schoolId === schoolId);
     if (!profile) return;
-    await withTenant(schoolId, async (db) => {
-      const payment = await db.payment.findFirst({
-        where: { schoolId, id: paymentId, method: "PAYSTACK", status: "SUCCESS", paidAt: { not: null } },
-        select: { studentId: true },
-      });
-      if (!payment) return;
-      const guardians = await db.studentGuardian.findMany({
-        where: { schoolId, studentId: payment.studentId, guardian: { portalDisabledAt: null } },
-        select: { guardianId: true },
-      });
-      await db.notificationDelivery.createMany({ skipDuplicates: true, data: guardians.map(({ guardianId }) => ({
-        schoolId, eventId: paymentId, eventType: PAID_PAYMENT_EVENT, principalType: "GUARDIAN",
-        principalId: guardianId, channel: profile.channel, dispatchState: "QUEUED",
-      })) });
+    const flags = await db.notificationPreference.findUnique({
+      where: { schoolId }, select: { paidWhatsAppEnabled: true, walletSmsEnabled: true, smsEnabled: true },
     });
+    if (profile.channel === "WHATSAPP" ? !flags?.paidWhatsAppEnabled : !flags?.walletSmsEnabled || !flags.smsEnabled) return;
+
+    const guardians = await db.studentGuardian.findMany({
+      where: { schoolId, studentId, guardian: { portalDisabledAt: null } },
+      select: { guardianId: true },
+    });
+    await db.notificationDelivery.createMany({ skipDuplicates: true, data: guardians.map(({ guardianId }) => ({
+      schoolId, eventId: paymentId, eventType: PAID_PAYMENT_EVENT, principalType: "GUARDIAN",
+      principalId: guardianId, channel: profile.channel, dispatchState: "QUEUED",
+    })) });
   }
 
   campaignRate(schoolId: string, overdue: boolean, now: Date): bigint | null {

@@ -55,14 +55,14 @@ const paystackStub = {
   }),
 };
 
-function makeService(email: ReturnType<typeof fakeEmail>) {
+function makeService(email: ReturnType<typeof fakeEmail>, paid?: PaidMessagingService) {
   const storage = new StorageService(
     new FilesystemStorageDriver(path.join(os.tmpdir(), `sk-confirm-${runId}`), {
       baseUrl: "http://localhost:4000/api/v1",
       secret: "test-secret",
     }),
   );
-  const confirmations = new PaymentConfirmationService(email.service as never);
+  const confirmations = new PaymentConfirmationService(email.service as never, undefined, paid);
   return new PaymentsService(storage, paystackStub as never, new PaymentPlanService(), undefined, undefined, confirmations);
 }
 
@@ -131,7 +131,7 @@ async function setUp(suffix: string, guardians: { email: string | null }[]) {
     });
     const reference = `PSK-${schoolId}-${payment.id}`;
     await db.payment.update({ where: { id: payment.id }, data: { paystackReference: reference } });
-    return { schoolId, paymentId: payment.id, reference, guardianIds };
+    return { schoolId, ownerId: signed.user.id, paymentId: payment.id, reference, guardianIds };
   });
 }
 
@@ -176,7 +176,7 @@ describe("online payment confirmation email", () => {
   });
 
   it("queues once from committed payment, waits through quiet hours, and holds an ambiguous SMS reservation", async () => {
-    const { schoolId, paymentId, reference, guardianIds } = await setUp("paid-outbound", [{ email: null }]);
+    const { schoolId, ownerId, paymentId, reference, guardianIds } = await setUp("paid-outbound", [{ email: null }]);
     const sendSmsWithOutcome = vi.fn().mockResolvedValue({ status: "UNKNOWN", reason: "PROVIDER_NO_ANSWER" });
     const config = {
       MESSAGING_PAID_ENABLED: "on", MESSAGING_PAID_PLATFORM_DAILY_KOBO: "100000",
@@ -196,13 +196,27 @@ describe("online payment confirmation email", () => {
     const worker = new PaidMessagingService(
       new ConfigService(config), consent as never, {} as never, preferences as never, termii as never,
     );
-    await worker.queue(schoolId, paymentId);
+    await withTenant(schoolId, (db) => db.notificationPreference.create({
+      data: { schoolId, smsEnabled: true, walletSmsEnabled: true, updatedBy: ownerId },
+    }));
+    const service = makeService(fakeEmail(), worker);
     const deliveries = () => withTenant(schoolId, (db) => db.notificationDelivery.findMany({
       where: { schoolId, eventId: paymentId, eventType: PAID_PAYMENT_EVENT },
     }));
     expect(await deliveries()).toHaveLength(0);
-    await makeService(fakeEmail()).handleWebhook(success(reference));
-    await Promise.all([worker.queue(schoolId, paymentId), worker.queue(schoolId, paymentId)]);
+    const event = success(reference);
+    await service.handleWebhook({ ...event, data: { ...event.data, amount: 50_000_00 } });
+    expect(await deliveries()).toHaveLength(0);
+    const enqueue = worker.queueVerifiedPayment.bind(worker);
+    vi.spyOn(worker, "queueVerifiedPayment").mockImplementationOnce(async (...args) => {
+      await enqueue(...args);
+      throw new Error("simulated interruption before commit");
+    });
+    await expect(service.handleWebhook(event)).rejects.toThrow("simulated interruption");
+    expect(await deliveries()).toHaveLength(0);
+    expect(await withTenant(schoolId, (db) => db.payment.findUniqueOrThrow({ where: { id: paymentId } })))
+      .toMatchObject({ status: "PENDING" });
+    await Promise.all([service.handleWebhook(event), service.handleWebhook(event)]);
     expect(await deliveries()).toHaveLength(1);
     const day = new Date();
     day.setUTCHours(10, 0, 0, 0);

@@ -213,8 +213,9 @@ consent still use the existing invitation channels.
   matching charge or release against verified zero charge.
 - Initial phone registration, automated credential refresh and full
   lifecycle handling for all Meta account events.
-- General inbound conversation handling, retention automation, and durable
-  recovery of the gap between financial commit and post-commit enqueue.
+- General inbound conversation handling, retention automation, and atomic
+  enqueue for other paid event producers. Paystack confirmations are written
+  in the transaction that records the verified payment.
 - Consolidation of all legacy SMS producers into the paid wallet rail and
   coverage of invoice creation through every composed transaction.
 
