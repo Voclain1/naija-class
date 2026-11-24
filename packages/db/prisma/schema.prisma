@@ -366,9 +366,11 @@ model School {
   reportExports           ReportExport[]
   previousAddresses       SchoolPreviousAddress[]
 
-  @@map("schools")
-  messagingWalletEntries MessagingWalletEntry[]
+  messagingWalletEntries  MessagingWalletEntry[]
+  metaMessagingAccount    MessagingMetaAccount?
+  metaMessagingEvents     MessagingMetaEvent[]
 
+  @@map("schools")
 }
 
 // A school's earlier web addresses (docs/modules/school-addresses.md,
@@ -3494,8 +3496,14 @@ model NotificationDelivery {
   channel       String // PUSH | SMS | EMAIL | NONE — what the rail chose
   sentAt        DateTime      @default(now()) @map("sent_at")
 
+  providerRef       String?   @map("provider_ref")
+  providerAccountId String?   @map("provider_account_id")
+  providerState     String?   @map("provider_state")
+  providerStateAt   DateTime? @map("provider_state_at")
+
   @@unique([schoolId, eventType, eventId, principalType, principalId])
   @@index([schoolId, sentAt])
+  @@unique([schoolId, providerAccountId, providerRef], map: "notification_deliveries_provider_ref_idx")
   @@map("notification_deliveries")
 }
 
@@ -5958,5 +5966,34 @@ model MessagingWalletEntry {
   school School @relation(fields: [schoolId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@unique([schoolId, kind, reference], map: "messaging_wallet_entries_school_id_kind_reference_key")
+  @@index([schoolId, createdAt(sort: Desc), id(sort: Desc)], map: "messaging_wallet_history_idx")
   @@map("messaging_wallet_entries")
+}
+
+model MessagingMetaAccount {
+  schoolId      String @id @map("school_id")
+  wabaId        String @map("waba_id")
+  phoneNumberId String @unique @map("phone_number_id")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@map("messaging_meta_accounts")
+}
+
+model MessagingMetaEvent {
+  id            String    @id
+  schoolId      String    @map("school_id")
+  wabaId        String    @map("waba_id")
+  phoneNumberId String    @map("phone_number_id")
+  providerRef   String    @map("provider_ref")
+  state         String
+  occurredAt    DateTime  @map("occurred_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  processedAt   DateTime? @map("processed_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, wabaId, phoneNumberId, providerRef, state, occurredAt], map: "messaging_meta_events_dedup_key")
+  @@index([schoolId, processedAt, createdAt], map: "messaging_meta_events_pending_idx")
+  @@map("messaging_meta_events")
 }

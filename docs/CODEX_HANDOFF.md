@@ -193,8 +193,9 @@ those; it doesn't replace them.
 Unified messaging foundations are on `feat/unified-messaging-infrastructure`.
 See [the contract](modules/unified-messaging.md) and [the rollout
 runbook](runbooks/unified-messaging.md). The Meta and wallet foundations have
-no live callers. The campaign preflight and Paystack link race fixes extend
-existing entry points.
+no live send callers. The Meta delivery-status callback is off by default.
+The campaign preflight and Paystack link race fixes extend existing entry
+points.
 
 - **UX simplification Sprint 4 validation is in progress on
   `feat/ux-complete-journey-validation`.** The existing browser suite proves

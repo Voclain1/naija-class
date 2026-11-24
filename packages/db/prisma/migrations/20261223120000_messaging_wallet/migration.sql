@@ -8,6 +8,8 @@ CREATE TABLE messaging_wallet_entries (
     UNIQUE (school_id, kind, reference)
 );
 
+CREATE INDEX messaging_wallet_history_idx ON messaging_wallet_entries (school_id, created_at DESC, id DESC);
+
 CREATE UNIQUE INDEX messaging_wallet_one_resolution
     ON messaging_wallet_entries (school_id, reference) WHERE kind IN ('SETTLE', 'RELEASE');
 CREATE UNIQUE INDEX messaging_wallet_one_provider_top_up

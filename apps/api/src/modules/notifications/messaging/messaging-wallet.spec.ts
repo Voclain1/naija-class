@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 
+import { ConfigService } from "@nestjs/config";
 import { basePrisma, createPrismaClient, withTenant } from "@school-kit/db";
 import { afterAll, describe, expect, it } from "vitest";
 
+import { EmailService } from "../../../common/email/email.service";
+import { NotificationPreferencesService } from "../notification-preferences.service";
+import { MessagingController } from "./messaging.controller";
 import {
   creditVerifiedMessagingTopUp,
   getMessagingWallet,
@@ -27,6 +31,7 @@ describe("messaging wallet with PostgreSQL and runtime RLS", () => {
         await tx.$executeRaw`ALTER TABLE messaging_wallet_entries DISABLE TRIGGER messaging_wallet_entry_immutable`;
         await tx.messagingWalletEntry.deleteMany({ where: { schoolId: { in: ids } } });
         await tx.$executeRaw`ALTER TABLE messaging_wallet_entries ENABLE TRIGGER messaging_wallet_entry_immutable`;
+        await tx.user.deleteMany({ where: { schoolId: { in: ids } } });
         await tx.school.deleteMany({ where: { id: { in: ids } } });
       });
     } finally {
@@ -59,4 +64,29 @@ describe("messaging wallet with PostgreSQL and runtime RLS", () => {
     expect(await getMessagingWallet(a)).toEqual({ availableKobo: 65n, reservedKobo: 0n });
     await expect(withTenant(a, (db) => db.messagingWalletEntry.deleteMany({ where: { schoolId: a } }))).rejects.toThrow(/immutable/i);
   });
+  it("returns tenant-scoped wallet history and blocks foreign cursors", async () => {
+    const a = await school();
+    const b = await school();
+    const role = await basePrisma.role.findFirstOrThrow({ where: { schoolId: null, key: "owner", isSystem: true } });
+    const user = await withTenant(a, async (db) => {
+      const owner = await db.user.create({ data: { schoolId: a, firstName: "Fictional", lastName: "Owner" } });
+      await db.userRole.create({ data: { userId: owner.id, roleId: role.id } });
+      return owner;
+    });
+    const auth = { schoolId: a, userId: user.id, sessionId: "test" };
+    const controller = new MessagingController(new NotificationPreferencesService(), new EmailService(new ConfigService({ RESEND_API_KEY: "" })));
+    await creditVerifiedMessagingTopUp(a, randomUUID(), 100n);
+    await creditVerifiedMessagingTopUp(b, randomUUID(), 200n);
+    const bEntry = await withTenant(b, (db) => db.messagingWalletEntry.findFirstOrThrow({ where: { schoolId: b } }));
+    const page = await controller.walletHistory(auth);
+    expect(page.items).toEqual([expect.objectContaining({ kind: "TOP_UP", amountKobo: "100" })]);
+    expect(page.nextCursor).toBeNull();
+    await expect(controller.walletHistory(auth, bEntry.id)).rejects.toThrow("Invalid wallet cursor");
+    const overview = await controller.overview(auth);
+    expect(overview.wallet.availableKobo).toBe("100");
+    expect(overview.templates).toHaveLength(9);
+    expect(overview.templates.every((template) => template.approval === "UNKNOWN")).toBe(true);
+    expect(overview.providers.filter((provider) => ["SMS", "WHATSAPP"].includes(provider.channel)).every((provider) => !provider.ready)).toBe(true);
+  });
+
 });

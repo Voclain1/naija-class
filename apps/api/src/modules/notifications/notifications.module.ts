@@ -1,10 +1,14 @@
 import { BullModule } from "@nestjs/bullmq";
 import { Module } from "@nestjs/common";
 
+import { EmailModule } from "../../common/email/email.module";
 import { PushModule } from "../../common/push/push.module";
 import { PUSH_QUEUE } from "../../common/queue";
 import { AnnouncementsModule } from "../announcements/announcements.module";
 import { AuthModule } from "../auth/auth.module";
+import { MetaWebhookController } from "./messaging/meta-webhook.controller";
+import { MetaWebhookService } from "./messaging/meta-webhook.service";
+import { MessagingController } from "./messaging/messaging.controller";
 import { NotificationDispatchModule } from "./notification-dispatch.module";
 import { NotificationPreferencesController } from "./notification-preferences.controller";
 import { PushProcessor } from "./push.processor";
@@ -23,13 +27,14 @@ import { PushProcessor } from "./push.processor";
 @Module({
   imports: [
     AuthModule,
+    EmailModule,
     AnnouncementsModule,
     PushModule,
     NotificationDispatchModule,
     BullModule.registerQueue({ name: PUSH_QUEUE }),
   ],
-  controllers: [NotificationPreferencesController],
-  providers: [PushProcessor],
+  controllers: [MessagingController, MetaWebhookController, NotificationPreferencesController],
+  providers: [PushProcessor, MetaWebhookService],
   exports: [NotificationDispatchModule],
 })
 export class NotificationsModule {}

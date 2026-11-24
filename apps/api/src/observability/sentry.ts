@@ -16,9 +16,13 @@ import { redactString, redactValue } from "@school-kit/types";
 
 let initialised = false;
 
+function isMetaWebhook(url: string | undefined): boolean {
+  return typeof url === "string" && /\/webhooks\/meta(?:\/|[?#]|$)/.test(url);
+}
+
 /** Routes whose request bodies never reach an error report. */
 export function dropsRequestBody(url: string | undefined): boolean {
-  return typeof url === "string" && /\/assistant\//.test(url);
+  return isMetaWebhook(url) || (typeof url === "string" && /\/assistant\//.test(url));
 }
 
 export function initSentry(): void {
@@ -49,6 +53,12 @@ export function initSentry(): void {
       // Strip auth headers entirely — never useful in a stack trace, always
       // sensitive. Replace cookies the same way.
       const req = event.request;
+      if (req && isMetaWebhook(req.url)) {
+        // The challenge embeds a verification secret in its query string.
+        req.url = req.url?.split("?")[0];
+        req.query_string = undefined;
+        req.headers = undefined;
+      }
       if (req?.headers) {
         const headers = { ...req.headers };
         delete headers.authorization;

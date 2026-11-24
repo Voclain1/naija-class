@@ -145,6 +145,10 @@ export const baseConfig = [
       "**/prisma/seed.ts",
       "**/prisma/seed.mts",
 
+      // The signed Meta webhook routes using only opaque account IDs and
+      // owning school IDs from its provisioned account directory.
+      "**/notifications/messaging/meta-webhook.service.ts",
+
       // Test files: setup/teardown legitimately uses basePrisma to manage
       // test schools (the schools table itself has no RLS). The RLS spec
       // intentionally tests cross-tenant behaviour via basePrisma.

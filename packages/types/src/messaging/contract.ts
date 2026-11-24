@@ -17,14 +17,14 @@ export interface MessagingOverview {
     blockers: MessagingBlocker[];
   }>;
   preferences: Record<MessagingChannel, boolean>;
-  wallet: { availableKobo: Kobo; reservedKobo: Kobo; lowBalance: boolean };
+  wallet: { availableKobo: Kobo; reservedKobo: Kobo; lowBalance: boolean | null };
   whatsapp: {
     status: "DISCONNECTED" | "PENDING" | "CONNECTED" | "UNHEALTHY";
     billing: "SCHOOLKIT" | "SCHOOL_OWNED" | null;
   };
   templates: Array<{
     name: string;
-    language: string;
+    language: string | null;
     approval: "UNKNOWN" | "PENDING" | "APPROVED" | "REJECTED" | "PAUSED";
   }>;
 }
@@ -57,4 +57,9 @@ export interface MessagingPlatformControls {
   embeddedSignupEnabled: boolean;
   dailyLimitKobo: Kobo;
   prices: Array<{ channel: "SMS" | "WHATSAPP"; unitPriceKobo: Kobo }>;
+}
+
+export interface MessagingWalletPage {
+  items: MessagingWalletEntry[];
+  nextCursor: string | null;
 }

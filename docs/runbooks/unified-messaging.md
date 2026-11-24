@@ -30,17 +30,49 @@ migration role.
 | Shared sender | Get explicit confirmation from Meta for the intended multi-tenant use before enabling. |
 | Template approvals | Verify the account, name, language, category, ordered body fields and button schema for each approved variant. Store the verification with the per-account template. |
 | Paystack payment buttons | Confirm `https://paystack.com/pay/{{1}}` for the reminder, invoice issued and overdue templates. Use the bare validated request code for the same invoice as the quoted amount. |
-| Meta webhook | Planned URL `https://api.schoolkit.ng/api/v1/webhooks/meta`. No route is registered in this change. Configure it after the challenge handler, durable inbox and tenant routing are deployed. Subscribe verified accounts to the `messages` field. |
+| Meta webhook | `https://api.schoolkit.ng/api/v1/webhooks/meta`. Registered in the API and off by default. Set up in rehearsal first using the steps below. |
 | Termii delivery | Verify the current signed delivery contract with Termii before registering any callback. Confirm the transactional DND route, sender approval and account-specific unit prices. |
-| Credentials | Add new credentials only to the server-side VPS API env file when the caller and runbook are ready. Keep existing `WHATSAPP_*` and `TERMII_*` values private. This change reads no new production environment variables. |
+| Credentials | Add new credentials only to the server-side VPS API env file when the caller and runbook are ready. Keep existing `WHATSAPP_*` and `TERMII_*` values private. |
 
 The VPS configuration serves the API under `https://api.schoolkit.ng/api/v1`.
-The source routes for a school-hosted parent login and staff login are
-`https://<school>.schoolkit.ng/parents/login` and
-`https://<school>.schoolkit.ng/staff/login`. The platform administration
-surface is `https://app.schoolkit.ng/staff/super-admin`. Confirm live route
-resolution during acceptance before using these URLs in any approved copy.
-The setup call still uses its existing internal alert rail.
+Public checks returned HTTP 200 for API health, `https://virgo.schoolkit.ng/parents/login`
+and `https://virgo.schoolkit.ng/staff/login`. The platform administration
+route `https://app.schoolkit.ng/staff/super-admin` redirects to
+`/staff/super-admin/login`, which also returned 200. These checks verified
+unauthenticated routing. The setup call still uses its existing internal
+alert rail.
+
+## Meta callback rehearsal
+
+1. Apply the additive `20261224120000_meta_webhook_inbox` migration. It adds
+   provider status columns to the existing notification journal, a provider
+   account directory and a tenant-isolated status inbox. Keep the changes
+   in place when rolling back the application image.
+2. Under operating authorization, independently verify the WABA and phone
+   ownership through Meta before provisioning a binding in
+   `messaging_meta_accounts`. Populate the school ID, WABA ID and Meta
+   phone-number ID under the migration role for rehearsal. The runtime role
+   cannot insert or update bindings. The current directory supports one
+   exclusive phone binding per school and does not route a shared sender.
+3. In the rehearsal VPS API environment file, configure
+   `MESSAGING_META_APP_SECRET` and an independent random
+   `MESSAGING_META_VERIFY_TOKEN`. Use the same verify token in the Meta
+   dashboard, choose the callback URL under the rehearsal API host, and
+   subscribe the verified WABA to `messages`. Set
+   `MESSAGING_META_WEBHOOK_ENABLED=on` for the rehearsal and confirm the
+   challenge. Protect the verify token from proxy/access logs.
+4. Verify that a signed status is durably recorded before acknowledgment,
+   the worker runs under each tenant scope, and repeated or reordered
+   events do not regress a delivery. Verify the 403 for a bad signature
+   and that an unbound account cannot create a tenant record.
+5. Keep the production switch off until sender authorization and launch
+   gates are satisfied. Set it back to `off` to stop callback processing
+   and leave the journal intact for reconciliation.
+
+The callback handles delivery statuses. Inbound conversation messages,
+consent changes, Termii reporting, retention automation and SMS fallback
+are pending. Unmatched authenticated statuses remain in the inbox until
+a corresponding provider reference is recorded on the notification.
 
 ## App Review demonstration checklist
 
@@ -72,12 +104,14 @@ The setup call still uses its existing internal alert rail.
 Implemented here: fresh per-recipient campaign checks, stale Paystack link
 protection during creation, Meta template payload construction and raw-body
 signature verification, wallet journal and concurrency-safe operations, and
-integer cost estimates. The signature helper has no HTTP consumer.
+integer cost estimates. The read-only overview and wallet history are available
+to authorized staff. The Meta status callback has a durable, deduplicated
+inbox and reconciles existing notification journal rows without fallback.
 
 Pending: live template approvals and the account-specific registry, consent
-and verified phone lifecycle, webhook endpoints and workers, durable unified
-dispatch and delivery reconciliation, spending controls and wallet top-up
+and verified phone lifecycle, incoming message and Termii callbacks, durable
+unified dispatch and wallet settlement on delivery, spending controls and wallet top-up
 checkout/webhooks, automatic finance and school event messaging, Embedded
-Signup, and the runtime frontend endpoints. The contract in
+Signup, and the remaining frontend endpoints. The contract in
 [Unified messaging](../modules/unified-messaging.md) describes the intended
 surface.
