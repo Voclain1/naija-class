@@ -280,11 +280,11 @@ export class PaymentLinksService {
       if (!invoice) throw new NotFoundError("Invoice not found.");
 
       const active = await db.paymentLink.findFirst({
-        where: { schoolId: authCtx.schoolId, invoiceId, status: "LIVE" },
+        where: { schoolId: authCtx.schoolId, invoiceId, status: { in: ["LIVE", "ARCHIVE_PENDING"] } },
         orderBy: { createdAt: "desc" },
-        select: { id: true, requestCode: true, hostedUrl: true },
+        select: { id: true, requestCode: true },
       });
-      if (!active?.requestCode || !active.hostedUrl) {
+      if (!active?.requestCode) {
         throw new ConflictError(
           "PAYMENT_LINK_NOT_LIVE",
           "There is no live payment link to archive.",
@@ -292,8 +292,11 @@ export class PaymentLinksService {
       }
 
       const reserved = await db.paymentLink.updateMany({
-        where: { id: active.id, schoolId: authCtx.schoolId, invoiceId, status: "LIVE" },
-        data: { status: "ARCHIVE_PENDING", hostedUrl: null, lastAttemptAt: new Date() },
+        where: {
+          id: active.id, schoolId: authCtx.schoolId, invoiceId,
+          OR: [{ status: "LIVE" }, { status: "ARCHIVE_PENDING", failureCode: "PAYSTACK_PAYMENT_REQUEST_ARCHIVE_FAILED" }],
+        },
+        data: { status: "ARCHIVE_PENDING", hostedUrl: null, lastAttemptAt: new Date(), failureCode: null },
       });
       if (reserved.count !== 1) {
         throw new ConflictError(
@@ -304,7 +307,6 @@ export class PaymentLinksService {
       return {
         id: active.id,
         requestCode: active.requestCode,
-        hostedUrl: active.hostedUrl,
       };
     });
 
@@ -312,11 +314,9 @@ export class PaymentLinksService {
       await this.paystack.archivePaymentRequest(link.requestCode);
     } catch (error) {
       await withTenant(authCtx.schoolId, (db) =>
-        db.paymentLink.update({
-          where: { id: link.id },
+        db.paymentLink.updateMany({
+          where: { id: link.id, schoolId: authCtx.schoolId, status: "ARCHIVE_PENDING" },
           data: {
-            status: "LIVE",
-            hostedUrl: link.hostedUrl,
             failureCode: "PAYSTACK_PAYMENT_REQUEST_ARCHIVE_FAILED",
             retryCount: { increment: 1 },
             lastAttemptAt: new Date(),
@@ -327,15 +327,13 @@ export class PaymentLinksService {
     }
 
     await withTenant(authCtx.schoolId, async (db) => {
-      await db.paymentLink.update({
-        where: { id: link.id },
-        data: {
-          status: "ARCHIVED",
-          archivedAt: new Date(),
-          hostedUrl: null,
-          failureCode: null,
-          lastAttemptAt: new Date(),
-        },
+      const details = { archivedAt: new Date(), hostedUrl: null, failureCode: null, lastAttemptAt: new Date() };
+      const archived = await db.paymentLink.updateMany({
+        where: { id: link.id, schoolId: authCtx.schoolId, status: "ARCHIVE_PENDING" },
+        data: { ...details, status: "ARCHIVED" },
+      });
+      if (!archived.count) await db.paymentLink.updateMany({
+        where: { id: link.id, schoolId: authCtx.schoolId, status: "PAID" }, data: details,
       });
       await db.auditLog.create({
         data: {
@@ -349,7 +347,7 @@ export class PaymentLinksService {
         },
       });
     });
-    return { state: "NOT_CREATED" };
+    return this.get(authCtx, invoiceId);
   }
 }
 

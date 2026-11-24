@@ -361,7 +361,7 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     await withTenant(A.schoolId, (db) => db.invoice.update({
       where: { id: A.boInv.id }, data: { status: "PARTIALLY_PAID", totalPaid: 5_000_00 },
     }));
-    await run(stale.id);
+    await run(stale.id, () => new Date(DAY().getTime() + 2 * 60_000));
     expect(port.emails).toHaveLength(1);
     expect(port.emails[0]?.html).not.toContain(url);
     expect(port.emails[0]?.html).toContain("15,000");

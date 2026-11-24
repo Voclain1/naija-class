@@ -290,7 +290,7 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
     });
   });
 
-  it("restores the live link when Paystack rejects a manual archive and denies cross-tenant targets", async () => {
+  it("keeps the link hidden when Paystack rejects an archive and denies cross-tenant targets", async () => {
     const link = await withTenant(schoolA, (db) =>
       db.paymentLink.create({
         data: {
@@ -324,8 +324,8 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
       db.paymentLink.findUniqueOrThrow({ where: { id: link.id } }),
     );
     expect(restored).toMatchObject({
-      status: "LIVE",
-      hostedUrl: `https://paystack.com/pay/PRQ_archive_failure_${runId}`,
+      status: "ARCHIVE_PENDING",
+      hostedUrl: null,
       failureCode: "PAYSTACK_PAYMENT_REQUEST_ARCHIVE_FAILED",
       retryCount: 1,
     });
