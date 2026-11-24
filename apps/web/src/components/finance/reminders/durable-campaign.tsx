@@ -30,7 +30,7 @@ function Mount(props: Props) {
     const s = new DurableCampaignSession(); setSession(s);
     if (campaignId) void s.loadCampaign(campaignId);
     else if (proposalId) void s.recoverProposal(proposalId);
-    else if (request) void s.start({ termId: request.termId, studentIds: [...new Set(request.studentIds)], options: { includePaymentPlans: !request.filters.excludePlans, overdueOnly: request.filters.overdueOnly } });
+    else if (request) void s.start({ termId: request.termId, studentIds: [...new Set(request.studentIds)], options: { includePaymentPlans: !request.filters.excludePlans, overdueOnly: request.filters.overdueOnly, ...request.deliveryOptions } });
     return () => s.dispose();
   }, [request, proposalId, campaignId]);
   return session ? <Panel session={session} onClose={props.onClose} /> : null;
@@ -66,6 +66,13 @@ function Panel({ session, onClose }: { session: DurableCampaignSession; onClose?
       <p className="text-sm"><strong>Term:</strong> {p.termLabel ?? "Term unavailable"}</p>
       <dl className="grid grid-cols-3 gap-3 rounded-lg bg-muted/50 p-3 text-sm">{[["Selected students", p.counts.selected], ["Eligible students", p.counts.eligible], ["Planned sends", p.counts.plannedSends]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd className="text-lg font-semibold">{value}</dd></div>)}</dl>
       <p className="text-sm">Email {p.channels.email.enabled && p.channels.email.configured ? "available" : "unavailable"} · SMS {p.channels.sms.enabled && p.channels.sms.configured ? "available" : "unavailable"} · App alerts {p.channels.push.enabled ? "enabled" : "off"}. SMS sender: {p.channels.sms.sender === "SCHOOL" ? "school-approved name" : "SchoolKit"}.</p>
+      <section aria-label="Schedule and estimated costs" className="space-y-2 rounded-xl border bg-card p-3 text-sm">
+        <p><strong>Delivery:</strong> {p.options.scheduledFor ? new Date(p.options.scheduledFor).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Lagos" }) + " (Lagos)" : "Next available send window"}</p>
+        <p>Payment link: {p.options.includeInvoiceLink ? "Include when a single matching invoice has a valid link" : "Not requested"}. Mobile channel: {p.options.useWhatsApp ? "WhatsApp (school-owned Meta billing)" : "Existing push/SMS rules"}.</p>
+        {p.smsEstimate && <p>Potential SMS segments: {p.smsEstimate.segments} · Maximum estimate: {p.smsEstimate.maximumKobo === null ? "Unknown — pricing not configured" : formatKobo(BigInt(p.smsEstimate.maximumKobo))}</p>}
+        {p.whatsappEstimate && <p>WhatsApp recipients: {p.whatsappEstimate.recipients} · Maximum estimate: {p.whatsappEstimate.maximumKobo === null ? "Unknown — pricing not configured" : formatKobo(BigInt(p.whatsappEstimate.maximumKobo))}. The school's Meta account is charged directly.</p>}
+        <p className="text-xs text-muted-foreground">Estimates are not final charges. The server rechecks the invoice, recipient, payment link and channel before sending.</p>
+      </section>
       {p.batchErrors.map((e) => <p role="alert" key={e.code} className="text-sm text-destructive">{e.message}</p>)}
       {p.batchWarnings.map((w) => <p key={w.code} className="rounded-lg bg-muted/50 p-2 text-sm">{w.message}</p>)}
       <div className="max-h-64 overflow-auto rounded-lg border"><table className="w-full text-left text-sm"><caption className="sr-only">Server-reviewed reminder recipients</caption><thead className="sticky top-0 bg-card"><tr>{["Student", "Class", "Balance", "Decision", "Planned channels"].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr></thead><tbody>{p.students.map((s) => <tr key={s.studentId} className="border-t"><td className="min-w-36 p-2">{s.name ?? "Student unavailable"}<p className="text-xs">{s.admissionNumber}</p></td><td className="p-2">{s.classLabel ?? "—"}</td><td className="whitespace-nowrap p-2">{formatKobo(s.balance)}</td><td className="min-w-32 p-2">{eligibility[s.eligibility]}</td><td className="min-w-36 p-2">{s.planned.emailGuardians} guardian email(s) · {s.planned.mobile === "NONE" ? "no mobile send" : reason(s.planned.mobile)}</td></tr>)}</tbody></table></div>
@@ -75,6 +82,7 @@ function Panel({ session, onClose }: { session: DurableCampaignSession; onClose?
     </>}
     {c && <section className="space-y-3 text-sm" aria-label="Saved campaign results">
       <p role="status" className="font-semibold">Campaign: {c.status === "RUNNING" ? "In progress" : c.status === "HALTED" ? "Halted" : "Completed"}</p>
+      {c.scheduledFor && <p>Scheduled for {new Date(c.scheduledFor).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Lagos" })} (Lagos time).</p>}
       {c.heldForQuietHours && <p className="rounded-lg bg-muted/50 p-3">Sends are held for quiet hours, 21:00–06:00 Lagos time.</p>}
       {c.haltReason && <p role="alert">Stopped: {reason(c.haltReason)}. Resume requires a fresh permission and feature check.</p>}
       <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(c.counts).map(([outcome, count]) => <div className="rounded-lg bg-muted/50 p-2" key={outcome}><dt>{SEND_LABELS[outcome as ReminderSendOutcome]}</dt><dd className="text-lg font-semibold">{count}</dd></div>)}</dl>
