@@ -7,6 +7,7 @@ import type { DeliveryState, MessagingChannel, MessagingDeliveryPage, MessagingO
 import { PageHeader } from "@/components/layout/page-primitives";
 import { Button } from "@/components/ui/button";
 import { WalletFunding } from "@/components/messaging/wallet-funding";
+import { MetaSignup, MetaManagement, InboundHistory } from "@/components/messaging/meta-management";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
@@ -257,9 +258,9 @@ function WhatsAppPanel({ overview, canManage, onChange }: { overview: MessagingO
     } catch (e) { setError(message(e)); } finally { setBusy(false); }
   }
   return <div className="space-y-4">
-    <section className={panel}><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Your school's WhatsApp account</h2><Status label={(health?.status ?? status).toLowerCase().replace(/^./, (c) => c.toUpperCase())} good={(health?.status ?? status) === "CONNECTED"} /></div>
-      <p className="mt-2 text-sm text-muted-foreground">Use your school's own business identity. Meta charges your school directly. Connecting and sending are separate steps and require platform approval.</p>
-      {status === "DISCONNECTED" && <p className="mt-4 rounded-xl bg-muted p-3 text-sm">Account connection is not available in this interface yet. Existing email and app notifications can still be managed in notification settings.</p>}
+    <section className={panel}><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Your school&apos;s WhatsApp account</h2><Status label={(health?.status ?? status).toLowerCase().replace(/^./, (c) => c.toUpperCase())} good={(health?.status ?? status) === "CONNECTED"} /></div>
+      <p className="mt-2 text-sm text-muted-foreground">Use your school&apos;s own business identity. Meta charges your school directly. Connecting and sending are separate steps and require platform approval.</p>
+      {status === "DISCONNECTED" && (canManage ? <MetaSignup onConnected={onChange} /> : <p className="mt-4 rounded-xl bg-muted p-3 text-sm">Only an authorised school owner can connect a WhatsApp account.</p>)}
       <div className="mt-4 flex flex-wrap gap-2">
         <Button variant="outline" disabled={busy || status === "DISCONNECTED"} onClick={() => void inspect()}>{busy ? "Working…" : "Check account and templates"}</Button>
         {canManage && status !== "DISCONNECTED" && <Button variant="destructive" disabled={busy} onClick={() => void disconnect()}>Disconnect</Button>}
@@ -273,5 +274,7 @@ function WhatsAppPanel({ overview, canManage, onChange }: { overview: MessagingO
       <ul className="mt-3 divide-y">{(catalogue?.available ? catalogue.templates : overview.templates.map((t) => ({ ...t, id: t.name, category: null }))).map((t) => <li key={t.id} className="flex flex-wrap items-start justify-between gap-2 py-3"><div><p className="text-sm font-medium">{t.name.replaceAll("_", " ")}</p><p className="text-xs text-muted-foreground">{t.language ?? "Language not verified"}{t.category && " · " + t.category}</p></div><Status label={t.approval === "UNKNOWN" ? "Not verified" : t.approval.toLowerCase()} /></li>)}</ul>
       {catalogue?.available && catalogue.templates.length === 0 && <p className="mt-3 text-sm text-muted-foreground">No matching templates on this account.</p>}
     </section>
+    {canManage && status === "CONNECTED" && <MetaManagement names={overview.templates.filter((t) => t.name !== "setup_call_booked").map((t) => t.name)} onChanged={() => void inspect()} />}
+    {canManage && <InboundHistory />}
   </div>;
 }

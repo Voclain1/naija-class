@@ -72,7 +72,7 @@ function Panel({ session, onClose }: { session: DurableCampaignSession; onClose?
         <p><strong>Delivery:</strong> {p.options.scheduledFor ? new Date(p.options.scheduledFor).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Lagos" }) + " (Lagos)" : "Next available send window"}</p>
         <p>Payment link: {p.options.includeInvoiceLink ? "Include when a single matching invoice has a valid link" : "Not requested"}. Mobile channel: {p.options.useWhatsApp ? "WhatsApp (school-owned Meta billing)" : "Existing push/SMS rules"}.</p>
         {p.smsEstimate && <p>Potential SMS segments: {p.smsEstimate.segments} · Maximum estimate: {p.smsEstimate.maximumKobo === null ? "Unknown — pricing not configured" : formatKobo(BigInt(p.smsEstimate.maximumKobo))}</p>}
-        {p.whatsappEstimate && <p>WhatsApp recipients: {p.whatsappEstimate.recipients} · Maximum estimate: {p.whatsappEstimate.maximumKobo === null ? "Unknown — pricing not configured" : formatKobo(BigInt(p.whatsappEstimate.maximumKobo))}. The school's Meta account is charged directly.</p>}
+        {p.whatsappEstimate && <p>WhatsApp recipients: {p.whatsappEstimate.recipients} · Maximum estimate: {p.whatsappEstimate.maximumKobo === null ? "Unknown — pricing not configured" : formatKobo(BigInt(p.whatsappEstimate.maximumKobo))}. The school&apos;s Meta account is charged directly.</p>}
         <p className="text-xs text-muted-foreground">Estimates are not final charges. The server rechecks the invoice, recipient, payment link and channel before sending.</p>
       </section>
       {p.batchErrors.map((e) => <p role="alert" key={e.code} className="text-sm text-destructive">{e.message}</p>)}
