@@ -1,12 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { MessagingPlatformControls, MessagingReconciliationReport, PaystackPaymentExceptionStatus, PaystackWebhookDeadLetterPage, PlatformAdminSchoolDto } from "@school-kit/types";
+import type { MessagingPlatformControls, MessagingReconciliationReport, MessagingSpendLimitState, PaystackPaymentExceptionStatus, PaystackWebhookDeadLetterPage, PlatformAdminSchoolDto } from "@school-kit/types";
 import { Button } from "@/components/ui/button";
 import { ConsoleHeading } from "@/components/super-admin/console-shell";
 import { usePlatformLoad } from "@/components/super-admin/platform-load";
 import { ApiError, proxyFetch } from "@/lib/api-client";
 import { formatKobo } from "@/lib/finance/format";
+import { parseTopUpNaira } from "@/lib/messaging/wallet-funding";
 
 type Exception = { reference: string; invoiceId: string | null; reason: string; expectedKobo: string | null; observedKobo: string | null; observedCurrency: string | null; unappliedKobo: string | null; createdAt: string; reviewStatus: PaystackPaymentExceptionStatus; reviewedAt: string | null };
 type TopUp = { reference: string; reconciliationCode: string | null; amountKobo: string; recoveryAttempts: number; createdAt: string };
@@ -43,12 +44,36 @@ function LoadState({ loading, error, empty }: { loading: boolean; error: string 
   return empty ? <p className="text-sm text-muted-foreground">No records returned.</p> : null;
 }
 
+function SpendingLimit({ current, path, onDone }: { current: MessagingSpendLimitState; path: string; onDone: () => void }) {
+  const [amount, setAmount] = useState("");
+  const parsed = amount.trim() === "0" ? "0" : parseTopUpNaira(amount);
+  return <div className="space-y-3 rounded-xl border p-3"><p className="text-sm">Recorded override: {current.dailyKobo === null ? "No override" : money(current.dailyKobo)}. Deployment ceilings still apply.</p>
+    <label className="block space-y-1 text-sm"><span>New daily ceiling (₦; zero pauses expenditure)</span><input className={inputStyle} value={amount} inputMode="decimal" onChange={(e) => setAmount(e.target.value)} /></label>
+    {parsed !== null && <EvidenceAction key={parsed} label={"Set daily ceiling to " + money(parsed)} path={path} body={{dailyKobo: parsed}} onDone={onDone} confirmation="Apply this spending ceiling? The backend enforces deployment limits and records the decision." />}
+  </div>;
+}
+
+function ReservationReview({ row, url, onDone }: { row: MessagingReconciliationReport["items"][number]; url: string; onDone: () => void }) {
+  const [resolution, setResolution] = useState<"SETTLE" | "RELEASE">("SETTLE");
+  const [charge, setCharge] = useState("");
+  const parsed = resolution === "RELEASE" ? "0" : parseTopUpNaira(charge);
+  const eligible = row.status === "PENDING_EVIDENCE" || row.status === "DISCREPANCY";
+  if (!eligible) return null;
+  return <details className="space-y-2 rounded-xl border p-3"><summary className="cursor-pointer font-medium">Evidence-based resolution</summary><p className="text-xs text-muted-foreground">Use a verified provider statement or other authorised financial evidence. Elapsed time alone is never evidence of non-charge.</p>
+    <label className="block space-y-1"><span>Resolution</span><select className={inputStyle} value={resolution} onChange={e => setResolution(e.target.value === "RELEASE" ? "RELEASE" : "SETTLE")}><option value="SETTLE">Settle confirmed charge</option><option value="RELEASE">Release verified non-charge</option></select></label>
+    {resolution === "SETTLE" && <label className="block space-y-1"><span>Confirmed provider charge (₦)</span><input className={inputStyle} inputMode="decimal" value={charge} onChange={e => setCharge(e.target.value)} /></label>}
+    {parsed !== null && BigInt(parsed) <= BigInt(row.reservedKobo) && <EvidenceAction key={resolution + ":" + parsed} label={resolution === "RELEASE" ? "Release verified non-charge" : "Settle " + money(parsed)} path={url + "/messaging/deliveries/" + encodeURIComponent(row.deliveryId) + "/reconcile"} body={{resolution,providerChargedKobo:parsed}} confirmation="Confirm this financial resolution against verified provider evidence? The action is audited and changes reserved funds." onDone={onDone} />}
+  </details>;
+}
+
 function SchoolReview({ schoolId }: { schoolId: string }) {
   const url = base + "/schools/" + encodeURIComponent(schoolId);
   const [exceptions, , exceptionError, reloadExceptions] = usePlatformLoad<{ items: Exception[] }>(url + "/payments/reconciliation", "Could not load payment exceptions.");
   const [topUps, , topUpError, reloadTopUps] = usePlatformLoad<{ items: TopUp[] }>(url + "/messaging/top-up-reconciliation", "Could not load top-up exceptions.");
   const [holds, , holdError, reloadHolds] = usePlatformLoad<MessagingReconciliationReport>(url + "/messaging/reconciliation", "Could not load reservation reconciliation.");
+  const [limit, , limitError, reloadLimit] = usePlatformLoad<MessagingSpendLimitState>(url + "/messaging/spending-limit", "Could not load school spending limit.");
   return <>
+    <section className={panel}><div className="flex flex-wrap justify-between gap-2"><h2 className="font-semibold">School messaging ceiling</h2><Button size="sm" variant="outline" onClick={reloadLimit}>Refresh</Button></div><LoadState loading={!limit} error={limitError} />{limit && <SpendingLimit current={limit} path={url + "/messaging/spending-limit"} onDone={reloadLimit} />}</section>
     <section className={panel}><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">School payment exceptions</h2><Button size="sm" variant="outline" onClick={reloadExceptions}>Refresh</Button></div><p className="text-sm text-muted-foreground">Review is not allocation, refund or resolution. Received but unapplied funds require authorised financial handling.</p>
       <LoadState loading={!exceptions} error={exceptionError} empty={exceptions?.items.length === 0} />
       {exceptions?.items.map((row) => <article key={row.reference + ":" + row.reason} className="space-y-3 rounded-xl border p-3 text-sm">
@@ -63,8 +88,8 @@ function SchoolReview({ schoolId }: { schoolId: string }) {
       {topUps?.items.map((row) => <article key={row.reference} className="space-y-2 rounded-xl border p-3 text-sm"><p className="font-semibold">{money(row.amountKobo)} · {row.reconciliationCode ? display(row.reconciliationCode) : "Pending verification"}</p><p className="break-all text-xs text-muted-foreground">{row.reference} · Attempts: {row.recoveryAttempts}</p><EvidenceAction label="Recheck top-up" path={url + "/messaging/top-up-reconciliation/" + encodeURIComponent(row.reference) + "/recover"} confirmation="Recheck this payment with Paystack? Only verified net credit can be applied." onDone={reloadTopUps} /></article>)}
       {topUps?.items.length === 100 && <p className="text-xs text-muted-foreground">First 100 cases returned; further cases may exist.</p>}
     </section>
-    <section className={panel}><div className="flex flex-wrap justify-between gap-2"><h2 className="font-semibold">SMS reservations</h2><Button size="sm" variant="outline" onClick={reloadHolds}>Refresh</Button></div><p className="text-sm text-muted-foreground">Escalation is an investigation deadline, never a release of uncertain funds. This view does not authorize manual debits or credits.</p><LoadState loading={!holds} error={holdError} empty={holds?.items.length === 0} />
-      {holds?.items.map((row) => <article key={row.deliveryId} className="space-y-2 rounded-xl border p-3 text-sm"><p className="font-semibold">{display(row.status)}{row.escalatedAt ? " · escalated" : ""}</p><p className="break-all text-xs text-muted-foreground">{row.deliveryId}</p><dl className="grid gap-2 sm:grid-cols-3"><div><dt>Reserved</dt><dd>{money(row.reservedKobo)}</dd></div><div><dt>Charged</dt><dd>{money(row.chargedKobo)}</dd></div><div><dt>Released</dt><dd>{money(row.releasedKobo)}</dd></div></dl>{row.discrepancyRecorded && <p className="text-xs text-muted-foreground">Discrepancy recorded; provider evidence required.</p>}</article>)}
+    <section className={panel}><div className="flex flex-wrap justify-between gap-2"><h2 className="font-semibold">SMS reservations</h2><Button size="sm" variant="outline" onClick={reloadHolds}>Refresh</Button></div><p className="text-sm text-muted-foreground">Escalation is an investigation deadline, never a release of uncertain funds. Any settlement or release requires verified provider evidence and an audited operator decision.</p><LoadState loading={!holds} error={holdError} empty={holds?.items.length === 0} />
+      {holds?.items.map((row) => <article key={row.deliveryId} className="space-y-2 rounded-xl border p-3 text-sm"><p className="font-semibold">{display(row.status)}{row.escalatedAt ? " · escalated" : ""}</p><p className="break-all text-xs text-muted-foreground">{row.deliveryId}</p><dl className="grid gap-2 sm:grid-cols-3"><div><dt>Reserved</dt><dd>{money(row.reservedKobo)}</dd></div><div><dt>Charged</dt><dd>{money(row.chargedKobo)}</dd></div><div><dt>Released</dt><dd>{money(row.releasedKobo)}</dd></div></dl>{row.discrepancyRecorded && <p className="text-xs text-muted-foreground">Discrepancy recorded; provider evidence required.</p>}<ReservationReview row={row} url={url} onDone={reloadHolds} /></article>)}
       {holds?.truncated && <p className="text-xs text-muted-foreground">Additional reservations exist.</p>}
     </section>
   </>;
@@ -80,7 +105,7 @@ export default function PlatformCommunicationsPage() {
     <section className={panel}><div className="flex flex-wrap justify-between gap-2"><h2 className="font-semibold">Platform release status</h2><Button size="sm" variant="outline" onClick={reloadControls}>Refresh</Button></div><LoadState loading={!controls} error={controlError} />
       {controls && <><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Paid dispatch</p><strong>{controls.paidSendingEnabled ? "Enabled" : "Disabled"}</strong></div><div className="rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">School WhatsApp onboarding</p><strong>{controls.embeddedSignupEnabled ? "Enabled" : "Disabled"}</strong></div><div className="rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Daily platform ceiling</p><strong>{money(controls.dailyLimitKobo)}</strong></div></div>
         <div className="grid gap-3 sm:grid-cols-2">{(["SMS", "WHATSAPP"] as const).map((channel) => <div key={channel} className="space-y-2 rounded-xl border p-3"><h3 className="text-sm font-medium">{channel === "SMS" ? "SMS" : "WhatsApp"}</h3><p className="text-xs text-muted-foreground">Emergency state: {controls.emergency?.[channel]?.stopped === true ? "Stopped" : controls.emergency?.[channel]?.stopped === false ? "Not stopped" : "Unknown"}</p>{controls.emergency?.[channel]?.stopped === false && <EvidenceAction label="Emergency stop" path={base + "/messaging/emergency-controls"} body={{ channel, stopped: true }} confirmation={"Stop " + channel + " before its next eligible provider request? In-flight sends cannot be recalled."} onDone={reloadControls} />}</div>)}</div>
-        <h3 className="text-sm font-semibold">Recorded price versions</h3>{controls.prices.length === 0 && <p className="text-sm text-muted-foreground">No verified prices returned.</p>}<div className="divide-y">{controls.prices.map((price) => <div key={price.schoolId + ":" + price.key + ":" + price.version} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><div><p>{display(price.key)} · {price.version}</p><p className="break-all text-xs text-muted-foreground">{price.schoolId}</p><p className="text-xs text-muted-foreground">{price.effective ? "Effective" : "Not effective"} · Verified {timestamp(price.verifiedAt)}</p></div><strong>{money(price.unitPriceKobo)}</strong></div>)}</div></>}
+        {controls.platformSpendLimit && <SpendingLimit current={controls.platformSpendLimit} path={base + "/messaging/spending-limit"} onDone={reloadControls} />}<h3 className="text-sm font-semibold">Recorded price versions</h3>{controls.prices.length === 0 && <p className="text-sm text-muted-foreground">No verified prices returned.</p>}<div className="divide-y">{controls.prices.map((price) => <div key={price.schoolId + ":" + price.key + ":" + price.version} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><div><p>{display(price.key)} · {price.version}</p><p className="break-all text-xs text-muted-foreground">{price.schoolId}</p><p className="text-xs text-muted-foreground">{price.effective ? "Effective" : "Not effective"} · Verified {timestamp(price.verifiedAt)}</p></div><strong>{money(price.unitPriceKobo)}</strong></div>)}</div></>}
     </section>
     <section className={panel}><div className="flex flex-wrap justify-between gap-2"><h2 className="font-semibold">Paystack webhook review</h2><Button size="sm" variant="outline" onClick={reloadDead}>Refresh</Button></div><LoadState loading={!dead} error={deadError} empty={dead?.items.length === 0} />
       {dead?.items.map((row) => <article className="space-y-2 rounded-xl border p-3 text-sm" key={row.eventKey}><div className="flex flex-wrap justify-between gap-2"><strong>{row.eventType}</strong><span>{row.attempts} attempts</span></div><p className="break-all text-xs text-muted-foreground">{row.reference ?? row.eventKey} · {timestamp(row.deadAt)}</p>{row.requiresFinancialReview ? <p className="text-sm text-muted-foreground">Financial review only — replay as a charge is prohibited.</p> : <EvidenceAction label="Queue audited replay" path={base + "/payments/webhooks/dead-letters/" + encodeURIComponent(row.eventKey) + "/replay"} confirmation="Requeue this existing authenticated event? Do not submit a new payment. Financial idempotency rules still apply." onDone={reloadDead} />}</article>)}

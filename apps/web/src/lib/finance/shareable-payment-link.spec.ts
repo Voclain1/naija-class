@@ -42,6 +42,12 @@ describe("shareablePaymentLinkUrl", () => {
     expect(shareablePaymentLinkUrl(live(BALANCE + 1), BALANCE)).toBeNull();
   });
 
+  it("never shares expired or malformed expiry links, even with a matching balance", () => {
+    expect(shareablePaymentLinkUrl({ ...live(BALANCE), expiresAt: "2000-01-01T00:00:00Z" }, BALANCE)).toBeNull();
+    expect(shareablePaymentLinkUrl({ ...live(BALANCE), expiresAt: "not a date" }, BALANCE)).toBeNull();
+    expect(shareablePaymentLinkUrl({ ...live(BALANCE), expiresAt: "2099-01-01T00:00:00Z" }, BALANCE)).toBe("https://paystack.com/pay/PRQ_abc");
+  });
+
   it("returns null for a missing state", () => {
     expect(shareablePaymentLinkUrl(null, BALANCE)).toBeNull();
     expect(shareablePaymentLinkUrl(undefined, BALANCE)).toBeNull();

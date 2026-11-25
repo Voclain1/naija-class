@@ -131,6 +131,8 @@ export default function InvoiceDetailPage() {
   const [installmentLinkError, setInstallmentLinkError] = useState<string | null>(null);
   const [paymentLink, setPaymentLink] = useState<PaymentLinkStateDto | undefined>(undefined);
   const [paymentLinkBusy, setPaymentLinkBusy] = useState(false);
+  const [linkClock, setLinkClock] = useState(Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setLinkClock(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
   const [paymentLinkError, setPaymentLinkError] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -497,7 +499,7 @@ export default function InvoiceDetailPage() {
         return [
           "Instalment " + (index + 1), entry.dueDate, formatKobo(entry.amount),
           entry.paid ? "Paid" : formatKobo(entry.outstanding ?? entry.amount) + " outstanding",
-          link?.state === "LIVE" && !entry.paid ? link.url : null,
+          link?.state === "LIVE" && !entry.paid && (!link.expiresAt || Date.parse(link.expiresAt) > Date.now()) ? link.url : null,
         ].filter(Boolean).join(" · ");
       }),
       "Sign into your SchoolKit parent portal to view the invoice and make a payment.",
@@ -519,7 +521,11 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  async function handleCopyPaymentLink(url: string) {
+  async function handleCopyPaymentLink(url: string, expiresAt?: string | null) {
+    if (expiresAt && !(Date.parse(expiresAt) > Date.now())) {
+      setPaymentLinkError("This link has expired. Refresh before sharing.");
+      return;
+    }
     await navigator.clipboard.writeText(url);
     setLinkCopied(true);
     window.setTimeout(() => setLinkCopied(false), 2000);
@@ -735,7 +741,7 @@ export default function InvoiceDetailPage() {
                 <Link2 className="h-4 w-4" /> Share payment link
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Create one durable link for the current balance. It is automatically disabled when the invoice changes.
+                Create a link for the current balance. SchoolKit invalidates stale links; a provider-hosted page may remain reachable until Paystack completes archival.
               </p>
             </div>
             <Button variant="ghost" size="sm" onClick={refreshPaymentLink} disabled={paymentLinkBusy}>
@@ -755,8 +761,11 @@ export default function InvoiceDetailPage() {
                 <Link href="/settings/finance/payments">Open Paystack settings</Link>
               </Button>
             </div>
+          ) : paymentLink.state === "LIVE" && paymentLink.expiresAt && (!Number.isFinite(Date.parse(paymentLink.expiresAt)) || Date.parse(paymentLink.expiresAt) <= linkClock) ? (
+            <div className="space-y-2"><p className="text-sm text-amber-700 dark:text-amber-300">This link has expired. Do not share it. Refresh the status before replacing it.</p><Button variant="outline" size="sm" disabled={paymentLinkBusy} onClick={refreshPaymentLink}>Check expired link</Button></div>
           ) : paymentLink.state === "LIVE" ? (
             <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">{paymentLink.expiresAt ? "Valid until " + new Date(paymentLink.expiresAt).toLocaleString("en-NG", { timeZone: "Africa/Lagos" }) + " (Lagos time)" : "Existing link — no recorded expiry. Refresh before sharing."}</p>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   aria-label="Shareable payment link"
@@ -764,7 +773,7 @@ export default function InvoiceDetailPage() {
                   value={paymentLink.url}
                   className={`${INPUT_CLASSES} font-mono text-xs`}
                 />
-                <Button variant="outline" onClick={() => handleCopyPaymentLink(paymentLink.url)}>
+                <Button variant="outline" onClick={() => handleCopyPaymentLink(paymentLink.url, paymentLink.expiresAt)}>
                   <Copy className="mr-2 h-4 w-4" /> {linkCopied ? "Copied" : "Copy"}
                 </Button>
                 <Button asChild>
@@ -777,6 +786,7 @@ export default function InvoiceDetailPage() {
                     }))}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={(event) => { if (paymentLink.expiresAt && (!Number.isFinite(Date.parse(paymentLink.expiresAt)) || Date.parse(paymentLink.expiresAt) <= Date.now())) { event.preventDefault(); setPaymentLinkError("This link has expired. Refresh before sharing."); } }}
                   >
                     <MessageCircle className="mr-2 h-4 w-4" /> Share on WhatsApp
                   </a>
@@ -790,16 +800,18 @@ export default function InvoiceDetailPage() {
               </p>
             </div>
           ) : paymentLink.state === "CREATING" ? (
-            <p className="text-sm text-muted-foreground">Payment link creation is in progress. Refresh shortly.</p>
+            <p className="text-sm text-muted-foreground">{paymentLink.lifecycle === "INVALIDATION_PENDING" ? "The previous link is being invalidated. Refresh before creating a replacement." : "Payment link creation is in progress. Refresh shortly."}</p>
           ) : paymentLink.state === "RETRYABLE_FAILURE" ? (
             <div className="space-y-2">
               <p className="text-sm text-destructive">
-                The previous link could not be completed. No payment URL was exposed.
+                {paymentLink.lifecycle === "EXPIRED" ? "The previous link expired. Create a replacement for the current balance." : "The previous link could not be completed. No payment URL was exposed."}
               </p>
               <Button size="sm" onClick={handleCreatePaymentLink} disabled={paymentLinkBusy}>
-                Retry creating link
+                {paymentLink.lifecycle === "EXPIRED" ? "Create replacement link" : "Retry creating link"}
               </Button>
             </div>
+          ) : paymentLink.lifecycle === "ALREADY_PAID" ? (
+            <p className="text-sm font-medium">This invoice is already paid. Refresh the invoice to see its latest status.</p>
           ) : (
             <Button size="sm" onClick={handleCreatePaymentLink} disabled={paymentLinkBusy}>
               <ExternalLink className="mr-2 h-4 w-4" />
@@ -868,11 +880,7 @@ export default function InvoiceDetailPage() {
                       className={`text-right font-mono tabular-nums font-medium ${p.status === "REVERSED" ? "text-muted-foreground line-through" : ""}`}
                     >
                       {formatKobo(p.amount)}
-                      {Boolean(p.unappliedKobo) && (
-                        <span className="block text-xs font-normal text-muted-foreground">
-                          {formatKobo(p.unappliedKobo ?? 0)} awaiting reconciliation
-                        </span>
-                      )}
+                      {p.unappliedKobo !== undefined && p.unappliedKobo > 0 && <div className="mt-1 space-y-1 text-xs font-normal text-muted-foreground"><p>Applied: {formatKobo(p.allocatedKobo ?? 0)}</p><p className="text-amber-700 dark:text-amber-300">Unapplied: {formatKobo(p.unappliedKobo)}</p></div>}
                     </TableCell>
                     <TableCell>
                       <Badge variant={PAYMENT_STATUS_VARIANTS[p.status]}>
@@ -883,7 +891,7 @@ export default function InvoiceDetailPage() {
                       <div className="flex items-center justify-end gap-3">
                         {/* The receipt is the main action on a paid row — a real
                             button, with its number beside it (2026-09-22). */}
-                        {p.receiptUrl ? (
+                        {p.allocatedKobo === 0 ? <span className="text-xs text-muted-foreground">No invoice receipt — funds unapplied</span> : p.receiptUrl ? (
                           <div className="flex flex-col items-end gap-0.5">
                             <Button size="sm" onClick={() => handleOpenReceipt(p.id)}>
                               <Receipt className="mr-1.5 h-4 w-4" />
@@ -904,7 +912,7 @@ export default function InvoiceDetailPage() {
                             {reissuingId === p.id ? "Issuing…" : "Issue receipt"}
                           </Button>
                         ) : null}
-                        {p.status === "SUCCESS" && p.receiptUrl && (
+                        {p.status === "SUCCESS" && p.allocatedKobo !== 0 && p.receiptUrl && (
                           <button
                             onClick={() => handleReissueReceipt(p.id, p.receiptNumber)}
                             disabled={reissuingId === p.id}
@@ -913,7 +921,7 @@ export default function InvoiceDetailPage() {
                             {reissuingId === p.id ? "Re-issuing…" : "Re-issue"}
                           </button>
                         )}
-                        {p.status === "SUCCESS" && (
+                        {p.status === "SUCCESS" && !(p.unappliedKobo !== undefined && p.unappliedKobo > 0) && (
                           <button
                             onClick={() => openRefundDialog(p.id, p.amount)}
                             className="text-xs text-destructive hover:underline"
@@ -991,9 +999,9 @@ export default function InvoiceDetailPage() {
                       <TableCell>
                         {!inst.paid && !["CANCELLED", "REFUNDED"].includes(invoice.status) && (
                           <div className="flex flex-wrap gap-2">
-                            {link?.state === "LIVE" ? (
+                            {link?.state === "LIVE" && (!link.expiresAt || Date.parse(link.expiresAt) > linkClock) ? (
                               <>
-                                <Button size="sm" variant="outline" onClick={() => void handleCopyPaymentLink(link.url)}>Copy</Button>
+                                <Button size="sm" variant="outline" onClick={() => void handleCopyPaymentLink(link.url, link.expiresAt)}>Copy</Button>
                                 <Button asChild size="sm" variant="outline">
                                   <a href={"mailto:?subject=School%20fee%20instalment&body=" + encodeURIComponent(link.url)}>Email</a>
                                 </Button>

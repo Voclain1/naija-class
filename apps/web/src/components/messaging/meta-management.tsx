@@ -112,7 +112,7 @@ export function MetaSignup({ onConnected }: { onConnected: () => void }) {
     {phase === "preparing" && <p role="status" className="text-sm">Checking onboarding availability…</p>}
     {phase === "waiting" && <><p role="status" className="text-sm">Complete the Meta window, including the final Finish button.</p><Button variant="outline" onClick={() => { cleanup.current?.(); setSession(null); setPhase("uncertain"); setError("Signup stopped locally. Check Meta and refresh before restarting."); }}>Stop waiting</Button></>}
     {phase === "verifying" && <p role="status" className="text-sm">Verifying account ownership and registration details…</p>}
-    {phase === "uncertain" && <Button variant="outline" onClick={onConnected}>Refresh account status</Button>}
+    {phase === "uncertain" && <Button variant="outline" onClick={() => window.location.reload()}>Reload account status</Button>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
   </div>;
 }
@@ -150,8 +150,8 @@ export function MetaManagement({ names, onChanged }: { names: string[]; onChange
     } catch (e) { setError(errorText(e)); setUncertain(true); }
     finally { lock.current = false; setBusy(false); }
   }
-  return <section className={box}>
-    <h2 className="text-lg font-semibold">Account & template management</h2>
+  return <section className={box + " ph-no-capture"} data-sentry-mask>
+    <h2 className="text-lg font-semibold">Account &amp; template management</h2>
     <p className="text-sm text-muted-foreground">These actions require separate platform releases. Do not submit a PIN or repeat a request when Meta already completed it.</p>
     <div className="space-y-2 rounded-xl border p-3"><label className="block space-y-1 text-sm"><span>Six-digit phone registration PIN</span><input type="password" inputMode="numeric" autoComplete="off" className={input} value={pin} maxLength={6} disabled={busy || uncertain} onChange={e => setPin(e.target.value.replace(/\D/g,"").slice(0,6))} /></label><Button variant="outline" disabled={busy || uncertain || !/^\d{6}$/.test(pin)} onClick={() => void action("register")}>Request registration</Button></div>
     <div className="space-y-3 rounded-xl border p-3"><h3 className="font-semibold">Submit a utility template</h3>
