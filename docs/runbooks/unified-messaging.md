@@ -352,3 +352,78 @@ link may still require financial reconciliation. The verified provider payment
 time determines eligibility. Funds received outside the cutoff are unapplied.
 Use the audited payment exception queue. Never refund or apply surplus from a
 support note or webhook replay alone.
+
+
+### First production cutover — mandatory pre-merge evidence (PR #563)
+
+The main baseline `61b5c214` has no Paystack webhook inbox and uses synchronous
+legacy-signature handling. Muse's specific FORCE RLS incompatibility is with
+the intermediate draft `36bb072`, not that main baseline. Verify the actual
+running API image, rather than assuming it is main. Do not deploy or use an
+intermediate draft image as a rollback target.
+
+The VPS workflow currently migrates before switching images and rewrites
+`api.env` from the GitHub `API_ENV_FILE` secret (except the documented two
+voice overrides). A setting changed only on the VPS can be overwritten.
+The new read-only PR preflight checks the candidate secret's structure
+without printing values and inspects running image/schema metadata. It
+does not establish provider delivery, backup restorability or SMS capacity.
+
+**Before merge / production authorization:**
+
+1. Obtain green exact-head CI and read-only cutover preflight. Verify the
+   live Paystack endpoint remains `/api/v1/payments/paystack/webhook`.
+   Confirm actual timestamped `Paystack-Signature` delivery with the live
+   signing keyring through the Paystack dashboard or a controlled rehearsal.
+   Do not log signing headers, secrets, or payment payloads. Confirm the
+   pre-cutover legacy image can still receive the provider's signature on
+   rollback; if not, a compatible rollback image must be rehearsed first.
+2. Review existing school/producer SMS authorization and actual DND unit
+   rates/capacity. Choose explicit `off` only if intentional cessation is
+   authorized; otherwise use `existing-authorized` with the school/producer
+   allowlist, current verified rates and both ceilings. Run permitted,
+   denied, exhausted and emergency-stop cases in isolation, with no real
+   sends. The presence of a Termii key is not proof of active service.
+3. Keep new paid dispatch, checkout/recovery, shared sender, Meta onboarding,
+   phone registration, template submission, inbound retention and provider
+   report processing off. Preserve existing internal notifications and
+   Paystack fee collection credentials. Confirm Fly auto-deploy is disabled.
+4. Verify an independently restorable recent backup, the exact old image tag,
+   and the rollback configuration. Rehearse the migration and rollback on
+   a private clone using fictional data. Confirm health, runtime role,
+   existing payment/receipt behavior, queue recovery and RLS.
+5. Record the sign-off and schedule a maintenance window. For the first
+   cutover, pause automated production deployment using
+   `VPS_DEPLOY_ENABLED=false` until ready. The added independent guard
+   requires `UNIFIED_MESSAGING_CUTOVER_APPROVED=true` before a live deploy
+   may proceed; leave it unset until steps 1–4 are evidenced. Do not turn
+   this into a bypass for incomplete evidence.
+
+**During the approved window:** stop/drain the old API and background workers
+before the first migration; keep Postgres and Redis running. Requests
+during the window must receive a retryable error, not a synthetic success.
+Verify no active webhook processing remains; record pending payment
+references in the secure operator journal. Apply migrations, boot the
+candidate with new paid gates off, and verify health and DB role before
+returning traffic. Verify signed webhook receipt, asynchronous completion,
+invoice allocation, receipts, existing email and internal alerts, and
+approved legacy SMS readiness. Review pending/dead-letter counts, payment
+exceptions and provider reconciliation. Do not initiate live test payments
+without separate owner authorization.
+
+**Rollback:** stop candidate workers first, prevent new webhook acceptance,
+retain all database changes, inbox payloads and dedupe keys, and inspect
+outstanding inbox work. The pre-inbox main image does not read the inbox;
+therefore RLS need not be relaxed for that target. Reconcile every accepted
+but unprocessed event via an audited, rehearsed compatible worker or
+provider verification; old synchronous code will not pick up those rows.
+Never delete or reset the inbox or restore an earlier database over newer
+payments. Restore the exact previous image and compatible config and
+verify its legacy webhook signature delivery before resuming. If recovery
+requires an intermediate inbox image, stop and obtain a separate reviewed
+compatibility plan; do not disable FORCE RLS in live production as an
+automatic rollback step. The existing generic deploy script does not
+implement a traffic drain or this financial recovery procedure. Use the
+approved controlled procedure rather than claiming automatic rollback is
+sufficient. First-cutover rehearsal and live provider confirmation remain
+unverified until evidence is recorded.

@@ -1,0 +1,56 @@
+# One-time, read-only deployment checks for the trusted messaging PR.
+# No deployment, provider calls, DB writes, or secret values in output.
+name: messaging-cutover-preflight
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  candidate-config:
+    if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/unified-messaging-infrastructure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Check candidate configuration without exposing values
+        env:
+          API_ENV_FILE: ${{ secrets.API_ENV_FILE }}
+          FLY_DEPLOY_DISABLED: ${{ vars.FLY_DEPLOY_DISABLED }}
+          VPS_MODE: ${{ vars.VPS_MODE }}
+        run: node scripts/check-messaging-cutover.mjs
+  live-metadata:
+    if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/unified-messaging-infrastructure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Inspect running image and database schema (read only)
+        run: |
+          ssh vps 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/school-kit
+          tag=$(sed -n 's/^APP_TAG=//p' deploy.env)
+          [[ "$tag" =~ ^[a-f0-9]{40}$ ]] || { echo "BLOCK deployed tag is not a single commit SHA"; exit 1; }
+          echo "Recorded deployment tag: $tag"
+          cid=$(docker compose --env-file deploy.env -f docker-compose.yml ps -q api 2>/dev/null)
+          [ -n "$cid" ] || { echo "BLOCK API container unavailable"; exit 1; }
+          image=$(docker inspect --format '{{.Config.Image}}' "$cid")
+          [[ "$image" == *"/school-kit-api:$tag" ]] || { echo "BLOCK running API image differs from recorded tag"; exit 1; }
+          echo "PASS running API image matches recorded tag"
+          docker compose --env-file deploy.env -f docker-compose.yml exec -T postgres psql -U postgres -d school_kit -X -v ON_ERROR_STOP=1 -Atc "BEGIN READ ONLY; SELECT CASE WHEN to_regclass('public.paystack_webhook_inbox') IS NULL THEN 'Paystack inbox: not installed' ELSE 'Paystack inbox: installed; review rollback target' END; COMMIT;" 2>/dev/null || { echo "BLOCK read-only schema inspection unavailable"; exit 1; }
+          curl -fsS --max-time 10 -o /dev/null http://127.0.0.1:4000/api/v1/health
+          echo "PASS existing API health"
+          REMOTE
