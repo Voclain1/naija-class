@@ -40,7 +40,6 @@ jobs:
 
       - name: Check settings
         env:
-          BACKUP_ENV_FILE: ${{ secrets.BACKUP_ENV_FILE }}
           API_ENV_FILE: ${{ secrets.API_ENV_FILE }}
           WEB_ENV_FILE: ${{ secrets.WEB_ENV_FILE }}
           PORTAL_ENV_FILE: ${{ secrets.PORTAL_ENV_FILE }}
@@ -51,20 +50,11 @@ jobs:
           WEB_HOST: ${{ vars.VPS_WEB_HOST }}
           PORTAL_HOST: ${{ vars.VPS_PORTAL_HOST }}
           VPS_MODE: ${{ vars.VPS_MODE }}
-          UNIFIED_MESSAGING_CUTOVER_APPROVED: ${{ vars.UNIFIED_MESSAGING_CUTOVER_APPROVED }}
         run: |
           missing=0
-          if [ "$VPS_MODE" = live ] && [ "$UNIFIED_MESSAGING_CUTOVER_APPROVED" != true ]; then
-            echo '::error::Unified messaging live cutover is not signed off. Complete the runbook evidence and controlled migration procedure before enabling deployment.'
-            missing=1
-          fi
-          if [ "$VPS_MODE" = live ]; then
-            for key in BACKUP_BUCKET WALG_S3_PREFIX AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT AWS_REGION HEALTHCHECK_PING_URL; do
-              if ! printf '%s\n' "$BACKUP_ENV_FILE" | grep -qE "^${key}=[^[:space:]]"; then
-                echo "::error::Live backup configuration is missing $key"
-                missing=1
-              fi
-            done
+          if [ "$VPS_MODE" != rehearsal ]; then
+            echo '::error::This migration-first workflow is rehearsal-only. Use the separately approved controlled live cutover.'
+            exit 1
           fi
           for v in API_ENV_FILE WEB_ENV_FILE PORTAL_ENV_FILE POSTGRES_PASSWORD SCHOOL_KIT_DB_PASSWORD \
                    APP_USER_DB_PASSWORD API_HOST WEB_HOST PORTAL_HOST; do
@@ -166,7 +156,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
 
       # A failed pull can fill the VPS disk before the health/rollback path runs.
-      # Remove only disposable build cache and dangling images; never prune
+      # Remove only disposable build cache; never prune
       # volumes, tagged rollback images, containers, or school data.
       - name: VPS disk preflight
         run: |
@@ -176,7 +166,6 @@ jobs:
           df -h /var/lib/docker /var/lib/containerd /opt/school-kit 2>/dev/null || df -h /
           docker system df || true
           docker builder prune -af --filter 'until=24h'
-          docker image prune -f
           echo '=== Disk space after safe cleanup ==='
           df -h /var/lib/docker /var/lib/containerd /opt/school-kit 2>/dev/null || df -h /
           free_kb=$(df -Pk /var/lib/containerd 2>/dev/null | awk 'NR==2 {print $4}')

@@ -510,3 +510,38 @@ The owner proved these options with a disposable R2 object using the
 previously installed rclone. Validate the pinned binary with a scheduled
 database backup and isolated restore before clearance. Verify a WAL-G
 base backup and replay archived WAL in a separate recovery exercise.
+
+#### Hosted release images and independent backup rollout
+
+The PR #563 `batch2-images` workflow publishes API candidate, allocation-aware
+recovery API, and PostgreSQL 18 backup tooling images to the existing GHCR
+namespace with run-specific tags. Use the digest references in the
+`batch2-image-digests` artifact. The build uses the repository package token.
+The rehearsal creates fictional credentials and an internal Docker network.
+It does not SSH to the VPS. Capture the rehearsal result alongside the digests.
+The generic VPS workflow and host deployment script are rehearsal-only.
+Owner approval alone does not re-enable their migration-first and automatic
+rollback paths on live systems.
+
+After explicit owner authorization, record the current `ops` and Postgres
+container IDs, current ops image, and protected configuration metadata.
+Pull the reviewed backup digest. Add a separate Compose override defining
+only `services.ops.image` as that immutable digest. Use the existing project
+and env file and that override to recreate just ops:
+
+```sh
+docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml up -d --no-deps --no-build --pull never ops
+```
+
+Check that the Postgres ID and start time are unchanged. Keep `backup.env`
+and credentials untouched. If ops fails, restore the recorded ops image
+using the same override and scoped command. Do not recreate Postgres to
+update rclone. Keep the override in the owner-approved operations
+configuration so later releases do not accidentally replace the pinned ops
+image. Verify cron output and a scheduled completed dump marker, independently
+download and check its checksum, then restore into a private scratch instance.
+Confirm retention and the missed-backup alert with the monitoring operator.
+For WAL-G, inspect archiver health and archived objects, take a base backup,
+and exercise PITR in an isolated instance using the correct PostgreSQL major
+and existing least-privilege storage configuration. Verify a transaction on
+each side of the chosen restore target.

@@ -1,0 +1,104 @@
+name: batch2-images
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 40
+    outputs:
+      candidate: ${{ steps.candidate.outputs.digest }}
+      recovery: ${{ steps.recovery.outputs.digest }}
+      backup: ${{ steps.backup.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: 93cc9eebf50ec06be72c3b565698f1c77907d0d9
+          path: recovery-source
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@v7
+        id: recovery
+        with:
+          context: recovery-source
+          file: recovery-source/apps/api/Dockerfile
+          push: true
+          tags: ghcr.io/voclain1/school-kit-api:batch2-recovery-${{ github.run_id }}
+          cache-from: type=gha,scope=api
+          labels: org.opencontainers.image.revision=93cc9eebf50ec06be72c3b565698f1c77907d0d9
+      - run: mv recovery-source "$RUNNER_TEMP/batch2-recovery-source"
+      - uses: docker/build-push-action@v7
+        id: candidate
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ghcr.io/voclain1/school-kit-api:batch2-candidate-${{ github.run_id }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=batch2-api,mode=max
+          labels: org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+      - uses: docker/build-push-action@v7
+        id: backup
+        with:
+          context: infra/vps/postgres
+          build-args: PG_MAJOR=18
+          push: true
+          tags: ghcr.io/voclain1/school-kit-postgres:batch2-ops-${{ github.run_id }}
+          cache-from: type=gha,scope=batch2-ops
+          cache-to: type=gha,scope=batch2-ops,mode=max
+          labels: org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+      - name: Record immutable image references
+        env:
+          CANDIDATE: ${{ steps.candidate.outputs.digest }}
+          RECOVERY: ${{ steps.recovery.outputs.digest }}
+          BACKUP: ${{ steps.backup.outputs.digest }}
+        run: |
+          printf 'Candidate: ghcr.io/voclain1/school-kit-api@%s\nRecovery: ghcr.io/voclain1/school-kit-api@%s\nBackup: ghcr.io/voclain1/school-kit-postgres@%s\n' "$CANDIDATE" "$RECOVERY" "$BACKUP" | tee "$RUNNER_TEMP/batch2-images.txt" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: batch2-image-digests
+          path: ${{ runner.temp }}/batch2-images.txt
+
+  rehearse:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: PUPPETEER_SKIP_DOWNLOAD=true pnpm install --frozen-lockfile
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Rehearse payment recovery on a private network
+        env:
+          CANDIDATE_IMAGE: ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.candidate }}
+          RECOVERY_IMAGE: ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.recovery }}
+          BACKUP_IMAGE: ghcr.io/voclain1/school-kit-postgres@${{ needs.build.outputs.backup }}
+        run: bash scripts/batch2-image-rehearsal.sh

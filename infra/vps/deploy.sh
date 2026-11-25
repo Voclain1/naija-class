@@ -9,6 +9,11 @@
 # schema, so migrations must stay backward compatible, as today.
 set -euo pipefail
 NEW_TAG="${1:?usage: deploy.sh <image tag>}"
+if ! grep -qx 'VPS_MODE=rehearsal' "$(dirname "$0")/deploy.env" ||
+   grep -q '^VPS_MODE=\(live\|production\)$' "$(dirname "$0")/deploy.env"; then
+  echo 'Generic deployment and automatic rollback are rehearsal-only.' >&2
+  exit 1
+fi
 . "$(dirname "$0")/lib.sh"
 
 apps=(api render-worker web portal)
