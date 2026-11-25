@@ -188,7 +188,20 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-24)
+## Latest state (updated 2026-11-25)
+
+Batch 1 production evidence work continues on draft PR #563 without merge or
+deployment. Exact-head `8552751` passed the main CI and Playwright jobs; its
+candidate configuration preflight failed while live VPS image/schema/health
+metadata passed. The next consolidated commit adds a redacted, read-only
+Termii wallet/sender check, aggregate live SMS authorization indicators and an
+isolated emergency-stop regression. It does not send SMS, charge Paystack,
+change `API_ENV_FILE`, set budgets, enable paid messaging, or approve the
+cutover. The GitHub secret cannot be read back, so it must not be overwritten
+without the complete current value; retain every unrelated line when the
+owner updates the candidate configuration. Termii rates, DND readiness and
+owner-approved school/platform ceilings remain external decisions. Keep
+`UNIFIED_MESSAGING_CUTOVER_APPROVED` unset.
 
 The closing sprint on draft PR #563 adds producer-scoped legacy SMS budgets,
 local payment-link cutoffs, zero-allocation acknowledgments and audited Paystack

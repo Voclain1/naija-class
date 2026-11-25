@@ -20,13 +20,18 @@ jobs:
         with:
           node-version: 22
       - name: Test cutover policy with fictional configurations
-        run: node --test scripts/check-messaging-cutover.test.mjs
+        run: node --test scripts/check-messaging-cutover.test.mjs scripts/check-termii-account.test.mjs
       - name: Check candidate configuration without exposing values
         env:
           API_ENV_FILE: ${{ secrets.API_ENV_FILE }}
           FLY_DEPLOY_DISABLED: ${{ vars.FLY_DEPLOY_DISABLED }}
           VPS_MODE: ${{ vars.VPS_MODE }}
         run: node scripts/check-messaging-cutover.mjs
+      - name: Check Termii account evidence without sending or exposing values
+        if: ${{ always() }}
+        env:
+          API_ENV_FILE: ${{ secrets.API_ENV_FILE }}
+        run: node scripts/check-termii-account.mjs
   live-metadata:
     if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/unified-messaging-infrastructure'
     runs-on: ubuntu-latest
@@ -53,6 +58,16 @@ jobs:
           [[ "$image" == *"/school-kit-api:$tag" ]] || { echo "BLOCK running API image differs from recorded tag"; exit 1; }
           echo "PASS running API image matches recorded tag"
           docker compose --env-file deploy.env -f docker-compose.yml exec -T postgres psql -U postgres -d school_kit -X -v ON_ERROR_STOP=1 -Atc "BEGIN READ ONLY; SELECT CASE WHEN to_regclass('public.paystack_webhook_inbox') IS NULL THEN 'Paystack inbox: not installed' ELSE 'Paystack inbox: installed; review rollback target' END; COMMIT;" 2>/dev/null || { echo "BLOCK read-only schema inspection unavailable"; exit 1; }
+          docker compose --env-file deploy.env -f docker-compose.yml exec -T postgres psql -U postgres -d school_kit -X -v ON_ERROR_STOP=1 -At <<'SQL' 2>/dev/null || { echo "BLOCK read-only SMS inventory unavailable"; exit 1; }
+          BEGIN READ ONLY;
+          SELECT 'EVIDENCE active schools with approved sender IDs: ' || count(*) FROM schools
+            WHERE status = 'ACTIVE' AND suspended_at IS NULL AND deletion_started_at IS NULL AND sms_sender_status = 'APPROVED';
+          SELECT 'EVIDENCE schools with explicit notification SMS opt-in: ' || count(*) FROM notification_preferences WHERE sms_enabled;
+          SELECT 'EVIDENCE saved admission settings with SMS alerts enabled: ' || count(*) FROM admission_settings WHERE sms_alerts;
+          SELECT 'EVIDENCE legacy SMS authorization audit rows: ' || count(*) FROM audit_logs WHERE action = 'messaging.legacy-sms.spend-authorized';
+          COMMIT;
+          SQL
+          echo "NOTICE aggregates are authorization indicators, not proof that Termii accepted or delivered an SMS"
           curl -fsS --max-time 10 -o /dev/null http://127.0.0.1:4000/api/v1/health
           echo "PASS existing API health"
           REMOTE

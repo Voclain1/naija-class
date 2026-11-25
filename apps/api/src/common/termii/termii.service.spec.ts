@@ -152,6 +152,40 @@ describe("TermiiService.sendSms — whose name the SMS goes out under", () => {
     }
   });
 
+  it("blocks an otherwise authorized producer at the emergency stop without provider egress", async () => {
+    const school = await basePrisma.school.create({
+      data: { name: "Legacy SMS emergency fixture", slug: `legacy-sms-stop-${randomUUID()}`, status: "ACTIVE" },
+    });
+    const rate = {
+      key: "TERMII_SMS", version: "fixture", evidence: "fixture",
+      effectiveFrom: "2020-01-01T00:00:00Z", effectiveUntil: "2099-01-01T00:00:00Z", verifiedAt: "2020-01-01T00:00:00Z",
+      providerAmount: "1", rateNumerator: "1", rateDenominator: "1", marginBasisPoints: "0", taxBasisPoints: "0",
+    };
+    const config: Record<string, string> = {
+      TERMII_API_KEY: "fixture", MESSAGING_LEGACY_SMS_MIGRATION_MODE: "existing-authorized",
+      MESSAGING_LEGACY_SMS_AUTHORIZATIONS: JSON.stringify({ [school.id]: { producers: ["ADMISSION"], dailyKobo: "10" } }),
+      MESSAGING_LEGACY_SMS_RATES: JSON.stringify([rate]), MESSAGING_PAID_PLATFORM_DAILY_KOBO: "100",
+    };
+    const service = new TermiiService({ get: (key: string) => config[key] } as never);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ code: "ok", message_id: "must-not-send" })));
+    vi.stubGlobal("fetch", fetchMock);
+    const stopped = await basePrisma.messagingEmergencyControl.create({
+      data: { channel: "SMS", stopped: true, actorId: randomUUID(), evidenceRef: "fictional-emergency-test" },
+    });
+    try {
+      await expect(service.sendSmsWithOutcome("2348012345678", "fixture", undefined,
+        { schoolId: school.id, eventType: "ADMISSION", eventId: "blocked" }))
+        .resolves.toMatchObject({ status: "REJECTED", reason: "PLATFORM_SMS_BUDGET_UNAVAILABLE" });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      await basePrisma.messagingEmergencyControl.create({
+        data: { channel: "SMS", stopped: false, actorId: stopped.actorId, evidenceRef: "fictional-emergency-test-reset" },
+      });
+      await basePrisma.school.delete({ where: { id: school.id } });
+    }
+  });
+
   it("uses the school's approved name when given one", async () => {
     await expect(sentFrom("DIVYSIXTH")).resolves.toBe("DIVYSIXTH");
   });

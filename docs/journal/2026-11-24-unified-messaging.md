@@ -45,3 +45,32 @@ operator review and replay, and independently approved email continuation.
 The isolated focused run passed 593 tests. Track exact-head CI and unresolved
 provider and financial approval gates in the disposition report. Keep PR #563
 in draft and leave PR #564 unchanged.
+
+## Batch 1 production evidence continuation — 2026-11-25
+
+Reviewed exact head `8552751`: the main CI/build job and Playwright passed,
+and the read-only VPS metadata job confirmed the running image matched its
+recorded tag, the existing API was healthy and the inbox was not installed.
+The candidate configuration job failed, so no cutover approval is justified.
+
+Added a read-only Termii account evidence script using the documented balance
+and sender-list GET endpoints. It prints only the wallet currency, whether
+positive capacity exists, and the `SchoolKit` sender status; it redacts the
+credential, balance, account identity and raw responses and never sends an
+SMS. The VPS preflight now also reports aggregate counts for approved school
+sender IDs, explicit notification SMS opt-ins, saved admission SMS settings
+and new legacy-authorization audit rows. These indicators do not claim that a
+provider accepted or delivered historical messages. Added the missing
+isolated emergency-stop case alongside the existing authorized,
+unauthorized and exhausted-budget coverage.
+
+No secret could be safely amended: GitHub does not reveal the existing
+`API_ENV_FILE`, and overwriting it without the full value would discard
+unrelated production credentials. No rate, school authorization or ceiling
+was invented. The supported safe deployment decision while Termii approval
+is outstanding remains `MESSAGING_LEGACY_SMS_MIGRATION_MODE=off`, with the
+existing Termii credential preserved, but using that choice requires the
+owner to confirm that no legitimate production SMS service is currently
+active. Paid messaging, top-ups, Meta/WhatsApp onboarding and Termii reports
+remain off; deployment approval remains unset; no merge or deployment was
+performed.
