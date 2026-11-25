@@ -9,10 +9,24 @@ try { env = parseEnv(process.env.API_ENV_FILE ?? ""); } catch { console.log("BLO
 const mode = env.PAYSTACK_WEBHOOK_MODE;
 const apiKey = env.PAYSTACK_SECRET_KEY ?? "";
 check(mode === "live" && apiKey.startsWith("sk_live_") && !apiKey.endsWith("_replace_me"), "explicit live Paystack mode and matching API key shape");
-check(env.PAYSTACK_WEBHOOK_REQUIRE_MODERN === "on", "modern-only Paystack mode explicitly configured");
+const requireModern = env.PAYSTACK_WEBHOOK_REQUIRE_MODERN;
+check(requireModern === "on" || requireModern === "off", "explicit modern-only or legacy transition authentication mode");
+const reviewBy = env.PAYSTACK_WEBHOOK_LEGACY_REVIEW_BY ?? "";
+const reviewDate = /^\d{4}-\d{2}-\d{2}$/.test(reviewBy) ? Date.parse(reviewBy + "T23:59:59Z") : NaN;
+const nowMs = Date.now();
+const boundedReview = Number.isFinite(reviewDate) && new Date(reviewDate).toISOString().slice(0,10) === reviewBy && reviewDate > nowMs && reviewDate - nowMs <= 31 * 86400000;
+if (requireModern === "off") {
+  check(boundedReview, "legacy transition has an explicit future review deadline within 31 days");
+  console.log("NOTICE legacy HMAC authentication is transitional; live delivery and rollback evidence still required");
+}
 let keys;
 try { keys = JSON.parse(env.PAYSTACK_WEBHOOK_LIVE_KEYS ?? ""); } catch { keys = null; }
-check(!!keys && typeof keys === "object" && !Array.isArray(keys) && Object.keys(keys).length > 0 && Object.keys(keys).length <= 8 && Object.entries(keys).every(([kid,secret]) => /^whk_[A-Za-z0-9_-]{1,80}$/.test(kid) && typeof secret === "string" && /^whsec_[A-Za-z0-9_-]{1,256}$/.test(secret)), "live webhook keyring has accepted structure (not provider verification)");
+const validKeyring = !!keys && typeof keys === "object" && !Array.isArray(keys) && Object.keys(keys).length > 0 && Object.keys(keys).length <= 8 && Object.entries(keys).every(([kid,secret]) => /^whk_[A-Za-z0-9_-]{1,80}$/.test(kid) && typeof secret === "string" && /^whsec_[A-Za-z0-9_-]{1,256}$/.test(secret));
+if (requireModern === "on" || env.PAYSTACK_WEBHOOK_LIVE_KEYS) {
+  check(validKeyring, "live webhook keyring has accepted structure (not provider verification)");
+} else if (requireModern === "off") {
+  console.log("NOTICE no modern live keyring configured for explicit legacy transition");
+}
 const gated = ["MESSAGING_PAID_ENABLED","MESSAGING_TOP_UPS_ENABLED","MESSAGING_TOP_UP_RECOVERY_ENABLED","MESSAGING_META_SIGNUP_ENABLED","MESSAGING_META_WEBHOOK_ENABLED","MESSAGING_META_PHONE_REGISTRATION_ENABLED","MESSAGING_META_TEMPLATE_SUBMISSION_ENABLED","MESSAGING_META_INBOUND_HISTORY_ENABLED","MESSAGING_TERMII_REPORTS_ENABLED"];
 for (const name of gated) check(env[name] === undefined || env[name] === "off", name + " disabled");
 const decision = env.MESSAGING_LEGACY_SMS_MIGRATION_MODE;

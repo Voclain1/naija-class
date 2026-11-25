@@ -71,7 +71,7 @@ The starting head was `36bb0728d2cebd4367fe3beaf2d820fb6e6e6f51`. The two copies
 |---|---|
 | 1. Written C1 policy, bounded migration and cutover preflight | Implemented and isolated-tested. Before production, run compatibility preflight against an agreed school/producer inventory and approved capacity evidence. |
 | 2. Link expiry applied to money movement and regression coverage | Backend timestamp allocation, pending archival and concurrent replacement cases passed in isolated PostgreSQL. |
-| 3. Modern Paystack delivery and key material verified in the target deployment | Code and example configuration default to modern. Target deployment remains unverified. |
+| 3. Paystack authentication path and live delivery verified in the target deployment | Modern remains the default. Owner reports separate signing keys unavailable on 25 Nov 2026 and authorizes the existing HMAC transition. Candidate must explicitly select live legacy compatibility with a bounded review date, retain no-downgrade behavior, and prove authenticated live delivery and rollback. Evidence remains open. |
 | 4. Dead-letter recovery | Retryable dead-letter list and requeue passed with competing replay requests. Never-delivered history recovery and external adjustments remain separate. |
 | 5. No receipts for zero allocations | The timestamp case asserts null receipt and zero allocation. Parent acknowledgment distinguishes the funds received. |
 | 6. Execute the regression suites | Focused results below. Use exact-head CI before interpreting full-suite or fresh-schema status. |

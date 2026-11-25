@@ -302,7 +302,8 @@ public endpoint stays `/api/v1/payments/paystack/webhook`. Configure
 `PAYSTACK_WEBHOOK_MODE` as either `test` or `live`, and provide the matching
 keyring JSON mapping `whk_` IDs to `whsec_` secrets. Keep the existing API
 secret. Legacy-only integrations require explicit, time-boxed authorization
-with `PAYSTACK_WEBHOOK_REQUIRE_MODERN=off` before cutover. New configurations
+with `PAYSTACK_WEBHOOK_REQUIRE_MODERN=off` and a future
+`PAYSTACK_WEBHOOK_LEGACY_REVIEW_BY` date in the candidate preflight before cutover. New configurations
 use modern verification by default.
 A malformed modern header is rejected even during this transition. During
 rotation install both key IDs and remove the retired entry after the overlap
@@ -373,11 +374,23 @@ does not establish provider delivery, backup restorability or SMS capacity.
 
 1. Obtain green exact-head CI and read-only cutover preflight. Verify the
    live Paystack endpoint remains `/api/v1/payments/paystack/webhook`.
-   Confirm actual timestamped `Paystack-Signature` delivery with the live
-   signing keyring through the Paystack dashboard or a controlled rehearsal.
-   Do not log signing headers, secrets, or payment payloads. Confirm the
-   pre-cutover legacy image can still receive the provider's signature on
-   rollback; if not, a compatible rollback image must be rehearsed first.
+   Choose the authentication path explicitly. For modern-only, confirm actual
+   timestamped `Paystack-Signature` delivery with the live signing keyring.
+   For an existing account without signing keys, the owner may authorize
+   `PAYSTACK_WEBHOOK_MODE=live`, `PAYSTACK_WEBHOOK_REQUIRE_MODERN=off` and
+   `PAYSTACK_WEBHOOK_LEGACY_REVIEW_BY=YYYY-MM-DD` (UTC, no more than 31 days
+   ahead) in the private candidate API configuration. Keep the existing live API
+   secret, do not invent a keyring, and confirm actual valid legacy HMAC delivery
+   to the VPS. A modern header, if present, still must validate; it never falls
+   back to legacy. The review date gates preflight, not running payments:
+   investigate migration availability before the date, reauthorize explicitly if
+   still unavailable, and switch to modern-only after verified delivery and a
+   compatible rollback rehearsal. Legacy signatures have no timestamp;
+   persistent event deduplication mitigates repeated processing but is not a
+   substitute for timestamp-based freshness. Do not log signing headers,
+   secrets, or payment payloads. Confirm the pre-cutover legacy image can
+   still receive the provider's signature on rollback; if not, a compatible
+   rollback image must be rehearsed first.
 2. Review existing school/producer SMS authorization and actual DND unit
    rates/capacity. Choose explicit `off` only if intentional cessation is
    authorized; otherwise use `existing-authorized` with the school/producer

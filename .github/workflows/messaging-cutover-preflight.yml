@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+      - name: Test cutover policy with fictional configurations
+        run: node --test scripts/check-messaging-cutover.test.mjs
       - name: Check candidate configuration without exposing values
         env:
           API_ENV_FILE: ${{ secrets.API_ENV_FILE }}
