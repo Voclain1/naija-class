@@ -63,7 +63,6 @@ export function MetaSignup({ onConnected }: { onConnected: () => void }) {
     let account: { wabaId: string; phoneNumberId: string } | undefined;
     let source: MessageEventSource | null = null;
     let sent = false;
-    let timer: number;
     function stop() {
       active = false; code = undefined; account = undefined;
       window.removeEventListener("message", receive);
@@ -90,7 +89,7 @@ export function MetaSignup({ onConnected }: { onConnected: () => void }) {
       account = { wabaId: parsed.wabaId, phoneNumberId: parsed.phoneNumberId };
       void complete();
     }
-    timer = window.setTimeout(() => fail("Signup expired or did not return the required account details. Check Meta before trying again."), Math.max(0, Date.parse(session.expiresAt) - Date.now()));
+    const timer = window.setTimeout(() => fail("Signup expired or did not return the required account details. Check Meta before trying again."), Math.max(0, Date.parse(session.expiresAt) - Date.now()));
     cleanup.current = stop;
     window.addEventListener("message", receive);
     try {
