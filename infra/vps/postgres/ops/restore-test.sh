@@ -4,14 +4,21 @@
 # WAL-G base backups, so a broken WAL archive shows up here too.
 set -eu
 . /ops/env.sh
-latest=$(rclone lsf "backup:${BACKUP_BUCKET}/dumps/daily" | sort | tail -1)
+latest=$(rclone lsf "backup:${BACKUP_BUCKET}/dumps/daily" | grep -E '^school-kit-[0-9TZ:-]+[.]dump[.]sha256$' | sort | tail -1)
 [ -n "$latest" ] || { echo "no dumps found"; exit 1; }
-echo "restoring $latest"
-rclone copyto "backup:${BACKUP_BUCKET}/dumps/daily/${latest}" /tmp/restore.dump
-trap 'rm -f /tmp/restore.dump; dropdb --if-exists restore_test' EXIT
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+dump=${latest%.sha256}
+echo "restoring $dump"
+rclone copyto "backup:${BACKUP_BUCKET}/dumps/daily/$dump" "$scratch/$dump"
+rclone copyto "backup:${BACKUP_BUCKET}/dumps/daily/$latest" "$scratch/$latest"
+expected=$(cut -d ' ' -f 1 "$scratch/$latest")
+actual=$(sha256sum "$scratch/$dump")
+[ "${actual%% *}" = "$expected" ] || { echo "off-site dump checksum mismatch"; exit 1; }
 dropdb --if-exists restore_test
 createdb restore_test
-pg_restore --no-owner --no-privileges -d restore_test /tmp/restore.dump
+trap 'rm -rf "$scratch"; dropdb --if-exists restore_test' EXIT
+pg_restore --exit-on-error --single-transaction --no-owner --no-privileges -d restore_test "$scratch/$dump"
 
 status=0
 for table in schools users students invoices payments; do
@@ -21,6 +28,6 @@ for table in schools users students invoices payments; do
   if [ "$live" -gt 0 ] && [ "$restored" -eq 0 ]; then status=1; fi
 done
 if [ -n "${WALG_S3_PREFIX:-}" ]; then
-  echo "WAL-G base backups:"; wal-g backup-list || status=1
+  echo "WAL-G base backups:"; wal-g backup-list --json | grep -q '"backup_name"' || status=1
 fi
 exit $status

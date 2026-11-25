@@ -73,7 +73,8 @@ for i in $(seq 1 60); do
   if healthy; then
     echo "healthy on $NEW_TAG (was ${PREV_TAG:-none})"
     echo "$PREV_TAG" > .previous-tag
-    docker image prune -af --filter "until=336h" >/dev/null || true
+    # Retain image digests needed for database recovery. Reclaim space only
+    # after the operator checks which release and database tools are pinned.
     exit 0
   fi
   sleep 3

@@ -440,3 +440,57 @@ implement a traffic drain or this financial recovery procedure. Use the
 approved controlled procedure rather than claiming automatic rollback is
 sufficient. First-cutover rehearsal and live provider confirmation remain
 unverified until evidence is recorded.
+
+### Batch 2 recovery and backup gates
+
+The verified production baseline `61b5c214` predates both allocated payments
+and the inbox. Its invoice, refund and receipt calculations sum the gross
+amount. After a candidate payment records a different allocation, bringing
+that API back for writes can corrupt the invoice balance and installment
+state. In the fixture a ₦40 allocated payment plus ₦70 of unapplied funds
+produced ₦110 under the old calculation and ₦40 under the candidate.
+Preserve gross collections, allocated amounts, receipts, audit rows and
+exception records without rewriting those amounts for the older image.
+
+Use `93cc9eebf50ec06be72c3b565698f1c77907d0d9` as the minimum recovery
+**source** until another release is tested. Build, pin and stage its actual
+API and worker image digests separately from the live deployment. Verify
+legacy signature compatibility, health, finance writes and inbox processing
+against a representative migrated fixture. An image identifier and a
+successful image rehearsal are both required before clearance. The old
+release is not an automatic recovery target. Recovery from the first
+deployment must use the pinned allocation-compatible release or remain in
+maintenance while fixing forward.
+
+In rehearsal, have the candidate accept a signed fictional event, stop it
+before the next worker claim, and return 503 on webhook ingress. Preserve the
+database, FORCE RLS policies, inbox identities and leases. Start the
+allocation-compatible recovery API and worker against the same database,
+wait for the lease to expire or review its dead-letter state, use the
+audited replay endpoint where needed, and submit the same signed event
+again. Verify one financial effect, one receipt, unchanged gross and
+allocated totals on duplicate delivery, preserved exception and audit
+records, and no cross-tenant inbox exposure. Resume ingress after that
+evidence. Never restore a pre-cutover snapshot over newer transactions.
+
+The owner restored a protected 2.2 MB production dump in an isolated
+PostgreSQL 18 and pgvector 0.8.7 container in seven seconds on 25 November
+2026. This was a manual restore. Nightly object-storage dumps and WAL-G
+backups were absent. Before cutover, check the running `ops` container's cron
+and backup output, the presence and permissions of `backup.env`, and
+credential identity, bucket/prefix permissions and endpoint access using
+redacted checks. Inspect `pg_stat_archiver` and actual WAL object inventory
+separately from the base backup list. The shipping workflow previously
+overwrote the VPS backup environment even if the secret was empty. The live
+settings check now requires the required key names before it proceeds.
+This does not verify credentials or their access.
+
+After authorization, prove a scheduled run produced a dump, read-back
+checksum marker, WAL-G base backup, archived WAL and success heartbeat.
+Use a network-isolated restore of that off-site artifact with no production
+volumes and verify aggregate integrity. The scheduled restore script still
+uses a scratch database on its configured instance. Run it solely against an
+approved isolated instance for this clearance, and use a separate test
+instance for WAL-G point-in-time recovery. Retain the verified database-tool
+image digest and exact production PostgreSQL major; an untagged or missing
+local tag is not a recovery plan. Deployment no longer prunes host images.

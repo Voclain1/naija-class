@@ -10,14 +10,31 @@ set -eu
 . /ops/env.sh
 [ -n "${BACKUP_BUCKET:-}" ] || { echo "backup: BACKUP_BUCKET not set, nothing to do"; exit 1; }
 
-stamp=$(date -u +%Y-%m-%dT%H%MZ)
-file="/tmp/school-kit-${stamp}.dump"
-trap 'rm -f "$file"' EXIT
+umask 077
+stamp=$(date -u +%Y-%m-%dT%H%M%SZ)
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+file="$scratch/school-kit-${stamp}.dump"
+echo "$(date -u +%FT%TZ) dump started"
 pg_dump -Fc -f "$file"
 size=$(wc -c < "$file")
 [ "$size" -gt 1024 ] || { echo "dump is only ${size} bytes; refusing to upload"; exit 1; }
-rclone copyto "$file" "backup:${BACKUP_BUCKET}/dumps/daily/$(basename "$file")"
-[ "$(date -u +%u)" != "7" ] || rclone copyto "$file" "backup:${BACKUP_BUCKET}/dumps/weekly/$(basename "$file")"
+pg_restore --list "$file" >/dev/null
+digest=$(sha256sum "$file")
+digest=${digest%% *}
+printf '%s  %s\n' "$digest" "$(basename "$file")" > "$file.sha256"
+
+publish() {
+  remote="backup:${BACKUP_BUCKET}/dumps/$1/$(basename "$file")"
+  rclone copyto "$file" "$remote"
+  # A completion marker is written only after reading the object back.
+  rclone copyto "$remote" "$scratch/readback"
+  actual=$(sha256sum "$scratch/readback")
+  [ "${actual%% *}" = "$digest" ] || { echo "off-site dump checksum mismatch"; return 1; }
+  rclone copyto "$file.sha256" "$remote.sha256"
+}
+publish daily
+[ "$(date -u +%u)" != "7" ] || publish weekly
 prune() { # a folder not created yet is not an error
   if rclone lsf "backup:${BACKUP_BUCKET}/dumps/$1" >/dev/null 2>&1; then
     rclone delete --min-age "$2" "backup:${BACKUP_BUCKET}/dumps/$1"
@@ -33,4 +50,4 @@ if [ -n "${WALG_S3_PREFIX:-}" ]; then
   echo "$(date -u +%FT%TZ) base backup ok"
 fi
 
-[ -z "${HEALTHCHECK_PING_URL:-}" ] || curl -fsS -m 10 -o /dev/null "$HEALTHCHECK_PING_URL" || true
+[ -z "${HEALTHCHECK_PING_URL:-}" ] || curl -fsS -m 10 -o /dev/null "$HEALTHCHECK_PING_URL"
