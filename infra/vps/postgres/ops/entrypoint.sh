@@ -7,12 +7,14 @@ umask 077
 : "${BACKUP_BUCKET:=}"
 if [ -n "$BACKUP_BUCKET" ]; then
   # rclone and WAL-G share the one set of S3 credentials (backup.env).
-  export RCLONE_CONFIG_BACKUP_TYPE=s3 RCLONE_CONFIG_BACKUP_PROVIDER=Other \
+  export RCLONE_CONFIG_BACKUP_TYPE=s3 RCLONE_CONFIG_BACKUP_PROVIDER=Cloudflare \
          RCLONE_CONFIG_BACKUP_ENV_AUTH=false \
          RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
          RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
          RCLONE_CONFIG_BACKUP_ENDPOINT="${AWS_ENDPOINT:-}" \
-         RCLONE_CONFIG_BACKUP_REGION="${AWS_REGION:-}"
+         RCLONE_CONFIG_BACKUP_REGION=auto \
+         RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET=true \
+         RCLONE_CONFIG_BACKUP_NO_HEAD=true
 fi
 export -p > /ops/env.sh
 cat > /etc/cron.d/school-kit <<'CRON'

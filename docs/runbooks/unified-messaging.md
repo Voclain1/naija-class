@@ -494,3 +494,19 @@ approved isolated instance for this clearance, and use a separate test
 instance for WAL-G point-in-time recovery. Retain the verified database-tool
 image digest and exact production PostgreSQL major; an untagged or missing
 local tag is not a recovery plan. Deployment no longer prunes host images.
+
+#### Cloudflare R2 backup transport
+
+The backup image pins upstream rclone v1.76.0 for Linux amd64 and verifies
+the upstream SHA-256 during the image build. The backup remote uses the
+Cloudflare provider, region auto, no bucket creation check, and no
+post-upload HEAD. Existing access keys and the configured endpoint remain
+unchanged. The independent download and SHA-256 comparison still run
+before the completed dump becomes eligible for restoration. The scheduled
+restore also independently verifies the marker against the retrieved dump.
+These rclone options do not change the WAL-G environment.
+
+The owner proved these options with a disposable R2 object using the
+previously installed rclone. Validate the pinned binary with a scheduled
+database backup and isolated restore before clearance. Verify a WAL-G
+base backup and replay archived WAL in a separate recovery exercise.
