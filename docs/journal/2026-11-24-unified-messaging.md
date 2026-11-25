@@ -74,3 +74,19 @@ owner to confirm that no legitimate production SMS service is currently
 active. Paid messaging, top-ups, Meta/WhatsApp onboarding and Termii reports
 remain off; deployment approval remains unset; no merge or deployment was
 performed.
+# 2026-11-25 — Batch 1 production configuration continuation
+
+- Recorded the owner's production fact: SMS has always been disabled; no
+  school has used Termii or another SMS provider. Existing email notifications
+  and manual WhatsApp sharing remain outside this change.
+- Made Termii evidence conditional on activation: it is mandatory unless all
+  four SMS/paid gates are explicitly `off`.
+- Added a one-time, non-deploying reconciliation that preserves the current
+  Contabo API environment and the original GitHub candidate before preparing
+  the seven approved overrides. Backups are restricted to the deploy account;
+  output contains key names/counts only, never values.
+- Added redacted live database aggregates for Paystack reference uniqueness and
+  receipt invariants. These do not claim to identify webhook versus callback
+  delivery.
+- No live payment or SMS is sent. The PR stays draft and
+  `UNIFIED_MESSAGING_CUTOVER_APPROVED` stays unset.

@@ -7,6 +7,19 @@ import { fileURLToPath } from "node:url";
 export async function checkTermiiAccount(apiEnvFile, fetchImpl = fetch) {
   let env;
   try { env = parseEnv(apiEnvFile ?? ""); } catch { return { ok: false, lines: ["BLOCK candidate API configuration could not be parsed for Termii evidence"] }; }
+  const smsDisabled = env.MESSAGING_LEGACY_SMS_MIGRATION_MODE === "off"
+    && env.MESSAGING_LEGACY_SMS_ENABLED === "off"
+    && env.MESSAGING_TERMII_REPORTS_ENABLED === "off"
+    && env.MESSAGING_PAID_ENABLED === "off";
+  if (smsDisabled) {
+    return {
+      ok: true,
+      lines: [
+        "PASS every SMS activation gate is explicitly disabled",
+        "NOTICE Termii account, sender, DND, pricing and capacity evidence remains mandatory before SMS activation",
+      ],
+    };
+  }
   const key = env.TERMII_API_KEY;
   if (!key || key === "replace-me") return { ok: false, lines: ["BLOCK Termii account credential is unavailable"] };
 

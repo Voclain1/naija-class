@@ -191,17 +191,21 @@ those; it doesn't replace them.
 ## Latest state (updated 2026-11-25)
 
 Batch 1 production evidence work continues on draft PR #563 without merge or
-deployment. Exact-head `8552751` passed the main CI and Playwright jobs; its
-candidate configuration preflight failed while live VPS image/schema/health
-metadata passed. The next consolidated commit adds a redacted, read-only
-Termii wallet/sender check, aggregate live SMS authorization indicators and an
-isolated emergency-stop regression. It does not send SMS, charge Paystack,
-change `API_ENV_FILE`, set budgets, enable paid messaging, or approve the
-cutover. The GitHub secret cannot be read back, so it must not be overwritten
-without the complete current value; retain every unrelated line when the
-owner updates the candidate configuration. Termii rates, DND readiness and
-owner-approved school/platform ceilings remain external decisions. Keep
-`UNIFIED_MESSAGING_CUTOVER_APPROVED` unset.
+deployment. The owner confirmed that SchoolKit has never activated an SMS
+provider; email and manual WhatsApp are the only existing notification paths.
+The candidate therefore explicitly keeps legacy SMS, Termii reports and paid
+messaging off. Termii account/sender/DND/rate/capacity evidence remains a hard
+activation prerequisite, but no longer blocks infrastructure checks while all
+four SMS gates are explicitly off.
+
+The preflight now prepares the exact seven approved Batch 1 overrides from the
+complete stored `API_ENV_FILE`, proves that unrelated candidate settings are
+unchanged, and retains mode-0600 running/original/proposed backups in a
+mode-0700 directory on the Contabo VPS. It does not replace the running file,
+update the GitHub secret, deploy, send SMS, or charge Paystack. The GitHub
+secret still cannot be read back through the repository API; the proposed
+backup must be installed as the complete secret through an authorized secret
+write path. Keep `UNIFIED_MESSAGING_CUTOVER_APPROVED` unset.
 
 The closing sprint on draft PR #563 adds producer-scoped legacy SMS budgets,
 local payment-link cutoffs, zero-allocation acknowledgments and audited Paystack

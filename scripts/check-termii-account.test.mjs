@@ -6,6 +6,25 @@ import { checkTermiiAccount } from "./check-termii-account.mjs";
 const config = "TERMII_API_KEY=private-fixture\nTERMII_BASE_URL=https://api.example.test";
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
+test("defers provider evidence only when every SMS activation gate is explicitly off", async () => {
+  const disabled = [
+    "MESSAGING_LEGACY_SMS_MIGRATION_MODE=off",
+    "MESSAGING_LEGACY_SMS_ENABLED=off",
+    "MESSAGING_TERMII_REPORTS_ENABLED=off",
+    "MESSAGING_PAID_ENABLED=off",
+  ].join("\n");
+  let called = false;
+  const result = await checkTermiiAccount(disabled, async () => { called = true; return response({}); });
+  assert.equal(result.ok, true);
+  assert.equal(called, false);
+  assert.match(result.lines.join("\n"), /mandatory before SMS activation/);
+
+  for (const missing of disabled.split("\n")) {
+    const incomplete = disabled.split("\n").filter((line) => line !== missing).join("\n");
+    assert.equal((await checkTermiiAccount(incomplete, async () => response({}))).ok, false);
+  }
+});
+
 test("reports redacted capacity and the SchoolKit sender state", async () => {
   const seen = [];
   const result = await checkTermiiAccount(config, async (url) => {
