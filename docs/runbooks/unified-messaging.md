@@ -545,3 +545,46 @@ For WAL-G, inspect archiver health and archived objects, take a base backup,
 and exercise PITR in an isolated instance using the correct PostgreSQL major
 and existing least-privilege storage configuration. Verify a transaction on
 each side of the chosen restore target.
+
+#### Authorized scheduler and physical recovery rehearsal
+
+Download the reviewed `infra/vps/batch2-backup-recovery.sh` from PR #563
+without changing its contents. Place it in the approved VPS operations
+directory or another operator-owned location. Run it from the directory
+containing the production Compose and env files, away from the 01:30 UTC
+backup window. The host needs Docker Compose, Python 3, flock and free
+storage for the base and WAL. Use the named verified digest.
+
+```sh
+cd /opt/school-kit
+bash /path/to/batch2-backup-recovery.sh activate
+# After the next scheduled 01:30 UTC run:
+bash /path/to/batch2-backup-recovery.sh verify-night
+```
+
+The activation writes two WAL-only restore markers on the existing cluster.
+It makes no application record changes. It stages WAL locally and checks a
+paused replay between the markers on a networkless clone, then removes the
+clone and temporary WAL. Stop if the verified base inventory or timeline
+changed, or if remote WAL cannot be fetched. The clone is never promoted.
+
+The script retains the original ops container, disables its restart policy
+and stops it before starting the separate digest-pinned scheduler. The
+verified tooling is retained under a local fallback tag as well as its GHCR
+digest. The persistent Compose override must accompany future ops-specific
+Compose commands. Do not run a generic Compose operation that starts the
+old service or removes the retained container as an orphan. If the
+replacement fails and the old image cannot restart, leave the old container
+intact and use the tagged fallback through the pinned override only after
+confirming there is no active scheduler.
+
+For Batch 2 acceptance, save the script's sanitized output, and match the
+scheduled dump marker and WAL-G base backup to the same cron window. Use the
+monitoring service to verify the success timestamp and missed-heartbeat
+notification or its test-delivery record. Verify that every retained base
+still has the WAL required for the agreed recovery window before approving
+any change to retention. Do not change the production database or use a
+forced backup or heartbeat ping as proof of cron scheduling. The second
+command performs independent download, checksum and archive-catalog
+validation of the scheduled dump. The separately verified off-site restore
+and the new named-target physical rehearsal are distinct evidence.
