@@ -469,6 +469,7 @@ type PayState =
 function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
   const [payState, setPayState] = useState<PayState>({ kind: "idle" });
   const balance = invoice.totalDue - invoice.totalPaid;
+  const canPay = PAYABLE_STATUSES.has(invoice.status) && balance > 0;
 
   async function onPay(installmentId?: string) {
     setPayState({ kind: "starting" });
@@ -568,12 +569,12 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
               <li key={item.id} className="flex flex-wrap items-baseline justify-between gap-1">
                 <span>Instalment {index + 1} · <time dateTime={item.dueDate}>{item.dueDate}</time></span>
                 <span className="tabular-nums">
-                  {item.outstanding === 0 ? "Paid" : (
+                  {item.outstanding === 0 ? "Paid" : canPay ? (
                     <button type="button" className="rounded-md border px-3 py-1.5 font-medium"
                       disabled={payState.kind === "starting"} onClick={() => void onPay(item.id)}>
                       Pay {formatNaira(item.outstanding)}
                     </button>
-                  )}
+                  ) : "Closed"}
                 </span>
                 {Boolean(item.paymentHistory?.length) && (
                   <ul className="w-full space-y-1 text-xs text-muted-foreground" aria-label="Payment history">
@@ -602,7 +603,7 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
         </p>
       )}
 
-      {balance > 0 && (
+      {canPay && (
         <div className="flex flex-col gap-1.5">
           <button
             type="button"
@@ -610,7 +611,7 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
             disabled={payState.kind === "starting"}
             className="h-10 rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {payState.kind === "starting" ? "Redirecting to payment…" : `Pay ${formatNaira(balance)}`}
+            {payState.kind === "starting" ? "Redirecting to payment…" : `Pay full balance · ${formatNaira(balance)}`}
           </button>
           <p className="text-xs text-muted-foreground">{ONLINE_PAYMENT_NOTE}</p>
         </div>

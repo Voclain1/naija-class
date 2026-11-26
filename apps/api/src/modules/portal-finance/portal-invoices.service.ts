@@ -67,8 +67,7 @@ const INVOICE_SELECT = {
 type InvoiceRow = Prisma.InvoiceGetPayload<{ select: typeof INVOICE_SELECT }>;
 
 function toPortalInvoiceDto(row: InvoiceRow, term: PortalInvoiceTermRefDto): PortalInvoiceDto {
-  const schedule = row.status === "CANCELLED" || row.status === "REFUNDED"
-    ? undefined : row.paymentPlans[0]?.installments;
+  const schedule = row.paymentPlans[0]?.installments;
   const progress = schedule && allocateSchedule(schedule, row.totalPaid, row.payments?.filter(({ status }) => status === "SUCCESS") ?? []);
   return {
     id: row.id,
