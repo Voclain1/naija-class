@@ -945,6 +945,39 @@ describe("InvoiceGenerationService (integration)", () => {
         expect(await db.auditLog.count({ where: { schoolId, entityId: replacement.id, action: "invoice.issue" } })).toBe(1);
       });
     });
+
+    it("previews and regenerates only cancelled and never-invoiced students in a mixed arm", async () => {
+      const { schoolId, ownerId } = await makeSchool("replace-mixed");
+      const { academicYearId, termId, classLevelId, classArmId } = await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const auth = ctx(schoolId, ownerId);
+      const input = { termId, classArmId };
+      const students = [];
+      for (const name of ["unpaid", "partial", "paid", "refunded", "cancelled", "new"]) {
+        students.push(await makeStudent(schoolId, `replace-mixed-${name}`));
+      }
+      const [unpaid, partial, paid, refunded, cancelled, fresh] = students as [string, string, string, string, string, string];
+      for (const studentId of students.slice(0, -1)) await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
+      const initial = await svc.generateForArm(auth, input, reqCtx);
+      const invoices = new Map(initial.invoices.map((invoice) => [invoice.studentId, invoice]));
+      await svc.cancel(auth, invoices.get(cancelled)!.id, reqCtx);
+      await enrollStudent(schoolId, fresh, classArmId, termId, academicYearId);
+      await withTenant(schoolId, async (db) => {
+        await db.invoice.update({ where: { id: invoices.get(partial)!.id }, data: { status: "PARTIALLY_PAID", totalPaid: 5_000 } });
+        await db.invoice.update({ where: { id: invoices.get(paid)!.id }, data: { status: "PAID", totalPaid: 15_000_000 } });
+        await db.invoice.update({ where: { id: invoices.get(refunded)!.id }, data: { status: "REFUNDED" } });
+      });
+
+      const preview = await svc.previewForArm(auth, input);
+      expect(new Set(preview.filter((row) => row.alreadyInvoiced).map((row) => row.studentId)))
+        .toEqual(new Set([unpaid, partial, paid, refunded]));
+      const run = await svc.generateForArm(auth, input, reqCtx);
+      expect(run).toMatchObject({ created: 2, skipped: 4 });
+      expect(new Set(run.invoices.map((invoice) => invoice.studentId))).toEqual(new Set([cancelled, fresh]));
+      const foreign = await makeSchool("replace-mixed-foreign");
+      const visible = await withTenant(foreign.schoolId, (db) => db.invoice.count({ where: { id: { in: run.invoices.map((invoice) => invoice.id) } } }));
+      expect(visible).toBe(0);
+    });
   });
 
   // ── cancel ─────────────────────────────────────────────────────────────────
