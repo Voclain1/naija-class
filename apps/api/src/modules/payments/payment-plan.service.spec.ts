@@ -410,10 +410,16 @@ describe("PaymentPlanService (integration)", () => {
       ],
     });
 
-    // Simulate 100k paid — should mark first two paid.
-    await withTenant(schoolId, (db) =>
-      svc.recomputeInstallmentsPaid(db as never, invoiceId, 100_000),
-    );
+    // Simulate the settlement transaction: update the authoritative invoice
+    // balance and recompute its persisted schedule together.
+    await withTenant(schoolId, async (db) => {
+      await db.invoice.update({ where: { id: invoiceId }, data: { totalPaid: 100_000, status: "PARTIALLY_PAID" } });
+      await svc.recomputeInstallmentsPaid(db, invoiceId, 100_000);
+      const stored = await db.paymentPlanInstallment.findMany({
+        where: { plan: { invoiceId } }, orderBy: { dueDate: "asc" }, select: { paid: true },
+      });
+      expect(stored.map(({ paid }) => paid)).toEqual([true, true, false]);
+    });
 
     const plan = await svc.findByInvoice(ctx(schoolId, ownerId), invoiceId);
     expect(plan!.installments[0].paid).toBe(true);

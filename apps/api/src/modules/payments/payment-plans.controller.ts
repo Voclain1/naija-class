@@ -53,7 +53,7 @@ export class PaymentPlansController {
   }
 
   @Put("policy")
-  @Permissions("payment-plan.create")
+  @Permissions("school.update")
   setPolicy(@CurrentUser() ctx: AuthContext, @Body(new ZodValidationPipe(installmentPolicySchema)) policy: InstallmentPolicy) {
     return this.requests.setPolicy(ctx, policy);
   }
