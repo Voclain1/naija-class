@@ -35,7 +35,15 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          ssh vps "cd /opt/school-kit && test -r backup-ops.override.yml && grep -E '^(NEXT_PUBLIC_[A-Z0-9_]+|SESSION_COOKIE_DOMAIN)=' web.env" > "$RUNNER_TEMP/hotfix-web.env"
+          ssh vps 'bash -se' > "$RUNNER_TEMP/hotfix-web.env" <<'REMOTE'
+          cd /opt/school-kit
+          for file in deploy.env docker-compose.yml api.env web.env backup.env; do
+            test -r "$file" || { echo "Missing or unreadable required file: $file" >&2; exit 1; }
+          done
+          if test -e backup-ops.override.yml; then echo "Backup override present" >&2; else echo "Backup override not present in Compose directory" >&2; fi
+          docker ps --format '{{.Names}} {{.Label "com.docker.compose.service"}}' | awk '$1 ~ /ops/ || $2 ~ /ops/' >&2
+          grep -E '^(NEXT_PUBLIC_[A-Z0-9_]+|SESSION_COOKIE_DOMAIN)=' web.env || { echo "No public build settings found in web.env" >&2; exit 1; }
+          REMOTE
           test -s "$RUNNER_TEMP/hotfix-web.env"
           echo "sha=$(sha256sum "$RUNNER_TEMP/hotfix-web.env" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           mv release-procedure/.github/workflows/invoice-565-activate.sh "$RUNNER_TEMP/"
@@ -94,8 +102,11 @@ jobs:
           applied="$RUNNER_TEMP/invoice-565-applied"
           ssh vps 'bash -se' > "$applied" <<'REMOTE'
           cd /opt/school-kit
-          dc=(docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml)
-          test -n "$("${dc[@]}" ps -q ops-pinned)"
+          dc=(docker compose --env-file deploy.env -f docker-compose.yml)
+          if test -r backup-ops.override.yml; then dc+=(-f backup-ops.override.yml); fi
+          ops=$(docker ps --format '{{.Names}}' | grep -E '(^|-)ops-pinned(-|$)')
+          test "$(printf '%s\n' "$ops" | wc -l)" = 1
+          docker exec "$ops" test -s /etc/cron.d/school-kit
           exec "${dc[@]}" exec -T postgres psql -XqAt -U postgres -d school_kit -v ON_ERROR_STOP=1 -c "SELECT CASE WHEN finished_at IS NULL THEN 'UNRESOLVED:' ELSE '' END || migration_name FROM _prisma_migrations WHERE rolled_back_at IS NULL"
           REMOTE
           find packages/db/prisma/migrations -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort > "$RUNNER_TEMP/invoice-565-expected"

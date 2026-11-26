@@ -9,10 +9,13 @@ api=$1 web=$2 expected_public=$3
 [[ $web =~ ^ghcr\.io/voclain1/school-kit-web@sha256:[0-9a-f]{64}$ ]]
 actual_public=$(grep -E '^(NEXT_PUBLIC_[A-Z0-9_]+|SESSION_COOKIE_DOMAIN)=' web.env | sha256sum | cut -d' ' -f1)
 test "$actual_public" = "$expected_public"
-base=(docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml)
+base=(docker compose --env-file deploy.env -f docker-compose.yml)
+if test -r backup-ops.override.yml; then base+=(-f backup-ops.override.yml); fi
 override=invoice-565.override.yml
 test ! -e "$override"
-test -n "$("${base[@]}" ps -q ops-pinned)"
+ops=$(docker ps --format '{{.Names}}' | grep -E '(^|-)ops-pinned(-|$)')
+test "$(printf '%s\n' "$ops" | wc -l)" = 1
+docker exec "$ops" test -s /etc/cron.d/school-kit
 protected() {
   local ids
   ids=$(docker ps -q)
@@ -20,7 +23,10 @@ protected() {
   docker inspect --format '{{.Id}} {{.State.StartedAt}} {{index .Config.Labels "com.docker.compose.project"}} {{index .Config.Labels "com.docker.compose.service"}}' $ids |
     awk '!( ($3=="school-kit") && ($4=="api" || $4=="web"))' | sort
 }
-fingerprints() { sha256sum deploy.env api.env web.env backup.env backup-ops.override.yml; }
+fingerprints() {
+  sha256sum deploy.env api.env web.env backup.env
+  if test -e backup-ops.override.yml; then sha256sum backup-ops.override.yml; else echo 'Backup override absent'; fi
+}
 before=$(protected)
 configs=$(fingerprints)
 old_api=$(docker inspect -f '{{.Config.Image}}' "$("${base[@]}" ps -q api)")
@@ -50,7 +56,6 @@ test "$(docker inspect -f '{{.Config.Image}}' "$("${dc[@]}" ps -q api)")" = "$ap
 test "$(docker inspect -f '{{.Config.Image}}' "$("${dc[@]}" ps -q web)")" = "$web"
 test "$before" = "$(protected)"
 test "$configs" = "$(fingerprints)"
-ops=$("${dc[@]}" ps -q ops-pinned)
 listing=$(docker top "$ops" -eo pid,args)
 awk 'NR>1 && $2 ~ /(^|\/)cron$/ {n++} END {exit n!=1}' <<<"$listing"
 docker exec "$ops" test -s /etc/cron.d/school-kit
