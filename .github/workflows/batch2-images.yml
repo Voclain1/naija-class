@@ -125,7 +125,7 @@ jobs:
           RR: ${{ steps.recovery_render.outputs.digest }}
           MG: ${{ steps.migrate.outputs.digest }}
         run: |
-          for d in "$CA" "$CR" "$RA" "$RR" "$MG" "$BK"; do [[ $d =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::a build produced no digest"; exit 1; }; done
+          for d in "$CA" "$CR" "$RA" "$RR" "$MG"; do [[ $d =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::a build produced no digest"; exit 1; }; done
           cat > "$RUNNER_TEMP/release-manifest.env" <<EOF
           HEAD_SHA=$HEAD_SHA
           RECOVERY_SHA=$RECOVERY_SHA

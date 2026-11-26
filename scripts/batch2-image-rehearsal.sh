@@ -179,4 +179,3 @@ render_with() {
 render_with "$RECOVERY_RENDER_IMAGE" recovery
 render_with "$CANDIDATE_RENDER_IMAGE" candidate
 echo 'Both render workers produced a valid PDF from a queued job on the migrated schema.'
-
