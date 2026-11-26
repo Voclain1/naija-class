@@ -45,10 +45,17 @@ type PlanRow = {
 //   cumulative:  [50_000, 100_000, 150_000]
 //   result:      [true,   false,   false  ]
 export function computeInstallmentsPaid(amounts: number[], totalPaid: number): boolean[] {
-  let cumulative = 0;
-  return amounts.map((a) => {
-    cumulative += a;
-    return cumulative <= totalPaid;
+  return projectUntargetedPayments(amounts, totalPaid).map(({ outstanding }) => outstanding === 0);
+}
+
+/** Existing invoice payments have no instalment target. Apply them in schedule
+ * order for display. Targeted payment settlement must use explicit attribution. */
+export function projectUntargetedPayments(amounts: number[], totalPaid: number) {
+  let remaining = Math.max(0, totalPaid);
+  return amounts.map((amount) => {
+    const amountPaid = Math.min(amount, remaining);
+    remaining -= amountPaid;
+    return { amountPaid, outstanding: amount - amountPaid };
   });
 }
 
@@ -73,7 +80,8 @@ function toInstallmentDto(row: InstallmentRow): PaymentPlanInstallmentDto {
   };
 }
 
-function toDto(row: PlanRow): PaymentPlanDto {
+function toDto(row: PlanRow, totalPaid: number): PaymentPlanDto {
+  const progress = projectUntargetedPayments(row.installments.map(({ amount }) => amount), totalPaid);
   return {
     id: row.id,
     schoolId: row.schoolId,
@@ -81,7 +89,7 @@ function toDto(row: PlanRow): PaymentPlanDto {
     name: row.name,
     createdBy: row.createdBy,
     createdAt: row.createdAt,
-    installments: row.installments.map(toInstallmentDto),
+    installments: row.installments.map((installment, index) => ({ ...toInstallmentDto(installment), ...progress[index] })),
   };
 }
 
@@ -157,10 +165,10 @@ export class PaymentPlanService {
 
       const plan = await db.paymentPlan.findUniqueOrThrow({
         where: { schoolId_invoiceId: { schoolId: authCtx.schoolId, invoiceId: dto.invoiceId } },
-        include: { installments: { orderBy: { dueDate: "asc" } } },
+        include: { installments: { orderBy: [{ dueDate: "asc" }, { id: "asc" }] } },
       });
 
-      return toDto(plan as PlanRow);
+      return toDto(plan as PlanRow, invoice.totalPaid);
     });
   }
 
@@ -170,10 +178,13 @@ export class PaymentPlanService {
     return withTenant(authCtx.schoolId, async (db) => {
       const plan = await db.paymentPlan.findUnique({
         where: { schoolId_invoiceId: { schoolId: authCtx.schoolId, invoiceId } },
-        include: { installments: { orderBy: { dueDate: "asc" } } },
+        include: {
+          invoice: { select: { totalPaid: true } },
+          installments: { orderBy: [{ dueDate: "asc" }, { id: "asc" }] },
+        },
       });
       if (!plan) return null;
-      return toDto(plan as PlanRow);
+      return toDto(plan, plan.invoice.totalPaid);
     });
   }
 
@@ -222,7 +233,7 @@ export class PaymentPlanService {
   ): Promise<void> {
     const plan = await db.paymentPlan.findFirst({
       where: { invoiceId },
-      include: { installments: { orderBy: { dueDate: "asc" } } },
+      include: { installments: { orderBy: [{ dueDate: "asc" }, { id: "asc" }] } },
     });
     if (!plan) return;
 

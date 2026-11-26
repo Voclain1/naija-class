@@ -28,6 +28,9 @@ export interface PaymentPlanInstallmentDto {
   amount: number;   // kobo
   dueDate: string;  // ISO date "YYYY-MM-DD"
   paid: boolean;
+  /** Display projection for existing untargeted invoice payments, in kobo. */
+  amountPaid?: number;
+  outstanding?: number;
   isOverdue: boolean; // computed: !paid && dueDate < today (read-time, not stored)
 }
 

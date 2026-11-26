@@ -872,14 +872,18 @@ export default function InvoiceDetailPage() {
               <Table stackOnMobile>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Instalment</TableHead>
                     <TableHead>Due date</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Outstanding</TableHead>
                     <TableHead className="text-center">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {plan.installments.map((inst) => (
+                  {plan.installments.map((inst, index) => (
                     <TableRow key={inst.id}>
+                      <TableCell>{index + 1}</TableCell>
                       <TableCell className={inst.isOverdue ? "font-medium text-destructive" : "text-muted-foreground"}>
                         {inst.dueDate}
                         {inst.isOverdue && (
@@ -887,6 +891,8 @@ export default function InvoiceDetailPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatKobo(inst.amount)}</TableCell>
+                      <TableCell className="text-right">{inst.amountPaid === undefined ? "—" : formatKobo(inst.amountPaid)}</TableCell>
+                      <TableCell className="text-right">{inst.outstanding === undefined ? "—" : formatKobo(inst.outstanding)}</TableCell>
                       <TableCell className="text-center">
                         {inst.paid ? (
                           <Badge variant="success">✓ Paid</Badge>

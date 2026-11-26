@@ -1,3 +1,4 @@
+import { projectUntargetedPayments } from "./payment-plan.service.js";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
@@ -18,6 +19,15 @@ import { computeInstallmentsPaid } from "./payment-plan.service.js";
 // ─────────────────────────────────────────────────────────────────────────────
 // Part 1 — computeInstallmentsPaid (pure unit)
 // ─────────────────────────────────────────────────────────────────────────────
+
+it("projects partial untargeted payments and caps progress at the schedule", () => {
+  expect(projectUntargetedPayments([100, 100, 100], 150)).toEqual([
+    { amountPaid: 100, outstanding: 0 },
+    { amountPaid: 50, outstanding: 50 },
+    { amountPaid: 0, outstanding: 100 },
+  ]);
+  expect(projectUntargetedPayments([100], 110)).toEqual([{ amountPaid: 100, outstanding: 0 }]);
+});
 
 describe("computeInstallmentsPaid", () => {
   it("totalPaid = 0 → all false", () => {

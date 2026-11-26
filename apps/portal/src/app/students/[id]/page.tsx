@@ -557,6 +557,22 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
         </div>
       </div>
 
+      {(invoice.installments?.length ?? 0) > 0 && (
+        <section className="space-y-2 border-t pt-3">
+          <h4 className="text-sm font-semibold">Payment schedule</h4>
+          <ol className="space-y-2 text-sm">
+            {invoice.installments?.map((item, index) => (
+              <li key={item.id} className="flex flex-wrap items-baseline justify-between gap-1">
+                <span>Instalment {index + 1} · <time dateTime={item.dueDate}>{item.dueDate}</time></span>
+                <span className="tabular-nums">
+                  {item.outstanding === 0 ? "Paid" : `${formatNaira(item.outstanding)} left`}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
       {payState.kind === "error" && (
         <p role="alert" className="text-sm text-destructive">
           {payState.message}
