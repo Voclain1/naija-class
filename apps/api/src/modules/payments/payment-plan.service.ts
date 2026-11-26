@@ -111,72 +111,79 @@ export class PaymentPlanService {
   // ─── Create plan ──────────────────────────────────────────────────────────
 
   async create(authCtx: AuthContext, dto: CreatePaymentPlanInput): Promise<PaymentPlanDto> {
-    return withTenant(authCtx.schoolId, async (db) => {
-      // 1. Load invoice.
-      const invoice = await db.invoice.findUnique({
-        where: { id: dto.invoiceId },
-        select: { id: true, schoolId: true, status: true, totalDue: true, totalPaid: true },
-      });
-      if (!invoice || invoice.schoolId !== authCtx.schoolId) {
-        throw new NotFoundError("Invoice not found.");
-      }
+    return withTenant(authCtx.schoolId, (db) => this.createInTransaction(db, authCtx, dto));
+  }
 
-      // 2. Status gate — ISSUED and PARTIALLY_PAID allowed (D4, amended).
-      if (invoice.status !== "ISSUED" && invoice.status !== "PARTIALLY_PAID") {
-        throw new ConflictError(
-          "INVOICE_NOT_PLANNABLE",
-          `Cannot create an installment plan for an invoice in status ${invoice.status}.`,
-        );
-      }
-
-      // 3. One plan per invoice (D3).
-      const existing = await db.paymentPlan.findUnique({
-        where: { schoolId_invoiceId: { schoolId: authCtx.schoolId, invoiceId: dto.invoiceId } },
-        select: { id: true },
-      });
-      if (existing) {
-        throw new ConflictError(
-          "PLAN_ALREADY_EXISTS",
-          "This invoice already has an installment plan. Delete it before creating a new one.",
-        );
-      }
-
-      // 4. Sum constraint — Σ installment.amount must equal invoice.totalDue (D2).
-      const installmentTotal = dto.installments.reduce((sum, i) => sum + i.amount, 0);
-      if (installmentTotal !== invoice.totalDue) {
-        throw new ConflictError(
-          "INSTALLMENT_SUM_MISMATCH",
-          `Installment amounts sum to ${installmentTotal} kobo but invoice totalDue is ${invoice.totalDue} kobo. They must be equal.`,
-        );
-      }
-
-      // 5. Create plan + installments atomically.
-      await db.paymentPlan.create({
-        data: {
-          schoolId: authCtx.schoolId,
-          invoiceId: dto.invoiceId,
-          name: dto.name,
-          createdBy: authCtx.userId,
-          installments: {
-            create: dto.installments.map((i) => ({
-              schoolId: authCtx.schoolId,
-              amount: i.amount,
-              dueDate: new Date(i.dueDate),
-            })),
-          },
-        },
-      });
-
-      // 6. Immediately recompute paid status — handles PARTIALLY_PAID invoices (D4 amendment).
-      await this.recomputeInstallmentsPaid(db, dto.invoiceId, invoice.totalPaid);
-
-      const plan = await db.paymentPlan.findUniqueOrThrow({
-        where: { schoolId_invoiceId: { schoolId: authCtx.schoolId, invoiceId: dto.invoiceId } },
-        include: { installments: { orderBy: [{ dueDate: "asc" }, { id: "asc" }] } },
-      });
-
-      return toDto(plan as PlanRow, invoice.totalPaid);
+  async createInTransaction(
+    db: PrismaClient,
+    authCtx: Pick<AuthContext, "schoolId" | "userId">,
+    dto: CreatePaymentPlanInput,
+  ): Promise<PaymentPlanDto> {
+    await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${authCtx.schoolId} AND id = ${dto.invoiceId} FOR UPDATE`;
+    // 1. Load invoice.
+    const invoice = await db.invoice.findUnique({
+      where: { id: dto.invoiceId },
+      select: { id: true, schoolId: true, status: true, totalDue: true, totalPaid: true },
     });
+    if (!invoice || invoice.schoolId !== authCtx.schoolId) {
+      throw new NotFoundError("Invoice not found.");
+    }
+
+    // 2. Status gate — ISSUED and PARTIALLY_PAID allowed (D4, amended).
+    if (invoice.status !== "ISSUED" && invoice.status !== "PARTIALLY_PAID") {
+      throw new ConflictError(
+        "INVOICE_NOT_PLANNABLE",
+        `Cannot create an installment plan for an invoice in status ${invoice.status}.`,
+      );
+    }
+
+    // 3. One plan per invoice (D3).
+    const existing = await db.paymentPlan.findUnique({
+      where: { schoolId_invoiceId: { schoolId: authCtx.schoolId, invoiceId: dto.invoiceId } },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictError(
+        "PLAN_ALREADY_EXISTS",
+        "This invoice already has an installment plan. Delete it before creating a new one.",
+      );
+    }
+
+    // 4. Sum constraint — Σ installment.amount must equal invoice.totalDue (D2).
+    const installmentTotal = dto.installments.reduce((sum, i) => sum + i.amount, 0);
+    if (installmentTotal !== invoice.totalDue) {
+      throw new ConflictError(
+        "INSTALLMENT_SUM_MISMATCH",
+        `Installment amounts sum to ${installmentTotal} kobo but invoice totalDue is ${invoice.totalDue} kobo. They must be equal.`,
+      );
+    }
+
+    // 5. Create plan + installments atomically.
+    await db.paymentPlan.create({
+      data: {
+        schoolId: authCtx.schoolId,
+        invoiceId: dto.invoiceId,
+        name: dto.name,
+        createdBy: authCtx.userId,
+        installments: {
+          create: dto.installments.map((i) => ({
+            schoolId: authCtx.schoolId,
+            amount: i.amount,
+            dueDate: new Date(i.dueDate),
+          })),
+        },
+      },
+    });
+
+    // 6. Immediately recompute paid status — handles PARTIALLY_PAID invoices (D4 amendment).
+    await this.recomputeInstallmentsPaid(db, dto.invoiceId, invoice.totalPaid);
+
+    const plan = await db.paymentPlan.findUniqueOrThrow({
+      where: { schoolId_invoiceId: { schoolId: authCtx.schoolId, invoiceId: dto.invoiceId } },
+      include: { installments: { orderBy: [{ dueDate: "asc" }, { id: "asc" }] } },
+    });
+
+    return toDto(plan as PlanRow, invoice.totalPaid);
   }
 
   // ─── Find by invoice ──────────────────────────────────────────────────────

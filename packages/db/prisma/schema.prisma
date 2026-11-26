@@ -28,6 +28,7 @@ datasource db {
 // ---------- Tenancy ----------
 
 model School {
+  installmentPolicy Json? @map("installment_policy")
   paystackPaymentExceptions PaystackPaymentException[]
   id                        String       @id @default(uuid())
   name                      String
@@ -5972,4 +5973,19 @@ model PaystackPaymentException {
 
   @@id([schoolId, reference, reason])
   @@map("paystack_payment_exceptions")
+}
+
+model InstallmentRequest {
+  id         String   @id @default(uuid())
+  schoolId   String   @map("school_id")
+  invoiceId  String   @map("invoice_id")
+  guardianId String   @map("guardian_id")
+  schedule   Json
+  status     String
+  revision   Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([schoolId, invoiceId])
+  @@map("installment_requests")
 }

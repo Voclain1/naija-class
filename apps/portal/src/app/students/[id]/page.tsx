@@ -11,6 +11,7 @@
 // unknown id, so the page never confirms or denies another family's child
 // exists at this URL.
 
+import { InstallmentRequests } from "./installment-requests";
 import Link from "@/components/portal-link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -589,6 +590,10 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
             ))}
           </ol>
         </section>
+      )}
+
+      {(!invoice.installments?.length && ["ISSUED", "PARTIALLY_PAID"].includes(invoice.status)) && (
+        <InstallmentRequests invoice={invoice} />
       )}
 
       {payState.kind === "error" && (

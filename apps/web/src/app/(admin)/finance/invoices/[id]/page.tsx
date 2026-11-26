@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffInstallmentRequests } from "./installment-requests";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -1190,6 +1191,11 @@ export default function InvoiceDetailPage() {
       )}
 
       {/* Cancel */}
+      {permissions.includes("payment-plan.read") && (
+        <StaffInstallmentRequests invoiceId={invoice.id}
+          canDecide={permissions.includes("payment-plan.create")} onApprove={() => window.location.reload()} />
+      )}
+
       {canCancelInvoice(invoice.status, permissions) && (
         <CancelInvoiceDialog onCancelled={handleCancelled}>
           {(open, busy) => (
