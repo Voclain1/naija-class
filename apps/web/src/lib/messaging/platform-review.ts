@@ -24,8 +24,7 @@ export function catalogIssue(rates: readonly Rate[], scope: "platform" | "school
     if (seen.has(key)) return "Duplicate price version.";
     seen.add(key);
   }
-  for (let i = 0; i < rates.length; i++) {
-    const a = rates[i];
+  for (const [i, a] of rates.entries()) {
     if (rates.slice(i+1).some(b => a.key === b.key && Date.parse(a.effectiveFrom) < Date.parse(b.effectiveUntil) && Date.parse(b.effectiveFrom) < Date.parse(a.effectiveUntil))) return "Validity intervals overlap for a price key.";
   }
   return null;

@@ -6,7 +6,7 @@ import { resolveShareablePaymentLink, shareablePaymentLinkUrl } from "./shareabl
 
 const BALANCE = 4_500_000; // kobo
 
-const live = (amount: number): PaymentLinkStateDto => ({
+const live = (amount: number): Extract<PaymentLinkStateDto, { state: "LIVE" }> => ({
   state: "LIVE",
   id: "pl-1",
   url: "https://paystack.com/pay/PRQ_abc",
