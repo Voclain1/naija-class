@@ -29,7 +29,7 @@ cleanup() {
     for c in api render-worker postgres; do docker logs --tail 25 "school-kit-$c-1" 2>&1 | sed "s/^/[$c] /" || true; done
   fi
   (cd "$R" && docker compose --env-file deploy.env -f docker-compose.yml -f rehearsal.override.yml down -v --remove-orphans >/dev/null 2>&1) || true
-  docker rm -fv rh-minio >/dev/null 2>&1 || true
+  docker rm -fv rh-s3 >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -98,7 +98,6 @@ cp Caddyfile "$R/Caddyfile.original"
 docker pull "$BACKUP" >/dev/null; docker pull "$MIGRATE" >/dev/null
 for i in "$CAND_API" "$CAND_RENDER" "$REC_API" "$REC_RENDER" "$OLD_API" "$OLD_RENDER"; do docker pull "$i" >/dev/null; done
 docker pull caddy:2.10-alpine >/dev/null; docker pull redis:7.4-alpine >/dev/null
-docker pull minio/minio >/dev/null; docker pull minio/mc >/dev/null
 docker tag "$BACKUP" school-kit-postgres:pg18
 docker tag caddy:2.10-alpine school-kit-caddy:2.10
 docker tag "$OLD_RENDER" "ghcr.io/voclain1/school-kit-render:$OLD_TAG" 2>/dev/null || true
@@ -113,9 +112,13 @@ sqlpg() { docker exec "$(dcb ps -q postgres)" psql -XqAt -v ON_ERROR_STOP=1 -U p
 dcb up -d --no-deps --no-build --pull never postgres redis
 for _ in $(seq 1 90); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(dcb ps -q postgres)")" = healthy ] && break; sleep 2; done
 net=school-kit_default
-docker run -d --name rh-minio --network "$net" --network-alias minio -e MINIO_ROOT_USER=fxaccess -e MINIO_ROOT_PASSWORD=fxsecretfxsecret minio/minio server /data >/dev/null
-for _ in $(seq 1 30); do docker run --rm --network "$net" --entrypoint sh minio/mc -c 'mc alias set l http://minio:9000 fxaccess fxsecretfxsecret >/dev/null && mc ls l >/dev/null' 2>/dev/null && break; sleep 2; done
-docker run --rm --network "$net" --entrypoint sh minio/mc -c 'mc alias set l http://minio:9000 fxaccess fxsecretfxsecret >/dev/null && mc mb -p l/rehearsal >/dev/null'
+# Object store for the rehearsal: the pinned image's own rclone serving S3 from a directory (a top-level directory is a bucket).
+docker run -d --name rh-s3 --network "$net" --network-alias minio --entrypoint sh "$BACKUP" -c \
+  'mkdir -p /data/rehearsal && exec rclone serve s3 /data --auth-key fxaccess,fxsecretfxsecret --addr :9000' >/dev/null
+S3=":s3,provider=Other,env_auth=false,access_key_id=fxaccess,secret_access_key=fxsecretfxsecret,endpoint=http://minio:9000"
+s3() { docker run --rm --network "$net" --entrypoint rclone "$BACKUP" "$@"; }
+for _ in $(seq 1 30); do s3 lsd "$S3:" >/dev/null 2>&1 && break; sleep 2; done
+s3 lsd "$S3:" | grep -q rehearsal
 
 # ---- the OLD production state: the real pre-allocation schema and release ------------------------------------
 docker run --rm --network "$net" -e DIRECT_URL=postgresql://school_kit:fx-migrations@postgres:5432/school_kit \
@@ -209,7 +212,7 @@ assert "S1: execute exits 20 (migration failure)" '[ "$rc" = 20 ]'
 assert "S1: ingress is CLOSED: HTTP 503 on health and on the webhook path" '[ "$(code /api/v1/health)" = 503 ] && [ "$(code /api/v1/payments/paystack/webhook)" = 503 ]'
 assert "S1: 503 carries Retry-After" 'curl -s -o /dev/null -D - --resolve "$EDGE_RESOLVE" "$EDGE_BASE/api/v1/payments/paystack/webhook" | grep -qi "^retry-after:"'
 assert "S1: the old application is stopped (drained BEFORE the migration) and no release was started" '[ -z "$(docker ps --format "{{.Image}}" | grep -E "school-kit-(api|render)" || true)" ]'
-assert "S1: the pre-migration snapshot exists in object storage and the restore point was recorded" 'docker run --rm --network "$net" --entrypoint sh minio/mc -c "mc alias set l http://minio:9000 fxaccess fxsecretfxsecret >/dev/null && mc ls l/rehearsal/dumps/pre-batch3/" | grep -q "pre-batch3.*dump" && grep -q "restore_point=batch3_pre_migration_" release/snapshot.txt'
+assert "S1: the pre-migration snapshot exists in object storage and the restore point was recorded" 's3 lsf "$S3:rehearsal/dumps/pre-batch3/" | grep -q "pre-batch3.*dump$" && grep -q "restore_point=batch3_pre_migration_" release/snapshot.txt'
 assert "S1: the failed migration is recorded as unresolved" '[ "$(sqlpg -c "SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL")" = 1 ]'
 assert "S1: PostgreSQL, ops-pinned, original ops untouched" 'invariants_hold'
 set +e; approved execute >/dev/null 2>&1; rr=$?; set -e
