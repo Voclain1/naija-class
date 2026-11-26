@@ -1,0 +1,99 @@
+name: Scoped instalment VPS cutover
+on:
+  push:
+    branches: [ops/instalment-vps-cutover]
+permissions:
+  contents: read
+  packages: read
+  actions: read
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RELEASE: 25e54017aa0d41870ab3988f1c55be3d00cab54e
+      MERGED_CI: '45861532043'
+      REHEARSAL: '45861786548'
+      REHEARSAL_HEAD: 1c819e65ddf3a54853f28709ab402a35ed7f8e64
+      RECOVERY_API: ghcr.io/voclain1/school-kit-api@sha256:4975ff12fcae9af62eed8811e52064118e03a6ceba22c82db5135ca1a24857a7
+      API_IMAGE: ghcr.io/voclain1/school-kit-api@sha256:58d4630e6a64aea0e852ebf336d12de2c90592347b986e77ceecb1e52adae2aa
+      WEB_IMAGE: ghcr.io/voclain1/school-kit-web@sha256:554321b10925ef51f5af458cfa67dd4c4bd464f3bfa101257f118c4482186f4c
+      PORTAL_IMAGE: ghcr.io/voclain1/school-kit-portal@sha256:aa390fb129faf424090467ec0f5a0f0cd51000b485df64f9e0ad659aeea90985
+      VPS_DEPLOY_ENABLED: ${{ vars.VPS_DEPLOY_ENABLED }}
+      FLY_DEPLOY_DISABLED: ${{ vars.FLY_DEPLOY_DISABLED }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify release and recovery gates
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "${VPS_DEPLOY_ENABLED:-false}" == false && "$FLY_DEPLOY_DISABLED" == true ]]
+          [[ "$RECOVERY_API" =~ ^ghcr\.io/voclain1/school-kit-api@sha256:[a-f0-9]{64}$ ]]
+          test "$RECOVERY_API" != "$API_IMAGE"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq .commit.sha)" = "$RELEASE"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/394117026" --jq .state)" = disabled_manually
+          test "$(gh run view "$MERGED_CI" --json headSha,conclusion --jq '.headSha + ":" + .conclusion')" = "$RELEASE:success"
+          test "$(gh run view "$REHEARSAL" --json headSha,conclusion --jq '.headSha + ":" + .conclusion')" = "$REHEARSAL_HEAD:success"
+          git diff --exit-code "$RELEASE" HEAD -- packages/db/prisma apps
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: PUPPETEER_SKIP_DOWNLOAD=true pnpm install --frozen-lockfile
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Open protected migration connection and verify role
+        env:
+          DB_PASSWORD: ${{ secrets.VPS_SCHOOL_KIT_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$DB_PASSWORD"
+          ssh -f -N -o ExitOnForwardFailure=yes -L 15432:127.0.0.1:5432 vps
+          encoded=$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["DB_PASSWORD"], safe=""))')
+          echo "::add-mask::$encoded"
+          url="postgresql://school_kit:$encoded@127.0.0.1:15432/school_kit"
+          test "$(psql "$url" -XqAt -v ON_ERROR_STOP=1 -c 'SELECT current_user')" = school_kit
+          echo "::add-mask::$url"
+          echo "DIRECT_URL=$url" >> "$GITHUB_ENV"
+      - name: Pre-pull pinned images and capture protected stack
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cfg=$(ssh vps 'mktemp -d /tmp/schoolkit-ghcr.XXXXXXXX')
+          [[ "$cfg" =~ ^/tmp/schoolkit-ghcr\.[A-Za-z0-9]+$ ]]
+          trap 'ssh vps "rm -f -- $cfg/config.json && rmdir -- $cfg"' EXIT
+          printf '%s' "$GHCR_TOKEN" | ssh vps "docker --config $cfg login ghcr.io -u $GITHUB_ACTOR --password-stdin"
+          for image in "$API_IMAGE" "$WEB_IMAGE" "$PORTAL_IMAGE" "$RECOVERY_API"; do
+            [[ "$image" =~ ^ghcr\.io/voclain1/school-kit-(api|web|portal)@sha256:[a-f0-9]{64}$ ]]
+            ssh vps "docker --config $cfg pull $image"
+          done
+          ssh vps "bash -se -- prepare $RELEASE $API_IMAGE $WEB_IMAGE $PORTAL_IMAGE $RECOVERY_API" < scripts/scoped-instalment-vps.sh
+      - name: Drain API and back up PostgreSQL
+        run: ssh vps "bash -se -- pause $RELEASE" < scripts/scoped-instalment-vps.sh
+      - name: Apply exactly the merged migrations
+        run: |
+          pnpm --filter @school-kit/db exec prisma migrate deploy
+          pnpm --filter @school-kit/db exec prisma migrate status
+      - name: Switch only API, web and portal and verify production
+        run: ssh vps "bash -se -- switch $RELEASE $API_IMAGE $WEB_IMAGE $PORTAL_IMAGE $RECOVERY_API" < scripts/scoped-instalment-vps.sh
+      - name: Verify public routing
+        env:
+          API_HOST: ${{ vars.VPS_API_HOST }}
+          WEB_HOST: ${{ vars.VPS_WEB_HOST }}
+          PORTAL_HOST: ${{ vars.VPS_PORTAL_HOST }}
+        run: |
+          curl -fsS --retry 3 --max-time 8 "https://$API_HOST/api/v1/health" >/dev/null
+          curl -fsS --retry 3 --max-time 8 "https://$WEB_HOST/api/health" >/dev/null
+          curl -fsS --retry 3 --max-time 8 "https://$PORTAL_HOST/api/health" >/dev/null
+          echo 'Public API, web and guardian portal healthy.'
