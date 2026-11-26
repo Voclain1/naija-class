@@ -127,7 +127,7 @@ export class InstallmentRequestsService {
         const school = await db.school.findUniqueOrThrow({ where: { id: schoolId }, select: { name: true } });
         const eventId = request.id + ":" + request.revision;
         const claim = await db.notificationDelivery.createMany({
-          data: [{ schoolId, eventType: "installment.request-updated", eventId, principalType: "GUARDIAN", principalId: guardianId, channel: "EMAIL" }],
+          data: [{ schoolId, eventType: "installment.request-updated-email", eventId, principalType: "GUARDIAN", principalId: guardianId, channel: "EMAIL" }],
           skipDuplicates: true,
         });
         return claim.count > 0 ? { email, schoolName: school.name } : null;

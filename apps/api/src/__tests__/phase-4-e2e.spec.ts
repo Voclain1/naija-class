@@ -11,6 +11,7 @@ import { ForbiddenError, NotFoundError } from "@school-kit/types";
 
 import { FilesystemStorageDriver } from "../common/storage/filesystem-storage.driver";
 import { StorageService } from "../common/storage/storage.service";
+import { InstallmentRequestsService } from "../modules/payments/installment-requests.service";
 import { PaymentPlanService } from "../modules/payments/payment-plan.service";
 import { PaymentsService } from "../modules/payments/payments.service";
 import { AuthService } from "../modules/auth/auth.service";
@@ -322,6 +323,40 @@ describe("Phase 4 E2E rollup (slice 8)", () => {
   // WALK 2 — cross-tenant denial: School B's guardian cannot touch School
   //          A's guardian-facing data.
   // =========================================================================
+  it("negotiates a guardian instalment request and settles the final instalment first", async () => {
+    const roster = await buildFixture("installment");
+    const actor = ctx(roster.schoolId, roster.ownerId);
+    const guardian = guardianCtx(roster.schoolId, roster.guardianId);
+    const plans = new PaymentPlanService();
+    const requests = new InstallmentRequestsService(plans);
+    const payments = new PortalPaymentsService(paystackStub, new PaymentsService(storage, paystackStub, plans));
+    const paymentPlanDates = [1, 2, 3].map((offset) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10));
+    const schedule = paymentPlanDates.map((dueDate) => ({ dueDate, amount: roster.invoiceDue / 3 }));
+    expect((await requests.guardianView(guardian, roster.studentId, roster.invoiceId)).policy.enabled).toBe(false);
+    await requests.setPolicy(actor, { enabled: true, maxInstallments: 3, minimumFirstKobo: 1, requireWithinTerm: false });
+    const request = await requests.submit(guardian, roster.studentId, roster.invoiceId, schedule);
+    expect(request.status).toBe("PENDING");
+    const counter = await requests.decide(actor, roster.invoiceId, request.id, {
+      action: "COUNTER", revision: request.revision, schedule,
+    });
+    expect(counter.status).toBe("COUNTERED");
+    await expect(requests.respond(guardian, roster.studentId, roster.invoiceId, request.id, request.revision, true))
+      .rejects.toThrow("current version");
+    const accepted = await requests.respond(guardian, roster.studentId, roster.invoiceId, request.id, counter.revision, true);
+    expect(accepted.status).toBe("APPROVED");
+    const plan = await plans.findByInvoice(actor, roster.invoiceId);
+    const finalInstallment = plan!.installments[2]!;
+    const init = await payments.initiate(guardian, roster.studentId, roster.invoiceId, reqCtx, "portal", finalInstallment.id);
+    const settled = await payments.verify(guardian, init.reference);
+    expect(settled.amount).toBe(finalInstallment.amount);
+    expect(settled.status).toBe("SUCCESS");
+    const summary = (await portalInvoices.listForStudent(guardian, roster.studentId)).data[0]!;
+    expect(summary.installments?.map((row) => row.amountPaid)).toEqual([0, 0, finalInstallment.amount]);
+    expect(summary.installments?.[2]?.paymentHistory?.[0]).toMatchObject({
+      allocatedKobo: finalInstallment.amount, status: "SUCCESS", receiptNumber: expect.any(String),
+    });
+  });
+
   it("WALK 2: a second school's guardian cannot read or write the first school's guardian-facing data", async () => {
     const a = await buildFixture("w2a");
     const b = await buildFixture("w2b");
