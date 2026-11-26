@@ -41,7 +41,8 @@ for n in $(seq 1 9); do
   sleep 1   # distinct backup timestamps
 done
 settle
-bases() { wal-g backup-list --json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'; }
+bases() { wal-g backup-list --json 2>/dev/null | grep -o '"backup_name":"[^"]*"' | wc -l; }
+base_names() { wal-g backup-list --json 2>/dev/null | grep -o '"backup_name":"[^"]*"' | cut -d'"' -f4 | sort; }
 walcount() { find "$WALG_FILE_PREFIX" -path '*wal_005*' -type f | wc -l; }
 check "fixture: nine full base backups exist" '[ "$(bases)" = 9 ]'
 before_w=$(walcount)
@@ -53,7 +54,7 @@ grep -q 'wal-g delete retain FULL 7 --confirm' /ops/backup.sh 2>/dev/null && ech
 wal-g delete retain FULL 7 --confirm >/dev/null
 check "confirmed prune keeps exactly 7 bases" '[ "$(bases)" = 7 ]'
 check "confirmed prune removed WAL older than the oldest kept base" '[ "$(walcount)" -lt "$before_w" ]'
-oldest=$(wal-g backup-list --json | python3 -c 'import json,sys; b=json.load(sys.stdin); print(b[0]["backup_name"])')
+oldest=$(base_names | head -n 1)
 check "kept oldest base is still fetchable (backup-fetch to scratch)" 'wal-g backup-fetch "$w/restore" "$oldest" >/dev/null && test -f "$w/restore/backup_label"'
 first_wal=$(sed -n 's/^START WAL LOCATION: .* (file \([0-9A-F]*\)).*/\1/p' "$w/restore/backup_label")
 check "WAL needed to start from the oldest kept base is still archived ($first_wal)" 'wal-g wal-fetch "$first_wal" "$w/seg" >/dev/null 2>&1 && test -s "$w/seg"'
