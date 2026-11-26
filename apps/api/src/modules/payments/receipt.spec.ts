@@ -70,6 +70,18 @@ describe("buildBrandedReceiptHtml — what the receipt shows (D1)", () => {
     expect(html).toContain("Balance</div><div class=\"v due\">₦50,000.00");
   });
 
+  it("distinguishes gross, applied and unapplied amounts on the printable receipt", () => {
+    const split = buildBrandedReceiptHtml({ ...RECEIPT, allocatedKobo: 30_000_00 });
+    expect(split).toContain('Gross funds received</div>');
+    expect(split).toContain('class="figure">₦50,000.00');
+    expect(split).toContain('Applied to this invoice</div><div class="v">₦30,000.00');
+    expect(split).toContain('Unapplied funds</div><div class="v">₦20,000.00');
+    expect(split).toContain('Paid to date</div><div class="v">₦100,000.00');
+    expect(html).toContain("Amount received");
+    expect(html).not.toContain("Unapplied funds");
+    expect(buildBrandedReceiptHtml({ ...RECEIPT, allocatedKobo: RECEIPT.amount })).toBe(html);
+  });
+
   it("marks a part payment, and a settled invoice as paid in full", () => {
     // Part payment: what is still owed is on the receipt, and stamped.
     expect(html).toContain("₦50,000.00 outstanding");

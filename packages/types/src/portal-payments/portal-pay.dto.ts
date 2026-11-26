@@ -21,9 +21,9 @@ export type PortalPayReturnTo = (typeof PORTAL_PAY_RETURN_TO)[number];
 // the default, so every existing caller keeps working unchanged.
 export const portalPaySchema = z.preprocess(
   (v) => v ?? {},
-  z.object({ returnTo: z.enum(PORTAL_PAY_RETURN_TO).default("portal") }).strict(),
+  z.object({ returnTo: z.enum(PORTAL_PAY_RETURN_TO).default("portal"), installmentId: z.string().uuid().optional() }).strict(),
 );
-export type PortalPayInput = { returnTo?: PortalPayReturnTo };
+export type PortalPayInput = { returnTo?: PortalPayReturnTo; installmentId?: string };
 
 /** Where the app listens for the end of checkout. Must match app.json's scheme. */
 export const APP_PAYMENT_RETURN_URL = "schoolkit://payments/callback";

@@ -1,3 +1,4 @@
+import { PortalInstallmentRequestsController } from "./portal-installment-requests.controller.js";
 import { Module } from "@nestjs/common";
 
 import { PaystackModule } from "../../common/paystack/paystack.module.js";
@@ -7,7 +8,7 @@ import { PortalPaymentsService } from "./portal-payments.service";
 
 @Module({
   imports: [PaystackModule, PaymentsModule],
-  controllers: [PortalPaymentsController],
+  controllers: [PortalPaymentsController, PortalInstallmentRequestsController],
   providers: [PortalPaymentsService],
 })
 export class PortalPaymentsModule {}

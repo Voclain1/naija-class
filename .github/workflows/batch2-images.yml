@@ -16,7 +16,7 @@ on:
 env:
   # The backup image the owner verified and runs in production as ops-pinned.
   PRODUCTION_BACKUP_IMAGE: ghcr.io/voclain1/school-kit-postgres@sha256:1c0ac5407c14975abad8240218366477a6c2515c6d7fbc6a379a121577d4429d
-  RECOVERY_SHA: 93cc9eebf50ec06be72c3b565698f1c77907d0d9
+  RECOVERY_SHA: ${{ github.event.pull_request.head.sha }}
 
 jobs:
   build:
@@ -57,7 +57,10 @@ jobs:
           push: true
           tags: ghcr.io/voclain1/school-kit-api:batch2-recovery-${{ github.run_id }}
           cache-from: type=gha,scope=api
-          labels: org.opencontainers.image.revision=${{ env.RECOVERY_SHA }}
+          labels: |
+            org.opencontainers.image.revision=${{ env.RECOVERY_SHA }}
+            org.schoolkit.release.role=recovery
+          build-args: SENTRY_RELEASE=${{ env.RECOVERY_SHA }}
       - uses: docker/build-push-action@v7
         id: recovery_render
         with:
@@ -66,7 +69,10 @@ jobs:
           push: true
           tags: ghcr.io/voclain1/school-kit-render:batch2-recovery-${{ github.run_id }}
           cache-from: type=gha,scope=render
-          labels: org.opencontainers.image.revision=${{ env.RECOVERY_SHA }}
+          labels: |
+            org.opencontainers.image.revision=${{ env.RECOVERY_SHA }}
+            org.schoolkit.release.role=recovery
+          build-args: SENTRY_RELEASE=${{ env.RECOVERY_SHA }}
       - run: mv recovery-source "$RUNNER_TEMP/batch2-recovery-source"
       - uses: docker/build-push-action@v7
         id: candidate_api
@@ -236,7 +242,7 @@ jobs:
       contents: read
       packages: read
     env:
-      OLD_SHA: 61b5c214cdc4c3908564321459b039c4f2dffcbb
+      OLD_SHA: 25e54017aa0d41870ab3988f1c55be3d00cab54e
     steps:
       - uses: actions/checkout@v7
         with:
@@ -248,11 +254,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: The old production release's own schema (migrations as of 61b5c214)
+      - name: The old production release's own schema (migrations as of 25e54017)
         run: |
           mkdir -p "$RUNNER_TEMP/baseline"
           git archive "$OLD_SHA" packages/db/prisma/migrations | tar -x -C "$RUNNER_TEMP/baseline"
-          ls "$RUNNER_TEMP/baseline/packages/db/prisma/migrations" | wc -l
+          while IFS= read -r -d '' path; do
+            cmp "$path" "${path#"$RUNNER_TEMP/baseline/"}"
+          done < <(find "$RUNNER_TEMP/baseline/packages/db/prisma/migrations" -name migration.sql -print0)
       - name: Release manifest from this run's digests
         run: |
           cat > "$RUNNER_TEMP/manifest.env" <<EOF
@@ -270,13 +278,12 @@ jobs:
       - name: Rehearse the guarded cutover, including its failure paths
         env:
           RELEASE_MANIFEST: ${{ runner.temp }}/manifest.env
-          OLD_API: ghcr.io/voclain1/school-kit-api:${{ env.OLD_SHA }}
-          OLD_RENDER: ghcr.io/voclain1/school-kit-render:${{ env.OLD_SHA }}
+          OLD_API: ghcr.io/voclain1/school-kit-api@sha256:58d4630e6a64aea0e852ebf336d12de2c90592347b986e77ceecb1e52adae2aa
+          OLD_RENDER: ghcr.io/voclain1/school-kit-render:61b5c214cdc4c3908564321459b039c4f2dffcbb
           BASELINE_MIGRATIONS: ${{ runner.temp }}/baseline/packages/db/prisma/migrations
         run: bash scripts/batch3-cutover-rehearsal.sh
 
-  # Proposes the manifest to the VPS ONLY if every hosted rehearsal for this exact head passed. It writes a single
-  # file (release/manifest.proposed); nothing is installed, authorised, started or restarted by this job.
+  # Publish an artifact after rehearsals, without a production SSH step.
   publish-manifest:
     needs: [build, retention, rehearse, cutover, tooling]
     if: github.event.pull_request.head.ref == 'feat/unified-messaging-infrastructure'
@@ -287,11 +294,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: ./.github/actions/vps-ssh
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Write release/manifest.proposed
+      - name: Prepare proposed manifest
         run: |
           set -euo pipefail
           cat > "$RUNNER_TEMP/manifest.env" <<EOF
@@ -307,6 +310,8 @@ jobs:
           EOF
           sed -i 's/^ *//' "$RUNNER_TEMP/manifest.env"
           cat "$RUNNER_TEMP/manifest.env"
-          ssh vps 'umask 077; mkdir -p /opt/school-kit/release; chmod 700 /opt/school-kit/release; cat > /opt/school-kit/release/manifest.proposed' < "$RUNNER_TEMP/manifest.env"
-          echo "proposed manifest written (not installed, not authorised)"
-
+      - uses: actions/upload-artifact@v7
+        with:
+          name: messaging-cutover-manifest
+          path: ${{ runner.temp }}/manifest.env
+          if-no-files-found: error

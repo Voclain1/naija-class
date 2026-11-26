@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 
+import { installmentOutstanding } from "../payments/installment-progress.js";
 import { withGuardian, withTenant } from "@school-kit/db";
 import {
   ConflictError,
@@ -35,6 +36,8 @@ function toPortalPaymentDto(dto: PaymentDto): PortalPaymentDto {
     invoiceId: dto.invoiceId,
     studentId: dto.studentId,
     amount: dto.amount,
+    allocatedKobo: dto.allocatedKobo,
+    unappliedKobo: dto.unappliedKobo,
     method: dto.method,
     status: dto.status,
     paidAt: dto.paidAt,
@@ -68,6 +71,7 @@ export class PortalPaymentsService {
     invoiceId: string,
     reqCtx: RequestContext,
     returnTo: PortalPayReturnTo = "portal",
+    installmentId?: string,
   ): Promise<PaystackInitResponseDto> {
     const { paymentId, customerEmail, amount, subaccountCode, schoolCode } = await withTenant(
       guardianCtx.schoolId,
@@ -106,7 +110,12 @@ export class PortalPaymentsService {
             );
           }
 
-          const remaining = invoice.totalDue - invoice.totalPaid;
+          const invoiceBalance = invoice.totalDue - invoice.totalPaid;
+          const targetBalance = installmentId
+            ? await installmentOutstanding(db2, guardianCtx.schoolId, invoiceId, installmentId, invoice.totalPaid)
+            : invoiceBalance;
+          if (targetBalance === null) throw new NotFoundError("Instalment not found.");
+          const remaining = Math.min(invoiceBalance, targetBalance);
           if (remaining <= 0) {
             throw new ConflictError("INVOICE_ALREADY_PAID", "This invoice is already fully paid.");
           }
@@ -132,6 +141,7 @@ export class PortalPaymentsService {
               invoiceId,
               studentId,
               amount: remaining,
+              installmentId,
               method: "PAYSTACK",
               status: "PENDING",
               recordedBy: null, // no staff actor — see PortalPaymentDto's own comment

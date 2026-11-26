@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Rehearses infra/vps/ops-tools/cutover.sh on ISOLATED infrastructure (a GitHub runner; fictional data,
 # fictional credentials, MinIO as the object store, no provider can be reached): the real docker-compose.yml,
-# the real Caddyfile, the pinned backup image as PostgreSQL 18 + ops-pinned, the real pre-allocation release
-# (61b5c214) as the "old production" application on that release's own schema, then the cutover.
+# the real Caddyfile, the pinned backup image as PostgreSQL 18 + ops-pinned, the deployed instalment-aware release
+# (25e54017) as the "old production" application on that release's own schema, then the cutover.
 #
 # Paths exercised: refusals (no/expired/mismatched authorisation, no explicit approval variable), a FAILED
 # MIGRATION (ingress stays 503, nothing started) -> resolve -> resume, a FAILED CANDIDATE (stays 503, never
 # starts the old image) -> allocation-compatible RECOVERY -> reopen, and a clean cutover back to the candidate.
 # Throughout: PostgreSQL identity, ops-pinned and the stopped original ops are unchanged, nothing is pruned.
 #
-# Env: RELEASE_MANIFEST (file), OLD_API, OLD_RENDER (the 61b5c214 images), BASELINE_MIGRATIONS (dir)
+# Env: RELEASE_MANIFEST (file), OLD_API, OLD_RENDER (the 25e54017 images), BASELINE_MIGRATIONS (dir)
 set -Eeuo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 : "${RELEASE_MANIFEST:?}" "${OLD_API:?}" "${OLD_RENDER:?}" "${BASELINE_MIGRATIONS:?}"
@@ -99,7 +99,8 @@ for i in "$CAND_API" "$CAND_RENDER" "$REC_API" "$REC_RENDER" "$OLD_API" "$OLD_RE
 docker pull caddy:2.10-alpine >/dev/null; docker pull redis:7.4-alpine >/dev/null
 docker tag "$BACKUP" school-kit-postgres:pg18
 docker tag caddy:2.10-alpine school-kit-caddy:2.10
-docker tag "$OLD_RENDER" "ghcr.io/voclain1/school-kit-render:$OLD_TAG" 2>/dev/null || true
+docker tag "$OLD_API" "ghcr.io/voclain1/school-kit-api:$OLD_TAG"
+docker tag "$OLD_RENDER" "ghcr.io/voclain1/school-kit-render:$OLD_TAG"
 docker tag "$BACKUP" schoolkit-ops-fallback:batch2-verified
 
 export CUTOVER_MODE=rehearsal COMPOSE_EXTRA=rehearsal.override.yml SK_DIR="$R"
@@ -128,7 +129,7 @@ for _ in $(seq 1 90); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(dc
 docker run --rm --network "$net" -e DIRECT_URL=postgresql://school_kit:fx-migrations@postgres:5432/school_kit \
   -v "$BASELINE_MIGRATIONS:/app/packages/db/prisma/migrations:ro" "$MIGRATE" migrate deploy >/dev/null
 base_count=$(sqlpg -c "SELECT count(*) FROM _prisma_migrations")
-echo "baseline schema (61b5c214): $base_count migrations applied"
+echo "baseline schema (25e54017): $base_count migrations applied"
 sqlpg -c "INSERT INTO schools (id,name,slug,updated_at) VALUES ('ab000000-0000-4000-a000-0000000000f1','Rehearsal School','rehearsal-school',now())"
 
 # ops-pinned exactly as the owner's activation leaves it: original ops created, stopped, restart=no; override pins the image.
@@ -144,8 +145,8 @@ dcb up -d --no-deps --no-build --pull never caddy
 dcb up -d --no-deps --no-build --pull never api render-worker
 for _ in $(seq 1 90); do [ "$(curl -s -o /dev/null -w '%{http_code}' --resolve "$EDGE_RESOLVE" "$EDGE_BASE/api/v1/health")" = 200 ] && break; sleep 2; done
 code() { curl -s -o /dev/null -m 10 -w '%{http_code}' --resolve "$EDGE_RESOLVE" "$EDGE_BASE$1"; }
-assert "old release (61b5c214) serves 200 through Caddy before the cutover" '[ "$(code /api/v1/health)" = 200 ]'
-assert "old API runs the pre-allocation image" '[ "$(docker inspect -f "{{.Config.Image}}" "$(dcb ps -q api)")" = "$OLD_API" ] || docker inspect -f "{{.Config.Image}}" "$(dcb ps -q api)" | grep -q "$OLD_TAG"'
+assert "old release (25e54017) serves 200 through Caddy before the cutover" '[ "$(code /api/v1/health)" = 200 ]'
+assert "baseline API runs the deployed instalment image" '[ "$(docker inspect -f "{{.Config.Image}}" "$(dcb ps -q api)")" = "$OLD_API" ] || docker inspect -f "{{.Config.Image}}" "$(dcb ps -q api)" | grep -q "$OLD_TAG"'
 
 # The owner pastes the manifest, exactly as the runbook says.
 cp "$RELEASE_MANIFEST" release/manifest.env
@@ -231,7 +232,7 @@ tail -8 "$R/s2.out" | sed 's/^/  /'
 assert "S2: execute exits 30 (candidate unhealthy)" '[ "$rc" = 30 ]'
 assert "S2: migrations were applied before the candidate started" '[ "$(sqlpg -c "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='"'"'payments'"'"' AND column_name='"'"'allocated_kobo'"'"')")" = t ]'
 assert "S2: ingress still CLOSED (503)" '[ "$(code /api/v1/health)" = 503 ]'
-assert "S2: no application container is running, and the 61b5c214 image was never restarted" '[ -z "$(docker ps --format "{{.Image}}" | grep -E "school-kit-(api|render)" || true)" ]'
+assert "S2: no application container is running, and the 25e54017 image was never restarted" '[ -z "$(docker ps --format "{{.Image}}" | grep -E "school-kit-(api|render)" || true)" ]'
 assert "S2: PostgreSQL, ops-pinned, original ops untouched" 'invariants_hold'
 
 echo "=== S3: allocation-compatible RECOVERY, then reopen ==="

@@ -15,7 +15,3 @@ ALTER TABLE paystack_payment_exceptions FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON paystack_payment_exceptions
     USING (school_id = current_setting('app.current_school_id', true))
     WITH CHECK (school_id = current_setting('app.current_school_id', true));
-
-ALTER TABLE messaging_wallet_top_ups
-    ADD COLUMN recovery_attempts INTEGER NOT NULL DEFAULT 0,
-    ADD COLUMN next_recovery_at TIMESTAMP(3);

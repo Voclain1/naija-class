@@ -27,6 +27,7 @@ import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalidation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
+import { installmentOutstanding } from "./installment-progress.js";
 import { invoiceAllocatedTotal } from "./payment-invoice-allocations.js";
 import { issueReceipt, loadReceiptLogo } from "./receipt.js";
 import { EventNotifierService } from "../notifications/event-notifier.service.js";
@@ -150,6 +151,7 @@ function formatKoboForMessage(kobo: number): string {
 
 // Row shape returned by Prisma for the payments table.
 type PaymentRow = {
+  installmentId?: string | null;
   id: string;
   schoolId: string;
   invoiceId: string;
@@ -180,6 +182,7 @@ function isUniqueViolation(e: unknown): boolean {
 
 // Minimal payment shape needed by the Paystack apply helpers.
 type PaymentCore = {
+  installmentId?: string | null;
   id: string;
   schoolId: string;
   invoiceId: string;
@@ -193,6 +196,7 @@ function toDto(row: PaymentRow): PaymentDto {
     id: row.id,
     schoolId: row.schoolId,
     invoiceId: row.invoiceId,
+    installmentId: row.installmentId ?? null,
     studentId: row.studentId,
     amount: row.amount,
     ...(row.allocatedKobo == null ? {} : { allocatedKobo: row.allocatedKobo, unappliedKobo: row.amount - row.allocatedKobo }),
@@ -283,6 +287,7 @@ export class PaymentsService {
   private replay(prior: PaymentRow, dto: RecordManualPaymentInput): ManualPaymentResultDto {
     const same =
       prior.invoiceId === dto.invoiceId &&
+      (prior.installmentId ?? null) === (dto.installmentId ?? null) &&
       prior.amount === dto.amount &&
       prior.method === dto.method &&
       (prior.reference ?? null) === (dto.reference ?? null) &&
@@ -327,7 +332,12 @@ export class PaymentsService {
       }
 
       // 2. Overpayment guard — REJECT (D1). Remaining = totalDue − totalPaid.
-      const remaining = invoice.totalDue - invoice.totalPaid;
+      const invoiceBalance = invoice.totalDue - invoice.totalPaid;
+      const targetBalance = dto.installmentId
+        ? await installmentOutstanding(db, authCtx.schoolId, dto.invoiceId, dto.installmentId, invoice.totalPaid)
+        : invoiceBalance;
+      if (targetBalance === null) throw new NotFoundError("Instalment not found.");
+      const remaining = Math.min(invoiceBalance, targetBalance);
       if (dto.amount > remaining) {
         throw new ConflictError(
           "PAYMENT_WOULD_EXCEED_BALANCE",
@@ -342,6 +352,7 @@ export class PaymentsService {
           invoiceId: dto.invoiceId,
           studentId: invoice.studentId,
           amount: dto.amount,
+          installmentId: dto.installmentId,
           method: dto.method,
           status: "SUCCESS",
           reference: dto.reference ?? null,
@@ -381,6 +392,7 @@ export class PaymentsService {
           metadata: {
             invoiceId: dto.invoiceId,
             amount: dto.amount,
+            installmentId: dto.installmentId,
             method: dto.method,
             newInvoiceStatus: newStatus,
             newTotalPaid,
@@ -394,6 +406,8 @@ export class PaymentsService {
         db,
         authCtx.schoolId,
         dto.invoiceId,
+        undefined,
+        dto.installmentId,
       );
 
       return { ...toDto(payment as PaymentRow), replayed: false };
@@ -538,6 +552,7 @@ export class PaymentsService {
           schoolId: true,
           invoiceId: true,
           studentId: true,
+          installmentId: true,
           amount: true,
           method: true,
           status: true,
@@ -565,7 +580,7 @@ export class PaymentsService {
         const paidAt = data.paid_at ? new Date(data.paid_at) : new Date();
         succeeded = await this.applyPaystackSuccess(db, payment, data as Record<string, unknown>, paidAt);
         if (succeeded) {
-          await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId);
+          await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId, undefined, payment.installmentId);
           balanceChanged = true;
         }
       } else {
@@ -693,7 +708,10 @@ export class PaymentsService {
         : ["CANCELLED", "REFUNDED"].includes(invoice.status) ? "CLOSED_INVOICE"
         : currentLink.status === "PAID" ? "PAYMENT_LINK_ALREADY_PAID"
         : null;
-      const allocated = reason ? 0 : Math.min(link.amount, Math.max(0, invoice.totalDue - invoice.totalPaid));
+      const targetBalance = link.installmentId
+        ? await installmentOutstanding(db, schoolId, invoiceId, link.installmentId, invoice.totalPaid) ?? 0
+        : link.amount;
+      const allocated = reason ? 0 : Math.min(link.amount, targetBalance, Math.max(0, invoice.totalDue - invoice.totalPaid));
       const surplus = link.amount - allocated;
       if (surplus) await recordPaystackException(db, schoolId, invoiceId, reference, reason ?? "INVOICE_OVERPAYMENT",
         link.amount, transaction.amount, transaction.currency, surplus);
@@ -708,6 +726,7 @@ export class PaymentsService {
             invoiceId,
             studentId: invoice.studentId,
             amount: link.amount,
+            installmentId: link.installmentId,
             allocatedKobo: allocated,
             method: "PAYSTACK",
             status: "SUCCESS",
@@ -733,7 +752,7 @@ export class PaymentsService {
           where: { id: invoiceId },
           data: { totalPaid: newTotalPaid, status: newStatus },
       });
-      await this.paymentLinkInvalidation?.markForArchive(db, schoolId, invoiceId, linkId);
+      await this.paymentLinkInvalidation?.markForArchive(db, schoolId, invoiceId, linkId, link.installmentId);
       await db.auditLog.createMany({
           data: [
             {
@@ -827,6 +846,7 @@ export class PaymentsService {
           schoolId: true,
           invoiceId: true,
           studentId: true,
+          installmentId: true,
           amount: true,
           method: true,
           status: true,
@@ -858,7 +878,7 @@ export class PaymentsService {
           paidAt,
         );
         if (applied) {
-          await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId);
+          await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId, undefined, payment.installmentId);
           changedInvoiceId = payment.invoiceId;
         }
       } else if (["failed", "abandoned"].includes(verifyData.status) && verifyData.reference === reference) {
@@ -1137,7 +1157,10 @@ export class PaymentsService {
       return false;
     }
     const closed = invoice.status === "CANCELLED" || invoice.status === "REFUNDED";
-    const allocated = closed ? 0 : Math.min(payment.amount, Math.max(0, invoice.totalDue - invoice.totalPaid));
+    const targetBalance = payment.installmentId
+      ? await installmentOutstanding(db, payment.schoolId, payment.invoiceId, payment.installmentId, invoice.totalPaid) ?? 0
+      : payment.amount;
+    const allocated = closed ? 0 : Math.min(payment.amount, targetBalance, Math.max(0, invoice.totalDue - invoice.totalPaid));
     // 1. Transition payment to SUCCESS and store Paystack payload — an
     // ATOMIC conditional update (updateMany + a status: "PENDING" filter),
     // not a plain update. This is what actually closes the race window
@@ -1181,7 +1204,7 @@ export class PaymentsService {
     const excess = payment.amount - allocated;
     if (excess > 0) {
       await recordPaystackException(db, payment.schoolId, payment.invoiceId, `PSK-${payment.schoolId}-${payment.id}`,
-        closed ? "CLOSED_INVOICE" : "INVOICE_OVERPAYMENT", payment.amount, paystackData.amount, paystackData.currency, excess);
+        closed ? "CLOSED_INVOICE" : payment.installmentId ? "INSTALLMENT_OVERPAYMENT" : "INVOICE_OVERPAYMENT", payment.amount, paystackData.amount, paystackData.currency, excess);
       await db.auditLog.create({
         data: {
           schoolId: payment.schoolId,

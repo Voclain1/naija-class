@@ -60,20 +60,20 @@ export function cancelInvoice(id: string): Promise<InvoiceDto> {
   return apiFetch<InvoiceDto>(`/invoices/${id}/cancel`, { method: "POST" });
 }
 
-export function getPaymentLink(id: string): Promise<PaymentLinkStateDto> {
-  return apiFetch<PaymentLinkStateDto>(`/invoices/${encodeURIComponent(id)}/payment-link`, {
+export function getPaymentLink(id: string, installmentId?: string): Promise<PaymentLinkStateDto> {
+  return apiFetch<PaymentLinkStateDto>(`/invoices/${encodeURIComponent(id)}${installmentId ? `/installments/${encodeURIComponent(installmentId)}` : ""}/payment-link`, {
     method: "GET",
   });
 }
 
-export function createPaymentLink(id: string): Promise<PaymentLinkStateDto> {
-  return apiFetch<PaymentLinkStateDto>(`/invoices/${encodeURIComponent(id)}/payment-link`, {
+export function createPaymentLink(id: string, installmentId?: string): Promise<PaymentLinkStateDto> {
+  return apiFetch<PaymentLinkStateDto>(`/invoices/${encodeURIComponent(id)}${installmentId ? `/installments/${encodeURIComponent(installmentId)}` : ""}/payment-link`, {
     method: "POST",
   });
 }
 
-export function archivePaymentLink(id: string): Promise<PaymentLinkStateDto> {
-  return apiFetch<PaymentLinkStateDto>(`/invoices/${encodeURIComponent(id)}/payment-link/archive`, {
+export function archivePaymentLink(id: string, installmentId?: string): Promise<PaymentLinkStateDto> {
+  return apiFetch<PaymentLinkStateDto>(`/invoices/${encodeURIComponent(id)}${installmentId ? `/installments/${encodeURIComponent(installmentId)}` : ""}/payment-link/archive`, {
     method: "POST",
   });
 }

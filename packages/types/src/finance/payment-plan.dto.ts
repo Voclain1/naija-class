@@ -28,6 +28,9 @@ export interface PaymentPlanInstallmentDto {
   amount: number;   // kobo
   dueDate: string;  // ISO date "YYYY-MM-DD"
   paid: boolean;
+  /** Display projection for existing untargeted invoice payments, in kobo. */
+  amountPaid?: number;
+  outstanding?: number;
   isOverdue: boolean; // computed: !paid && dueDate < today (read-time, not stored)
 }
 
@@ -39,4 +42,34 @@ export interface PaymentPlanDto {
   createdBy: string;
   createdAt: Date;
   installments: PaymentPlanInstallmentDto[];
+}
+
+export const installmentPolicySchema = z.object({
+  enabled: z.boolean(),
+  maxInstallments: z.number().int().min(2).max(12),
+  minimumFirstKobo: z.number().int().min(0).max(2_147_483_647),
+  requireWithinTerm: z.boolean(),
+}).strict();
+export type InstallmentPolicy = z.infer<typeof installmentPolicySchema>;
+
+export const installmentProposalSchema = z.array(createInstallmentSchema).min(2).max(12);
+export const installmentRequestInputSchema = z.object({
+  schedule: installmentProposalSchema,
+  explanation: z.string().trim().min(1).max(500).optional(),
+}).strict();
+export type InstallmentRequestInput = z.infer<typeof installmentRequestInputSchema>;
+export const installmentRequestDecisionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("APPROVE"), revision: z.number().int().positive() }),
+  z.object({ action: z.literal("REJECT"), revision: z.number().int().positive() }),
+  z.object({ action: z.literal("COUNTER"), revision: z.number().int().positive(), schedule: installmentProposalSchema }),
+]);
+export type InstallmentRequestDecision = z.infer<typeof installmentRequestDecisionSchema>;
+
+export interface InstallmentRequestDto {
+  id: string;
+  invoiceId: string;
+  status: string;
+  explanation: string | null;
+  schedule: CreateInstallmentInput[];
+  revision: number;
 }

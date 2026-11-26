@@ -1,3 +1,4 @@
+import { InstallmentRequestsService } from "./installment-requests.service.js";
 import { Module } from "@nestjs/common";
 
 import { EmailModule } from "../../common/email/email.module.js";
@@ -28,7 +29,7 @@ import { RefundsService } from "./refunds.service.js";
 @Module({
   imports: [PaystackModule, MessagingWalletModule, PaidMessagingModule, PayrollModule, InvoicesModule, NotificationDispatchModule, EmailModule],
   controllers: [PaymentsController, PaystackController, PaymentPlansController, RefundsController],
-  providers: [PaymentsService, PaymentPlanService, RefundsService, PaymentConfirmationService, PaystackWebhookInboxService],
-  exports: [PaymentsService, PaymentPlanService, RefundsService, PaystackWebhookInboxService],
+  providers: [InstallmentRequestsService, PaymentsService, PaymentPlanService, RefundsService, PaymentConfirmationService, PaystackWebhookInboxService],
+  exports: [InstallmentRequestsService, PaymentsService, PaymentPlanService, RefundsService, PaystackWebhookInboxService],
 })
 export class PaymentsModule {}

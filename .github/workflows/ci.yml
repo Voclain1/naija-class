@@ -67,8 +67,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    # Service containers mirror local docker-compose.yml. We use the
-    # pgvector/pgvector:pg16 image (not vanilla postgres:16) because Prisma's
+    # Database tests use the production PostgreSQL major. We use the
+    # pgvector/pgvector:pg18 image (not vanilla postgres:18) because Prisma's
     # schema declares the `vector` extension and we'd otherwise need to
     # apt-install the extension binary on a stock image. Note that GH Actions
     # service containers cannot mount host volumes at start time, so the init
@@ -76,7 +76,7 @@ jobs:
     # rather than as docker-entrypoint-initdb.d.
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg18
         env:
           POSTGRES_USER: school_kit
           POSTGRES_PASSWORD: school_kit
@@ -298,7 +298,7 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg18
         env:
           POSTGRES_USER: school_kit
           POSTGRES_PASSWORD: school_kit
@@ -454,4 +454,13 @@ jobs:
           path: |
             e2e/playwright-report
             e2e/test-results
+          retention-days: 7
+
+      - name: Upload fictional instalment previews
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: instalment-previews
+          path: e2e/test-results/**/*-preview.png
+          if-no-files-found: ignore
           retention-days: 7

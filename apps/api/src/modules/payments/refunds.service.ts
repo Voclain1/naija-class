@@ -46,6 +46,7 @@ export class RefundsService {
           schoolId: true,
           invoiceId: true,
           amount: true,
+          allocatedKobo: true,
           method: true,
           status: true,
           paystackReference: true,
@@ -77,7 +78,8 @@ export class RefundsService {
         where: { id: payment.invoiceId },
         select: { id: true, totalDue: true, totalPaid: true, status: true, dueDate: true },
       });
-      if (invoice.status === "CANCELLED" || invoice.status === "REFUNDED") {
+      const affectsInvoice = (payment.allocatedKobo ?? payment.amount) > 0;
+      if (affectsInvoice && (invoice.status === "CANCELLED" || invoice.status === "REFUNDED")) {
         throw new ConflictError(
           "INVOICE_NOT_REVERSIBLE",
           `Invoice is in terminal status ${invoice.status} and cannot have payments reversed.`,
@@ -156,28 +158,20 @@ export class RefundsService {
         data: { status: "REVERSED" },
       });
 
-      // 7. Recompute totalPaid from all remaining SUCCESS payments.
-      const newTotalPaid = await invoiceAllocatedTotal(db, authCtx.schoolId, payment.invoiceId);
-
-      // 8. Compute new invoice status.
-      //    Override: if newTotalPaid === 0, the invoice is REFUNDED (not ISSUED/OVERDUE).
-      //    This signals that all payments have been returned, not just "never started paying."
-      const computedStatus = computeInvoiceStatus(newTotalPaid, invoice.totalDue, invoice.dueDate);
-      const newStatus = newTotalPaid === 0 ? "REFUNDED" : computedStatus;
-
-      // 9. Update the invoice.
-      await db.invoice.update({
-        where: { id: payment.invoiceId },
-        data: { totalPaid: newTotalPaid, status: newStatus },
-      });
-
-      // 10. Recompute installment plan paid flags.
-      await this.paymentPlan.recomputeInstallmentsPaid(db, payment.invoiceId, newTotalPaid);
-      await this.paymentLinkInvalidation?.markForArchive(
-        db,
-        authCtx.schoolId,
-        payment.invoiceId,
-      );
+      // A return of entirely unapplied funds never changes the invoice or
+      // its replacement eligibility. The original receipt remains auditable.
+      let newTotalPaid = invoice.totalPaid;
+      let newStatus = invoice.status;
+      if (affectsInvoice) {
+        newTotalPaid = await invoiceAllocatedTotal(db, authCtx.schoolId, payment.invoiceId);
+        newStatus = newTotalPaid === 0 ? "REFUNDED" : computeInvoiceStatus(newTotalPaid, invoice.totalDue, invoice.dueDate);
+        await db.invoice.update({
+          where: { id: payment.invoiceId },
+          data: { totalPaid: newTotalPaid, status: newStatus },
+        });
+        await this.paymentPlan.recomputeInstallmentsPaid(db, payment.invoiceId, newTotalPaid);
+        await this.paymentLinkInvalidation?.markForArchive(db, authCtx.schoolId, payment.invoiceId);
+      }
 
       // 11. Audit log.
       await db.auditLog.create({

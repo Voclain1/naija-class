@@ -1,3 +1,5 @@
+import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
+import { listPaymentExceptions, paymentExceptionReviewSchema, reviewPaymentException, type PaymentExceptionReview } from "./payment-exceptions.js";
 import {
   Body,
   Controller,
@@ -70,6 +72,25 @@ export class PaymentsController {
     @Query(new ZodValidationPipe(listReceiptsSchema)) query: ListReceiptsInput,
   ): Promise<ReceiptListResponse> {
     return this.service.listReceipts(authCtx, query);
+  }
+
+  @Get("invoice/:invoiceId/reconciliation")
+  @Permissions("payment.read")
+  async listReconciliation(@CurrentUser() authCtx: AuthContext, @Param("invoiceId") invoiceId: string) {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
+    return listPaymentExceptions(authCtx.schoolId, invoiceId);
+  }
+
+  @Post("invoice/:invoiceId/reconciliation/review")
+  @Permissions("payment.record")
+  @HttpCode(200)
+  async reviewReconciliation(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("invoiceId") invoiceId: string,
+    @Body(new ZodValidationPipe(paymentExceptionReviewSchema)) review: PaymentExceptionReview,
+  ) {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    return reviewPaymentException(authCtx.schoolId, authCtx.userId, invoiceId, review);
   }
 
   // ─── Dynamic routes ────────────────────────────────────────────────────────

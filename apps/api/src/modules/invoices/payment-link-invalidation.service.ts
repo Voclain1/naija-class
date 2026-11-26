@@ -15,12 +15,14 @@ export class PaymentLinkInvalidationService {
     schoolId: string,
     invoiceId: string,
     exceptLinkId?: string,
+    changedInstallmentId?: string | null,
   ): Promise<number> {
     const links = await db.paymentLink.findMany({
       where: {
         schoolId,
         invoiceId,
         status: "LIVE",
+        ...(changedInstallmentId ? { OR: [{ installmentId: null }, { installmentId: changedInstallmentId }] } : {}),
         ...(exceptLinkId ? { id: { not: exceptLinkId } } : {}),
       },
       select: { id: true },

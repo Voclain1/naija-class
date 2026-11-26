@@ -43,7 +43,8 @@ export interface ReceiptData {
   student: { name: string; admissionNumber: string; className: string | null };
   /** e.g. "First Term 2026/2027". */
   termLabel: string | null;
-  amount: number; // kobo
+  amount: number; // gross, in kobo
+  allocatedKobo?: number; // legacy payments were fully allocated
   method: string; // CASH | POS | BANK_TRANSFER | PAYSTACK
   reference: string | null;
   invoice: { totalDue: number; totalPaidAfter: number }; // kobo, server-computed
@@ -115,6 +116,8 @@ export function buildBrandedReceiptHtml(r: ReceiptData): string {
   const brand = safeBrandColor(r.school.primaryColor);
   const balance = Math.max(r.invoice.totalDue - r.invoice.totalPaidAfter, 0);
   const settled = balance === 0;
+  const allocated = r.allocatedKobo ?? r.amount;
+  const unapplied = r.amount - allocated;
   const method = METHOD_LABELS[r.method] ?? r.method.replace(/_/g, " ").toLowerCase();
   const contact = [r.school.phone, r.school.email].filter((x): x is string => !!x && x.trim() !== "");
 
@@ -296,13 +299,17 @@ export function buildBrandedReceiptHtml(r: ReceiptData): string {
 
   <div class="amount">
     <div>
-      <div class="label">Amount received</div>
+      <div class="label">${unapplied > 0 ? "Gross funds received" : "Amount received"}</div>
       <div class="figure">${e(formatKobo(r.amount))}</div>
     </div>
     <div class="chip">${settled ? "Paid in full" : `${e(formatKobo(balance))} outstanding`}</div>
   </div>
   <div class="words">${e(receiptAmountInWords(r.amount))}</div>
 
+  ${unapplied > 0 ? `<div class="ledger">
+    <div><div class="k">Applied to this invoice</div><div class="v">${e(formatKobo(allocated))}</div></div>
+    <div><div class="k">Unapplied funds</div><div class="v">${e(formatKobo(unapplied))}</div></div>
+  </div>` : ""}
   <div class="ledger">
     <div><div class="k">Invoice total</div><div class="v">${e(formatKobo(r.invoice.totalDue))}</div></div>
     <div><div class="k">Paid to date</div><div class="v">${e(formatKobo(r.invoice.totalPaidAfter))}</div></div>
@@ -422,6 +429,7 @@ export async function issueReceipt(
       invoiceId: true,
       studentId: true,
       amount: true,
+      allocatedKobo: true,
       method: true,
       reference: true,
       recordedBy: true,
@@ -490,6 +498,7 @@ export async function issueReceipt(
     },
     termLabel: term ? `${term.name} ${term.academicYear.label}` : null,
     amount: payment.amount,
+    allocatedKobo: payment.allocatedKobo ?? payment.amount,
     method: payment.method,
     reference: payment.reference,
     invoice: { totalDue: invoice.totalDue, totalPaidAfter: args.totalPaidAfter },

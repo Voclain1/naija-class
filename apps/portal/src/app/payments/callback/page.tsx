@@ -164,10 +164,14 @@ function PaymentCallbackContent() {
       {state.kind === "resolved" && state.payment.status === "SUCCESS" && (
         <>
           <h1 className="text-xl font-semibold tracking-tight text-emerald-600">
-            Payment successful
+            {(state.payment.unappliedKobo ?? 0) > 0 ? "Funds received" : "Payment successful"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Your payment has been confirmed and applied to the invoice.
+            {state.payment.allocatedKobo === 0
+              ? "Your school received the funds and will review them. The invoice balance has not changed."
+              : (state.payment.unappliedKobo ?? 0) > 0
+                ? "Part of your payment was applied to the invoice. Your school will review the remaining funds."
+                : "Your payment has been confirmed and applied to the invoice."}
           </p>
         </>
       )}

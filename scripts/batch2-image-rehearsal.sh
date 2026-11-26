@@ -6,6 +6,8 @@ for image in "$CANDIDATE_IMAGE" "$RECOVERY_IMAGE" "$BACKUP_IMAGE" "$CANDIDATE_RE
   docker pull "$image"
 done
 
+test "$CANDIDATE_IMAGE" != "$RECOVERY_IMAGE"
+
 prefix="batch2-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 network="$prefix-isolated"
 db="$prefix-db"
@@ -52,9 +54,11 @@ reference="PSK-$school-$payment"
 sql <<SQL
 INSERT INTO schools (id,name,slug,updated_at) VALUES ('$school','Batch 2 Fixture','batch-two-fixture',now());
 INSERT INTO invoices (id,school_id,student_id,term_id,academic_year_id,items,total_amount,total_discount,total_due,total_paid,status,updated_at)
-VALUES ('$invoice','$school','fixture-student','fixture-term','fixture-year','[]',10000,0,10000,0,'ISSUED',now());
-INSERT INTO payments (id,school_id,invoice_id,student_id,amount,method,status,paystack_reference,updated_at)
-VALUES ('$payment','$school','$invoice','fixture-student',11000,'PAYSTACK','PENDING','$reference',now());
+VALUES ('$invoice','$school','fixture-student','fixture-term','fixture-year','[]',20000,0,20000,0,'ISSUED',now());
+INSERT INTO payment_plans (id,school_id,invoice_id,name,created_by) VALUES ('fixture-plan','$school','$invoice','Instalment recovery','fixture-owner');
+INSERT INTO payment_plan_installments (id,school_id,plan_id,amount,due_date) VALUES ('target-one','$school','fixture-plan',10000,'2027-01-01'),('target-two','$school','fixture-plan',10000,'2027-02-01');
+INSERT INTO payments (id,school_id,invoice_id,student_id,installment_id,amount,method,status,paystack_reference,updated_at)
+VALUES ('$payment','$school','$invoice','fixture-student','target-two',11000,'PAYSTACK','PENDING','$reference',now());
 SQL
 
 fixture_key=sk_test_batch2_fictional
@@ -99,8 +103,9 @@ for _ in {1..60}; do
 done
 check_finance() {
   test "$(sql -c 'SELECT count(*) FROM paystack_webhook_inbox WHERE processed_at IS NOT NULL')" = 1
-  test "$(sql -c "SELECT amount,allocated_kobo,status,receipt_number IS NOT NULL FROM payments WHERE id='$payment'")" = '11000|10000|SUCCESS|t'
-  test "$(sql -c "SELECT total_paid,status FROM invoices WHERE id='$invoice'")" = '10000|PAID'
+  test "$(sql -c "SELECT amount,allocated_kobo,status,installment_id,receipt_number IS NOT NULL FROM payments WHERE id='$payment'")" = '11000|10000|SUCCESS|target-two|t'
+  test "$(sql -c "SELECT total_paid,status FROM invoices WHERE id='$invoice'")" = '10000|PARTIALLY_PAID'
+  test "$(sql -c "SELECT paid FROM payment_plan_installments WHERE plan_id='fixture-plan' ORDER BY id")" = $'f\nt'
   test "$(sql -c "SELECT count(*) FROM audit_logs WHERE entity_id='$payment' AND action='payment.paystack-confirm'")" = 1
   test "$(sql -c "SELECT count(*) FROM paystack_payment_exceptions WHERE reference='$reference' AND unapplied_kobo=1000")" = 1
   test "$(sql -c "SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid='paystack_webhook_inbox'::regclass")" = t

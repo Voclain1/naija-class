@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import type { InvoiceStatus } from "@school-kit/types";
+import type { InvoiceStatus, PaystackWebhookEvent } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service.js";
-import { computeInstallmentsPaid } from "./payment-plan.service.js";
+import { computeInstallmentsPaid, projectUntargetedPayments } from "./payment-plan.service.js";
 
 // Phase 3 / Slice 9 — payment plan service spec.
 //
@@ -18,6 +18,15 @@ import { computeInstallmentsPaid } from "./payment-plan.service.js";
 // ─────────────────────────────────────────────────────────────────────────────
 // Part 1 — computeInstallmentsPaid (pure unit)
 // ─────────────────────────────────────────────────────────────────────────────
+
+it("projects partial untargeted payments and caps progress at the schedule", () => {
+  expect(projectUntargetedPayments([100, 100, 100], 150)).toEqual([
+    { amountPaid: 100, outstanding: 0 },
+    { amountPaid: 50, outstanding: 50 },
+    { amountPaid: 0, outstanding: 100 },
+  ]);
+  expect(projectUntargetedPayments([100], 110)).toEqual([{ amountPaid: 100, outstanding: 0 }]);
+});
 
 describe("computeInstallmentsPaid", () => {
   it("totalPaid = 0 → all false", () => {
@@ -164,6 +173,48 @@ describe("PaymentPlanService (integration)", () => {
       return invoice.id;
     });
   }
+
+  it("caps simultaneous targeted charges and keeps replayed funds unapplied", async () => {
+    const { PaymentPlanService } = await import("./payment-plan.service.js");
+    const { PaymentsService } = await import("./payments.service.js");
+    const { schoolId, ownerId } = await makeSchool("concurrent-target");
+    const invoiceId = await makeInvoice(schoolId, ownerId, { totalDue: 20000 });
+    const planService = new PaymentPlanService();
+    const plan = await planService.create(ctx(schoolId, ownerId), {
+      invoiceId, name: "Two instalments",
+      installments: [{ amount: 10000, dueDate: "2027-01-01" }, { amount: 10000, dueDate: "2027-02-01" }],
+    });
+    const installments = plan.installments;
+    const charges = await withTenant(schoolId, async (db) => {
+      const invoice = await db.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+      return Promise.all([0, 1].map(() => db.payment.create({
+        data: {
+          schoolId, invoiceId, studentId: invoice.studentId, installmentId: installments[1]!.id,
+          amount: 10000, method: "PAYSTACK", status: "PENDING",
+        },
+      })));
+    });
+    const events = charges.map((payment): PaystackWebhookEvent => ({
+      event: "charge.success",
+      data: { reference: ["PSK", schoolId, payment.id].join("-"), amount: 10000, status: "success", currency: "NGN", paid_at: "2026-11-26T12:00:00Z" },
+    }));
+    const service = new PaymentsService({} as never, {} as never, planService);
+    await Promise.all(events.map((event) => service.handleWebhook(event)));
+    await service.handleWebhook(events[0]!);
+    const result = await withTenant(schoolId, async (db) => ({
+      payments: await db.payment.findMany({
+        where: { invoiceId }, select: { status: true, amount: true, allocatedKobo: true },
+      }),
+      exceptions: await db.paystackPaymentException.findMany({ where: { invoiceId } }),
+      invoice: await db.invoice.findUniqueOrThrow({ where: { id: invoiceId } }),
+    }));
+    expect(result.payments.map((payment) => payment.allocatedKobo).sort()).toEqual([0, 10000]);
+    expect(result.payments.every((payment) => payment.amount === 10000 && payment.status === "SUCCESS")).toBe(true);
+    expect(result.invoice.totalPaid).toBe(10000);
+    expect(result.exceptions).toHaveLength(1);
+    expect(result.exceptions[0]?.unappliedKobo).toBe(10000);
+    expect((await planService.findByInvoice(ctx(schoolId, ownerId), invoiceId))?.installments.map((row) => row.paid)).toEqual([false, true]);
+  });
 
   // ── Tests ────────────────────────────────────────────────────────────────
 
@@ -359,14 +410,30 @@ describe("PaymentPlanService (integration)", () => {
       ],
     });
 
-    // Simulate 100k paid — should mark first two paid.
-    await withTenant(schoolId, (db) =>
-      svc.recomputeInstallmentsPaid(db as never, invoiceId, 100_000),
-    );
+    // Simulate the settlement transaction: update the authoritative invoice
+    // balance and recompute its persisted schedule together.
+    await withTenant(schoolId, async (db) => {
+      await db.invoice.update({ where: { id: invoiceId }, data: { totalPaid: 100_000, status: "PARTIALLY_PAID" } });
+      await svc.recomputeInstallmentsPaid(db, invoiceId, 100_000);
+      const stored = await db.paymentPlanInstallment.findMany({
+        where: { plan: { invoiceId } }, orderBy: { dueDate: "asc" }, select: { paid: true },
+      });
+      expect(stored.map(({ paid }) => paid)).toEqual([true, true, false]);
+    });
 
     const plan = await svc.findByInvoice(ctx(schoolId, ownerId), invoiceId);
     expect(plan!.installments[0].paid).toBe(true);
     expect(plan!.installments[1].paid).toBe(true);
     expect(plan!.installments[2].paid).toBe(false);
+  });
+});
+
+describe("targeted instalment allocation", () => {
+  it("credits a later instalment before allocating an earlier untargeted part payment", async () => {
+    const { allocateSchedule } = await import("./installment-progress.js");
+    const schedule = [{ id: "first", amount: 100 }, { id: "second", amount: 100 }];
+    const result = allocateSchedule(schedule, 130, [{ installmentId: "second", amount: 125, allocatedKobo: 100 }]);
+    expect(result.map(({ amountPaid, outstanding }) => [amountPaid, outstanding])).toEqual([[30, 70], [100, 0]]);
+    expect(allocateSchedule(schedule, 30, []).map(({ amountPaid }) => amountPaid)).toEqual([30, 0]);
   });
 });

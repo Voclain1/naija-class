@@ -232,6 +232,8 @@ connections, versioned consent, the Meta and Termii inboxes, and manual
 wallet reconciliation are covered with simulated providers. Remaining
 event and provider activation work is listed in the runbook.
 
+- 2026-11-26: Instalment checkout work is in draft #566, with an allocation-aware finance prerequisite in draft #567. See the [instalment journal](journal/2026-11-26-instalments.md) for migration ownership and release gates.
+
 Invoice replacement hotfix PR #565 branches from main. Apply the sequence
 check migration before the API. The unique zero slot remains in place and
 only cancelled, unpaid term history may move to a negative internal sequence.

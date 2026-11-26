@@ -28,6 +28,8 @@ datasource db {
 // ---------- Tenancy ----------
 
 model School {
+  installmentPolicy Json? @map("installment_policy")
+  paystackPaymentExceptions PaystackPaymentException[]
   id                        String       @id @default(uuid())
   name                      String
   slug                      String       @unique // for subdomains: <slug>.schoolkit.ng
@@ -2716,6 +2718,8 @@ enum PaymentLinkStatus {
 }
 
 model PaymentLink {
+  installmentId String? @map("installment_id")
+  installment PaymentPlanInstallment? @relation(fields: [installmentId], references: [id], onDelete: Restrict)
   expiresAt DateTime? @map("expires_at")
   id                   String            @id @default(uuid())
   schoolId             String            @map("school_id")
@@ -2771,6 +2775,8 @@ enum PaymentStatus {
 }
 
 model Payment {
+  installmentId String? @map("installment_id")
+  installment PaymentPlanInstallment? @relation(fields: [installmentId], references: [id], onDelete: Restrict)
   allocatedKobo Int? @map("allocated_kobo")
   id                String        @id @default(uuid())
   schoolId          String        @map("school_id")
@@ -2868,6 +2874,8 @@ model PaymentPlan {
 }
 
 model PaymentPlanInstallment {
+  payments Payment[]
+  paymentLinks PaymentLink[]
   id       String      @id @default(uuid())
   schoolId String      @map("school_id")
   planId   String      @map("plan_id")
@@ -6238,4 +6246,20 @@ model PaystackPaymentException {
 
   @@id([schoolId, reference, reason])
   @@map("paystack_payment_exceptions")
+}
+
+model InstallmentRequest {
+  id         String   @id @default(uuid())
+  schoolId   String   @map("school_id")
+  invoiceId  String   @map("invoice_id")
+  guardianId String?  @map("guardian_id")
+  explanation String?
+  schedule   Json
+  status     String
+  revision   Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([schoolId, invoiceId])
+  @@map("installment_requests")
 }
