@@ -23,7 +23,7 @@ export const portalPaySchema = z.preprocess(
   (v) => v ?? {},
   z.object({ returnTo: z.enum(PORTAL_PAY_RETURN_TO).default("portal"), installmentId: z.string().uuid().optional() }).strict(),
 );
-export type PortalPayInput = { returnTo?: PortalPayReturnTo };
+export type PortalPayInput = { returnTo?: PortalPayReturnTo; installmentId?: string };
 
 /** Where the app listens for the end of checkout. Must match app.json's scheme. */
 export const APP_PAYMENT_RETURN_URL = "schoolkit://payments/callback";

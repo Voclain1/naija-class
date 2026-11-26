@@ -151,6 +151,7 @@ function formatKoboForMessage(kobo: number): string {
 
 // Row shape returned by Prisma for the payments table.
 type PaymentRow = {
+  installmentId?: string | null;
   id: string;
   schoolId: string;
   invoiceId: string;
@@ -195,6 +196,7 @@ function toDto(row: PaymentRow): PaymentDto {
     id: row.id,
     schoolId: row.schoolId,
     invoiceId: row.invoiceId,
+    installmentId: row.installmentId ?? null,
     studentId: row.studentId,
     amount: row.amount,
     ...(row.allocatedKobo == null ? {} : { allocatedKobo: row.allocatedKobo, unappliedKobo: row.amount - row.allocatedKobo }),

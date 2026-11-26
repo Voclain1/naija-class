@@ -23,6 +23,7 @@ export interface PaymentDto {
   id: string;
   schoolId: string;
   invoiceId: string;
+  installmentId?: string | null;
   studentId: string;
   amount: number; // kobo
   method: PaymentMethod;

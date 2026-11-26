@@ -574,6 +574,17 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
                     </button>
                   )}
                 </span>
+                {Boolean(item.paymentHistory?.length) && (
+                  <ul className="w-full space-y-1 text-xs text-muted-foreground" aria-label="Payment history">
+                    {item.paymentHistory?.map((payment) => (
+                      <li key={payment.id}>
+                        {payment.status === "REVERSED" ? "Reversed" : payment.allocatedKobo ? "Applied" : "Awaiting reconciliation"}
+                        {" · "}{formatNaira(payment.allocatedKobo)}
+                        {payment.receiptNumber && <> · Receipt {payment.receiptNumber}</>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             ))}
           </ol>

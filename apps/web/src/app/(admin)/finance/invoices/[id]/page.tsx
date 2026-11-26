@@ -463,6 +463,18 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  function planShareText() {
+    if (!plan) return "";
+    return [
+      plan.name,
+      ...plan.installments.map((entry, index) => [
+        "Instalment " + (index + 1), entry.dueDate, formatKobo(entry.amount),
+        entry.paid ? "Paid" : formatKobo(entry.outstanding ?? entry.amount) + " outstanding",
+      ].join(" · ")),
+      "Sign into your SchoolKit parent portal to view the invoice and make a payment.",
+    ].join("\n");
+  }
+
   async function updateInstallmentLink(installmentId: string, archive = false) {
     if (!invoice) return;
     setInstallmentLinkError(null);
@@ -886,6 +898,15 @@ export default function InvoiceDetailPage() {
         {plan ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">{plan.name}</p>
+            <div className="mb-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => void handleCopyPaymentLink(planShareText())}>Copy plan</Button>
+              <Button asChild size="sm" variant="outline">
+                <a href={"mailto:?subject=" + encodeURIComponent(plan.name) + "&body=" + encodeURIComponent(planShareText())}>Email plan</a>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <a href={buildNoRecipientWhatsAppUrl(planShareText())} target="_blank" rel="noreferrer">Share plan on WhatsApp</a>
+              </Button>
+            </div>
             <div className="rounded-lg border">
               <Table stackOnMobile>
                 <TableHeader>
@@ -926,9 +947,12 @@ export default function InvoiceDetailPage() {
                           <div className="flex flex-wrap gap-2">
                             {link?.state === "LIVE" ? (
                               <>
-                                <Button size="sm" variant="outline" onClick={() => void handleCopyPaymentLink(link.hostedUrl)}>Copy</Button>
+                                <Button size="sm" variant="outline" onClick={() => void handleCopyPaymentLink(link.url)}>Copy</Button>
                                 <Button asChild size="sm" variant="outline">
-                                  <a href={buildNoRecipientWhatsAppUrl(link.hostedUrl)} target="_blank" rel="noreferrer">WhatsApp</a>
+                                  <a href={"mailto:?subject=School%20fee%20instalment&body=" + encodeURIComponent(link.url)}>Email</a>
+                                </Button>
+                                <Button asChild size="sm" variant="outline">
+                                  <a href={buildNoRecipientWhatsAppUrl(link.url)} target="_blank" rel="noreferrer">WhatsApp</a>
                                 </Button>
                                 <Button size="sm" variant="ghost" disabled={installmentLinkPending !== null}
                                   onClick={() => void updateInstallmentLink(inst.id, true)}>Archive</Button>

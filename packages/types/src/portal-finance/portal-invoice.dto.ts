@@ -38,6 +38,13 @@ export interface PortalInvoiceInstallmentDto {
   amountPaid: number;
   outstanding: number;
   dueDate: string;
+  paymentHistory?: {
+    id: string;
+    allocatedKobo: number;
+    paidAt: Date | null;
+    status: "SUCCESS" | "REVERSED";
+    receiptNumber: string | null;
+  }[];
 }
 
 export interface PortalInvoiceDto {
