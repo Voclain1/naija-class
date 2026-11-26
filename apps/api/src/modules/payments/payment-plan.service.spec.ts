@@ -194,10 +194,10 @@ describe("PaymentPlanService (integration)", () => {
         },
       })));
     });
-    const events = charges.map((payment) => ({
+    const events = charges.map((payment): PaystackWebhookEvent => ({
       event: "charge.success",
-      data: { reference: ["PSK", schoolId, payment.id].join("-"), amount: 10000, currency: "NGN", paid_at: "2026-11-26T12:00:00Z" },
-    } as PaystackWebhookEvent));
+      data: { reference: ["PSK", schoolId, payment.id].join("-"), amount: 10000, status: "success", currency: "NGN", paid_at: "2026-11-26T12:00:00Z" },
+    }));
     const service = new PaymentsService({} as never, {} as never, planService);
     await Promise.all(events.map((event) => service.handleWebhook(event)));
     await service.handleWebhook(events[0]!);

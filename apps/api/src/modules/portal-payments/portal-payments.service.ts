@@ -36,6 +36,8 @@ function toPortalPaymentDto(dto: PaymentDto): PortalPaymentDto {
     invoiceId: dto.invoiceId,
     studentId: dto.studentId,
     amount: dto.amount,
+    allocatedKobo: dto.allocatedKobo,
+    unappliedKobo: dto.unappliedKobo,
     method: dto.method,
     status: dto.status,
     paidAt: dto.paidAt,

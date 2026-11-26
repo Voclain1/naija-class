@@ -855,12 +855,24 @@ export default function InvoiceDetailPage() {
                     <TableCell className="text-muted-foreground">
                       {p.paidAt ? new Date(p.paidAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" }) : "—"}
                     </TableCell>
-                    <TableCell>{METHOD_LABELS[p.method as ManualPaymentMethod] ?? p.method}</TableCell>
+                    <TableCell>
+                      {METHOD_LABELS[p.method as ManualPaymentMethod] ?? p.method}
+                      {p.installmentId && plan && (
+                        <span className="block text-xs text-muted-foreground">
+                          Instalment {plan.installments.findIndex((item) => item.id === p.installmentId) + 1}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{p.reference ?? "—"}</TableCell>
                     <TableCell
                       className={`text-right font-mono tabular-nums font-medium ${p.status === "REVERSED" ? "text-muted-foreground line-through" : ""}`}
                     >
                       {formatKobo(p.amount)}
+                      {Boolean(p.unappliedKobo) && (
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          {formatKobo(p.unappliedKobo ?? 0)} awaiting reconciliation
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={PAYMENT_STATUS_VARIANTS[p.status]}>
