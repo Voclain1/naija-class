@@ -4,7 +4,7 @@ CREATE TABLE installment_requests (
   id TEXT PRIMARY KEY,
   school_id TEXT NOT NULL REFERENCES schools(id) ON DELETE RESTRICT,
   invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE RESTRICT,
-  guardian_id TEXT NOT NULL REFERENCES guardians(id) ON DELETE RESTRICT,
+  guardian_id TEXT REFERENCES guardians(id) ON DELETE SET NULL,
   schedule JSONB NOT NULL,
   explanation TEXT CHECK (char_length(explanation) <= 500),
   status TEXT NOT NULL CHECK (status IN ('PENDING', 'COUNTERED', 'APPROVED', 'REJECTED')),

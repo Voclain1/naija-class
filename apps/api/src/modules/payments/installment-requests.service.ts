@@ -84,6 +84,12 @@ export class InstallmentRequestsService {
       if (decision.action === "REJECT") {
         dto = await this.update(db, request, ctx.userId, "REJECTED");
       } else {
+        const invoice = await this.invoice(db, ctx.schoolId, invoiceId);
+        const linked = request.guardianId && await db.studentGuardian.findFirst({
+          where: { studentId: invoice.studentId, guardianId: request.guardianId, guardian: { portalDisabledAt: null } },
+          select: { guardianId: true },
+        });
+        if (!linked) throw new ConflictError("INSTALLMENT_REQUEST_UNAVAILABLE", "The guardian no longer has access to this invoice.");
         if (request.status !== "PENDING") throw new ConflictError("INSTALLMENT_REQUEST_CHANGED", "The guardian must respond to the counter-offer.");
         if (decision.action === "COUNTER") {
           await this.validate(db, ctx.schoolId, invoiceId, decision.schedule);
@@ -94,10 +100,12 @@ export class InstallmentRequestsService {
       }
       return { dto, guardianId: request.guardianId };
     });
-    await this.events?.installmentRequestUpdated({
-      schoolId: ctx.schoolId, guardianId: result.guardianId, requestId, revision: result.dto.revision,
-    });
-    await this.sendDecisionEmail(ctx.schoolId, result.guardianId, result.dto);
+    if (result.guardianId) {
+      await this.events?.installmentRequestUpdated({
+        schoolId: ctx.schoolId, guardianId: result.guardianId, requestId, revision: result.dto.revision,
+      });
+      await this.sendDecisionEmail(ctx.schoolId, result.guardianId, result.dto);
+    }
     return result.dto;
   }
 
@@ -149,7 +157,7 @@ export class InstallmentRequestsService {
 
   private async invoice(db: PrismaClient, schoolId: string, invoiceId: string, studentId?: string) {
     const invoice = await db.invoice.findFirst({ where: { id: invoiceId, schoolId, studentId }, select: {
-      id: true, termId: true, status: true, totalDue: true, totalPaid: true, paymentPlans: { select: { id: true } },
+      id: true, studentId: true, termId: true, status: true, totalDue: true, totalPaid: true, paymentPlans: { select: { id: true } },
     } });
     if (!invoice) throw new NotFoundError("Invoice not found.");
     return invoice;
