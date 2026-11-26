@@ -114,7 +114,7 @@ net=school-kit_default
 # Object store for the rehearsal: the pinned image's own rclone serving S3 from a directory (a top-level directory is a bucket).
 docker run -d --name rh-s3 --network "$net" --network-alias minio --entrypoint sh "$BACKUP" -c \
   'mkdir -p /data/rehearsal && exec rclone serve s3 /data --auth-key fxaccess,fxsecretfxsecret --addr :9000' >/dev/null
-S3=":s3,provider=Other,env_auth=false,access_key_id=fxaccess,secret_access_key=fxsecretfxsecret,endpoint=http://minio:9000"
+S3=":s3,provider=Other,env_auth=false,access_key_id=fxaccess,secret_access_key=fxsecretfxsecret,endpoint='http://minio:9000'"
 s3() { docker run --rm --network "$net" --entrypoint rclone "$BACKUP" "$@"; }
 for _ in $(seq 1 30); do s3 lsd "$S3:" >/dev/null 2>&1 && break; sleep 2; done
 s3 lsd "$S3:" | grep -q rehearsal
