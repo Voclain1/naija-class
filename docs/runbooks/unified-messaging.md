@@ -481,12 +481,11 @@ and backup output, the presence and permissions of `backup.env`, and
 credential identity, bucket/prefix permissions and endpoint access using
 redacted checks. Inspect `pg_stat_archiver` and actual WAL object inventory
 separately from the base backup list. The shipping workflow previously
-overwrote the VPS backup environment even if the secret was empty. **No check
-of the `BACKUP_ENV_FILE` key names exists at head `fa74b19`** (corrected
-2026-11-26; the workflow is rehearsal-only, so the gap is latent). Reconcile it
-with `docs/runbooks/batch2-acceptance-and-batch3.md` §3.
-Likewise no code reads `UNIFIED_MESSAGING_CUTOVER_APPROVED`: that control is
-procedural until implemented.
+overwrote the VPS backup environment even if the secret was empty. **Since 2026-11-26** `deploy-vps.yml` never overwrites a server's `backup.env` (the secret only
+bootstraps an empty server), `ops-tools/backup_env.py` rejects missing, empty and duplicate required
+settings, and `cutover.sh` refuses to run unless the owner exports
+`UNIFIED_MESSAGING_CUTOVER_APPROVED=true` for that one command and holds an unexpired authorisation
+bound to the exact head and manifest. See `docs/runbooks/batch2-acceptance-and-batch3.md`.
 
 After authorization, prove a scheduled run produced a dump, read-back
 checksum marker, WAL-G base backup, archived WAL and success heartbeat.
@@ -522,7 +521,8 @@ namespace with run-specific tags. Use the digest references in the
 `batch2-image-digests` artifact. The build uses the repository package token.
 The rehearsal creates fictional credentials and an internal Docker network.
 It does not SSH to the VPS. Capture the rehearsal result alongside the digests.
-The generic VPS workflow and host deployment script are rehearsal-only.
+The generic VPS workflow and host deployment script are rehearsal-only; the production
+procedure is `infra/vps/ops-tools/cutover.sh` (`docs/runbooks/batch2-acceptance-and-batch3.md`).
 Owner approval alone does not re-enable their migration-first and automatic
 rollback paths on live systems.
 
