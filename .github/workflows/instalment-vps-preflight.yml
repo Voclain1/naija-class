@@ -30,12 +30,19 @@ jobs:
           ssh -o BatchMode=yes vps 'bash -se' <<'REMOTE'
           set -euo pipefail
           cd /opt/school-kit
-          for file in deploy.env api.env web.env portal.env backup.env docker-compose.yml backup-ops.override.yml; do
+          for file in deploy.env api.env web.env portal.env backup.env docker-compose.yml; do
             test -r "$file"
             printf 'Present: %s\n' "$file"
           done
           docker ps --filter label=com.docker.compose.project=school-kit --format '{{.Label "com.docker.compose.service"}} {{.Image}} {{.Status}}'
-          docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml config --services
+          docker ps --filter name=ops-pinned --format 'Backup scheduler: {{.Names}} {{.Image}} {{.Status}}'
+          find /opt/school-kit -maxdepth 3 -type f \( -iname '*override*y*ml' -o -iname '*ops*y*ml' \) -print
+          for service in api web portal ops-pinned; do
+            container=$(docker ps --filter "label=com.docker.compose.service=$service" --filter label=com.docker.compose.project=school-kit -q)
+            if [[ -n "$container" ]]; then
+              docker inspect --format '{{.Name}} {{index .Config.Labels "com.docker.compose.project.config_files"}}' "$container"
+            fi
+          done
           db=$(docker ps --filter label=com.docker.compose.project=school-kit --filter label=com.docker.compose.service=postgres -q)
           test -n "$db"
           docker exec "$db" pg_isready -U postgres -d school_kit
