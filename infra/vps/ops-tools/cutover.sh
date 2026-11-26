@@ -79,10 +79,14 @@ pgmajor_running() { docker exec "$PG" psql -XqAt -v ON_ERROR_STOP=1 -U postgres 
 sql() { docker exec "$PG" psql -XqAt -v ON_ERROR_STOP=1 -U postgres -d school_kit "$@"; }
 PG=$(dc ps -q postgres); [ -n "$PG" ] || die "PostgreSQL container not found"
 PG_ID=$(identity "$PG")
+REDIS_ID=$(identity "$(dc ps -q redis)")
+PINNED_OPS_ID=$(identity "$(dco ps -q ops-pinned)")
 
 # Re-checked after every phase.
 invariants() {
-  [ "$(identity "$PG")" = "$PG_ID" ] || die "PostgreSQL was recreated or restarted during the cutover: STOP"
+  [ "$(identity "$(dc ps -q redis)")" = "$REDIS_ID" ] || die "Redis identity changed"
+  [ "$(identity "$(dco ps -q ops-pinned)")" = "$PINNED_OPS_ID" ] || die "ops-pinned identity changed"
+  [ "$(identity "$(dc ps -q postgres)")" = "$PG_ID" ] || die "PostgreSQL was recreated or restarted during the cutover: STOP"
   local p; p=$(dco ps -q ops-pinned); [ -n "$p" ] || die "ops-pinned is gone"
   [ "$(docker inspect -f '{{.State.Running}}' "$p")" = true ] || die "ops-pinned stopped"
   local o; o=$(dc ps -aq ops); [ -z "$o" ] || [ "$(docker inspect -f '{{.State.Running}}' "$o")" = false ] || die "the original ops is running (two schedulers)"
@@ -220,7 +224,7 @@ migrate_run() { # status|deploy|resolve NAME
 }
 migrations_ok() {
   [ "$(sql -c "SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL")" = 0 ] || return 1
-  [ "$(sql -c "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payments' AND column_name='allocated_kobo')")" = t ] || return 1
+  [ "$(sql -c "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payments' AND column_name='allocated_kobo') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payments' AND column_name='installment_id')")" = t ] || return 1
   [ "$(sql -c "SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid='paystack_webhook_inbox'::regclass")" = t ] || return 1
   [ "$(sql -c "SELECT NOT (rolsuper OR rolbypassrls) FROM pg_roles WHERE rolname='app_user'")" = t ]
 }

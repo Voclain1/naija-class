@@ -272,7 +272,7 @@ jobs:
           RECOVERY_API=ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.recovery_api }}
           RECOVERY_RENDER=ghcr.io/voclain1/school-kit-render@${{ needs.build.outputs.recovery_render }}
           MIGRATE=ghcr.io/voclain1/school-kit-migrate@${{ needs.build.outputs.migrate }}
-          BACKUP_OPS=ghcr.io/voclain1/school-kit-postgres@${{ needs.build.outputs.backup }}
+          BACKUP_OPS=$PRODUCTION_BACKUP_IMAGE
           EOF
           sed -i 's/^ *//' "$RUNNER_TEMP/manifest.env"
       - name: Rehearse the guarded cutover, including its failure paths
@@ -306,7 +306,7 @@ jobs:
           RECOVERY_API=ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.recovery_api }}
           RECOVERY_RENDER=ghcr.io/voclain1/school-kit-render@${{ needs.build.outputs.recovery_render }}
           MIGRATE=ghcr.io/voclain1/school-kit-migrate@${{ needs.build.outputs.migrate }}
-          BACKUP_OPS=ghcr.io/voclain1/school-kit-postgres@${{ needs.build.outputs.backup }}
+          BACKUP_OPS=$PRODUCTION_BACKUP_IMAGE
           EOF
           sed -i 's/^ *//' "$RUNNER_TEMP/manifest.env"
           cat "$RUNNER_TEMP/manifest.env"

@@ -1,7 +1,4 @@
-# Puts the operator tools on the VPS, so nothing has to be downloaded from a tablet.
-# Writes ONLY /opt/school-kit/ops-tools (scripts + a checksum list + the exact head SHA). It
-# touches no compose file, no env file, no container, and restarts nothing. The checksum list
-# is printed here so the owner can compare it with `sha256sum -c` on the server.
+# Publish checksummed operator tooling as a CI artifact.
 name: batch2-ops-tools
 on:
   pull_request:
@@ -19,14 +16,16 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: ./.github/actions/vps-ssh
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Ship the operator tools (read-only for production state)
+      - name: Checksum operator tools
         run: |
           set -euo pipefail
           cd infra/vps/ops-tools
-          echo "${{ github.event.pull_request.head.sha }}" > HEAD_SHA
-          sha256sum *.sh *.py HEAD_SHA | tee SHA256SUMS
-          tar -cf - *.sh *.py HEAD_SHA SHA256SUMS | ssh vps 'set -euo pipefail; umask 022; cd /opt/school-kit; rm -rf ops-tools.new; mkdir ops-tools.new; tar -C ops-tools.new -xf -; chmod 755 ops-tools.new/*.sh ops-tools.new/*.py; (cd ops-tools.new && sha256sum -c SHA256SUMS >/dev/null); rm -rf ops-tools.old; if [ -d ops-tools ]; then mv ops-tools ops-tools.old; fi; mv ops-tools.new ops-tools; rm -rf ops-tools.old; echo "tools installed at /opt/school-kit/ops-tools for head $(cat ops-tools/HEAD_SHA)"'
+          printf '%s\n' "$HEAD_SHA" > HEAD_SHA
+          sha256sum *.sh *.py HEAD_SHA > SHA256SUMS
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: messaging-ops-tools
+          path: infra/vps/ops-tools/
+          if-no-files-found: error

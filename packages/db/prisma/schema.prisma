@@ -29,7 +29,6 @@ datasource db {
 
 model School {
   installmentPolicy Json? @map("installment_policy")
-  paystackPaymentExceptions PaystackPaymentException[]
   id                        String       @id @default(uuid())
   name                      String
   slug                      String       @unique // for subdomains: <slug>.schoolkit.ng

@@ -32,97 +32,6 @@ jobs:
         env:
           API_ENV_FILE: ${{ secrets.API_ENV_FILE }}
         run: node scripts/check-termii-account.mjs
-  reconcile-production-config:
-    if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/unified-messaging-infrastructure'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - uses: ./.github/actions/vps-ssh
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Prepare and validate preserved candidate
-        env:
-          API_ENV_FILE: ${{ secrets.API_ENV_FILE }}
-          FLY_DEPLOY_DISABLED: ${{ vars.FLY_DEPLOY_DISABLED }}
-          VPS_MODE: ${{ vars.VPS_MODE }}
-        run: |
-          set -euo pipefail
-          umask 077
-          [ -n "$API_ENV_FILE" ] || { echo "BLOCK stored API environment is empty"; exit 1; }
-          printf '%s\n' "$API_ENV_FILE" > "$RUNNER_TEMP/api-env-stored"
-          node scripts/prepare-messaging-api-env.mjs "$RUNNER_TEMP/api-env-stored" "$RUNNER_TEMP/api-env-proposed"
-          API_ENV_FILE="$(cat "$RUNNER_TEMP/api-env-proposed")" node scripts/check-messaging-cutover.mjs
-          API_ENV_FILE="$(cat "$RUNNER_TEMP/api-env-proposed")" node scripts/check-termii-account.mjs
-      - name: Back up and reconcile environments without exposing values
-        run: |
-          set -euo pipefail
-          umask 077
-          tar -C "$RUNNER_TEMP" -cf - api-env-stored api-env-proposed | ssh vps 'umask 077; mkdir -p /opt/school-kit/config-backups; chmod 700 /opt/school-kit/config-backups; tar -C /opt/school-kit/config-backups -xf -'
-          ssh vps 'bash -s' <<'REMOTE'
-          set -euo pipefail
-          umask 077
-          cd /opt/school-kit
-          [ -s api.env ] || { echo "BLOCK running API environment is unavailable"; exit 1; }
-          stamp=$(date -u +%Y%m%dT%H%M%SZ)
-          backup="config-backups/batch1-${stamp}"
-          mkdir -m 700 "$backup"
-          cp -p api.env "$backup/api.env.running"
-          mv config-backups/api-env-stored "$backup/api.env.github-original"
-          mv config-backups/api-env-proposed "$backup/api.env.github-proposed"
-          chmod 600 "$backup"/*
-          python3 - "$backup" <<'PY'
-          import re, sys
-          from pathlib import Path
-
-          root = Path(sys.argv[1])
-          def read(name):
-              values = {}
-              for line in (root / name).read_text().splitlines():
-                  match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)=(.*)$', line)
-                  if match:
-                      if match.group(1) in values:
-                          raise SystemExit('BLOCK duplicate environment key in ' + name)
-                      values[match.group(1)] = match.group(2)
-              return values
-
-          running = read('api.env.running')
-          stored = read('api.env.github-original')
-          proposed = read('api.env.github-proposed')
-          overridden = {'DATABASE_URL','DIRECT_URL','REDIS_URL','RENDER_WORKER_URL','RENDER_WORKER_PORT','API_PORT','CLIENT_IP_HEADER','NODE_ENV','SCHEDULED_JOBS','VOICE_PROVIDER','VOICE_OPENAI_API_KEY'}
-          comparable = sorted((set(running) | set(stored)) - overridden)
-          missing_running = [key for key in comparable if key not in running]
-          missing_stored = [key for key in comparable if key not in stored]
-          different = [key for key in comparable if key in running and key in stored and running[key] != stored[key]]
-          target = {
-              'PAYSTACK_WEBHOOK_MODE': 'live',
-              'PAYSTACK_WEBHOOK_REQUIRE_MODERN': 'off',
-              'PAYSTACK_WEBHOOK_LEGACY_REVIEW_BY': '2026-12-09',
-              'MESSAGING_LEGACY_SMS_MIGRATION_MODE': 'off',
-              'MESSAGING_LEGACY_SMS_ENABLED': 'off',
-              'MESSAGING_TERMII_REPORTS_ENABLED': 'off',
-              'MESSAGING_PAID_ENABLED': 'off',
-          }
-          if any(proposed.get(key) != value for key, value in target.items()):
-              raise SystemExit('BLOCK proposed messaging values differ from approved Batch 1 configuration')
-          unrelated = (set(stored) | set(proposed)) - set(target)
-          if any(stored.get(key) != proposed.get(key) for key in unrelated):
-              raise SystemExit('BLOCK an unrelated candidate setting changed')
-          print('PASS secure running, original-candidate and proposed-candidate backups created')
-          print(f'EVIDENCE comparable keys: {len(comparable)}; differing values: {len(different)}; missing running: {len(missing_running)}; missing stored: {len(missing_stored)}')
-          for label, keys in [('different', different), ('missing-running', missing_running), ('missing-stored', missing_stored)]:
-              if keys:
-                  print('EVIDENCE ' + label + ' keys: ' + ','.join(keys))
-          print('PASS proposed candidate changes only the seven approved Batch 1 settings')
-          PY
-          echo "PASS backups retained under /opt/school-kit/$backup (values redacted)"
-          REMOTE
   live-metadata:
     if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/unified-messaging-infrastructure'
     runs-on: ubuntu-latest
@@ -140,14 +49,11 @@ jobs:
           ssh vps 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd /opt/school-kit
-          tag=$(sed -n 's/^APP_TAG=//p' deploy.env)
-          [[ "$tag" =~ ^[a-f0-9]{40}$ ]] || { echo "BLOCK deployed tag is not a single commit SHA"; exit 1; }
-          echo "Recorded deployment tag: $tag"
-          cid=$(docker compose --env-file deploy.env -f docker-compose.yml ps -q api 2>/dev/null)
+          cid=$(docker ps -q --filter label=com.docker.compose.project=school-kit --filter label=com.docker.compose.service=api)
           [ -n "$cid" ] || { echo "BLOCK API container unavailable"; exit 1; }
           image=$(docker inspect --format '{{.Config.Image}}' "$cid")
-          [[ "$image" == *"/school-kit-api:$tag" ]] || { echo "BLOCK running API image differs from recorded tag"; exit 1; }
-          echo "PASS running API image matches recorded tag"
+          [[ "$image" == 'ghcr.io/voclain1/school-kit-api@sha256:58d4630e6a64aea0e852ebf336d12de2c90592347b986e77ceecb1e52adae2aa' ]] || { echo "BLOCK running API differs from the approved instalment baseline"; exit 1; }
+          echo "PASS running API matches the pinned instalment baseline"
           docker compose --env-file deploy.env -f docker-compose.yml exec -T postgres psql -U postgres -d school_kit -X -v ON_ERROR_STOP=1 -Atc "BEGIN READ ONLY; SELECT CASE WHEN to_regclass('public.paystack_webhook_inbox') IS NULL THEN 'Paystack inbox: not installed' ELSE 'Paystack inbox: installed; review rollback target' END; COMMIT;" </dev/null 2>/dev/null || { echo "BLOCK read-only schema inspection unavailable"; exit 1; }
           docker compose --env-file deploy.env -f docker-compose.yml exec -T postgres psql -U postgres -d school_kit -X -v ON_ERROR_STOP=1 -At <<'SQL' 2>/dev/null || { echo "BLOCK read-only SMS inventory unavailable"; exit 1; }
           BEGIN READ ONLY;

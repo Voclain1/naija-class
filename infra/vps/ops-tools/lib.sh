@@ -14,9 +14,15 @@ bad()  { echo "FAIL $*"; FAILED=1; }
 info() { echo "INFO $*"; }
 die()  { echo "BLOCK $*" >&2; exit 1; }
 
-# Extra compose files exist ONLY for the isolated rehearsal (CUTOVER_MODE=rehearsal); production ignores them.
+# Preserve the scoped production application overlays beneath the next release override.
 EXTRA_FILES=()
-if [ "${CUTOVER_MODE:-production}" = rehearsal ]; then for f in ${COMPOSE_EXTRA:-}; do EXTRA_FILES+=(-f "$f"); done; fi
+if [ "${CUTOVER_MODE:-production}" = rehearsal ]; then
+  for f in ${COMPOSE_EXTRA:-}; do EXTRA_FILES+=(-f "$f"); done
+else
+  for f in invoice-565.override.yml releases/25e54017aa0d41870ab3988f1c55be3d00cab54e/candidate.yml; do
+    if [ -r "$SK_DIR/$f" ]; then EXTRA_FILES+=(-f "$f"); fi
+  done
+fi
 dc()  { docker compose --env-file deploy.env -f docker-compose.yml "${EXTRA_FILES[@]}" "$@"; }
 # dco = the base project + the pinned scheduler + (once a cutover has started) the release override, so a
 # later compose command can never fall back to the APP_TAG image (the pre-allocation 61b5c214 release).
