@@ -27,6 +27,7 @@ import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalidation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
+import { installmentOutstanding } from "./installment-progress.js";
 import { invoiceAllocatedTotal } from "./payment-invoice-allocations.js";
 import { issueReceipt, loadReceiptLogo } from "./receipt.js";
 import { EventNotifierService } from "../notifications/event-notifier.service.js";
@@ -180,6 +181,7 @@ function isUniqueViolation(e: unknown): boolean {
 
 // Minimal payment shape needed by the Paystack apply helpers.
 type PaymentCore = {
+  installmentId?: string | null;
   id: string;
   schoolId: string;
   invoiceId: string;
@@ -538,6 +540,7 @@ export class PaymentsService {
           schoolId: true,
           invoiceId: true,
           studentId: true,
+          installmentId: true,
           amount: true,
           method: true,
           status: true,
@@ -693,7 +696,10 @@ export class PaymentsService {
         : ["CANCELLED", "REFUNDED"].includes(invoice.status) ? "CLOSED_INVOICE"
         : currentLink.status === "PAID" ? "PAYMENT_LINK_ALREADY_PAID"
         : null;
-      const allocated = reason ? 0 : Math.min(link.amount, Math.max(0, invoice.totalDue - invoice.totalPaid));
+      const targetBalance = link.installmentId
+        ? await installmentOutstanding(db, schoolId, invoiceId, link.installmentId, invoice.totalPaid) ?? 0
+        : link.amount;
+      const allocated = reason ? 0 : Math.min(link.amount, targetBalance, Math.max(0, invoice.totalDue - invoice.totalPaid));
       const surplus = link.amount - allocated;
       if (surplus) await recordPaystackException(db, schoolId, invoiceId, reference, reason ?? "INVOICE_OVERPAYMENT",
         link.amount, transaction.amount, transaction.currency, surplus);
@@ -708,6 +714,7 @@ export class PaymentsService {
             invoiceId,
             studentId: invoice.studentId,
             amount: link.amount,
+            installmentId: link.installmentId,
             allocatedKobo: allocated,
             method: "PAYSTACK",
             status: "SUCCESS",
@@ -826,6 +833,7 @@ export class PaymentsService {
           schoolId: true,
           invoiceId: true,
           studentId: true,
+          installmentId: true,
           amount: true,
           method: true,
           status: true,
@@ -1136,7 +1144,10 @@ export class PaymentsService {
       return false;
     }
     const closed = invoice.status === "CANCELLED" || invoice.status === "REFUNDED";
-    const allocated = closed ? 0 : Math.min(payment.amount, Math.max(0, invoice.totalDue - invoice.totalPaid));
+    const targetBalance = payment.installmentId
+      ? await installmentOutstanding(db, payment.schoolId, payment.invoiceId, payment.installmentId, invoice.totalPaid) ?? 0
+      : payment.amount;
+    const allocated = closed ? 0 : Math.min(payment.amount, targetBalance, Math.max(0, invoice.totalDue - invoice.totalPaid));
     // 1. Transition payment to SUCCESS and store Paystack payload — an
     // ATOMIC conditional update (updateMany + a status: "PENDING" filter),
     // not a plain update. This is what actually closes the race window
@@ -1180,7 +1191,7 @@ export class PaymentsService {
     const excess = payment.amount - allocated;
     if (excess > 0) {
       await recordPaystackException(db, payment.schoolId, payment.invoiceId, `PSK-${payment.schoolId}-${payment.id}`,
-        closed ? "CLOSED_INVOICE" : "INVOICE_OVERPAYMENT", payment.amount, paystackData.amount, paystackData.currency, excess);
+        closed ? "CLOSED_INVOICE" : payment.installmentId ? "INSTALLMENT_OVERPAYMENT" : "INVOICE_OVERPAYMENT", payment.amount, paystackData.amount, paystackData.currency, excess);
       await db.auditLog.create({
         data: {
           schoolId: payment.schoolId,

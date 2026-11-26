@@ -142,6 +142,38 @@ export class InvoicesController {
     return this.paymentLinks.archive(authCtx, id, { ipAddress: ip });
   }
 
+  @Get(":id/installments/:installmentId/payment-link")
+  @Permissions("payment.read")
+  async getInstallmentPaymentLink(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Param("installmentId") installmentId: string,
+  ): Promise<PaymentLinkStateDto> {
+    return this.paymentLinks.get(authCtx, id, installmentId);
+  }
+
+  @Post(":id/installments/:installmentId/payment-link")
+  @Permissions("payment.record")
+  async createInstallmentPaymentLink(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Param("installmentId") installmentId: string,
+    @Ip() ip: string,
+  ): Promise<PaymentLinkStateDto> {
+    return this.paymentLinks.create(authCtx, id, { ipAddress: ip }, installmentId);
+  }
+
+  @Post(":id/installments/:installmentId/payment-link/archive")
+  @Permissions("payment.record")
+  async archiveInstallmentPaymentLink(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Param("installmentId") installmentId: string,
+    @Ip() ip: string,
+  ): Promise<PaymentLinkStateDto> {
+    return this.paymentLinks.archive(authCtx, id, { ipAddress: ip }, installmentId);
+  }
+
   @Post(":id/cancel")
   @Permissions("invoice.cancel")
   async cancel(

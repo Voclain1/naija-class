@@ -12,6 +12,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 import { isPaystackPaymentRequestCode, PAYSTACK_PAYMENT_REQUEST_BASE } from "../../common/paystack/payment-request-code.js";
+import { installmentOutstanding } from "../payments/installment-progress.js";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
 
 interface RequestContext {
@@ -36,7 +37,7 @@ export class PaymentLinksService {
     return new Date(Date.now() + minutes * 60_000);
   }
 
-  async get(authCtx: AuthContext, invoiceId: string): Promise<PaymentLinkStateDto> {
+  async get(authCtx: AuthContext, invoiceId: string, installmentId: string | null = null): Promise<PaymentLinkStateDto> {
     return withTenant(authCtx.schoolId, async (db) => {
       const invoice = await db.invoice.findFirst({
         where: { id: invoiceId, schoolId: authCtx.schoolId },
@@ -64,19 +65,19 @@ export class PaymentLinksService {
       }
 
       const active = await db.paymentLink.findFirst({
-        where: { schoolId: authCtx.schoolId, invoiceId, status: { in: [...ACTIVE_STATUSES] } },
+        where: { schoolId: authCtx.schoolId, invoiceId, installmentId, status: { in: [...ACTIVE_STATUSES] } },
         orderBy: { createdAt: "desc" },
       });
       if (active?.status === "CREATING") return { state: "CREATING" };
       if (active?.status === "LIVE") return active.expiresAt && active.expiresAt <= new Date()
         ? { state: "RETRYABLE_FAILURE", lifecycle: "EXPIRED", failureCode: "PAYMENT_LINK_EXPIRED" } : toLiveDto(active, school.name, studentLabel);
       const pending = await db.paymentLink.findFirst({
-        where: { schoolId: authCtx.schoolId, invoiceId, status: "ARCHIVE_PENDING" }, select: { id: true },
+        where: { schoolId: authCtx.schoolId, invoiceId, installmentId, status: "ARCHIVE_PENDING" }, select: { id: true },
       });
       if (pending) return { state: "CREATING", lifecycle: "INVALIDATION_PENDING" };
 
       const failed = await db.paymentLink.findFirst({
-        where: { schoolId: authCtx.schoolId, invoiceId, status: "CREATE_FAILED" },
+        where: { schoolId: authCtx.schoolId, invoiceId, installmentId, status: "CREATE_FAILED" },
         orderBy: { createdAt: "desc" },
         select: { failureCode: true },
       });
@@ -90,6 +91,7 @@ export class PaymentLinksService {
     authCtx: AuthContext,
     invoiceId: string,
     reqCtx: RequestContext,
+    installmentId: string | null = null,
   ): Promise<PaymentLinkStateDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
 
@@ -107,7 +109,12 @@ export class PaymentLinksService {
           "A payment link cannot be created for this invoice status.",
         );
       }
-      const amount = invoice.totalDue - invoice.totalPaid;
+      const invoiceBalance = invoice.totalDue - invoice.totalPaid;
+      const target = installmentId
+        ? await installmentOutstanding(db, authCtx.schoolId, invoiceId, installmentId, invoice.totalPaid)
+        : invoiceBalance;
+      if (target == null) throw new NotFoundError("Instalment not found.");
+      const amount = Math.min(invoiceBalance, target);
       if (amount <= 0) {
         throw new ConflictError(
           "PAYMENT_LINK_NO_BALANCE",
@@ -136,7 +143,7 @@ export class PaymentLinksService {
 
       const now = new Date();
       const expired = await db.paymentLink.findFirst({
-        where: { schoolId: authCtx.schoolId, invoiceId, status: "LIVE", expiresAt: { lte: now } },
+        where: { schoolId: authCtx.schoolId, invoiceId, installmentId, status: "LIVE", expiresAt: { lte: now } },
         select: { id: true },
       });
       if (expired) {
@@ -155,7 +162,7 @@ export class PaymentLinksService {
       }
       const existing = await db.paymentLink.findFirst({
         where: {
-          schoolId: authCtx.schoolId, invoiceId,
+          schoolId: authCtx.schoolId, invoiceId, installmentId,
           OR: [
             { status: { in: ["CREATING", "LIVE"] } },
             { status: "ARCHIVE_PENDING", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
@@ -165,7 +172,7 @@ export class PaymentLinksService {
       });
       if (existing) return { existing, schoolName: school.name, studentLabel } as const;
       const link = await db.paymentLink.create({
-        data: { schoolId: authCtx.schoolId, invoiceId, amount, createdBy: authCtx.userId, expiresAt: this.expiresAt() },
+        data: { schoolId: authCtx.schoolId, invoiceId, installmentId, amount, createdBy: authCtx.userId, expiresAt: this.expiresAt() },
       });
       return { link, splitCode: school.paystackSplitCode, schoolName: school.name, studentLabel };
     });
@@ -234,10 +241,13 @@ export class PaymentLinksService {
 
       return await withTenant(authCtx.schoolId, async (db) => {
         // Serialize publication of the link with invoice updates and invalidation.
-        const [current] = await db.$queryRaw<{ outstanding: number; status: string }[]>`
-          SELECT total_due - total_paid AS outstanding, status::text
+        const [current] = await db.$queryRaw<{ outstanding: number; total_paid: number; status: string }[]>`
+          SELECT total_due - total_paid AS outstanding, total_paid, status::text
           FROM invoices WHERE school_id = ${authCtx.schoolId} AND id = ${invoiceId} FOR UPDATE`;
-        if (!current || (link.expiresAt && link.expiresAt <= new Date()) || current.outstanding !== link.amount || ["PAID", "CANCELLED", "REFUNDED"].includes(current.status)) {
+        const target = current && installmentId
+          ? await installmentOutstanding(db, authCtx.schoolId, invoiceId, installmentId, current.total_paid)
+          : current?.outstanding;
+        if (!current || target == null || (link.expiresAt && link.expiresAt <= new Date()) || Math.min(current.outstanding, target) !== link.amount || ["PAID", "CANCELLED", "REFUNDED"].includes(current.status)) {
           throw new ConflictError("PAYMENT_LINK_BALANCE_CHANGED", "The outstanding invoice changed during payment link creation.");
         }
         const hostedUrl = `${PAYSTACK_PAYMENT_REQUEST_BASE}${fetched.request_code}`;
@@ -294,6 +304,7 @@ export class PaymentLinksService {
     authCtx: AuthContext,
     invoiceId: string,
     reqCtx: RequestContext,
+    installmentId: string | null = null,
   ): Promise<PaymentLinkStateDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
 
@@ -305,7 +316,7 @@ export class PaymentLinksService {
       if (!invoice) throw new NotFoundError("Invoice not found.");
 
       const active = await db.paymentLink.findFirst({
-        where: { schoolId: authCtx.schoolId, invoiceId, status: { in: ["LIVE", "ARCHIVE_PENDING"] } },
+        where: { schoolId: authCtx.schoolId, invoiceId, installmentId, status: { in: ["LIVE", "ARCHIVE_PENDING"] } },
         orderBy: { createdAt: "desc" },
         select: { id: true, requestCode: true },
       });
@@ -318,7 +329,7 @@ export class PaymentLinksService {
 
       const reserved = await db.paymentLink.updateMany({
         where: {
-          id: active.id, schoolId: authCtx.schoolId, invoiceId,
+          id: active.id, schoolId: authCtx.schoolId, invoiceId, installmentId,
           OR: [{ status: "LIVE" }, { status: "ARCHIVE_PENDING", failureCode: "PAYSTACK_PAYMENT_REQUEST_ARCHIVE_FAILED" }],
         },
         data: { status: "ARCHIVE_PENDING", hostedUrl: null, lastAttemptAt: new Date(), failureCode: null },
@@ -374,7 +385,7 @@ export class PaymentLinksService {
         },
       });
     });
-    return this.get(authCtx, invoiceId);
+    return this.get(authCtx, invoiceId, installmentId);
   }
 }
 

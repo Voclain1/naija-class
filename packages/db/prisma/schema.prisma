@@ -2701,6 +2701,8 @@ enum PaymentLinkStatus {
 }
 
 model PaymentLink {
+  installmentId String? @map("installment_id")
+  installment PaymentPlanInstallment? @relation(fields: [installmentId], references: [id], onDelete: Restrict)
   expiresAt DateTime? @map("expires_at")
   id                   String            @id @default(uuid())
   schoolId             String            @map("school_id")
@@ -2756,6 +2758,8 @@ enum PaymentStatus {
 }
 
 model Payment {
+  installmentId String? @map("installment_id")
+  installment PaymentPlanInstallment? @relation(fields: [installmentId], references: [id], onDelete: Restrict)
   allocatedKobo Int? @map("allocated_kobo")
   id                String        @id @default(uuid())
   schoolId          String        @map("school_id")
@@ -2853,6 +2857,8 @@ model PaymentPlan {
 }
 
 model PaymentPlanInstallment {
+  payments Payment[]
+  paymentLinks PaymentLink[]
   id       String      @id @default(uuid())
   schoolId String      @map("school_id")
   planId   String      @map("plan_id")

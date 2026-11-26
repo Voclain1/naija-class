@@ -379,3 +379,13 @@ describe("PaymentPlanService (integration)", () => {
     expect(plan!.installments[2].paid).toBe(false);
   });
 });
+
+describe("targeted instalment allocation", () => {
+  it("credits a later instalment before allocating an earlier untargeted part payment", async () => {
+    const { allocateSchedule } = await import("./installment-progress.js");
+    const schedule = [{ id: "first", amount: 100 }, { id: "second", amount: 100 }];
+    const result = allocateSchedule(schedule, 130, [{ installmentId: "second", amount: 125, allocatedKobo: 100 }]);
+    expect(result.map(({ amountPaid, outstanding }) => [amountPaid, outstanding])).toEqual([[30, 70], [100, 0]]);
+    expect(allocateSchedule(schedule, 30, []).map(({ amountPaid }) => amountPaid)).toEqual([30, 0]);
+  });
+});

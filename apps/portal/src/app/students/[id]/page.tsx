@@ -469,16 +469,18 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
   const [payState, setPayState] = useState<PayState>({ kind: "idle" });
   const balance = invoice.totalDue - invoice.totalPaid;
 
-  async function onPay() {
+  async function onPay(installmentId?: string) {
     setPayState({ kind: "starting" });
     try {
       const res = await fetch(
         `/api/portal/students/${invoice.studentId}/invoices/${invoice.id}/pay`,
         // At the school's own address, Paystack returns the parent there,
         // where their sign-in lives (docs/modules/school-hosted-apps.md).
-        schoolCodeHere()
-          ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ returnTo: "school" }) }
-          : { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ returnTo: schoolCodeHere() ? "school" : "portal", installmentId }),
+        },
       );
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {
@@ -565,7 +567,12 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
               <li key={item.id} className="flex flex-wrap items-baseline justify-between gap-1">
                 <span>Instalment {index + 1} · <time dateTime={item.dueDate}>{item.dueDate}</time></span>
                 <span className="tabular-nums">
-                  {item.outstanding === 0 ? "Paid" : `${formatNaira(item.outstanding)} left`}
+                  {item.outstanding === 0 ? "Paid" : (
+                    <button type="button" className="rounded-md border px-3 py-1.5 font-medium"
+                      disabled={payState.kind === "starting"} onClick={() => void onPay(item.id)}>
+                      Pay {formatNaira(item.outstanding)}
+                    </button>
+                  )}
                 </span>
               </li>
             ))}
@@ -583,7 +590,7 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
         <div className="flex flex-col gap-1.5">
           <button
             type="button"
-            onClick={onPay}
+            onClick={() => void onPay()}
             disabled={payState.kind === "starting"}
             className="h-10 rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >

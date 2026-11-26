@@ -125,6 +125,9 @@ export default function InvoiceDetailPage() {
   const [term, setTerm] = useState<TermDto | null>(null);
   const [payments, setPayments] = useState<PaymentDto[]>([]);
   const [plan, setPlan] = useState<PaymentPlanDto | null | undefined>(undefined); // undefined = loading
+  const [installmentLinks, setInstallmentLinks] = useState<Record<string, PaymentLinkStateDto>>({});
+  const [installmentLinkPending, setInstallmentLinkPending] = useState<string | null>(null);
+  const [installmentLinkError, setInstallmentLinkError] = useState<string | null>(null);
   const [paymentLink, setPaymentLink] = useState<PaymentLinkStateDto | undefined>(undefined);
   const [paymentLinkBusy, setPaymentLinkBusy] = useState(false);
   const [paymentLinkError, setPaymentLinkError] = useState<string | null>(null);
@@ -457,6 +460,21 @@ export default function InvoiceDetailPage() {
       setPaymentLinkError(financeErrorMessage(e));
     } finally {
       setPaymentLinkBusy(false);
+    }
+  }
+
+  async function updateInstallmentLink(installmentId: string, archive = false) {
+    if (!invoice) return;
+    setInstallmentLinkError(null);
+    setInstallmentLinkPending(installmentId);
+    try {
+      const action = archive ? archivePaymentLink : createPaymentLink;
+      const link = await action(invoice.id, installmentId);
+      setInstallmentLinks((previous) => ({ ...previous, [installmentId]: link }));
+    } catch (error) {
+      setInstallmentLinkError(financeErrorMessage(error));
+    } finally {
+      setInstallmentLinkPending(null);
     }
   }
 
@@ -878,10 +896,13 @@ export default function InvoiceDetailPage() {
                     <TableHead className="text-right">Paid</TableHead>
                     <TableHead className="text-right">Outstanding</TableHead>
                     <TableHead className="text-center">Status</TableHead>
+                    <TableHead>Payment link</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {plan.installments.map((inst, index) => (
+                  {plan.installments.map((inst, index) => {
+                    const link = installmentLinks[inst.id];
+                    return (
                     <TableRow key={inst.id}>
                       <TableCell>{index + 1}</TableCell>
                       <TableCell className={inst.isOverdue ? "font-medium text-destructive" : "text-muted-foreground"}>
@@ -900,11 +921,32 @@ export default function InvoiceDetailPage() {
                           <Badge variant="muted">Pending</Badge>
                         )}
                       </TableCell>
+                      <TableCell>
+                        {!inst.paid && !["CANCELLED", "REFUNDED"].includes(invoice.status) && (
+                          <div className="flex flex-wrap gap-2">
+                            {link?.state === "LIVE" ? (
+                              <>
+                                <Button size="sm" variant="outline" onClick={() => void handleCopyPaymentLink(link.hostedUrl)}>Copy</Button>
+                                <Button asChild size="sm" variant="outline">
+                                  <a href={buildNoRecipientWhatsAppUrl(link.hostedUrl)} target="_blank" rel="noreferrer">WhatsApp</a>
+                                </Button>
+                                <Button size="sm" variant="ghost" disabled={installmentLinkPending !== null}
+                                  onClick={() => void updateInstallmentLink(inst.id, true)}>Archive</Button>
+                              </>
+                            ) : (
+                              <Button size="sm" variant="outline" disabled={installmentLinkPending !== null}
+                                onClick={() => void updateInstallmentLink(inst.id)}>Get link</Button>
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
+            {installmentLinkError && <p role="alert" className="text-sm text-destructive">{installmentLinkError}</p>}
             {!hasSuccessPayment && (
               <div className="flex items-center gap-3">
                 <Button variant="destructive" size="sm" disabled={planDeleting} onClick={handleDeletePlan}>

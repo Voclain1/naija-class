@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 
+import { allocateSchedule, targetedPayments } from "./installment-progress.js";
 import { type PrismaClient, withTenant } from "@school-kit/db";
 import {
   ConflictError,
@@ -82,8 +83,12 @@ function toInstallmentDto(row: InstallmentRow, progress: { amountPaid: number; o
   };
 }
 
-function toDto(row: PlanRow, totalPaid: number): PaymentPlanDto {
-  const progress = projectUntargetedPayments(row.installments.map(({ amount }) => amount), totalPaid);
+function toDto(
+  row: PlanRow,
+  totalPaid: number,
+  targeted: Parameters<typeof allocateSchedule>[2] = [],
+): PaymentPlanDto {
+  const progress = allocateSchedule(row.installments, totalPaid, targeted);
   return {
     id: row.id,
     schoolId: row.schoolId,
@@ -91,7 +96,7 @@ function toDto(row: PlanRow, totalPaid: number): PaymentPlanDto {
     name: row.name,
     createdBy: row.createdBy,
     createdAt: row.createdAt,
-    installments: row.installments.map((installment, index) => toInstallmentDto(installment, progress[index]!)),
+    installments: row.installments.map((installment, index) => toInstallmentDto(installment, { amountPaid: progress[index]!.amountPaid, outstanding: progress[index]!.outstanding })),
   };
 }
 
@@ -181,12 +186,12 @@ export class PaymentPlanService {
       const plan = await db.paymentPlan.findUnique({
         where: { schoolId_invoiceId: { schoolId: authCtx.schoolId, invoiceId } },
         include: {
-          invoice: { select: { totalPaid: true } },
+          invoice: { select: { totalPaid: true, payments: targetedPayments } },
           installments: { orderBy: [{ dueDate: "asc" }, { id: "asc" }] },
         },
       });
       if (!plan) return null;
-      return toDto(plan, plan.invoice.totalPaid);
+      return toDto(plan, plan.invoice.totalPaid, plan.invoice.payments);
     });
   }
 
@@ -202,12 +207,17 @@ export class PaymentPlanService {
         throw new NotFoundError("Payment plan not found.");
       }
 
+      await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${authCtx.schoolId} AND id = ${plan.invoiceId} FOR UPDATE`;
+      const hasTarget = await db.paymentPlanInstallment.findFirst({
+        where: { planId, OR: [{ payments: { some: {} } }, { paymentLinks: { some: {} } }] },
+        select: { id: true },
+      });
       // Lock check — cannot delete once any payment is recorded (D6).
       const invoice = await db.invoice.findUniqueOrThrow({
         where: { id: plan.invoiceId },
         select: { totalPaid: true },
       });
-      if (invoice.totalPaid > 0) {
+      if (hasTarget || invoice.totalPaid > 0) {
         throw new ConflictError(
           "PLAN_LOCKED_PAYMENTS_EXIST",
           "Cannot delete an installment plan after payments have been recorded against the invoice.",
@@ -239,8 +249,11 @@ export class PaymentPlanService {
     });
     if (!plan) return;
 
-    const amounts = plan.installments.map((i) => i.amount);
-    const paidFlags = computeInstallmentsPaid(amounts, totalPaid);
+    const targeted = await db.payment.findMany({
+      ...targetedPayments,
+      where: { ...targetedPayments.where, invoiceId, schoolId: plan.schoolId },
+    });
+    const paidFlags = allocateSchedule(plan.installments, totalPaid, targeted).map(({ outstanding }) => outstanding === 0);
 
     const toUpdate = plan.installments.filter((inst, idx) => inst.paid !== paidFlags[idx]);
     if (toUpdate.length === 0) return;
