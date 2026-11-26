@@ -11,6 +11,8 @@
 #   scheduler        ops-pinned persistence, original ops retained and stopped, images present
 #   deploy-preflight host preconditions for the controlled cutover
 #   rotate-ping      replace the heartbeat URL (hidden prompt)
+#   sync-secret      write backup.env into the GitHub secret BACKUP_ENV_FILE (hidden token prompt; nothing displayed)
+#   owner-session    the whole owner procedure in ONE guided run (inspect, re-pin, rotate heartbeat, sync secret)
 #   repin-ops REF    move ops-pinned to another immutable backup image (REF = ...@sha256:<64 hex>)
 set -Eeuo pipefail
 umask 077
@@ -159,6 +161,41 @@ repin-ops)
       if swap_scheduler "$PG_ID"; then ok "fallback image running"; else bad "MANUAL ACTION: no healthy scheduler; the original ops is untouched and stopped"; fi
     fi
   fi ;;
+sync-secret)
+  [ -t 0 ] || die "interactive only (it asks for a token with a hidden prompt)"
+  python3 "$here/backup_env.py" validate backup.env >/dev/null || die "backup.env fails validation; the secret was NOT changed (run: guard.sh config)"
+  python3 -c 'import nacl' 2>/dev/null || die "python3-nacl is missing. Run once: sudo apt-get install -y python3-nacl   then repeat"
+  echo "Create a FINE-GRAINED token at github.com/settings/personal-access-tokens: only this repository, permission 'Secrets: Read and write', 1-day expiry."
+  read -rsp "Paste the token (hidden), then Enter: " tok; echo
+  rc=0; GH_TOKEN=$tok python3 "$here/gh_secret.py" "${GH_REPO:-Voclain1/naija-class}" BACKUP_ENV_FILE backup.env || rc=$?
+  unset tok
+  if [ "$rc" = 0 ]; then ok "BACKUP_ENV_FILE now equals the running backup.env. Revoke the token. Then re-run the 'backup-config-reconcile' check on PR #563 (Checks tab > Re-run all jobs): it must say 'identical'."
+  else bad "the secret was NOT updated; revoke the token anyway"; fi ;;
+
+owner-session)
+  [ -t 0 ] || die "interactive only"
+  step() { printf '\n=== %s\n' "$1"; }
+  confirm() { local a; read -r -p "$1 Type $2 to continue (anything else stops): " a; [ "$a" = "$2" ] || die "stopped by you; nothing further was changed"; }
+  step "1/5 read-only inspections (config, scheduler, retention)"
+  "$0" config || die "fix the configuration first"
+  "$0" scheduler || die "the scheduler is not in the expected state"
+  "$0" retention || die "the retention inspection reported failures"
+  step "2/5 move ops-pinned to the corrected backup image (only if the release manifest names a different one)"
+  if [ -s release/manifest.env ]; then
+    want=$(sed -n 's/^BACKUP_OPS=//p' release/manifest.env | head -n 1); have=$(override_image)
+    if [ -n "$want" ] && [ "$want" != "$have" ]; then confirm "ops-pinned will be recreated on the new image (rolls back by itself on failure)." REPIN; "$0" repin-ops "$want" || die "re-pin failed (it rolled back; see above)"
+    else ok "ops-pinned already runs the manifest's backup image"; fi
+  else info "no release/manifest.env yet: skipping (run 'cutover.sh stage' first when you have the manifest)"; fi
+  step "3/5 rotate the heartbeat URL"
+  echo "In Healthchecks: create the NEW check (same schedule, same email channel) and copy its ping URL. Leave the old check running."
+  confirm "Have you created the new check?" YES
+  "$0" rotate-ping || die "heartbeat rotation failed (it rolled back; see above)"
+  step "4/5 validate the result"
+  "$0" config || die "configuration invalid after rotation"
+  step "5/5 make the GitHub secret match"
+  "$0" sync-secret || die "the secret was not updated"
+  echo; ok "owner session complete. Remaining: after the next 01:30 UTC run confirm the NEW Healthchecks check is green, then pause the old one."
+  ;;
 *) die "unknown mode: $mode" ;;
 esac
 exit "$FAILED"

@@ -241,7 +241,9 @@ jobs:
           printf '%s\n' "$WEB_ENV_FILE" > out/web.env
           printf '%s\n' "$PORTAL_ENV_FILE" > out/portal.env
           printf '%s\n' "$CBT_ENV_FILE" > out/cbt.env
-          printf '%s\n' "$BACKUP_ENV_FILE" > out/backup.env
+          # The VPS file is the source of truth (it carries settings, e.g. the heartbeat URL, that a
+          # secret may lack). The secret only BOOTSTRAPS a server that has no backup.env yet.
+          printf '%s\n' "$BACKUP_ENV_FILE" > out/backup.env.bootstrap
           ssh vps "grep '^APP_TAG=' /opt/school-kit/deploy.env 2>/dev/null || true" > out/deploy.env
           cat >> out/deploy.env <<ENV
           IMAGE_PREFIX=${IMAGE_PREFIX}
@@ -289,6 +291,19 @@ jobs:
           mv -f api.env.merged api.env
           rm -f api.env.incoming api.voice.local.tmp
           VOICE_ENV
+          ssh vps 'bash -se' <<'BACKUP_ENV'
+          set -euo pipefail
+          umask 077
+          cd /opt/school-kit
+          if [ -s backup.env ]; then
+            rm -f backup.env.bootstrap
+            echo "backup.env kept as it is on the server (never overwritten from the GitHub secret)"
+          else
+            python3 ops-tools/backup_env.py validate backup.env.bootstrap >/dev/null || { echo "::error::BACKUP_ENV_FILE is empty or invalid and the server has no backup.env"; exit 1; }
+            mv -f backup.env.bootstrap backup.env
+            echo "backup.env bootstrapped from the GitHub secret"
+          fi
+          BACKUP_ENV
           printf '%s' "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
           ssh vps "/opt/school-kit/deploy.sh ${TAG}"
           ssh vps 'docker logout ghcr.io'

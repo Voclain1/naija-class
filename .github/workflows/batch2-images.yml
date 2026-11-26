@@ -220,9 +220,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - run: shellcheck -S warning infra/vps/ops-tools/*.sh infra/vps/postgres/ops/*.sh scripts/batch2-*.sh scripts/batch3-*.sh scripts/ops-tools-test.sh scripts/backup-env-test.sh
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq rclone python3-nacl
+      - run: shellcheck -S warning infra/vps/ops-tools/*.sh infra/vps/postgres/ops/*.sh scripts/batch2-*.sh scripts/batch3-*.sh scripts/ops-tools-test.sh scripts/backup-env-test.sh scripts/gh-secret-test.sh
       - run: bash scripts/backup-env-test.sh
       - run: bash scripts/ops-tools-test.sh
+      - run: bash scripts/gh-secret-test.sh
       - name: Retention fixtures with the runner's rclone (the image-based jobs use the pinned one)
         run: bash scripts/batch2-retention-fixture.sh
 
