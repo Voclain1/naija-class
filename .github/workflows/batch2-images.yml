@@ -124,7 +124,6 @@ jobs:
           RA: ${{ steps.recovery_api.outputs.digest }}
           RR: ${{ steps.recovery_render.outputs.digest }}
           MG: ${{ steps.migrate.outputs.digest }}
-          BK: ${{ steps.backup.outputs.digest }}
         run: |
           for d in "$CA" "$CR" "$RA" "$RR" "$MG" "$BK"; do [[ $d =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::a build produced no digest"; exit 1; }; done
           cat > "$RUNNER_TEMP/release-manifest.env" <<EOF
@@ -136,14 +135,14 @@ jobs:
           RECOVERY_API=ghcr.io/voclain1/school-kit-api@$RA
           RECOVERY_RENDER=ghcr.io/voclain1/school-kit-render@$RR
           MIGRATE=ghcr.io/voclain1/school-kit-migrate@$MG
-          BACKUP_OPS=ghcr.io/voclain1/school-kit-postgres@$BK
+          BACKUP_OPS=$PRODUCTION_BACKUP_IMAGE
           EOF
           sed -i 's/^ *//' "$RUNNER_TEMP/release-manifest.env"
           echo '### Release manifest (exact head)' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"; cat "$RUNNER_TEMP/release-manifest.env" | tee -a "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
-          name: batch2-release-manifest
+          name: batch2-build-manifest-unverified
           path: ${{ runner.temp }}/release-manifest.env
 
   retention:

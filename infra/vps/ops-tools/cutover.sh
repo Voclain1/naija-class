@@ -5,7 +5,7 @@
 #   cutover.sh stage            validate release/manifest.env, pull every image BY DIGEST, check revision labels
 #   cutover.sh authorize        owner types the authorisation phrase; binds head SHA + manifest hash, 4 h
 #   cutover.sh verify           read-only gates (no authorisation needed)
-#   cutover.sh execute [--resume]  the maintenance window: snapshot, 503, drain, migrate, candidate, reopen
+#   cutover.sh execute [--resume]  the maintenance window: 503, drain, snapshot, migrate, candidate, reopen
 #   cutover.sh resolve-migration   after fixing a failed migration's cause: mark it rolled back
 #   cutover.sh recover          allocation-compatible recovery release (never the pre-allocation image)
 #   cutover.sh reopen           give traffic back once a running release passes the financial gate
@@ -34,7 +34,7 @@ AUTH=release/AUTHORIZATION
 STATE=release/state
 REHEARSAL=0; [ "${CUTOVER_MODE:-production}" = rehearsal ] && REHEARSAL=1
 IMG_RE='^ghcr\.io/voclain1/school-kit-(api|render|migrate|postgres)@sha256:[0-9a-f]{64}$'
-PHASES=(NONE STAGED SNAPSHOT_DONE MAINT_ON DRAINED MIGRATED CANDIDATE_UP REOPENED)
+PHASES=(NONE STAGED MAINT_ON DRAINED SNAPSHOT_DONE MIGRATED CANDIDATE_UP REOPENED)
 
 dcr() { dco "$@"; }
 dvar() { sed -n "s/^$1=//p" deploy.env | head -n 1; }
@@ -195,8 +195,8 @@ lsn=$(psql -XqAt -c "SELECT pg_create_restore_point('batch3_pre_migration_$TS')"
 psql -XqAt -c "SELECT pg_switch_wal()" >/dev/null
 echo "SNAPSHOT $(basename "$f") restore_point=batch3_pre_migration_$TS lsn=$lsn"
 SNAP
-  ) || die "the pre-migration snapshot failed; nothing has been changed"
-  echo "$out" | tee release/snapshot.txt
+  ) || die "the pre-migration snapshot failed; ingress stays closed and no migration was started"
+  echo "$out" | tee -a release/snapshot.txt
 }
 drain() {
   info "ingress is closed; waiting ${DRAIN_WAIT:-30}s for in-flight requests"; sleep "${DRAIN_WAIT:-30}"
@@ -316,15 +316,15 @@ execute)
   if [ "$cur" != NONE ] && [ "$cur" != STAGED ] && [ "$cur" != REOPENED ] && [ "$resume" = 0 ]; then die "an earlier run stopped at $cur; use --resume (after fixing the cause) or recover"; fi
   if [ "$cur" = REOPENED ]; then state_set STAGED; fi
   gates || { echo "GATES FAILED: nothing was changed" >&2; exit 10; }
-  if ! done_phase SNAPSHOT_DONE; then snapshot; state_set SNAPSHOT_DONE; invariants; fi
   if ! done_phase MAINT_ON; then maintenance_on; state_set MAINT_ON; invariants; fi
   if ! done_phase DRAINED; then drain; state_set DRAINED; invariants; fi
+  if ! done_phase SNAPSHOT_DONE; then snapshot; state_set SNAPSHOT_DONE; invariants; fi
   if ! done_phase MIGRATED; then
     info "pending migrations (names only):"; migrate_run status 2>&1 | grep -E '^[0-9]{14}_' || info "(none listed)"
     if ! migrate_run deploy; then
       echo "MIGRATION FAILED. Ingress stays CLOSED (503); the old application stays stopped; nothing was started." >&2
-      echo "Ingress was closed and both services stopped after the snapshot, so nothing has been written since restore point in release/snapshot.txt." >&2
-      echo "Next: fix the cause, then 'cutover.sh resolve-migration' and 'cutover.sh execute --resume'; or restore from the snapshot with the owner's engineer." >&2
+      echo "The pre-migration backup is recorded in release/snapshot.txt. Preserve the live database and investigate before resuming." >&2
+      echo "Next: fix the cause, then 'cutover.sh resolve-migration' and 'cutover.sh execute --resume'; or escalate to the owner's engineer for financial recovery." >&2
       invariants; exit 20
     fi
     migrations_ok || { echo "post-migration verification FAILED; staying in maintenance" >&2; exit 20; }
@@ -347,6 +347,7 @@ execute)
   echo "Now run the post-deployment acceptance checks (docs/runbooks/batch2-acceptance-and-batch3.md)." ;;
 recover)
   require_authorization
+  migrations_ok || die "recovery requires the completed instalment and inbox schema"
   maintenance_on
   stop_release
   if ! start_release recovery; then stop_release; echo "RECOVERY RELEASE DID NOT BECOME HEALTHY. Stay in maintenance and fix forward." >&2; invariants; exit 40; fi
