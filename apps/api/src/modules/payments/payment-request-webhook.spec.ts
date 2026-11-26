@@ -214,7 +214,12 @@ describe("paymentrequest.success — real database application", () => {
     expect(verifyTransaction).toHaveBeenCalledOnce();
 
     await withTenant(schoolId, async (db) => {
-      expect(await db.payment.count({ where: { schoolId, invoiceId: { in: [cancelled.id, replacement.id] } } })).toBe(0);
+      expect(await db.payment.findMany({
+        where: { schoolId, invoiceId: { in: [cancelled.id, replacement.id] } },
+        select: { invoiceId: true, amount: true, allocatedKobo: true, receiptNumber: true },
+      })).toEqual([{ invoiceId: cancelled.id, amount: 100_000, allocatedKobo: 0, receiptNumber: null }]);
+      expect(await db.paystackPaymentException.findFirst({ where: { schoolId, reference: lateReference } }))
+        .toMatchObject({ invoiceId: cancelled.id, reason: "CLOSED_INVOICE", unappliedKobo: 100_000 });
       expect(await db.invoice.findUniqueOrThrow({ where: { id: cancelled.id } })).toMatchObject({ status: "CANCELLED", totalPaid: 0 });
       expect(await db.invoice.findUniqueOrThrow({ where: { id: replacement.id } })).toMatchObject({ status: "ISSUED", totalPaid: 0 });
     });
