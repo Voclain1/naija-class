@@ -956,12 +956,17 @@ describe("InvoiceGenerationService (integration)", () => {
       await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
       const auth = ctx(schoolId, ownerId);
       const input = { termId, classArmId };
-      const students = [];
-      for (const name of ["unpaid", "partial", "paid", "refunded", "cancelled", "new"]) {
-        students.push(await makeStudent(schoolId, `replace-mixed-${name}`));
+      const [unpaid, partial, paid, refunded, cancelled, fresh] = await Promise.all([
+        makeStudent(schoolId, "replace-mixed-unpaid"),
+        makeStudent(schoolId, "replace-mixed-partial"),
+        makeStudent(schoolId, "replace-mixed-paid"),
+        makeStudent(schoolId, "replace-mixed-refunded"),
+        makeStudent(schoolId, "replace-mixed-cancelled"),
+        makeStudent(schoolId, "replace-mixed-new"),
+      ]);
+      for (const studentId of [unpaid, partial, paid, refunded, cancelled]) {
+        await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
       }
-      const [unpaid, partial, paid, refunded, cancelled, fresh] = students as [string, string, string, string, string, string];
-      for (const studentId of students.slice(0, -1)) await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
       const initial = await svc.generateForArm(auth, input, reqCtx);
       const invoices = new Map(initial.invoices.map((invoice) => [invoice.studentId, invoice]));
       await svc.cancel(auth, invoices.get(cancelled)!.id, reqCtx);
