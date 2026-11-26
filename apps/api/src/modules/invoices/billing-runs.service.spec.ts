@@ -80,11 +80,13 @@ describe("billing runs against PostgreSQL", () => {
     expect(audits.every((a) => (a.metadata as { proposalId?: string }).proposalId === run.id)).toBe(true);
   });
 
-  it("re-running normal generation skips existing term invoices, including cancelled ones", async () => {
+  it("billing-run preview and normal generation agree on cancelled replacements", async () => {
     const run = await prepare(); const done = await approve(run);
     await invoices.cancel(fx.auth, done.result!.invoiceIds[0]!, { ipAddress: null });
+    expect((await prepare()).createCount).toBe(1);
     const repeated = await invoices.generateForArm(fx.auth, { termId: fx.input.termId, classArmId: fx.arms[0]!.id }, { ipAddress: null });
-    expect(repeated).toMatchObject({ created: 0, skipped: 1 });
+    expect(repeated).toMatchObject({ created: 1, skipped: 0 });
+    expect(await count(fx.auth.schoolId)).toBe(3);
     expect((await prepare()).createCount).toBe(0);
   });
 
