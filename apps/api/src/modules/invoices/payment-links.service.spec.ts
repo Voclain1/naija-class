@@ -229,6 +229,7 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
       ),
     ).toBe(1);
     expect(await service.get(authA, invoiceA)).toEqual(created);
+    expect(created.state === "LIVE" && new Date(created.expiresAt ?? "").getTime()).toBeGreaterThan(Date.now());
 
     expect(await service.archive(authA, invoiceA, { ipAddress: "127.0.0.1" })).toEqual({
       state: "NOT_CREATED",
@@ -252,7 +253,85 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
     ).toBe(1);
   });
 
-  it("restores the live link when Paystack rejects a manual archive and denies cross-tenant targets", async () => {
+  it("supersedes an expired live link once under concurrent replacement requests", async () => {
+    const cutoff = new Date(Date.now() - 60_000);
+    const old = await withTenant(schoolA, (db) => db.paymentLink.create({
+      data: {
+        schoolId: schoolA, invoiceId: invoiceA, createdBy: userA, amount: 250_000, status: "LIVE",
+        expiresAt: cutoff, requestCode: `PRQ_old_${runId}`, hostedUrl: `https://paystack.com/pay/PRQ_old_${runId}`,
+      },
+    }));
+    const replacementCode = `PRQ_new_${runId}`;
+    let metadata: Record<string, unknown> = {};
+    const paystack = {
+      createCustomer: vi.fn(async ({ email }: { email: string }) => ({ customer_code: "CUS_cp2", email })),
+      createPaymentRequest: vi.fn(async (input: { metadata: Record<string, unknown> }) => {
+        metadata = input.metadata;
+        return { request_code: replacementCode };
+      }),
+      getPaymentRequest: vi.fn(async () => ({
+        id: 123461, request_code: replacementCode, amount: 250_000, currency: "NGN",
+        status: "pending", archived: false, split_code: "SPL_test_a", metadata,
+        customer: { customer_code: "CUS_cp2", email: "parent@schoolkit.ng" },
+      })),
+      archivePaymentRequest: vi.fn(async () => undefined),
+    };
+    const service = new PaymentLinksService(paystack as never);
+    try {
+      expect(await service.get(authA, invoiceA)).toMatchObject({ lifecycle: "EXPIRED" });
+      await Promise.all([service.create(authA, invoiceA, { ipAddress: null }), service.create(authA, invoiceA, { ipAddress: null })]);
+      expect(await service.get(authA, invoiceA)).toMatchObject({
+        state: "LIVE", url: `https://paystack.com/pay/${replacementCode}`,
+      });
+      expect(paystack.createPaymentRequest).toHaveBeenCalledTimes(1);
+      const prior = await withTenant(schoolA, (db) => db.paymentLink.findUniqueOrThrow({ where: { id: old.id } }));
+      expect(prior).toMatchObject({ status: "ARCHIVE_PENDING", hostedUrl: null, invalidatedAt: cutoff });
+    } finally {
+      await withTenant(schoolA, (db) => db.paymentLink.deleteMany({
+        where: { schoolId: schoolA, invoiceId: invoiceA, requestCode: { in: [old.requestCode!, replacementCode] } },
+      }));
+    }
+  });
+
+  it("rejects a provider link when a partial payment commits during creation", async () => {
+    const invoice = await withTenant(schoolA, async (db) => {
+      const original = await db.invoice.findUniqueOrThrow({ where: { id: invoiceA } });
+      return db.invoice.create({
+        data: {
+          schoolId: schoolA, studentId: original.studentId, termId: original.termId,
+          academicYearId: original.academicYearId, sequence: 100, items: [],
+          totalAmount: 250_000, totalDiscount: 0, totalDue: 250_000, status: "ISSUED",
+        },
+      });
+    });
+    const requestCode = `PRQ_stale_${runId}`;
+    const fake = {
+      createCustomer: vi.fn(async () => ({ customer_code: "CUS_fictional" })),
+      createPaymentRequest: vi.fn(async () => ({ request_code: requestCode })),
+      getPaymentRequest: vi.fn(async () => {
+        const link = await withTenant(schoolA, async (db) => {
+          await db.invoice.update({ where: { id: invoice.id }, data: { status: "PARTIALLY_PAID", totalPaid: 50_000 } });
+          return db.paymentLink.findFirstOrThrow({ where: { schoolId: schoolA, invoiceId: invoice.id } });
+        });
+        return {
+          id: 23456, request_code: requestCode, amount: 250_000, currency: "NGN",
+          archived: false, split_code: "SPL_test_a",
+          metadata: { schoolId: schoolA, invoiceId: invoice.id, schoolKitPaymentLinkId: link.id },
+          customer: { customer_code: "CUS_fictional", email: "parent@schoolkit.ng" },
+        };
+      }),
+      archivePaymentRequest: vi.fn(async () => undefined),
+    };
+    const service = new PaymentLinksService(fake as never);
+    await expect(service.create(authA, invoice.id, { ipAddress: null }))
+      .rejects.toMatchObject({ code: "PAYMENT_LINK_BALANCE_CHANGED" });
+    expect(fake.archivePaymentRequest).toHaveBeenCalledWith(requestCode);
+    expect(await service.get(authA, invoice.id)).toEqual({
+      state: "RETRYABLE_FAILURE", failureCode: "PAYMENT_LINK_BALANCE_CHANGED",
+    });
+  });
+
+  it("keeps the link hidden when Paystack rejects an archive and denies cross-tenant targets", async () => {
     const link = await withTenant(schoolA, (db) =>
       db.paymentLink.create({
         data: {
@@ -286,8 +365,8 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
       db.paymentLink.findUniqueOrThrow({ where: { id: link.id } }),
     );
     expect(restored).toMatchObject({
-      status: "LIVE",
-      hostedUrl: `https://paystack.com/pay/PRQ_archive_failure_${runId}`,
+      status: "ARCHIVE_PENDING",
+      hostedUrl: null,
       failureCode: "PAYSTACK_PAYMENT_REQUEST_ARCHIVE_FAILED",
       retryCount: 1,
     });

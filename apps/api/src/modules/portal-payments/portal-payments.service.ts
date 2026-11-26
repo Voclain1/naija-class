@@ -73,6 +73,7 @@ export class PortalPaymentsService {
       guardianCtx.schoolId,
       (db) =>
         withGuardian(guardianCtx.guardianId, studentId, db, async (db2) => {
+          await db2.$queryRaw`SELECT id FROM invoices WHERE school_id = ${guardianCtx.schoolId} AND id = ${invoiceId} AND student_id = ${studentId} FOR UPDATE`;
           const invoice = await db2.invoice.findUnique({
             where: { id: invoiceId },
             select: { id: true, studentId: true, status: true, totalDue: true, totalPaid: true },

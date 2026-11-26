@@ -1,8 +1,8 @@
 export type PaymentLinkStateDto =
   | { state: "CONNECT_PAYSTACK" }
-  | { state: "NOT_CREATED" }
-  | { state: "CREATING" }
-  | { state: "RETRYABLE_FAILURE"; failureCode: string | null }
+  | { state: "NOT_CREATED"; lifecycle?: "ALREADY_PAID" }
+  | { state: "CREATING"; lifecycle?: "INVALIDATION_PENDING" }
+  | { state: "RETRYABLE_FAILURE"; failureCode: string | null; lifecycle?: "EXPIRED" }
   | {
       state: "LIVE";
       id: string;
@@ -13,6 +13,7 @@ export type PaymentLinkStateDto =
       studentLabel: string;
       requestCode: string;
       createdAt: string;
+      expiresAt?: string | null;
     };
 
 export function buildPaymentLinkMessage(input: {

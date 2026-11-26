@@ -12,6 +12,7 @@ import type { AuthContext } from "../../common/auth/auth-context.js";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalidation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
+import { invoiceAllocatedTotal } from "./payment-invoice-allocations.js";
 import { computeInvoiceStatus } from "./payments.service.js";
 
 const AUDIT_REFUND_CREATE = "refund.create";
@@ -32,6 +33,11 @@ export class RefundsService {
 
   async create(authCtx: AuthContext, dto: CreateRefundInput): Promise<RefundDto> {
     const result = await withTenant(authCtx.schoolId, async (db) => {
+      // Lock the invoice before rereading the payment and calling the provider.
+      // This matches the payment and link paths and serializes competing reversals.
+      await db.$queryRaw`
+        SELECT i.id FROM invoices i JOIN payments p ON p.invoice_id = i.id AND p.school_id = i.school_id
+        WHERE i.school_id = ${authCtx.schoolId} AND p.id = ${dto.paymentId} FOR UPDATE OF i`;
       // 1. Load the payment — RLS ensures school_id matches.
       const payment = await db.payment.findUnique({
         where: { id: dto.paymentId },
@@ -151,11 +157,7 @@ export class RefundsService {
       });
 
       // 7. Recompute totalPaid from all remaining SUCCESS payments.
-      const { _sum } = await db.payment.aggregate({
-        where: { invoiceId: payment.invoiceId, status: "SUCCESS" },
-        _sum: { amount: true },
-      });
-      const newTotalPaid = _sum.amount ?? 0;
+      const newTotalPaid = await invoiceAllocatedTotal(db, authCtx.schoolId, payment.invoiceId);
 
       // 8. Compute new invoice status.
       //    Override: if newTotalPaid === 0, the invoice is REFUNDED (not ISSUED/OVERDUE).
