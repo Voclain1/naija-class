@@ -1,0 +1,32 @@
+name: invoice-565-verify
+on:
+  push:
+    branches: [ops/invoice-565-verify]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Wait for scoped activation and run rollback-only fictional invoice smoke
+        run: |
+          set -euo pipefail
+          expected=1f1ba567999b69af81c49d706cd7f9facc92b339
+          api=""
+          for attempt in {1..45}; do
+            api=$(ssh vps 'cd /opt/school-kit && docker compose --env-file deploy.env -f docker-compose.yml ps -q api')
+            actual=$(ssh vps "docker inspect -f '{{index .Config.Labels \"org.opencontainers.image.revision\"}}' '$api'" 2>/dev/null || true)
+            if [[ $actual == "$expected" ]] && curl -fsS --max-time 8 -o /dev/null https://api.schoolkit.ng/api/v1/health; then break; fi
+            sleep 20
+          done
+          test "$actual" = "$expected"
+          curl -fsS --max-time 8 -o /dev/null https://api.schoolkit.ng/api/v1/health
+          ssh vps "docker exec -i '$api' node --input-type=module" < .github/workflows/invoice-565-smoke.mjs
