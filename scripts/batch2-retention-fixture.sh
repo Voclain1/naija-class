@@ -99,7 +99,7 @@ printf '#!/bin/sh\necho "{\\"backup_name\\":\\"base_x\\"}"\n' > "$stub/wal-g"
 chmod +x "$stub"/*
 printf 'export BACKUP_BUCKET=%s PGDATABASE=x\n' "$work/rb" > "$work/env.sh"
 sed "s#/ops/env.sh#$work/env.sh#" "$restore_sh" > "$work/restore.sh"
-restore() { PATH="$stub:$PATH" bash "$work/restore.sh" 2>&1 | grep -v 'NOTICE: Config'; return "${PIPESTATUS[0]}"; }
+restore() { PATH="$stub:$PATH" sh "$work/restore.sh" 2>&1 | grep -v 'NOTICE: Config'; return "${PIPESTATUS[0]}"; }
 mkfull() { # bucket folder-age-seconds stamp-out : create pair with CORRECT checksum
   local stamp; stamp=$(mkpair "$1" daily "$2" nomarker); local f="$1/dumps/daily/school-kit-$stamp.dump"
   echo "payload $stamp" > "$f"; ( cd "$1/dumps/daily" && sha256sum "school-kit-$stamp.dump" > "school-kit-$stamp.dump.sha256" ); echo "$stamp"
@@ -139,7 +139,7 @@ sed "s#/ops/env.sh#$work/hbenv.sh#" "$backup_sh" > "$work/backup.sh"
 run() { # label expect-ping env...
   local label=$1 expect=$2 rc=0; shift 2
   : > "$work/pings"; rm -rf "$work/hbbucket"
-  env PATH="$hb:$PATH" STUB_PINGS="$work/pings" "$@" bash "$work/backup.sh" >"$work/last.log" 2>&1 || rc=$?
+  env PATH="$hb:$PATH" STUB_PINGS="$work/pings" "$@" sh "$work/backup.sh" >"$work/last.log" 2>&1 || rc=$?
   local pings; pings=$(wc -l < "$work/pings")
   if [ "$expect" = 1 ]; then check "$label: exit 0 and exactly one heartbeat" '[ "$rc" = 0 ] && [ "$pings" = 1 ]'
   else check "$label: non-zero exit and NO heartbeat" '[ "$rc" != 0 ] && [ "$pings" = 0 ]'; fi
