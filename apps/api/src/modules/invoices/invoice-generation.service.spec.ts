@@ -939,28 +939,89 @@ describe("InvoiceGenerationService (integration)", () => {
       expect(byId.get(unbilled)).toBe(false);
     });
 
-    // The sharp edge. @@unique([schoolId, studentId, termId]) is status-
-    // agnostic, so cancelling does NOT free a student to be re-billed by a
-    // bulk run. Preview must say so, or the dialog promises invoices that
-    // generation then silently skips.
-    it("still flags a student whose only invoice for the term was CANCELLED", async () => {
-      const { schoolId, ownerId } = await makeSchool("preview-flag-cancelled");
-      const { academicYearId, termId, classLevelId, classArmId } =
-        await makeAcademicStructure(schoolId);
-      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
-      const studentId = await makeStudent(schoolId, "preview-flag-cancelled-s1");
+    it("reissues a cancelled term invoice at current fees, once under concurrency, preserving its history", async () => {
+      const { schoolId, ownerId } = await makeSchool("replace-cancelled");
+      const { academicYearId, termId, classLevelId, classArmId } = await makeAcademicStructure(schoolId);
+      const { catId, feeItemId } = await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const studentId = await makeStudent(schoolId, "replace-cancelled-s1");
       await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
+      const auth = ctx(schoolId, ownerId);
+      const input = { termId, classArmId };
+      const original = (await svc.generateForArm(auth, input, reqCtx)).invoices[0]!;
+      await svc.cancel(auth, original.id, reqCtx);
+      await withTenant(schoolId, async (db) => {
+        await db.feeItem.update({ where: { id: feeItemId }, data: { amount: 10_000_000 } });
+        await db.discountRule.create({ data: {
+          schoolId, studentId, name: "Updated scholarship", feeItemId, duration: "TERM", termId,
+          discountType: "PERCENTAGE", value: 1000, createdBy: ownerId,
+        } });
+        await db.feeItem.createMany({ data: [
+          { schoolId, categoryId: catId, name: "Books", amount: 50_000, classLevelId, termId, createdBy: ownerId },
+          { schoolId, categoryId: catId, name: "Materials", amount: 75_000, classLevelId, termId, createdBy: ownerId },
+        ] });
+      });
+      const [preview] = await svc.previewForArm(auth, input);
+      expect(preview).toMatchObject({ alreadyInvoiced: false, feeItemCount: 3, totalDue: 9_125_000 });
+      const results = await Promise.all([
+        svc.generateForArm(auth, input, reqCtx),
+        svc.generateForArm(auth, input, reqCtx),
+      ]);
+      expect(results.map((result) => result.created).sort()).toEqual([0, 1]);
+      const replacement = results.flatMap((result) => result.invoices)[0]!;
+      expect(replacement).toMatchObject({ kind: "TERM", sequence: 0, totalDue: preview!.totalDue, totalPaid: 0 });
+      expect(replacement.id).not.toBe(original.id);
+      expect(await svc.generateForArm(auth, input, reqCtx)).toMatchObject({ created: 0, skipped: 1 });
+      await svc.cancel(auth, replacement.id, reqCtx);
+      expect(await svc.generateForArm(auth, input, reqCtx)).toMatchObject({ created: 1, skipped: 0 });
 
-      const { invoices } = await svc.generateForArm(ctx(schoolId, ownerId), { termId, classArmId }, reqCtx);
-      await svc.cancel(ctx(schoolId, ownerId), invoices[0].id, reqCtx);
+      await withTenant(schoolId, async (db) => {
+        const rows = await db.invoice.findMany({ where: { schoolId, studentId, termId }, orderBy: { sequence: "asc" } });
+        expect(rows.map(({ id, sequence, status, totalDue }) => ({ id, sequence, status, totalDue }))).toEqual([
+          { id: replacement.id, sequence: -2, status: "CANCELLED", totalDue: 9_125_000 },
+          { id: original.id, sequence: -1, status: "CANCELLED", totalDue: 15_000_000 },
+          { id: expect.any(String), sequence: 0, status: "ISSUED", totalDue: 9_125_000 },
+        ]);
+        expect(await db.auditLog.count({ where: { schoolId, entityId: original.id, action: "invoice.cancel" } })).toBe(1);
+        expect(await db.auditLog.count({ where: { schoolId, entityId: replacement.id, action: "invoice.issue" } })).toBe(1);
+      });
+    });
 
-      const preview = await svc.previewForArm(ctx(schoolId, ownerId), { termId, classArmId });
-      expect(preview[0].alreadyInvoiced).toBe(true);
+    it("previews and regenerates only cancelled and never-invoiced students in a mixed arm", async () => {
+      const { schoolId, ownerId } = await makeSchool("replace-mixed");
+      const { academicYearId, termId, classLevelId, classArmId } = await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const auth = ctx(schoolId, ownerId);
+      const input = { termId, classArmId };
+      const [unpaid, partial, paid, refunded, cancelled, fresh] = await Promise.all([
+        makeStudent(schoolId, "replace-mixed-unpaid"),
+        makeStudent(schoolId, "replace-mixed-partial"),
+        makeStudent(schoolId, "replace-mixed-paid"),
+        makeStudent(schoolId, "replace-mixed-refunded"),
+        makeStudent(schoolId, "replace-mixed-cancelled"),
+        makeStudent(schoolId, "replace-mixed-new"),
+      ]);
+      for (const studentId of [unpaid, partial, paid, refunded, cancelled]) {
+        await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
+      }
+      const initial = await svc.generateForArm(auth, input, reqCtx);
+      const invoices = new Map(initial.invoices.map((invoice) => [invoice.studentId, invoice]));
+      await svc.cancel(auth, invoices.get(cancelled)!.id, reqCtx);
+      await enrollStudent(schoolId, fresh, classArmId, termId, academicYearId);
+      await withTenant(schoolId, async (db) => {
+        await db.invoice.update({ where: { id: invoices.get(partial)!.id }, data: { status: "PARTIALLY_PAID", totalPaid: 5_000 } });
+        await db.invoice.update({ where: { id: invoices.get(paid)!.id }, data: { status: "PAID", totalPaid: 15_000_000 } });
+        await db.invoice.update({ where: { id: invoices.get(refunded)!.id }, data: { status: "REFUNDED" } });
+      });
 
-      // And generation agrees — preview and generation must not disagree.
-      const rerun = await svc.generateForArm(ctx(schoolId, ownerId), { termId, classArmId }, reqCtx);
-      expect(rerun.created).toBe(0);
-      expect(rerun.skipped).toBe(1);
+      const preview = await svc.previewForArm(auth, input);
+      expect(new Set(preview.filter((row) => row.alreadyInvoiced).map((row) => row.studentId)))
+        .toEqual(new Set([unpaid, partial, paid, refunded]));
+      const run = await svc.generateForArm(auth, input, reqCtx);
+      expect(run).toMatchObject({ created: 2, skipped: 4 });
+      expect(new Set(run.invoices.map((invoice) => invoice.studentId))).toEqual(new Set([cancelled, fresh]));
+      const foreign = await makeSchool("replace-mixed-foreign");
+      const visible = await withTenant(foreign.schoolId, (db) => db.invoice.count({ where: { id: { in: run.invoices.map((invoice) => invoice.id) } } }));
+      expect(visible).toBe(0);
     });
   });
 

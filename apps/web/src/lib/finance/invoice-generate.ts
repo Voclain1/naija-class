@@ -136,8 +136,7 @@ export function buildGenerateConfirmation(
   const skipNote =
     scope.skippedCount > 0
       ? ` ${scope.skippedCount} student${scope.skippedCount === 1 ? "" : "s"} already ` +
-        `${scope.skippedCount === 1 ? "has" : "have"} an invoice for this term and will be skipped. ` +
-        "Cancelling an invoice does not undo this — a cancelled invoice still counts as issued for the term."
+        `${scope.skippedCount === 1 ? "has" : "have"} an invoice for this term and will be skipped.`
       : "";
 
   return {
@@ -145,7 +144,7 @@ export function buildGenerateConfirmation(
     subject,
     consequence: isZeroImpact(scope)
       ? "Nothing will be created or changed."
-      : "Each student gets one invoice for this term, priced from the current fee catalogue." +
+      : "Invoices use the current fees and discounts. Cancelled invoices remain in the history when replacements are created." +
         skipNote,
     // Never a bare "Generate": the label restates the count so the button
     // itself says what it does, matching how "Cancel this invoice" reads.

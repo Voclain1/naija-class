@@ -50,7 +50,7 @@ export function groupBillsByStudent(invoices: InvoiceDto[]): PayerGroup[] {
 
 /** "Term bill" or "Extra bill 2", the words a bursar uses. */
 export function billLabel(invoice: Pick<InvoiceDto, "sequence">): string {
-  return invoice.sequence === 0 ? "Term bill" : `Extra bill ${invoice.sequence}`;
+  return invoice.sequence <= 0 ? "Term bill" : `Extra bill ${invoice.sequence}`;
 }
 
 /**

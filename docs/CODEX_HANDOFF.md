@@ -232,6 +232,11 @@ connections, versioned consent, the Meta and Termii inboxes, and manual
 wallet reconciliation are covered with simulated providers. Remaining
 event and provider activation work is listed in the runbook.
 
+Invoice replacement hotfix PR #565 branches from main. Apply the sequence
+check migration before the API. The unique zero slot remains in place and
+only cancelled, unpaid term history may move to a negative internal sequence.
+
+
 - **UX simplification Sprint 4 validation is in progress on
   `feat/ux-complete-journey-validation`.** The existing browser suite proves
   each core screen independently; the new composed lifecycle carries one
