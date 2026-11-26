@@ -82,9 +82,14 @@ describe("billing runs against PostgreSQL", () => {
 
   it("billing-run preview and normal generation agree on cancelled replacements", async () => {
     const run = await prepare(); const done = await approve(run);
-    await invoices.cancel(fx.auth, done.result!.invoiceIds[0]!, { ipAddress: null });
+    const invoiceId = done.result!.invoiceIds[0]!;
+    const cancelledArm = await withTenant(fx.auth.schoolId, (db) => db.invoice.findUniqueOrThrow({
+      where: { id: invoiceId }, select: { classArmId: true },
+    }));
+    expect(cancelledArm.classArmId).toBeTruthy();
+    await invoices.cancel(fx.auth, invoiceId, { ipAddress: null });
     expect((await prepare()).createCount).toBe(1);
-    const repeated = await invoices.generateForArm(fx.auth, { termId: fx.input.termId, classArmId: fx.arms[0]!.id }, { ipAddress: null });
+    const repeated = await invoices.generateForArm(fx.auth, { termId: fx.input.termId, classArmId: cancelledArm.classArmId! }, { ipAddress: null });
     expect(repeated).toMatchObject({ created: 1, skipped: 0 });
     expect(await count(fx.auth.schoolId)).toBe(3);
     expect((await prepare()).createCount).toBe(0);
