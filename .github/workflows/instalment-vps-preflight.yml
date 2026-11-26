@@ -1,0 +1,47 @@
+name: Scoped instalment VPS preflight
+on:
+  push:
+    branches: [ops/instalment-vps-preflight]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check automatic deployment
+        env:
+          ENABLED: ${{ vars.VPS_DEPLOY_ENABLED }}
+          FLY_DISABLED: ${{ vars.FLY_DEPLOY_DISABLED }}
+        run: |
+          [[ "${ENABLED:-false}" == false ]]
+          [[ "$FLY_DISABLED" == true ]]
+          echo 'Automatic VPS and Fly deployment disabled.'
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Inspect protected stack without changes
+        shell: bash
+        run: |
+          ssh -o BatchMode=yes vps 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/school-kit
+          for file in deploy.env api.env web.env portal.env backup.env docker-compose.yml backup-ops.override.yml; do
+            test -r "$file"
+            printf 'Present: %s\n' "$file"
+          done
+          docker ps --filter label=com.docker.compose.project=school-kit --format '{{.Label "com.docker.compose.service"}} {{.Image}} {{.Status}}'
+          docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml config --services
+          db=$(docker ps --filter label=com.docker.compose.project=school-kit --filter label=com.docker.compose.service=postgres -q)
+          test -n "$db"
+          docker exec "$db" pg_isready -U postgres -d school_kit
+          docker exec "$db" psql -XqAt -U postgres -d school_kit -v ON_ERROR_STOP=1 -c "SELECT current_setting('server_version_num')::int / 10000, count(*) FILTER (WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL),count(*) FILTER (WHERE finished_at IS NULL AND rolled_back_at IS NULL) FROM _prisma_migrations;"
+          df -Ph /opt/school-kit /var/lib/docker
+          curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:4000/api/v1/health
+          curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:3001/api/health
+          curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:3002/api/health
+          REMOTE
