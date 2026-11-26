@@ -98,7 +98,7 @@ describe("buildGenerateConfirmation — says what will be created, for whom, for
     expect(c.dismissLabel.toLowerCase()).not.toContain("cancel");
   });
 
-  it("explains the skip, including that cancelling does not free a student to be re-billed", () => {
+  it("explains why issued invoices are skipped and preserves cancelled history", () => {
     const scope = summariseGeneration(
       [line({ studentId: "a" }), line({ studentId: "b", alreadyInvoiced: true })],
       "A",
@@ -106,7 +106,7 @@ describe("buildGenerateConfirmation — says what will be created, for whom, for
     );
     const c = buildGenerateConfirmation(scope, naira);
     expect(c.consequence).toContain("1 student already has an invoice");
-    expect(c.consequence).toContain("Cancelling an invoice does not undo this");
+    expect(c.consequence).toContain("Cancelled invoices remain in the history");
   });
 
   it("a zero-impact run is not dressed up as a meaningful bulk action", () => {

@@ -62,6 +62,10 @@ interface TermContext {
 // Service
 // ---------------------------------------------------------------------------
 
+function blocksTermGeneration(slot: { status: string; totalPaid: number } | undefined): boolean {
+  return !!slot && (slot.status !== "CANCELLED" || slot.totalPaid !== 0);
+}
+
 @Injectable()
 export class InvoiceGenerationService {
   constructor(
@@ -89,6 +93,9 @@ export class InvoiceGenerationService {
       const arm = await this.fetchArm(db, authCtx.schoolId, dto.classArmId);
       const term = await this.fetchTerm(db, authCtx.schoolId, dto.termId);
 
+      // Different arms and billing-run callers can overlap after a student move.
+      // Serialize term generation and retain the unique sequence-zero slot.
+      await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`term-invoice:${authCtx.schoolId}:${dto.termId}`}, 0))`;
       const enrollments = await db.enrollment.findMany({
         where: {
           schoolId: authCtx.schoolId,
@@ -125,20 +132,10 @@ export class InvoiceGenerationService {
       const created: InvoiceDto[] = [];
       let skipped = 0;
 
+      const slots = await this.termInvoiceSlots(db, authCtx.schoolId, dto.termId, enrollments.map((row) => row.studentId));
       for (const { studentId } of enrollments) {
-        // Skip if an invoice already exists for this student-term pair.
-        const existing = await db.invoice.findUnique({
-          where: {
-            schoolId_studentId_termId_sequence: {
-              schoolId: authCtx.schoolId,
-              studentId,
-              termId: dto.termId,
-              sequence: 0,
-            },
-          },
-          select: { id: true },
-        });
-        if (existing) {
+        const existing = slots.get(studentId);
+        if (blocksTermGeneration(existing)) {
           skipped += 1;
           continue;
         }
@@ -156,6 +153,22 @@ export class InvoiceGenerationService {
         const openCharges = await this.charges.openForBilling(db, authCtx.schoolId, studentId, dto.termId);
         const snapshot = buildSnapshot(feeItems, discountRules, openCharges);
 
+        if (existing) {
+          // Re-key only the historical slot. Raw SQL also preserves updatedAt.
+          const moved = await db.$executeRaw`
+            UPDATE invoices SET sequence = (
+              SELECT COALESCE(MIN(history.sequence), 0) - 1
+              FROM invoices history
+              WHERE history.school_id = ${authCtx.schoolId} AND history.student_id = ${studentId}
+                AND history.term_id = ${dto.termId} AND history.sequence < 0
+            )
+            WHERE school_id = ${authCtx.schoolId} AND id = ${existing.id}
+              AND sequence = 0 AND status = 'CANCELLED' AND total_paid = 0`;
+          if (moved !== 1) {
+            skipped += 1;
+            continue;
+          }
+        }
         const invoice = await db.invoice.create({
           data: {
             schoolId: authCtx.schoolId,
@@ -191,6 +204,7 @@ export class InvoiceGenerationService {
               totalDiscount: snapshot.totalDiscount,
               totalDue: snapshot.totalDue,
               chargeCount: openCharges.length,
+              ...(existing ? { replacesCancelledInvoiceId: existing.id } : {}),
               ...(reqCtx.assistantRunId ? { via: "assistant", proposalId: reqCtx.assistantRunId } : {}),
             },
           },
@@ -254,26 +268,7 @@ export class InvoiceGenerationService {
         enrollments.map((e) => e.studentId),
       );
 
-      // Which of these students would generateForArm actually SKIP? Keyed off
-      // the same `@@unique([schoolId, studentId, termId])` row its loop tests,
-      // so preview and generation cannot drift apart (F-34). One findMany over
-      // the roster rather than a findUnique per row — the same batching
-      // discipline resolveStudentIdentities above follows.
-      //
-      // `select: { studentId: true }` with no status filter is deliberate and
-      // load-bearing: the uniqueness row is status-agnostic, so a CANCELLED
-      // invoice still blocks regeneration. Filtering to live statuses here
-      // would make preview promise invoices that generation then skips.
-      const existingInvoices = await db.invoice.findMany({
-        where: {
-          schoolId: authCtx.schoolId,
-          termId: dto.termId,
-          sequence: 0,
-          studentId: { in: enrollments.map((e) => e.studentId) },
-        },
-        select: { studentId: true },
-      });
-      const alreadyInvoicedIds = new Set(existingInvoices.map((i) => i.studentId));
+      const slots = await this.termInvoiceSlots(db, authCtx.schoolId, dto.termId, enrollments.map((row) => row.studentId));
 
       const previews: InvoiceRunPreviewLine[] = [];
       for (const { studentId } of enrollments) {
@@ -297,11 +292,19 @@ export class InvoiceGenerationService {
           totalAmount: snapshot.totalAmount,
           totalDiscount: snapshot.totalDiscount,
           totalDue: snapshot.totalDue,
-          alreadyInvoiced: alreadyInvoicedIds.has(studentId),
+          alreadyInvoiced: blocksTermGeneration(slots.get(studentId)),
         });
       }
 
       return previews;
+  }
+
+  private async termInvoiceSlots(db: PrismaClient, schoolId: string, termId: string, studentIds: string[]) {
+    const invoices = await db.invoice.findMany({
+      where: { schoolId, termId, sequence: 0, studentId: { in: studentIds } },
+      select: { id: true, studentId: true, status: true, totalPaid: true },
+    });
+    return new Map(invoices.map((invoice) => [invoice.studentId, invoice]));
   }
 
   // ─── Supplementary invoices (Phase 9 / CP5.1, §13 CP5-D3) ─────────────────
@@ -606,6 +609,7 @@ export class InvoiceGenerationService {
     actor: { schoolId: string; userId: string | null; ipAddress: string | null },
     id: string,
   ): Promise<Prisma.InvoiceGetPayload<object>> {
+    await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${actor.schoolId} AND id = ${id} FOR UPDATE`;
     const row = await db.invoice.findUnique({ where: { id } });
     if (!row) throw new NotFoundError("Invoice not found.");
 
@@ -851,7 +855,7 @@ function toDto(
     academicYearId: row.academicYearId,
     classArmId: row.classArmId,
     status: row.status as InvoiceStatus,
-    sequence: row.sequence,
+    sequence: Math.max(0, row.sequence),
     kind: invoiceKind(row.sequence),
     items,
     totalAmount: row.totalAmount,

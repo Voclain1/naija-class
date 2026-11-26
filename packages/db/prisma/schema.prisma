@@ -2629,7 +2629,7 @@ model Invoice {
   payments       Payment[]
   paymentPlans   PaymentPlan[]
   paymentLinks   PaymentLink[]
-  // Phase 9 / CP5.1 — 0 = the term invoice; 1, 2, … = supplementary invoices.
+  // Zero is the current term slot, negatives are cancelled term history, positives are supplements.
   sequence       Int             @default(0)
   charges        StudentCharge[]
 
