@@ -1,11 +1,5 @@
-# Compares GitHub's BACKUP_ENV_FILE with the running /opt/school-kit/backup.env and BLOCKS
-# (fails the check) on anything unresolved: empty or missing required values, duplicates,
-# provider-rule violations, or any difference between the two. Modelled on Batch 1's
-# reconcile-production-config. Prints key NAMES and verdicts only (no values, lengths or
-# hashes; see infra/vps/ops-tools/backup_env.py). Writes nothing to backup.env; protected 0600 copies
-# of both files are kept under /opt/school-kit/config-backups so a change can be reverted.
-# It does not write the GitHub secret: secrets are write-only (owner procedure in
-# docs/runbooks/batch2-acceptance-and-batch3.md §3).
+# The scoped cutover preserves the live backup configuration and pinned scheduler.
+# BACKUP_ENV_FILE belongs to the disabled generic deployment workflow.
 name: backup-config-reconcile
 on:
   pull_request:
@@ -37,26 +31,19 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Compare (blocks on any unresolved discrepancy)
+      - name: Verify live backup configuration and scheduler without changes
         env:
-          BACKUP_ENV_FILE: ${{ secrets.BACKUP_ENV_FILE }}
+          VPS_DEPLOY_ENABLED: ${{ vars.VPS_DEPLOY_ENABLED }}
         run: |
           set -euo pipefail
-          umask 077
-          [ -n "$BACKUP_ENV_FILE" ] || { echo "BLOCK stored BACKUP_ENV_FILE is empty"; exit 1; }
-          ssh vps 'umask 077; mkdir -p -m 700 /opt/school-kit/config-backups'
-          ssh vps 'umask 077; cat > /opt/school-kit/config-backups/.backup_env.py' < infra/vps/ops-tools/backup_env.py
-          printf '%s\n' "$BACKUP_ENV_FILE" | ssh vps 'umask 077; cat > /opt/school-kit/config-backups/.backup-env.incoming'
-          ssh vps 'bash -s' <<'REMOTE'
+          [[ "${VPS_DEPLOY_ENABLED:-false}" == false ]]
+          ssh vps 'cd /opt/school-kit && python3 - validate backup.env' < infra/vps/ops-tools/backup_env.py
+          ssh vps 'cd /opt/school-kit && bash -se' <<'REMOTE'
           set -euo pipefail
-          umask 077
-          cd /opt/school-kit
-          [ -s backup.env ] || { echo "BLOCK running backup.env unavailable"; exit 1; }
-          d="config-backups/batch2-backup-env-$(date -u +%Y%m%dT%H%M%SZ)"; mkdir -m 700 "$d"
-          cp -p backup.env "$d/backup.env.running"
-          mv config-backups/.backup-env.incoming "$d/backup.env.github"
-          mv config-backups/.backup_env.py "$d/backup_env.py"
-          chmod 600 "$d"/*
-          echo "protected copies: /opt/school-kit/$d"
-          python3 "$d/backup_env.py" compare "$d/backup.env.running" "$d/backup.env.github"
+          test -f backup-ops.override.yml
+          c=$(docker ps -q --filter label=com.docker.compose.project=school-kit --filter label=com.docker.compose.service=ops-pinned)
+          [[ -n "$c" && "$c" != *$'\n'* ]]
+          [ "$(docker inspect -f '{{.Image}}' "$c")" = "$(docker image inspect -f '{{.Id}}' ghcr.io/voclain1/school-kit-postgres@sha256:1c0ac5407c14975abad8240218366477a6c2515c6d7fbc6a379a121577d4429d)" ]
+          docker top "$c" -eo pid,comm | awk '$1 ~ /^[0-9]+$/ && $2 == "cron" { n++ } END { exit n != 1 }'
+          echo 'PASS production pinned backup scheduler is present and running one cron.'
           REMOTE
