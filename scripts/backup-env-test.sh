@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fictional-data tests for infra/vps/backup_env.py. Asserts verdicts AND that no value leaks.
 set -u
-py=$(dirname "$0")/../infra/vps/backup_env.py; t=$(mktemp -d); trap 'rm -rf "$t"' EXIT; fail=0
+py=$(dirname "$0")/../infra/vps/ops-tools/backup_env.py; t=$(mktemp -d); trap 'rm -rf "$t"' EXIT; fail=0
 SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 good() { cat <<EOF
 BACKUP_BUCKET=fixture-bucket

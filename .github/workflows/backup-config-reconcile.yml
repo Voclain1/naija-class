@@ -2,7 +2,7 @@
 # (fails the check) on anything unresolved: empty or missing required values, duplicates,
 # provider-rule violations, or any difference between the two. Modelled on Batch 1's
 # reconcile-production-config. Prints key NAMES and verdicts only (no values, lengths or
-# hashes; see infra/vps/backup_env.py). Writes nothing to backup.env; protected 0600 copies
+# hashes; see infra/vps/ops-tools/backup_env.py). Writes nothing to backup.env; protected 0600 copies
 # of both files are kept under /opt/school-kit/config-backups so a change can be reverted.
 # It does not write the GitHub secret: secrets are write-only (owner procedure in
 # docs/runbooks/batch2-acceptance-and-batch3.md §3).
@@ -45,7 +45,7 @@ jobs:
           umask 077
           [ -n "$BACKUP_ENV_FILE" ] || { echo "BLOCK stored BACKUP_ENV_FILE is empty"; exit 1; }
           ssh vps 'umask 077; mkdir -p -m 700 /opt/school-kit/config-backups'
-          ssh vps 'umask 077; cat > /opt/school-kit/config-backups/.backup_env.py' < infra/vps/backup_env.py
+          ssh vps 'umask 077; cat > /opt/school-kit/config-backups/.backup_env.py' < infra/vps/ops-tools/backup_env.py
           printf '%s\n' "$BACKUP_ENV_FILE" | ssh vps 'umask 077; cat > /opt/school-kit/config-backups/.backup-env.incoming'
           ssh vps 'bash -s' <<'REMOTE'
           set -euo pipefail

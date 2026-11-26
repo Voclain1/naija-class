@@ -5,7 +5,9 @@
 #   walg-retention   real wal-g retention on a throwaway PostgreSQL 18, inside the same images
 #   rehearse         payment recovery across candidate -> recovery -> candidate, plus real report-card
 #                    PDF rendering by both worker images
-#   cutover          the guarded production cutover procedure, including its failure paths
+#   cutover          the guarded production cutover procedure on isolated infrastructure, including its
+#                    failure paths (refusals, failed migration, failed candidate, recovery, clean cutover)
+#   tooling          operator-script tests (stub docker, fictional files) and shellcheck
 name: batch2-images
 on:
   pull_request:
@@ -208,3 +210,66 @@ jobs:
           RECOVERY_RENDER_IMAGE: ghcr.io/voclain1/school-kit-render@${{ needs.build.outputs.recovery_render }}
           BACKUP_IMAGE: ghcr.io/voclain1/school-kit-postgres@${{ needs.build.outputs.backup }}
         run: bash scripts/batch2-image-rehearsal.sh
+
+  tooling:
+    if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: shellcheck -S warning infra/vps/ops-tools/*.sh infra/vps/postgres/ops/*.sh scripts/batch2-*.sh scripts/batch3-*.sh scripts/ops-tools-test.sh scripts/backup-env-test.sh
+      - run: bash scripts/backup-env-test.sh
+      - run: bash scripts/ops-tools-test.sh
+      - name: Retention fixtures with the runner's rclone (the image-based jobs use the pinned one)
+        run: bash scripts/batch2-retention-fixture.sh
+
+  cutover:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    env:
+      OLD_SHA: 61b5c214cdc4c3908564321459b039c4f2dffcbb
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: The old production release's own schema (migrations as of 61b5c214)
+        run: |
+          mkdir -p "$RUNNER_TEMP/baseline"
+          git archive "$OLD_SHA" packages/db/prisma/migrations | tar -x -C "$RUNNER_TEMP/baseline"
+          ls "$RUNNER_TEMP/baseline/packages/db/prisma/migrations" | wc -l
+      - name: Release manifest from this run's digests
+        run: |
+          cat > "$RUNNER_TEMP/manifest.env" <<EOF
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          RECOVERY_SHA=${{ env.RECOVERY_SHA }}
+          PG_MAJOR=18
+          CANDIDATE_API=ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.candidate_api }}
+          CANDIDATE_RENDER=ghcr.io/voclain1/school-kit-render@${{ needs.build.outputs.candidate_render }}
+          RECOVERY_API=ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.recovery_api }}
+          RECOVERY_RENDER=ghcr.io/voclain1/school-kit-render@${{ needs.build.outputs.recovery_render }}
+          MIGRATE=ghcr.io/voclain1/school-kit-migrate@${{ needs.build.outputs.migrate }}
+          BACKUP_OPS=ghcr.io/voclain1/school-kit-postgres@${{ needs.build.outputs.backup }}
+          EOF
+          sed -i 's/^ *//' "$RUNNER_TEMP/manifest.env"
+      - name: Rehearse the guarded cutover, including its failure paths
+        env:
+          RELEASE_MANIFEST: ${{ runner.temp }}/manifest.env
+          OLD_API: ghcr.io/voclain1/school-kit-api:${{ env.OLD_SHA }}
+          OLD_RENDER: ghcr.io/voclain1/school-kit-render:${{ env.OLD_SHA }}
+          BASELINE_MIGRATIONS: ${{ runner.temp }}/baseline/packages/db/prisma/migrations
+        run: bash scripts/batch3-cutover-rehearsal.sh
+
