@@ -28,6 +28,7 @@ datasource db {
 // ---------- Tenancy ----------
 
 model School {
+  paystackPaymentExceptions PaystackPaymentException[]
   id                        String       @id @default(uuid())
   name                      String
   slug                      String       @unique // for subdomains: <slug>.schoolkit.ng
@@ -2700,6 +2701,7 @@ enum PaymentLinkStatus {
 }
 
 model PaymentLink {
+  expiresAt DateTime? @map("expires_at")
   id                   String            @id @default(uuid())
   schoolId             String            @map("school_id")
   invoiceId            String            @map("invoice_id")
@@ -2716,6 +2718,7 @@ model PaymentLink {
   lastAttemptAt        DateTime          @default(now()) @map("last_attempt_at")
   createdAt            DateTime          @default(now()) @map("created_at")
   updatedAt            DateTime          @updatedAt @map("updated_at")
+  invalidatedAt        DateTime?         @map("invalidated_at")
   archivedAt           DateTime?         @map("archived_at")
   paidAt               DateTime?         @map("paid_at")
 
@@ -2753,6 +2756,7 @@ enum PaymentStatus {
 }
 
 model Payment {
+  allocatedKobo Int? @map("allocated_kobo")
   id                String        @id @default(uuid())
   schoolId          String        @map("school_id")
   invoiceId         String        @map("invoice_id")
@@ -5943,4 +5947,23 @@ model SchoolAiTermsEvent {
 
   @@index([schoolId, recordedAt(sort: Desc)])
   @@map("school_ai_terms_events")
+}
+
+model PaystackPaymentException {
+  schoolId         String   @map("school_id")
+  reference        String
+  reason           String
+  invoiceId        String   @map("invoice_id")
+  expectedKobo     Int?     @map("expected_kobo")
+  observedKobo     BigInt?  @map("observed_kobo")
+  observedCurrency String?  @map("observed_currency")
+  unappliedKobo    Int?     @map("unapplied_kobo")
+  createdAt        DateTime @default(now()) @map("created_at")
+  reviewStatus     String   @default("OPEN") @map("review_status")
+  reviewedAt       DateTime? @map("reviewed_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+
+  @@id([schoolId, reference, reason])
+  @@map("paystack_payment_exceptions")
 }

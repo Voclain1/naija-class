@@ -382,9 +382,9 @@ export class FinanceService implements OnModuleInit {
         db.payment.findMany({
           where: {
             status: "SUCCESS",
-            invoice: { termId, status: { notIn: [...BILLED_EXCLUDED_STATUSES] } },
+            invoice: { termId },
           },
-          select: { amount: true, paidAt: true, createdAt: true },
+          select: { amount: true, allocatedKobo: true, paidAt: true, createdAt: true, invoice: { select: { status: true } } },
         }),
         // Deliberately the SAME source getDashboard() uses (invoice-level
         // sums), not a sum of the rows above. If the payment-level series ever
@@ -398,6 +398,10 @@ export class FinanceService implements OnModuleInit {
 
       const totalInvoiced = totalsAgg._sum.totalDue ?? 0;
       const totalCollected = totalsAgg._sum.totalPaid ?? 0;
+
+      const grossCashCollected = payments.reduce((total, payment) => total + payment.amount, 0);
+      const unappliedCashCollected = payments.reduce((total, payment) =>
+        total + payment.amount - (payment.allocatedKobo ?? payment.amount), 0);
 
       // In-term weeks, snapped to Mondays, derived from the stored dates.
       // A term starting mid-week has its first bucket begin on the Monday
@@ -449,9 +453,10 @@ export class FinanceService implements OnModuleInit {
         );
       }
       for (const pay of payments) {
+        if (BILLED_EXCLUDED_STATUSES.some((status) => status === pay.invoice.status)) continue;
         place(
           pay.paidAt ?? pay.createdAt,
-          pay.amount,
+          pay.allocatedKobo ?? pay.amount,
           collectedDelta,
           (n) => {
             collectedBefore += n;
@@ -540,6 +545,8 @@ export class FinanceService implements OnModuleInit {
         buckets,
         totalInvoiced,
         totalCollected,
+        grossCashCollected,
+        unappliedCashCollected,
       };
     });
   }

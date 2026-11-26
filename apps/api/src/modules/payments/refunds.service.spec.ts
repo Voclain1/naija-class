@@ -154,6 +154,24 @@ describe("RefundsService (integration)", () => {
 
   // ── Tests ────────────────────────────────────────────────────────────────
 
+  it("returns entirely unapplied funds while preserving a cancelled invoice", async () => {
+    const { RefundsService } = await import("./refunds.service.js");
+    const { PaymentPlanService } = await import("./payment-plan.service.js");
+    const svc = new RefundsService({ refundTransaction: async () => ({ id: "fictional-refund" }) } as never, new PaymentPlanService());
+    const { schoolId, ownerId } = await makeSchool("unapplied-cancel");
+    const { invoiceId, studentId } = await makeInvoice(schoolId, ownerId, { totalDue: 10000, status: "CANCELLED" });
+    const payment = await withTenant(schoolId, (db) => db.payment.create({
+      data: { schoolId, invoiceId, studentId, amount: 10000, allocatedKobo: 0, method: "PAYSTACK",
+        status: "SUCCESS", paystackReference: "fictional-cancelled-link-payment" },
+    }));
+    const refund = await svc.create(ctx(schoolId, ownerId), { paymentId: payment.id, amount: 10000, reason: "Return unapplied funds" });
+    expect(refund.status).toBe("PROCESSED");
+    await withTenant(schoolId, async (db) => {
+      expect(await db.invoice.findUnique({ where: { id: invoiceId } })).toMatchObject({ status: "CANCELLED", totalPaid: 0 });
+      expect(await db.payment.findUnique({ where: { id: payment.id } })).toMatchObject({ status: "REVERSED", allocatedKobo: 0, receiptNumber: null });
+    });
+  });
+
   it("reverses a PAID invoice to REFUNDED when all payments are reversed", async () => {
     const { RefundsService } = await import("./refunds.service.js");
     const { PaymentPlanService } = await import("./payment-plan.service.js");

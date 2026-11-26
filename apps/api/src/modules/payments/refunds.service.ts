@@ -12,6 +12,7 @@ import type { AuthContext } from "../../common/auth/auth-context.js";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalidation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
+import { invoiceAllocatedTotal } from "./payment-invoice-allocations.js";
 import { computeInvoiceStatus } from "./payments.service.js";
 
 const AUDIT_REFUND_CREATE = "refund.create";
@@ -32,6 +33,11 @@ export class RefundsService {
 
   async create(authCtx: AuthContext, dto: CreateRefundInput): Promise<RefundDto> {
     const result = await withTenant(authCtx.schoolId, async (db) => {
+      // Lock the invoice before rereading the payment and calling the provider.
+      // This matches the payment and link paths and serializes competing reversals.
+      await db.$queryRaw`
+        SELECT i.id FROM invoices i JOIN payments p ON p.invoice_id = i.id AND p.school_id = i.school_id
+        WHERE i.school_id = ${authCtx.schoolId} AND p.id = ${dto.paymentId} FOR UPDATE OF i`;
       // 1. Load the payment — RLS ensures school_id matches.
       const payment = await db.payment.findUnique({
         where: { id: dto.paymentId },
@@ -40,6 +46,7 @@ export class RefundsService {
           schoolId: true,
           invoiceId: true,
           amount: true,
+          allocatedKobo: true,
           method: true,
           status: true,
           paystackReference: true,
@@ -71,7 +78,8 @@ export class RefundsService {
         where: { id: payment.invoiceId },
         select: { id: true, totalDue: true, totalPaid: true, status: true, dueDate: true },
       });
-      if (invoice.status === "CANCELLED" || invoice.status === "REFUNDED") {
+      const affectsInvoice = (payment.allocatedKobo ?? payment.amount) > 0;
+      if (affectsInvoice && (invoice.status === "CANCELLED" || invoice.status === "REFUNDED")) {
         throw new ConflictError(
           "INVOICE_NOT_REVERSIBLE",
           `Invoice is in terminal status ${invoice.status} and cannot have payments reversed.`,
@@ -150,32 +158,20 @@ export class RefundsService {
         data: { status: "REVERSED" },
       });
 
-      // 7. Recompute totalPaid from all remaining SUCCESS payments.
-      const { _sum } = await db.payment.aggregate({
-        where: { invoiceId: payment.invoiceId, status: "SUCCESS" },
-        _sum: { amount: true },
-      });
-      const newTotalPaid = _sum.amount ?? 0;
-
-      // 8. Compute new invoice status.
-      //    Override: if newTotalPaid === 0, the invoice is REFUNDED (not ISSUED/OVERDUE).
-      //    This signals that all payments have been returned, not just "never started paying."
-      const computedStatus = computeInvoiceStatus(newTotalPaid, invoice.totalDue, invoice.dueDate);
-      const newStatus = newTotalPaid === 0 ? "REFUNDED" : computedStatus;
-
-      // 9. Update the invoice.
-      await db.invoice.update({
-        where: { id: payment.invoiceId },
-        data: { totalPaid: newTotalPaid, status: newStatus },
-      });
-
-      // 10. Recompute installment plan paid flags.
-      await this.paymentPlan.recomputeInstallmentsPaid(db, payment.invoiceId, newTotalPaid);
-      await this.paymentLinkInvalidation?.markForArchive(
-        db,
-        authCtx.schoolId,
-        payment.invoiceId,
-      );
+      // A return of entirely unapplied funds never changes the invoice or
+      // its replacement eligibility. The original receipt remains auditable.
+      let newTotalPaid = invoice.totalPaid;
+      let newStatus = invoice.status;
+      if (affectsInvoice) {
+        newTotalPaid = await invoiceAllocatedTotal(db, authCtx.schoolId, payment.invoiceId);
+        newStatus = newTotalPaid === 0 ? "REFUNDED" : computeInvoiceStatus(newTotalPaid, invoice.totalDue, invoice.dueDate);
+        await db.invoice.update({
+          where: { id: payment.invoiceId },
+          data: { totalPaid: newTotalPaid, status: newStatus },
+        });
+        await this.paymentPlan.recomputeInstallmentsPaid(db, payment.invoiceId, newTotalPaid);
+        await this.paymentLinkInvalidation?.markForArchive(db, authCtx.schoolId, payment.invoiceId);
+      }
 
       // 11. Audit log.
       await db.auditLog.create({

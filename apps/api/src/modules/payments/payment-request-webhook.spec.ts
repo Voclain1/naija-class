@@ -72,7 +72,15 @@ describe("paymentrequest.success — real database application", () => {
     await basePrisma.$disconnect();
   });
 
-  it("credits once, updates the invoice, consumes the link, and archives remotely", async () => {
+  it("credits once when the link was invalidating, preserves PAID, and archives remotely", async () => {
+    const cutoff = new Date("2026-08-23T17:00:00.000Z");
+    await withTenant(schoolId, async (db) => {
+      await db.paymentLink.update({
+        where: { id: linkId }, data: { status: "ARCHIVE_PENDING", hostedUrl: null, expiresAt: cutoff },
+      });
+      await db.$executeRaw`UPDATE payment_links SET invalidated_at = ${cutoff} WHERE id = ${linkId}`;
+    });
+    const lateReference = `${reference}-late`;
     const metadata = { schoolKitPaymentLinkId: linkId, schoolId, invoiceId };
     const paystack = {
       getPaymentRequest: vi.fn(async () => ({
@@ -85,13 +93,13 @@ describe("paymentrequest.success — real database application", () => {
         split_code: "SPL_cp3",
         metadata,
         customer: { customer_code: "CUS_cp3", email: `noreply-payment-${linkId}@schoolkit.ng` },
-        transactions: [{ reference, status: "success", amount: 180_000, currency: "NGN" }],
+        transactions: [reference, lateReference].map((reference) => ({ reference, status: "success", amount: 180_000, currency: "NGN" })),
       })),
-      verifyTransaction: vi.fn(async () => ({
+      verifyTransaction: vi.fn(async (reference: string) => ({
         status: "success",
         reference,
         amount: 180_000,
-        paid_at: "2026-08-22T17:00:00.000Z",
+        paid_at: reference === lateReference ? cutoff.toISOString() : "2026-08-22T17:00:00.000Z",
         metadata: { referrer: `https://paystack.shop/pay/PRQ_${runId}` },
         channel: "card",
         currency: "NGN",
@@ -149,6 +157,24 @@ describe("paymentrequest.success — real database application", () => {
     expect(state.linkAudits).toBe(1);
     expect(archivePaymentRequest).toHaveBeenCalledTimes(1);
     expect(archivePaymentRequest).toHaveBeenCalledWith(`PRQ_${runId}`);
+
+    // The signed envelope can still carry a time before expiry. Only the
+    // independently verified provider transaction time governs allocation.
+    const late = {
+      ...event, data: {
+        ...event.data, id: 999001, request_code: `PRQ_${runId}`, reference: lateReference, transaction: { reference: lateReference },
+      },
+    };
+    paystack.getPaymentRequest.mockRejectedValue(new Error("Archived request is unavailable"));
+    await Promise.all([service.handlePaymentRequestWebhook(late), service.handlePaymentRequestWebhook(late)]);
+    const unapplied = await withTenant(schoolId, async (db) => ({
+      payment: await db.payment.findFirstOrThrow({ where: { schoolId, paystackReference: lateReference } }),
+      exceptions: await db.paystackPaymentException.findMany({ where: { schoolId, reference: lateReference } }),
+      invoice: await db.invoice.findUniqueOrThrow({ where: { id: invoiceId } }),
+    }));
+    expect(unapplied.payment).toMatchObject({ amount: 180_000, allocatedKobo: 0, receiptNumber: null });
+    expect(unapplied.exceptions).toMatchObject([{ reason: "PAYMENT_LINK_EXPIRED", unappliedKobo: 180_000 }]);
+    expect(unapplied.invoice).toMatchObject({ totalPaid: 180_000, status: "PAID" });
   });
 
   it("never applies a verified cancelled link to the original or its replacement", async () => {
@@ -188,7 +214,12 @@ describe("paymentrequest.success — real database application", () => {
     expect(verifyTransaction).toHaveBeenCalledOnce();
 
     await withTenant(schoolId, async (db) => {
-      expect(await db.payment.count({ where: { schoolId, invoiceId: { in: [cancelled.id, replacement.id] } } })).toBe(0);
+      expect(await db.payment.findMany({
+        where: { schoolId, invoiceId: { in: [cancelled.id, replacement.id] } },
+        select: { invoiceId: true, amount: true, allocatedKobo: true, receiptNumber: true },
+      })).toEqual([{ invoiceId: cancelled.id, amount: 100_000, allocatedKobo: 0, receiptNumber: null }]);
+      expect(await db.paystackPaymentException.findFirst({ where: { schoolId, reference: lateReference } }))
+        .toMatchObject({ invoiceId: cancelled.id, reason: "CLOSED_INVOICE", unappliedKobo: 100_000 });
       expect(await db.invoice.findUniqueOrThrow({ where: { id: cancelled.id } })).toMatchObject({ status: "CANCELLED", totalPaid: 0 });
       expect(await db.invoice.findUniqueOrThrow({ where: { id: replacement.id } })).toMatchObject({ status: "ISSUED", totalPaid: 0 });
     });
