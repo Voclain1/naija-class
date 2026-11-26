@@ -1,20 +1,33 @@
 #!/bin/sh
-# Restores the newest nightly dump into a scratch database and compares row
-# counts with the live one (db-restore-test.yml, monthly). Also lists the
-# WAL-G base backups, so a broken WAL archive shows up here too.
+# Restores the newest COMPLETE nightly dump into a scratch database and
+# compares row counts with the live one (db-restore-test.yml, manual). Also
+# lists the WAL-G base backups, so a broken WAL archive shows up here too.
+#
+# "Complete" = a checksum marker whose dump object exists. A marker without a
+# dump, or a dump without a marker (an interrupted or pruned pair), is skipped
+# and reported, never selected. The newest complete pair is then verified
+# strictly: a checksum mismatch on it is a failure, not a reason to fall back
+# silently to an older backup.
 set -eu
 . /ops/env.sh
-latest=$(rclone lsf "backup:${BACKUP_BUCKET}/dumps/daily" | grep -E '^school-kit-[0-9TZ:-]+[.]dump[.]sha256$' | sort | tail -1)
-[ -n "$latest" ] || { echo "no dumps found"; exit 1; }
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-dump=${latest%.sha256}
+folder="backup:${BACKUP_BUCKET}/dumps/daily"
+rclone lsf --files-only "$folder" > "$scratch/list"
+pick=
+for marker in $(grep -E '^school-kit-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{4,6}Z[.]dump[.]sha256$' "$scratch/list" | sort -r); do
+  if grep -qxF "${marker%.sha256}" "$scratch/list"; then pick=$marker; break; fi
+  echo "skipping incomplete pair (marker without dump): $marker"
+done
+[ -n "$pick" ] || { echo "no complete dump + marker pair found"; exit 1; }
+dump=${pick%.sha256}
 echo "restoring $dump"
-rclone copyto "backup:${BACKUP_BUCKET}/dumps/daily/$dump" "$scratch/$dump"
-rclone copyto "backup:${BACKUP_BUCKET}/dumps/daily/$latest" "$scratch/$latest"
-expected=$(cut -d ' ' -f 1 "$scratch/$latest")
+rclone copyto "$folder/$dump" "$scratch/$dump"
+rclone copyto "$folder/$pick" "$scratch/$pick"
+expected=$(cut -d ' ' -f 1 "$scratch/$pick")
 actual=$(sha256sum "$scratch/$dump")
 [ "${actual%% *}" = "$expected" ] || { echo "off-site dump checksum mismatch"; exit 1; }
+pg_restore --list "$scratch/$dump" >/dev/null
 dropdb --if-exists restore_test
 createdb restore_test
 trap 'rm -rf "$scratch"; dropdb --if-exists restore_test' EXIT

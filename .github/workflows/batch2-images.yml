@@ -1,7 +1,20 @@
+# Immutable release images and isolated rehearsals for PR #563 (never touches production).
+#   build            candidate + recovery API AND render worker, migration runner, backup tooling
+#   retention        dump/marker retention + restore selection, inside the pinned PRODUCTION backup
+#                    image (documents today's behaviour) and the fresh image (the corrected one)
+#   walg-retention   real wal-g retention on a throwaway PostgreSQL 18, inside the same images
+#   rehearse         payment recovery across candidate -> recovery -> candidate, plus real report-card
+#                    PDF rendering by both worker images
+#   cutover          the guarded production cutover procedure, including its failure paths
 name: batch2-images
 on:
   pull_request:
     branches: [main]
+
+env:
+  # The backup image the owner verified and runs in production as ops-pinned.
+  PRODUCTION_BACKUP_IMAGE: ghcr.io/voclain1/school-kit-postgres@sha256:1c0ac5407c14975abad8240218366477a6c2515c6d7fbc6a379a121577d4429d
+  RECOVERY_SHA: 93cc9eebf50ec06be72c3b565698f1c77907d0d9
 
 jobs:
   build:
@@ -10,10 +23,13 @@ jobs:
     permissions:
       contents: read
       packages: write
-    timeout-minutes: 40
+    timeout-minutes: 60
     outputs:
-      candidate: ${{ steps.candidate.outputs.digest }}
-      recovery: ${{ steps.recovery.outputs.digest }}
+      candidate_api: ${{ steps.candidate_api.outputs.digest }}
+      candidate_render: ${{ steps.candidate_render.outputs.digest }}
+      recovery_api: ${{ steps.recovery_api.outputs.digest }}
+      recovery_render: ${{ steps.recovery_render.outputs.digest }}
+      migrate: ${{ steps.migrate.outputs.digest }}
       backup: ${{ steps.backup.outputs.digest }}
     steps:
       - uses: actions/checkout@v7
@@ -22,7 +38,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
-          ref: 93cc9eebf50ec06be72c3b565698f1c77907d0d9
+          ref: ${{ env.RECOVERY_SHA }}
           path: recovery-source
           persist-credentials: false
       - uses: docker/setup-buildx-action@v4
@@ -32,24 +48,55 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - uses: docker/build-push-action@v7
-        id: recovery
+        id: recovery_api
         with:
           context: recovery-source
           file: recovery-source/apps/api/Dockerfile
           push: true
           tags: ghcr.io/voclain1/school-kit-api:batch2-recovery-${{ github.run_id }}
           cache-from: type=gha,scope=api
-          labels: org.opencontainers.image.revision=93cc9eebf50ec06be72c3b565698f1c77907d0d9
+          labels: org.opencontainers.image.revision=${{ env.RECOVERY_SHA }}
+      - uses: docker/build-push-action@v7
+        id: recovery_render
+        with:
+          context: recovery-source
+          file: recovery-source/apps/api/Dockerfile.render
+          push: true
+          tags: ghcr.io/voclain1/school-kit-render:batch2-recovery-${{ github.run_id }}
+          cache-from: type=gha,scope=render
+          labels: org.opencontainers.image.revision=${{ env.RECOVERY_SHA }}
       - run: mv recovery-source "$RUNNER_TEMP/batch2-recovery-source"
       - uses: docker/build-push-action@v7
-        id: candidate
+        id: candidate_api
         with:
           context: .
           file: apps/api/Dockerfile
           push: true
           tags: ghcr.io/voclain1/school-kit-api:batch2-candidate-${{ github.run_id }}
+          build-args: SENTRY_RELEASE=${{ github.event.pull_request.head.sha }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=batch2-api,mode=max
+          labels: org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+      - uses: docker/build-push-action@v7
+        id: candidate_render
+        with:
+          context: .
+          file: apps/api/Dockerfile.render
+          push: true
+          tags: ghcr.io/voclain1/school-kit-render:batch2-candidate-${{ github.run_id }}
+          build-args: SENTRY_RELEASE=${{ github.event.pull_request.head.sha }}
+          cache-from: type=gha,scope=render
+          cache-to: type=gha,scope=batch2-render,mode=max
+          labels: org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+      - uses: docker/build-push-action@v7
+        id: migrate
+        with:
+          context: .
+          file: infra/vps/migrate/Dockerfile
+          push: true
+          tags: ghcr.io/voclain1/school-kit-migrate:batch2-${{ github.run_id }}
+          cache-from: type=gha,scope=batch2-migrate
+          cache-to: type=gha,scope=batch2-migrate,mode=max
           labels: org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
       - uses: docker/build-push-action@v7
         id: backup
@@ -61,22 +108,79 @@ jobs:
           cache-from: type=gha,scope=batch2-ops
           cache-to: type=gha,scope=batch2-ops,mode=max
           labels: org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
-      - name: Record immutable image references
+      - name: Record the release manifest (immutable references)
         env:
-          CANDIDATE: ${{ steps.candidate.outputs.digest }}
-          RECOVERY: ${{ steps.recovery.outputs.digest }}
-          BACKUP: ${{ steps.backup.outputs.digest }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CA: ${{ steps.candidate_api.outputs.digest }}
+          CR: ${{ steps.candidate_render.outputs.digest }}
+          RA: ${{ steps.recovery_api.outputs.digest }}
+          RR: ${{ steps.recovery_render.outputs.digest }}
+          MG: ${{ steps.migrate.outputs.digest }}
+          BK: ${{ steps.backup.outputs.digest }}
         run: |
-          printf 'Candidate: ghcr.io/voclain1/school-kit-api@%s\nRecovery: ghcr.io/voclain1/school-kit-api@%s\nBackup: ghcr.io/voclain1/school-kit-postgres@%s\n' "$CANDIDATE" "$RECOVERY" "$BACKUP" | tee "$RUNNER_TEMP/batch2-images.txt" >> "$GITHUB_STEP_SUMMARY"
+          for d in "$CA" "$CR" "$RA" "$RR" "$MG" "$BK"; do [[ $d =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::a build produced no digest"; exit 1; }; done
+          cat > "$RUNNER_TEMP/release-manifest.env" <<EOF
+          HEAD_SHA=$HEAD_SHA
+          RECOVERY_SHA=$RECOVERY_SHA
+          PG_MAJOR=18
+          CANDIDATE_API=ghcr.io/voclain1/school-kit-api@$CA
+          CANDIDATE_RENDER=ghcr.io/voclain1/school-kit-render@$CR
+          RECOVERY_API=ghcr.io/voclain1/school-kit-api@$RA
+          RECOVERY_RENDER=ghcr.io/voclain1/school-kit-render@$RR
+          MIGRATE=ghcr.io/voclain1/school-kit-migrate@$MG
+          BACKUP_OPS=ghcr.io/voclain1/school-kit-postgres@$BK
+          EOF
+          sed -i 's/^ *//' "$RUNNER_TEMP/release-manifest.env"
+          echo '### Release manifest (exact head)' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"; cat "$RUNNER_TEMP/release-manifest.env" | tee -a "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
-          name: batch2-image-digests
-          path: ${{ runner.temp }}/batch2-images.txt
+          name: batch2-release-manifest
+          path: ${{ runner.temp }}/release-manifest.env
+
+  retention:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        which: [production-pinned, fresh]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Dump retention, pairing, restore selection and heartbeat gating (isolated fixtures)
+        env:
+          FRESH: ghcr.io/voclain1/school-kit-postgres@${{ needs.build.outputs.backup }}
+        run: |
+          image=$PRODUCTION_BACKUP_IMAGE; mode=legacy
+          if [ "${{ matrix.which }}" = fresh ]; then image=$FRESH; mode=pairwise; fi
+          docker pull "$image"
+          docker run --rm --network none --entrypoint bash -e MODE=$mode -e OPS_DIR=/ops \
+            -v "$PWD/scripts:/t:ro" "$image" /t/batch2-retention-fixture.sh
+      - name: WAL-G retention on a throwaway PostgreSQL 18 (real wal-g, real objects)
+        env:
+          FRESH: ghcr.io/voclain1/school-kit-postgres@${{ needs.build.outputs.backup }}
+        run: |
+          image=$PRODUCTION_BACKUP_IMAGE
+          if [ "${{ matrix.which }}" = fresh ]; then image=$FRESH; fi
+          docker run --rm --network none --user postgres --entrypoint bash \
+            -v "$PWD/scripts:/t:ro" "$image" /t/batch2-walg-fixture.sh
 
   rehearse:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: read
@@ -98,7 +202,9 @@ jobs:
           password: ${{ github.token }}
       - name: Rehearse payment recovery on a private network
         env:
-          CANDIDATE_IMAGE: ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.candidate }}
-          RECOVERY_IMAGE: ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.recovery }}
+          CANDIDATE_IMAGE: ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.candidate_api }}
+          RECOVERY_IMAGE: ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.recovery_api }}
+          CANDIDATE_RENDER_IMAGE: ghcr.io/voclain1/school-kit-render@${{ needs.build.outputs.candidate_render }}
+          RECOVERY_RENDER_IMAGE: ghcr.io/voclain1/school-kit-render@${{ needs.build.outputs.recovery_render }}
           BACKUP_IMAGE: ghcr.io/voclain1/school-kit-postgres@${{ needs.build.outputs.backup }}
         run: bash scripts/batch2-image-rehearsal.sh

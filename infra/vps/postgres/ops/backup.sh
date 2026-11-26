@@ -35,13 +35,38 @@ publish() {
 }
 publish daily
 [ "$(date -u +%u)" != "7" ] || publish weekly
-prune() { # a folder not created yet is not an error
-  if rclone lsf "backup:${BACKUP_BUCKET}/dumps/$1" >/dev/null 2>&1; then
-    rclone delete --min-age "$2" "backup:${BACKUP_BUCKET}/dumps/$1"
-  fi
+# Pair-wise retention. A dump is VALID only with its checksum marker, so each
+# pair is removed marker-first (a dump without a marker is never mistaken for a
+# backup, and a marker never outlives its dump). Pairs are judged by the UTC
+# stamp in their name, not by object age. Never touches other prefixes or
+# unrecognised names, and always keeps the newest KEEP_MIN complete pairs, so a
+# long outage of the nightly job can never prune the last good backups.
+KEEP_MIN=3
+prune() { # folder days
+  folder="backup:${BACKUP_BUCKET}/dumps/$1"
+  list="$scratch/list.$1"
+  rc=0; rclone lsf --files-only "$folder" > "$list" || rc=$?
+  [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || { echo "prune $1: listing failed (rclone exit $rc)"; return 1; }
+  [ "$rc" -eq 0 ] || : > "$list"   # exit 3 = folder not created yet
+  cutoff=$(date -u -d "$2 days ago" +%Y%m%d%H%M%S)
+  norm() { n=${1#school-kit-}; n=${n%%.*}; n=$(printf '%s' "$n" | tr -d 'TZ-'); [ ${#n} -eq 12 ] && n="${n}00"; printf '%s' "$n"; }
+  # complete pairs, newest first
+  pairs="$scratch/pairs.$1"
+  grep -E '^school-kit-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{4,6}Z[.]dump[.]sha256$' "$list" | sort -r | while read -r m; do
+    if grep -qxF "${m%.sha256}" "$list"; then echo "$m"; fi
+  done > "$pairs"
+  keep=$(head -n "$KEEP_MIN" "$pairs")
+  # reverse order: for one stamp "X.dump.sha256" sorts before "X.dump", so the
+  # marker is removed first
+  grep -E '^school-kit-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{4,6}Z[.]dump([.]sha256)?$' "$list" | sort -r | while read -r f; do
+    [ "$(norm "$f")" -lt "$cutoff" ] || continue
+    case "$f" in *.sha256) m=$f;; *) m=$f.sha256;; esac
+    if printf '%s\n' "$keep" | grep -qxF "$m"; then continue; fi
+    rclone deletefile "$folder/$f"
+  done
 }
-prune daily 15d
-prune weekly 57d
+prune daily 15
+prune weekly 57
 echo "$(date -u +%FT%TZ) dump ok: $(basename "$file"), ${size} bytes"
 
 if [ -n "${WALG_S3_PREFIX:-}" ]; then

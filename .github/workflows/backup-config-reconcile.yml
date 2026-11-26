@@ -1,10 +1,11 @@
-# Read-only comparison of GitHub's BACKUP_ENV_FILE with the running
-# /opt/school-kit/backup.env, modelled on Batch 1's reconcile-production-config.
-# Prints KEY NAMES and statuses only: no values, no hashes, no lengths of
-# secrets. Writes nothing to backup.env. Protected copies of both files are
-# kept (0600, in a 0700 directory) so a later change can be reverted.
-# It does NOT rewrite the GitHub secret: secrets are write-only, so the owner
-# does that from the VPS file (docs/runbooks/batch2-acceptance-and-batch3.md §3).
+# Compares GitHub's BACKUP_ENV_FILE with the running /opt/school-kit/backup.env and BLOCKS
+# (fails the check) on anything unresolved: empty or missing required values, duplicates,
+# provider-rule violations, or any difference between the two. Modelled on Batch 1's
+# reconcile-production-config. Prints key NAMES and verdicts only (no values, lengths or
+# hashes; see infra/vps/backup_env.py). Writes nothing to backup.env; protected 0600 copies
+# of both files are kept under /opt/school-kit/config-backups so a change can be reverted.
+# It does not write the GitHub secret: secrets are write-only (owner procedure in
+# docs/runbooks/batch2-acceptance-and-batch3.md §3).
 name: backup-config-reconcile
 on:
   pull_request:
@@ -13,7 +14,18 @@ on:
 permissions:
   contents: read
 jobs:
+  validator-tests:
+    if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validator tests on fictional files (verdicts and no value leakage)
+        run: bash scripts/backup-env-test.sh
   compare:
+    needs: validator-tests
     if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/unified-messaging-infrastructure'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -25,50 +37,26 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Compare without exposing values
+      - name: Compare (blocks on any unresolved discrepancy)
         env:
           BACKUP_ENV_FILE: ${{ secrets.BACKUP_ENV_FILE }}
         run: |
           set -euo pipefail
           umask 077
           [ -n "$BACKUP_ENV_FILE" ] || { echo "BLOCK stored BACKUP_ENV_FILE is empty"; exit 1; }
-          printf '%s\n' "$BACKUP_ENV_FILE" | ssh vps 'umask 077; mkdir -p -m 700 /opt/school-kit/config-backups; cat > /opt/school-kit/config-backups/.backup-env.incoming'
+          ssh vps 'umask 077; mkdir -p -m 700 /opt/school-kit/config-backups'
+          ssh vps 'umask 077; cat > /opt/school-kit/config-backups/.backup_env.py' < infra/vps/backup_env.py
+          printf '%s\n' "$BACKUP_ENV_FILE" | ssh vps 'umask 077; cat > /opt/school-kit/config-backups/.backup-env.incoming'
           ssh vps 'bash -s' <<'REMOTE'
           set -euo pipefail
           umask 077
           cd /opt/school-kit
           [ -s backup.env ] || { echo "BLOCK running backup.env unavailable"; exit 1; }
-          stamp=$(date -u +%Y%m%dT%H%M%SZ)
-          d="config-backups/batch2-backup-env-$stamp"; mkdir -m 700 "$d"
+          d="config-backups/batch2-backup-env-$(date -u +%Y%m%dT%H%M%SZ)"; mkdir -m 700 "$d"
           cp -p backup.env "$d/backup.env.running"
           mv config-backups/.backup-env.incoming "$d/backup.env.github"
+          mv config-backups/.backup_env.py "$d/backup_env.py"
           chmod 600 "$d"/*
-          python3 - "$d" <<'PY'
-          import re, sys
-          from pathlib import Path
-          root = Path(sys.argv[1])
-          def read(name):
-              out = {}
-              for line in (root / name).read_text().splitlines():
-                  if not line.strip() or line.lstrip().startswith('#'): continue
-                  m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)=(.*)$', line)
-                  if not m: raise SystemExit('BLOCK a line in ' + name + ' is not KEY=VALUE (content withheld)')
-                  if m.group(1) in out: raise SystemExit('BLOCK duplicate key ' + m.group(1) + ' in ' + name)
-                  out[m.group(1)] = m.group(2)
-              return out
-          run, gh = read('backup.env.running'), read('backup.env.github')
-          required = ['BACKUP_BUCKET','WALG_S3_PREFIX','AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY','AWS_ENDPOINT','HEALTHCHECK_PING_URL']
-          only_run = sorted(set(run) - set(gh)); only_gh = sorted(set(gh) - set(run))
-          differ = sorted(k for k in set(run) & set(gh) if run[k] != gh[k])
-          same = len(set(run) & set(gh)) - len(differ)
-          print(f'EVIDENCE keys running={len(run)} github={len(gh)} identical={same}')
-          for label, keys in (('only-on-VPS', only_run), ('only-in-GitHub', only_gh), ('different-value', differ)):
-              print(f'EVIDENCE {label}: ' + (','.join(keys) if keys else 'none'))
-          for k in required:
-              print(('PASS ' if k in run else 'BLOCK ') + 'running has ' + k)
-              print(('PASS ' if k in gh else 'BLOCK ') + 'github has ' + k)
-          if only_gh: print('REVIEW keys present only in GitHub would be LOST if the secret were replaced from the VPS file')
-          if not (only_run or only_gh or differ): print('PASS GitHub secret and running backup.env are identical')
-          PY
-          echo "PASS protected copies under /opt/school-kit/$d (values never printed)"
+          echo "protected copies: /opt/school-kit/$d"
+          python3 "$d/backup_env.py" compare "$d/backup.env.running" "$d/backup.env.github"
           REMOTE

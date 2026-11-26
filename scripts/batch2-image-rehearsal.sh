@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-for image in "$CANDIDATE_IMAGE" "$RECOVERY_IMAGE" "$BACKUP_IMAGE"; do
-  [[ $image =~ ^ghcr\.io/voclain1/school-kit-(api|postgres)@sha256:[0-9a-f]{64}$ ]]
+for image in "$CANDIDATE_IMAGE" "$RECOVERY_IMAGE" "$BACKUP_IMAGE" "$CANDIDATE_RENDER_IMAGE" "$RECOVERY_RENDER_IMAGE"; do
+  [[ $image =~ ^ghcr\.io/voclain1/school-kit-(api|postgres|render)@sha256:[0-9a-f]{64}$ ]]
   docker pull "$image"
 done
 
@@ -11,13 +11,15 @@ network="$prefix-isolated"
 db="$prefix-db"
 redis="$prefix-redis"
 api="$prefix-api"
+worker="$prefix-worker"
 receipts="$prefix-receipts"
 cleanup() {
   status=$?
   if [ "$status" != 0 ]; then
     docker logs --tail 80 "$api" 2>&1 || true
+    docker logs --tail 80 "$worker" 2>&1 || true
   fi
-  docker rm -fv "$api" "$redis" "$db" >/dev/null 2>&1 || true
+  docker rm -fv "$api" "$worker" "$redis" "$db" >/dev/null 2>&1 || true
   docker volume rm "$receipts" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
 }
@@ -114,4 +116,62 @@ test "$(sql -c "SELECT receipt_number FROM payments WHERE id='$payment'")" = "$r
 docker rm -f "$api"
 start_api "$CANDIDATE_IMAGE" off
 check_finance
-echo 'Candidate → recovery → candidate: one settled allocation, one receipt, one audit and one exception; duplicate suppressed, FORCE RLS retained.'
+
+echo 'Candidate -> recovery -> candidate: one settled allocation, one receipt, one audit and one exception; duplicate suppressed, FORCE RLS retained.'
+
+# ---- document rendering by the render workers -------------------------------
+# The worker image is the only place Chromium runs. Both the allocation-compatible
+# recovery worker and the candidate worker must turn a queued job into a real PDF.
+year=ab000000-0000-4000-a000-0000000000a1; term=ab000000-0000-4000-a000-0000000000a2
+level=ab000000-0000-4000-a000-0000000000a3; arm=ab000000-0000-4000-a000-0000000000a4
+student=ab000000-0000-4000-a000-0000000000a5; card=ab000000-0000-4000-a000-0000000000a6
+sql <<SQL
+INSERT INTO academic_years (id,school_id,label,start_date,end_date,is_current,updated_at) VALUES ('$year','$school','2026/2027','2026-09-01','2027-07-31',true,now());
+INSERT INTO terms (id,school_id,academic_year_id,sequence,name,start_date,end_date,is_current,updated_at) VALUES ('$term','$school','$year',1,'First Term','2026-09-14','2026-12-18',true,now());
+INSERT INTO class_levels (id,school_id,name,code,stage,order_index,is_active,updated_at) VALUES ('$level','$school','JSS 1','jss1','JSS',1,true,now());
+INSERT INTO class_arms (id,school_id,class_level_id,name,code,is_active,updated_at) VALUES ('$arm','$school','$level','JSS 1A','jss1-a',true,now());
+INSERT INTO students (id,school_id,admission_number,first_name,last_name,date_of_birth,gender,updated_at) VALUES ('$student','$school','ADM-1','Fictional','Pupil','2014-01-01','FEMALE',now());
+INSERT INTO report_cards (id,school_id,student_id,term_id,academic_year_id,class_arm_id,overall_total,overall_average,overall_position,subjects_count,updated_at)
+VALUES ('$card','$school','$student','$term','$year','$arm',0,0,1,0,now());
+SQL
+start_worker() {
+  docker run -d --name "$worker" --network "$network" -v "$receipts:/srv/receipts" \
+    -e STORAGE_FILESYSTEM_ROOT=/srv/receipts -e NODE_ENV=test -e RENDER_WORKER_PORT=4001 \
+    -e DATABASE_URL=postgresql://app_user:fixture-runtime@postgres:5432/school_kit \
+    -e REDIS_URL=redis://redis:6379 "$1"
+  for _ in {1..90}; do
+    if docker exec "$worker" node -e 'fetch("http://127.0.0.1:4001/health").then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))'; then return; fi
+    sleep 1
+  done
+  return 1
+}
+enqueue() {
+  docker exec -e CARD="$card" -e SCHOOL="$school" "$api" node -e '
+    const {Queue}=require("bullmq");
+    const q=new Queue("report-cards",{connection:{host:"redis",port:6379}});
+    q.add("render",{schoolId:process.env.SCHOOL,userId:"fixture-user",reportCardId:process.env.CARD},{attempts:1})
+      .then(()=>q.close()).catch(e=>{console.error(e);process.exit(1)});
+  '
+}
+render_with() {
+  local image=$1 label=$2
+  sql -c "UPDATE report_cards SET pdf_status='PENDING', artifact_url=NULL, generated_at=NULL WHERE id='$card'"
+  docker run --rm --network none --user 0 -v "$receipts:/srv/receipts" --entrypoint sh "$RECOVERY_IMAGE" -c 'rm -rf /srv/receipts/schools'
+  start_worker "$image"
+  enqueue
+  for _ in {1..120}; do
+    [ "$(sql -c "SELECT pdf_status FROM report_cards WHERE id='$card'")" = GENERATED ] && break
+    sleep 1
+  done
+  test "$(sql -c "SELECT pdf_status FROM report_cards WHERE id='$card'")" = GENERATED
+  path=$(sql -c "SELECT artifact_url FROM report_cards WHERE id='$card'")
+  test "$(docker exec "$worker" head -c 5 "/srv/receipts/$path")" = '%PDF-'
+  test "$(docker exec "$worker" stat -c %s "/srv/receipts/$path")" -gt 1000
+  test "$(sql -c "SELECT count(*) FROM audit_logs WHERE action='report-card.render' AND entity_id='$card'")" -ge 1
+  echo "$label worker rendered a real PDF ($(docker exec "$worker" stat -c %s "/srv/receipts/$path") bytes) and audited it."
+  docker rm -f "$worker" >/dev/null
+}
+render_with "$RECOVERY_RENDER_IMAGE" recovery
+render_with "$CANDIDATE_RENDER_IMAGE" candidate
+echo 'Both render workers produced a valid PDF from a queued job on the migrated schema.'
+
