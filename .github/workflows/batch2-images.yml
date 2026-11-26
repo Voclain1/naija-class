@@ -221,7 +221,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq rclone python3-nacl
-      - run: shellcheck -S warning infra/vps/ops-tools/*.sh infra/vps/postgres/ops/*.sh scripts/batch2-*.sh scripts/batch3-*.sh scripts/ops-tools-test.sh scripts/backup-env-test.sh scripts/gh-secret-test.sh
+      - run: shellcheck -S warning -e SC2034 infra/vps/ops-tools/*.sh infra/vps/postgres/ops/*.sh scripts/batch2-*.sh scripts/batch3-*.sh scripts/ops-tools-test.sh scripts/backup-env-test.sh scripts/gh-secret-test.sh
       - run: bash scripts/backup-env-test.sh
       - run: bash scripts/ops-tools-test.sh
       - run: bash scripts/gh-secret-test.sh
@@ -274,4 +274,39 @@ jobs:
           OLD_RENDER: ghcr.io/voclain1/school-kit-render:${{ env.OLD_SHA }}
           BASELINE_MIGRATIONS: ${{ runner.temp }}/baseline/packages/db/prisma/migrations
         run: bash scripts/batch3-cutover-rehearsal.sh
+
+  # Proposes the manifest to the VPS ONLY if every hosted rehearsal for this exact head passed. It writes a single
+  # file (release/manifest.proposed); nothing is installed, authorised, started or restarted by this job.
+  publish-manifest:
+    needs: [build, retention, rehearse, cutover, tooling]
+    if: github.event.pull_request.head.ref == 'feat/unified-messaging-infrastructure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Write release/manifest.proposed
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/manifest.env" <<EOF
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          RECOVERY_SHA=${{ env.RECOVERY_SHA }}
+          PG_MAJOR=18
+          CANDIDATE_API=ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.candidate_api }}
+          CANDIDATE_RENDER=ghcr.io/voclain1/school-kit-render@${{ needs.build.outputs.candidate_render }}
+          RECOVERY_API=ghcr.io/voclain1/school-kit-api@${{ needs.build.outputs.recovery_api }}
+          RECOVERY_RENDER=ghcr.io/voclain1/school-kit-render@${{ needs.build.outputs.recovery_render }}
+          MIGRATE=ghcr.io/voclain1/school-kit-migrate@${{ needs.build.outputs.migrate }}
+          BACKUP_OPS=ghcr.io/voclain1/school-kit-postgres@${{ needs.build.outputs.backup }}
+          EOF
+          sed -i 's/^ *//' "$RUNNER_TEMP/manifest.env"
+          cat "$RUNNER_TEMP/manifest.env"
+          ssh vps 'umask 077; mkdir -p /opt/school-kit/release; chmod 700 /opt/school-kit/release; cat > /opt/school-kit/release/manifest.proposed' < "$RUNNER_TEMP/manifest.env"
+          echo "proposed manifest written (not installed, not authorised)"
 

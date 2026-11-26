@@ -264,6 +264,18 @@ finance_gate() {
 
 case $mode in
 stage)
+  # CI writes release/manifest.proposed ONLY after every rehearsal for that exact head passed. Installing it
+  # as the manifest needs the owner to type the first 12 characters of the head commit they approved.
+  if [ -s release/manifest.proposed ] && ! cmp -s release/manifest.proposed "$MANIFEST" 2>/dev/null; then
+    [ -t 0 ] || die "a new proposed manifest exists; installing it is interactive"
+    prop=$(sed -n 's/^HEAD_SHA=//p' release/manifest.proposed | head -n 1)
+    [[ $prop =~ ^[0-9a-f]{40}$ ]] || die "the proposed manifest has no valid HEAD_SHA"
+    echo "CI proposes a release built from head ${prop:0:12} (all hosted rehearsals passed for it)."
+    read -r -p "Type the first 12 characters of the head commit you approved on PR #563: " typed
+    [ "$typed" = "${prop:0:12}" ] || die "that is not the proposed head; nothing was installed"
+    cp release/manifest.proposed "$MANIFEST"; rm -f "$AUTH"; state_set NONE
+    ok "manifest installed (any earlier authorisation is void)"
+  fi
   load_manifest
   [ "$(df -Pk /var/lib/docker | awk 'NR == 2 { printf "%d", $4 / 1048576 }')" -ge 5 ] || die "less than 5 GiB free for image extraction"
   for ref in "$M_CANDIDATE_API" "$M_CANDIDATE_RENDER" "$M_RECOVERY_API" "$M_RECOVERY_RENDER" "$M_MIGRATE" "$M_BACKUP_OPS"; do
