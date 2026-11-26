@@ -1,4 +1,4 @@
-import { Injectable, Optional } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { withGuardian, withTenant, type PrismaClient } from "@school-kit/db";
 import {
   ConflictError, NotFoundError, installmentPolicySchema, installmentProposalSchema,
@@ -7,6 +7,8 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
+import { EmailService } from "../../common/email/email.service.js";
+import { isSuppressedForAll } from "../announcements/announcement-email.shared.js";
 import { EventNotifierService } from "../notifications/event-notifier.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
 
@@ -16,7 +18,13 @@ const defaultPolicy: InstallmentPolicy = {
 
 @Injectable()
 export class InstallmentRequestsService {
-  constructor(private readonly plans: PaymentPlanService, @Optional() private readonly events?: EventNotifierService) {}
+  private readonly logger = new Logger(InstallmentRequestsService.name);
+
+  constructor(
+    private readonly plans: PaymentPlanService,
+    @Optional() private readonly events?: EventNotifierService,
+    @Optional() private readonly email?: EmailService,
+  ) {}
 
   async policy(db: PrismaClient, schoolId: string): Promise<InstallmentPolicy> {
     const school = await db.school.findUnique({ where: { id: schoolId }, select: { installmentPolicy: true } });
@@ -51,7 +59,7 @@ export class InstallmentRequestsService {
   }
 
   async submit(ctx: GuardianAuthContext, studentId: string, invoiceId: string, schedule: CreateInstallmentInput[]) {
-    return withTenant(ctx.schoolId, (db) => withGuardian(ctx.guardianId, studentId, db, async (tx) => {
+    const result = await withTenant(ctx.schoolId, (db) => withGuardian(ctx.guardianId, studentId, db, async (tx) => {
       await this.lock(tx, ctx.schoolId, invoiceId);
       await this.validate(tx, ctx.schoolId, invoiceId, schedule, studentId);
       if (await tx.installmentRequest.findFirst({ where: {
@@ -63,6 +71,8 @@ export class InstallmentRequestsService {
       await this.audit(tx, request, ctx.guardianId);
       return this.dto(request);
     }));
+    await this.events?.installmentRequestSubmitted({ schoolId: ctx.schoolId, requestId: result.id });
+    return result;
   }
 
   async decide(ctx: AuthContext, invoiceId: string, requestId: string, decision: InstallmentRequestDecision) {
@@ -87,6 +97,7 @@ export class InstallmentRequestsService {
     await this.events?.installmentRequestUpdated({
       schoolId: ctx.schoolId, guardianId: result.guardianId, requestId, revision: result.dto.revision,
     });
+    await this.sendDecisionEmail(ctx.schoolId, result.guardianId, result.dto);
     return result.dto;
   }
 
@@ -100,6 +111,36 @@ export class InstallmentRequestsService {
       if (!accept) return this.update(tx, request, ctx.guardianId, "REJECTED");
       return this.approve(tx, request, ctx.guardianId);
     }));
+  }
+
+  private async sendDecisionEmail(schoolId: string, guardianId: string, request: InstallmentRequestDto) {
+    if (!this.email?.isConfigured) return;
+    try {
+      const recipient = await withTenant(schoolId, async (db) => {
+        const invoice = await db.invoice.findFirstOrThrow({ where: { id: request.invoiceId, schoolId }, select: { studentId: true } });
+        const link = await db.studentGuardian.findFirst({
+          where: { studentId: invoice.studentId, guardianId, guardian: { schoolId, emailVerified: true, portalDisabledAt: null } },
+          select: { guardian: { select: { email: true } } },
+        });
+        const email = link?.guardian.email;
+        if (!email || await isSuppressedForAll(db, schoolId, email)) return null;
+        const school = await db.school.findUniqueOrThrow({ where: { id: schoolId }, select: { name: true } });
+        const eventId = request.id + ":" + request.revision;
+        const claim = await db.notificationDelivery.createMany({
+          data: [{ schoolId, eventType: "installment.request-updated", eventId, principalType: "GUARDIAN", principalId: guardianId, channel: "EMAIL" }],
+          skipDuplicates: true,
+        });
+        return claim.count > 0 ? { email, schoolName: school.name } : null;
+      });
+      if (recipient) await this.email.send({
+        to: recipient.email, schoolName: recipient.schoolName,
+        subject: "Your school updated your instalment request",
+        html: "<p>Sign in to your SchoolKit parent portal to review the school's decision.</p>",
+        purpose: "installment-request-updated",
+      });
+    } catch {
+      this.logger.warn("Instalment decision email could not be sent for request " + request.id);
+    }
   }
 
   private async lock(db: PrismaClient, schoolId: string, invoiceId: string) {

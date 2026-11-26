@@ -161,6 +161,26 @@ export class EventNotifierService {
     });
   }
 
+  async installmentRequestSubmitted(args: { schoolId: string; requestId: string }): Promise<void> {
+    await this.safely("installmentRequestSubmitted", async () => {
+      const { school, staff } = await withTenant(args.schoolId, async (db) => ({
+        school: await db.school.findUniqueOrThrow({ where: { id: args.schoolId }, select: { name: true } }),
+        staff: await db.user.findMany({
+          where: { schoolId: args.schoolId, isActive: true, roles: { some: { role: { key: { in: ["owner", "admin", "bursar"] } } } } },
+          select: { id: true },
+        }),
+      }));
+      for (const user of staff) {
+        await this.dispatch.notifyOfEvent({
+          schoolId: args.schoolId, principal: { type: "STAFF", userId: user.id },
+          eventType: "installment.request-submitted", eventId: args.requestId,
+          title: school.name, body: "An instalment plan request is awaiting review.",
+          data: { screen: "fees" },
+        });
+      }
+    });
+  }
+
   async installmentRequestUpdated(args: {
     schoolId: string;
     guardianId: string;

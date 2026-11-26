@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 
 type RequestView = { policy: InstallmentPolicy; requests: InstallmentRequestDto[] };
 
-export function StaffInstallmentRequests({ invoiceId, canDecide, onApprove }: {
+export function StaffInstallmentRequests({ invoiceId, canDecide, canConfigure, onApprove }: {
   invoiceId: string;
   canDecide: boolean;
+  canConfigure: boolean;
   onApprove: () => void;
 }) {
   const [view, setView] = useState<RequestView>();
@@ -93,7 +94,7 @@ export function StaffInstallmentRequests({ invoiceId, canDecide, onApprove }: {
           )}
         </article>
       ))}
-      {view && canDecide && (
+      {view && canConfigure && (
         <details className="space-y-2 text-sm">
           <summary className="cursor-pointer">School policy (owner or admin)</summary>
           <form className="grid gap-3 p-2 sm:grid-cols-2" onSubmit={updatePolicy}>

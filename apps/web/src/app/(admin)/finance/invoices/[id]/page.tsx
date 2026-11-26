@@ -117,7 +117,7 @@ export default function InvoiceDetailPage() {
   // used to decide whether this page offered the action; it now checks the
   // signed-in user's grant too, via the same shared helper the invoice list
   // uses — this page previously kept its own duplicate status set.
-  const { permissions } = useAuth();
+  const { permissions, roles } = useAuth();
 
   const [invoice, setInvoice] = useState<InvoiceDto | null>(null);
   const [student, setStudent] = useState<StudentDetailDto | null>(null);
@@ -464,14 +464,38 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  async function preparePlanLinks() {
+    if (!invoice || !plan) return;
+    setInstallmentLinkPending("all");
+    setInstallmentLinkError(null);
+    try {
+      const links: Record<string, PaymentLinkStateDto> = {};
+      for (const item of plan.installments.filter((entry) => !entry.paid)) {
+        links[item.id] = await createPaymentLink(invoice.id, item.id);
+      }
+      setInstallmentLinks(links);
+      if (Object.values(links).some((link) => link.state !== "LIVE")) {
+        setInstallmentLinkError("Some links are still unavailable. Refresh before sharing the full plan.");
+      }
+    } catch (error) {
+      setInstallmentLinkError(financeErrorMessage(error));
+    } finally {
+      setInstallmentLinkPending(null);
+    }
+  }
+
   function planShareText() {
     if (!plan) return "";
     return [
       plan.name,
-      ...plan.installments.map((entry, index) => [
-        "Instalment " + (index + 1), entry.dueDate, formatKobo(entry.amount),
-        entry.paid ? "Paid" : formatKobo(entry.outstanding ?? entry.amount) + " outstanding",
-      ].join(" · ")),
+      ...plan.installments.map((entry, index) => {
+        const link = installmentLinks[entry.id];
+        return [
+          "Instalment " + (index + 1), entry.dueDate, formatKobo(entry.amount),
+          entry.paid ? "Paid" : formatKobo(entry.outstanding ?? entry.amount) + " outstanding",
+          link?.state === "LIVE" && !entry.paid ? link.url : null,
+        ].filter(Boolean).join(" · ");
+      }),
       "Sign into your SchoolKit parent portal to view the invoice and make a payment.",
     ].join("\n");
   }
@@ -900,6 +924,11 @@ export default function InvoiceDetailPage() {
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">{plan.name}</p>
             <div className="mb-3 flex flex-wrap gap-2">
+              {permissions.includes("payment.record") && plan.installments.some((entry) => !entry.paid) && (
+                <Button size="sm" variant="outline" disabled={installmentLinkPending !== null} onClick={() => void preparePlanLinks()}>
+                  Prepare payable links
+                </Button>
+              )}
               <Button size="sm" variant="outline" onClick={() => void handleCopyPaymentLink(planShareText())}>Copy plan</Button>
               <Button asChild size="sm" variant="outline">
                 <a href={"mailto:?subject=" + encodeURIComponent(plan.name) + "&body=" + encodeURIComponent(planShareText())}>Email plan</a>
@@ -1193,7 +1222,9 @@ export default function InvoiceDetailPage() {
       {/* Cancel */}
       {permissions.includes("payment-plan.read") && (
         <StaffInstallmentRequests invoiceId={invoice.id}
-          canDecide={permissions.includes("payment-plan.create")} onApprove={() => window.location.reload()} />
+          canDecide={permissions.includes("payment-plan.create")}
+          canConfigure={roles.some((role) => ["owner", "admin"].includes(role.key))}
+          onApprove={() => window.location.reload()} />
       )}
 
       {canCancelInvoice(invoice.status, permissions) && (
