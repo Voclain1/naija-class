@@ -57,6 +57,7 @@ export interface PaymentReceiptUrlDto {
 // ---------------------------------------------------------------------------
 
 export const recordManualPaymentSchema = z.object({
+  installmentId: z.string().uuid().optional(),
   invoiceId: z.string().uuid(),
   // Amount in kobo. The web UI converts from naira (× 100) before submitting.
   amount: z.number().int().positive(),

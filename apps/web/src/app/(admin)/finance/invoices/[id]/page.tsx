@@ -153,6 +153,7 @@ export default function InvoiceDetailPage() {
   const [paystackError, setPaystackError] = useState<string | null>(null);
 
   // Record payment form
+  const [recordInstallmentId, setRecordInstallmentId] = useState("");
   const [recording, setRecording] = useState(false);
   const [recordError, setRecordError] = useState<string | null>(null);
   // Branded receipts (docs/modules/branded-receipts.md D5): the payment just
@@ -260,6 +261,7 @@ export default function InvoiceDetailPage() {
       const recorded = await recordManualPayment({
         invoiceId: invoice.id,
         amount: amountKobo,
+        installmentId: recordInstallmentId || undefined,
         method: form.method,
         paidAt: new Date(form.paidAt).toISOString(),
         reference: form.reference || undefined,
@@ -269,6 +271,8 @@ export default function InvoiceDetailPage() {
         listPayments({ invoiceId: invoice.id }),
         getPaymentPlan(invoice.id).catch(() => null),
       ]);
+      setRecordInstallmentId("");
+      setInstallmentLinks({});
       setInvoice(updatedInvoice);
       setPayments(updatedPayments.data);
       setPlan(updatedPlan);
@@ -1143,6 +1147,17 @@ export default function InvoiceDetailPage() {
         <div className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
           <h2 className="text-base font-semibold text-foreground">Record payment</h2>
           <form onSubmit={handleRecordPayment} className="space-y-3">
+            {plan && (
+              <label className="block text-sm text-muted-foreground">
+                Apply to
+                <select className={INPUT_CLASSES} value={recordInstallmentId} onChange={(event) => setRecordInstallmentId(event.target.value)}>
+                  <option value="">Invoice balance (earliest unpaid instalments)</option>
+                  {plan.installments.map((entry, index) => !entry.paid && (
+                    <option key={entry.id} value={entry.id}>Instalment {index + 1} · {formatKobo(entry.outstanding ?? entry.amount)} outstanding</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="inv-amount-naira-2" className="mb-1 block text-sm text-muted-foreground">Amount (₦)</label>

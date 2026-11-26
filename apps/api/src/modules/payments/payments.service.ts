@@ -287,6 +287,7 @@ export class PaymentsService {
   private replay(prior: PaymentRow, dto: RecordManualPaymentInput): ManualPaymentResultDto {
     const same =
       prior.invoiceId === dto.invoiceId &&
+      (prior.installmentId ?? null) === (dto.installmentId ?? null) &&
       prior.amount === dto.amount &&
       prior.method === dto.method &&
       (prior.reference ?? null) === (dto.reference ?? null) &&
@@ -331,7 +332,12 @@ export class PaymentsService {
       }
 
       // 2. Overpayment guard — REJECT (D1). Remaining = totalDue − totalPaid.
-      const remaining = invoice.totalDue - invoice.totalPaid;
+      const invoiceBalance = invoice.totalDue - invoice.totalPaid;
+      const targetBalance = dto.installmentId
+        ? await installmentOutstanding(db, authCtx.schoolId, dto.invoiceId, dto.installmentId, invoice.totalPaid)
+        : invoiceBalance;
+      if (targetBalance === null) throw new NotFoundError("Instalment not found.");
+      const remaining = Math.min(invoiceBalance, targetBalance);
       if (dto.amount > remaining) {
         throw new ConflictError(
           "PAYMENT_WOULD_EXCEED_BALANCE",
@@ -346,6 +352,7 @@ export class PaymentsService {
           invoiceId: dto.invoiceId,
           studentId: invoice.studentId,
           amount: dto.amount,
+          installmentId: dto.installmentId,
           method: dto.method,
           status: "SUCCESS",
           reference: dto.reference ?? null,
@@ -385,6 +392,7 @@ export class PaymentsService {
           metadata: {
             invoiceId: dto.invoiceId,
             amount: dto.amount,
+            installmentId: dto.installmentId,
             method: dto.method,
             newInvoiceStatus: newStatus,
             newTotalPaid,
@@ -398,6 +406,8 @@ export class PaymentsService {
         db,
         authCtx.schoolId,
         dto.invoiceId,
+        undefined,
+        dto.installmentId,
       );
 
       return { ...toDto(payment as PaymentRow), replayed: false };
@@ -570,7 +580,7 @@ export class PaymentsService {
         const paidAt = data.paid_at ? new Date(data.paid_at) : new Date();
         succeeded = await this.applyPaystackSuccess(db, payment, data as Record<string, unknown>, paidAt);
         if (succeeded) {
-          await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId);
+          await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId, undefined, payment.installmentId);
           balanceChanged = true;
         }
       } else {
@@ -742,7 +752,7 @@ export class PaymentsService {
           where: { id: invoiceId },
           data: { totalPaid: newTotalPaid, status: newStatus },
       });
-      await this.paymentLinkInvalidation?.markForArchive(db, schoolId, invoiceId, linkId);
+      await this.paymentLinkInvalidation?.markForArchive(db, schoolId, invoiceId, linkId, link.installmentId);
       await db.auditLog.createMany({
           data: [
             {
@@ -867,7 +877,7 @@ export class PaymentsService {
           paidAt,
         );
         if (applied) {
-          await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId);
+          await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId, undefined, payment.installmentId);
           changedInvoiceId = payment.invoiceId;
         }
       } else if (["failed", "abandoned"].includes(verifyData.status) && verifyData.reference === reference) {
