@@ -481,9 +481,12 @@ and backup output, the presence and permissions of `backup.env`, and
 credential identity, bucket/prefix permissions and endpoint access using
 redacted checks. Inspect `pg_stat_archiver` and actual WAL object inventory
 separately from the base backup list. The shipping workflow previously
-overwrote the VPS backup environment even if the secret was empty. The live
-settings check now requires the required key names before it proceeds.
-This does not verify credentials or their access.
+overwrote the VPS backup environment even if the secret was empty. **No check
+of the `BACKUP_ENV_FILE` key names exists at head `fa74b19`** (corrected
+2026-11-26; the workflow is rehearsal-only, so the gap is latent). Reconcile it
+with `docs/runbooks/batch2-acceptance-and-batch3.md` §3.
+Likewise no code reads `UNIFIED_MESSAGING_CUTOVER_APPROVED`: that control is
+procedural until implemented.
 
 After authorization, prove a scheduled run produced a dump, read-back
 checksum marker, WAL-G base backup, archived WAL and success heartbeat.
