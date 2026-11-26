@@ -24,5 +24,6 @@ COPY packages/db/ ./packages/db/
 RUN chown -R node:node /app
 USER node
 WORKDIR /app/packages/db
-ENTRYPOINT ["pnpm", "exec", "prisma"]
+# The local binary: no pnpm/corepack download at run time (the container has no cache and may have no egress).
+ENTRYPOINT ["./node_modules/.bin/prisma"]
 CMD ["migrate", "status"]
