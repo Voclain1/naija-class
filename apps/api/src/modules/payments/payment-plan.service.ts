@@ -67,7 +67,8 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
 }
 
-function toInstallmentDto(row: InstallmentRow): PaymentPlanInstallmentDto {
+function toInstallmentDto(row: InstallmentRow, progress: { amountPaid: number; outstanding: number }): PaymentPlanInstallmentDto {
+  const paid = progress.outstanding === 0;
   const dueDateStr =
     row.dueDate instanceof Date ? row.dueDate.toISOString().slice(0, 10) : String(row.dueDate).slice(0, 10);
   return {
@@ -75,8 +76,9 @@ function toInstallmentDto(row: InstallmentRow): PaymentPlanInstallmentDto {
     planId: row.planId,
     amount: row.amount,
     dueDate: dueDateStr,
-    paid: row.paid,
-    isOverdue: !row.paid && dueDateStr < todayIso(),
+    ...progress,
+    paid,
+    isOverdue: !paid && dueDateStr < todayIso(),
   };
 }
 
@@ -89,7 +91,7 @@ function toDto(row: PlanRow, totalPaid: number): PaymentPlanDto {
     name: row.name,
     createdBy: row.createdBy,
     createdAt: row.createdAt,
-    installments: row.installments.map((installment, index) => ({ ...toInstallmentDto(installment), ...progress[index] })),
+    installments: row.installments.map((installment, index) => toInstallmentDto(installment, progress[index]!)),
   };
 }
 

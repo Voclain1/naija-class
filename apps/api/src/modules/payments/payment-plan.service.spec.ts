@@ -1,11 +1,10 @@
-import { projectUntargetedPayments } from "./payment-plan.service.js";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import type { InvoiceStatus } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service.js";
-import { computeInstallmentsPaid } from "./payment-plan.service.js";
+import { computeInstallmentsPaid, projectUntargetedPayments } from "./payment-plan.service.js";
 
 // Phase 3 / Slice 9 — payment plan service spec.
 //
