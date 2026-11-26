@@ -1,0 +1,70 @@
+name: Messaging rehearsal using existing pinned images
+on:
+  push:
+    branches: [ops/messaging-rehearsal-reuse]
+permissions:
+  contents: read
+  packages: read
+env:
+  CANDIDATE_IMAGE: ghcr.io/voclain1/school-kit-api@sha256:62ded47b97d2766002fd81d40f62e16da513f2043162a31470090811e75f2432
+  RECOVERY_IMAGE: ghcr.io/voclain1/school-kit-api@sha256:621b2e9607ab328f529efa269262eccfdc2bf5ea5ea2d406bf1782635835c6a2
+  CANDIDATE_RENDER_IMAGE: ghcr.io/voclain1/school-kit-render@sha256:e36430f8b52938a5983c315adec0ea3d3ae9ac9222ea501723450fed9e4d7893
+  RECOVERY_RENDER_IMAGE: ghcr.io/voclain1/school-kit-render@sha256:ff908e63e74bcec9b895c60ac607ae115f273cb47e0e161f930b43ace33a57be
+  MIGRATE: ghcr.io/voclain1/school-kit-migrate@sha256:a5c63c00bb1733453d79008394ae6a6763f57391b5bdcba9f9b315893ed2e7cd
+  BACKUP_IMAGE: ghcr.io/voclain1/school-kit-postgres@sha256:1c0ac5407c14975abad8240218366477a6c2515c6d7fbc6a379a121577d4429d
+  IMAGE_SOURCE: dcfcdb975197826ba424dd241b1c8b5ca9fdbd87
+  BASELINE: 25e54017aa0d41870ab3988f1c55be3d00cab54e
+jobs:
+  rehearse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [payment, cutover]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify application and schema match the published images
+        run: git diff --exit-code "$IMAGE_SOURCE" HEAD -- apps packages pnpm-lock.yaml infra/vps/Dockerfile.next
+      - uses: pnpm/action-setup@v6
+        if: matrix.test == 'payment'
+      - uses: actions/setup-node@v7
+        if: matrix.test == 'payment'
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Pending inbox and instalment recovery
+        if: matrix.test == 'payment'
+        run: |
+          PUPPETEER_SKIP_DOWNLOAD=true pnpm install --frozen-lockfile
+          bash scripts/batch2-image-rehearsal.sh
+      - name: Same-schema upgrade and guarded cutover
+        if: matrix.test == 'cutover'
+        env:
+          OLD_API: ghcr.io/voclain1/school-kit-api@sha256:58d4630e6a64aea0e852ebf336d12de2c90592347b986e77ceecb1e52adae2aa
+          OLD_RENDER: ghcr.io/voclain1/school-kit-render:61b5c214cdc4c3908564321459b039c4f2dffcbb
+        run: |
+          mkdir -p "$RUNNER_TEMP/baseline"
+          git archive "$BASELINE" packages/db/prisma/migrations | tar -x -C "$RUNNER_TEMP/baseline"
+          export BASELINE_MIGRATIONS="$RUNNER_TEMP/baseline/packages/db/prisma/migrations"
+          export RELEASE_MANIFEST="$RUNNER_TEMP/manifest.env"
+          cat > "$RELEASE_MANIFEST" <<MANIFEST
+          HEAD_SHA=$IMAGE_SOURCE
+          RECOVERY_SHA=$IMAGE_SOURCE
+          PG_MAJOR=18
+          CANDIDATE_API=$CANDIDATE_IMAGE
+          CANDIDATE_RENDER=$CANDIDATE_RENDER_IMAGE
+          RECOVERY_API=$RECOVERY_IMAGE
+          RECOVERY_RENDER=$RECOVERY_RENDER_IMAGE
+          MIGRATE=$MIGRATE
+          BACKUP_OPS=$BACKUP_IMAGE
+          MANIFEST
+          bash scripts/batch3-cutover-rehearsal.sh
