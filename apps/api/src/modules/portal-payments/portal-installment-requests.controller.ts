@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
-import { installmentProposalSchema, type CreateInstallmentInput } from "@school-kit/types";
+import { installmentRequestInputSchema, type InstallmentRequestInput } from "@school-kit/types";
 import { z } from "zod";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
 import { CurrentGuardian } from "../../common/auth/current-guardian.decorator.js";
@@ -24,9 +24,9 @@ export class PortalInstallmentRequestsController {
     @CurrentGuardian() ctx: GuardianAuthContext,
     @Param("studentId") studentId: string,
     @Param("invoiceId") invoiceId: string,
-    @Body(new ZodValidationPipe(installmentProposalSchema)) schedule: CreateInstallmentInput[],
+    @Body(new ZodValidationPipe(installmentRequestInputSchema)) input: InstallmentRequestInput,
   ) {
-    return this.service.submit(ctx, studentId, invoiceId, schedule);
+    return this.service.submit(ctx, studentId, invoiceId, input.schedule, input.explanation);
   }
 
   @Post(":requestId/respond")

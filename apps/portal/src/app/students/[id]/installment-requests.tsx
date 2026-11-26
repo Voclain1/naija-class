@@ -44,7 +44,8 @@ export function InstallmentRequests({ invoice }: { invoice: PortalInvoiceDto }) 
     const schedule = Array.from({ length: count }, (_, index) => ({
       amount: Number(data.get("amount-" + index)), dueDate: String(data.get("due-" + index)),
     }));
-    void update(() => api("", schedule));
+    const explanation = String(data.get("explanation") ?? "").trim();
+    void update(() => api("", { schedule, explanation: explanation || undefined }));
   }
 
   return (
@@ -81,6 +82,9 @@ export function InstallmentRequests({ invoice }: { invoice: PortalInvoiceDto }) 
               <label>Due date {index + 1}<input className="block w-full rounded border p-2" required type="date" name={"due-" + index} /></label>
             </div>
           ))}
+          <label className="block text-sm">Anything the school should know? (optional)
+            <textarea className="mt-1 block w-full rounded border p-2" rows={2} name="explanation" maxLength={500} />
+          </label>
           <button type="submit" disabled={busy} className="rounded-md border px-3 py-2 text-sm font-medium">Send request to school</button>
         </form>
       )}

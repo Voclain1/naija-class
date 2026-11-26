@@ -31,7 +31,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { useAuth } from "@/lib/auth/use-auth";
 import { formatKobo } from "@/lib/finance/format";
-import { canCancelInvoice } from "@/lib/finance/invoice-cancel";
+import { canCancelInvoice, hasPermission } from "@/lib/finance/invoice-cancel";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { archivePaymentLink, createPaymentLink, getInvoice, getPaymentLink } from "@/lib/finance/invoices-api";
 import {
@@ -928,7 +928,7 @@ export default function InvoiceDetailPage() {
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">{plan.name}</p>
             <div className="mb-3 flex flex-wrap gap-2">
-              {permissions.includes("payment.record") && plan.installments.some((entry) => !entry.paid) && (
+              {hasPermission(permissions, "payment.record") && plan.installments.some((entry) => !entry.paid) && (
                 <Button size="sm" variant="outline" disabled={installmentLinkPending !== null} onClick={() => void preparePlanLinks()}>
                   Prepare payable links
                 </Button>
@@ -1235,9 +1235,9 @@ export default function InvoiceDetailPage() {
       )}
 
       {/* Cancel */}
-      {permissions.includes("payment-plan.read") && (
+      {hasPermission(permissions, "payment-plan.read") && (
         <StaffInstallmentRequests invoiceId={invoice.id}
-          canDecide={permissions.includes("payment-plan.create")}
+          canDecide={hasPermission(permissions, "payment-plan.create")}
           canConfigure={roles.some((role) => ["owner", "admin"].includes(role.key))}
           onApprove={() => window.location.reload()} />
       )}

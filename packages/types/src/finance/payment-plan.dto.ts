@@ -53,6 +53,11 @@ export const installmentPolicySchema = z.object({
 export type InstallmentPolicy = z.infer<typeof installmentPolicySchema>;
 
 export const installmentProposalSchema = z.array(createInstallmentSchema).min(2).max(12);
+export const installmentRequestInputSchema = z.object({
+  schedule: installmentProposalSchema,
+  explanation: z.string().trim().min(1).max(500).optional(),
+}).strict();
+export type InstallmentRequestInput = z.infer<typeof installmentRequestInputSchema>;
 export const installmentRequestDecisionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("APPROVE"), revision: z.number().int().positive() }),
   z.object({ action: z.literal("REJECT"), revision: z.number().int().positive() }),
@@ -64,6 +69,7 @@ export interface InstallmentRequestDto {
   id: string;
   invoiceId: string;
   status: string;
+  explanation: string | null;
   schedule: CreateInstallmentInput[];
   revision: number;
 }

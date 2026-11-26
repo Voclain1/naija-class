@@ -58,7 +58,7 @@ export class InstallmentRequestsService {
     }));
   }
 
-  async submit(ctx: GuardianAuthContext, studentId: string, invoiceId: string, schedule: CreateInstallmentInput[]) {
+  async submit(ctx: GuardianAuthContext, studentId: string, invoiceId: string, schedule: CreateInstallmentInput[], explanation?: string) {
     const result = await withTenant(ctx.schoolId, (db) => withGuardian(ctx.guardianId, studentId, db, async (tx) => {
       await this.lock(tx, ctx.schoolId, invoiceId);
       await this.validate(tx, ctx.schoolId, invoiceId, schedule, studentId);
@@ -66,7 +66,7 @@ export class InstallmentRequestsService {
         schoolId: ctx.schoolId, invoiceId, status: { in: ["PENDING", "COUNTERED"] },
       } })) throw new ConflictError("INSTALLMENT_REQUEST_OPEN", "An instalment request is already under review.");
       const request = await tx.installmentRequest.create({
-        data: { schoolId: ctx.schoolId, invoiceId, guardianId: ctx.guardianId, schedule, status: "PENDING" },
+        data: { schoolId: ctx.schoolId, invoiceId, guardianId: ctx.guardianId, schedule, explanation, status: "PENDING" },
       });
       await this.audit(tx, request, ctx.guardianId);
       return this.dto(request);
@@ -188,8 +188,8 @@ export class InstallmentRequestsService {
     })).map((row) => this.dto(row));
   }
 
-  private dto(row: { id: string; invoiceId: string; status: string; schedule: unknown; revision: number }): InstallmentRequestDto {
-    return { id: row.id, invoiceId: row.invoiceId, status: row.status, schedule: installmentProposalSchema.parse(row.schedule), revision: row.revision };
+  private dto(row: { id: string; invoiceId: string; status: string; schedule: unknown; revision: number; explanation: string | null }): InstallmentRequestDto {
+    return { id: row.id, invoiceId: row.invoiceId, status: row.status, explanation: row.explanation, schedule: installmentProposalSchema.parse(row.schedule), revision: row.revision };
   }
 
   private async approve(db: PrismaClient, request: Awaited<ReturnType<InstallmentRequestsService["request"]>>, actor: string) {

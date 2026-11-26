@@ -5980,6 +5980,7 @@ model InstallmentRequest {
   schoolId   String   @map("school_id")
   invoiceId  String   @map("invoice_id")
   guardianId String   @map("guardian_id")
+  explanation String?
   schedule   Json
   status     String
   revision   Int      @default(1)

@@ -6,6 +6,7 @@ CREATE TABLE installment_requests (
   invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE RESTRICT,
   guardian_id TEXT NOT NULL REFERENCES guardians(id) ON DELETE RESTRICT,
   schedule JSONB NOT NULL,
+  explanation TEXT CHECK (char_length(explanation) <= 500),
   status TEXT NOT NULL CHECK (status IN ('PENDING', 'COUNTERED', 'APPROVED', 'REJECTED')),
   revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
   created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

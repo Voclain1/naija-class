@@ -71,6 +71,7 @@ export function StaffInstallmentRequests({ invoiceId, canDecide, canConfigure, o
       {view?.requests.map((request) => (
         <article key={request.id} className="space-y-2 rounded-md border p-3 text-sm">
           <p className="font-medium">{request.status === "COUNTERED" ? "Awaiting guardian response" : request.status}</p>
+          {request.explanation && <p className="whitespace-pre-wrap break-words">{request.explanation}</p>}
           <ul>{request.schedule.map((row) => <li key={row.dueDate}>{row.dueDate} · {formatKobo(row.amount)}</li>)}</ul>
           {canDecide && (request.status === "PENDING" || request.status === "COUNTERED") && (
             <div className="flex flex-wrap gap-2">
