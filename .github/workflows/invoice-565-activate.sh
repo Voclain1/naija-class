@@ -25,7 +25,7 @@ protected() {
 }
 fingerprints() {
   sha256sum deploy.env api.env web.env backup.env
-  if test -e backup-ops.override.yml; then sha256sum backup-ops.override.yml; else echo 'Backup override absent'; fi
+  if test -e backup-ops.override.yml; then stat -c '%i %s %y %z %a %u %g' backup-ops.override.yml; else echo 'Backup override absent'; fi
 }
 before=$(protected)
 configs=$(fingerprints)
