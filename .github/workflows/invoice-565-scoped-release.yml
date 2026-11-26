@@ -1,0 +1,112 @@
+name: invoice-565-scoped-release
+on:
+  push:
+    branches: [ops/invoice-565-scoped-release]
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: invoice-565-scoped-release
+  cancel-in-progress: false
+env:
+  RELEASE_SHA: 1f1ba567999b69af81c49d706cd7f9facc92b339
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: release-procedure
+          sparse-checkout: .github/workflows/invoice-565-activate.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - id: public
+        name: Read public build settings from current VPS
+        run: |
+          set -euo pipefail
+          umask 077
+          ssh vps "cd /opt/school-kit && test -r backup-ops.override.yml && grep -E '^(NEXT_PUBLIC_[A-Z0-9_]+|SESSION_COOKIE_DOMAIN)=' web.env" > "$RUNNER_TEMP/hotfix-web.env"
+          test -s "$RUNNER_TEMP/hotfix-web.env"
+          echo "sha=$(sha256sum "$RUNNER_TEMP/hotfix-web.env" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          mv release-procedure/.github/workflows/invoice-565-activate.sh "$RUNNER_TEMP/"
+          rm -rf release-procedure
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@v7
+        id: api
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ghcr.io/voclain1/school-kit-api:${{ env.RELEASE_SHA }}
+          build-args: SENTRY_RELEASE=${{ env.RELEASE_SHA }}
+          cache-from: type=gha,scope=api
+          labels: org.opencontainers.image.revision=${{ env.RELEASE_SHA }}
+      - uses: docker/build-push-action@v7
+        id: web
+        with:
+          context: .
+          file: infra/vps/Dockerfile.next
+          push: true
+          tags: ghcr.io/voclain1/school-kit-web:${{ env.RELEASE_SHA }}
+          build-args: |
+            APP=web
+            PUBLIC_ENV_SHA=${{ steps.public.outputs.sha }}
+          secret-files: public_env=${{ runner.temp }}/hotfix-web.env
+          cache-from: type=gha,scope=web
+          labels: org.opencontainers.image.revision=${{ env.RELEASE_SHA }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: PUPPETEER_SKIP_DOWNLOAD=true pnpm install --frozen-lockfile
+      - name: Stage immutable API and web images
+        env:
+          TOKEN: ${{ github.token }}
+          API: ghcr.io/voclain1/school-kit-api@${{ steps.api.outputs.digest }}
+          WEB: ghcr.io/voclain1/school-kit-web@${{ steps.web.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ $API =~ ^ghcr\.io/voclain1/school-kit-api@sha256:[0-9a-f]{64}$ ]]
+          [[ $WEB =~ ^ghcr\.io/voclain1/school-kit-web@sha256:[0-9a-f]{64}$ ]]
+          printf 'API %s\nWeb %s\n' "$API" "$WEB" | tee -a "$GITHUB_STEP_SUMMARY"
+          printf '%s' "$TOKEN" | ssh vps "set -eu; cfg=\$(mktemp -d); trap 'rm -rf \"\$cfg\"' EXIT; docker --config \"\$cfg\" login ghcr.io -u '${{ github.actor }}' --password-stdin; docker --config \"\$cfg\" pull '$API'; docker --config \"\$cfg\" pull '$WEB'"
+      - name: Verify migration inventory and apply only the hotfix
+        env:
+          DIRECT_URL: postgresql://school_kit:${{ secrets.VPS_SCHOOL_KIT_DB_PASSWORD }}@127.0.0.1:15432/school_kit
+        run: |
+          set -euo pipefail
+          applied="$RUNNER_TEMP/invoice-565-applied"
+          ssh vps 'bash -se' > "$applied" <<'REMOTE'
+          cd /opt/school-kit
+          dc=(docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml)
+          test -n "$("${dc[@]}" ps -q ops-pinned)"
+          exec "${dc[@]}" exec -T postgres psql -XqAt -U postgres -d school_kit -v ON_ERROR_STOP=1 -c "SELECT CASE WHEN finished_at IS NULL THEN 'UNRESOLVED:' ELSE '' END || migration_name FROM _prisma_migrations WHERE rolled_back_at IS NULL"
+          REMOTE
+          find packages/db/prisma/migrations -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort > "$RUNNER_TEMP/invoice-565-expected"
+          sort -u "$applied" -o "$applied"
+          test -z "$(comm -13 "$RUNNER_TEMP/invoice-565-expected" "$applied")"
+          pending=$(comm -23 "$RUNNER_TEMP/invoice-565-expected" "$applied")
+          test "$pending" = 20270122120000_cancelled_term_invoice_history
+          ssh -fN -o ExitOnForwardFailure=yes -L 15432:127.0.0.1:5432 vps
+          pnpm --filter @school-kit/db exec prisma migrate deploy
+      - name: Activate only API and web and verify protected services
+        env:
+          API: ghcr.io/voclain1/school-kit-api@${{ steps.api.outputs.digest }}
+          WEB: ghcr.io/voclain1/school-kit-web@${{ steps.web.outputs.digest }}
+        run: ssh vps bash -s -- "$API" "$WEB" ${{ steps.public.outputs.sha }} < "$RUNNER_TEMP/invoice-565-activate.sh"
