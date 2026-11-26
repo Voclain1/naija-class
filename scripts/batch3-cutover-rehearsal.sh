@@ -254,6 +254,7 @@ assert "S4: guard.sh release and scheduler both pass" 'bash "$tools/guard.sh" re
 assert "S4: PostgreSQL identity and start time unchanged through the whole rehearsal" 'invariants_hold'
 assert "S4: the recovery images and the fallback tag were not pruned" 'docker image inspect "$REC_API" "$REC_RENDER" "$OLD_API" schoolkit-ops-fallback:batch2-verified >/dev/null'
 assert "S4: a plain compose config (no release override) would fall back to APP_TAG, which the tooling never runs" '[ "$(dcb config | grep -c "school-kit-api:$OLD_TAG")" -ge 1 ] && [ "$(dcb -f backup-ops.override.yml -f release.override.yml config | grep -c "school-kit-api@")" -ge 1 ]'
-assert "S4: the tooling contains no orphan removal, build, image prune, compose down or PostgreSQL restart" '! grep -hEv "^[[:space:]]*#" "$tools/cutover.sh" "$tools/guard.sh" "$tools/lib.sh" | grep -Eq "remove-orphans|--build|image prune|system prune|compose[^|]* down|up -d[^|]* postgres|restart postgres"'
+tooling_code=$(sed '/^[[:space:]]*#/d' "$tools/cutover.sh" "$tools/guard.sh" "$tools/lib.sh")
+assert "S4: the tooling contains no orphan removal, build, image prune, compose down or PostgreSQL restart"  '! grep -Eq "remove-orphans|--build|image prune|system prune|compose[^|]* down|up -d[^|]* postgres|restart postgres" <<<"$tooling_code"'
 
 [ "$fails" = 0 ] && echo "CUTOVER REHEARSAL PASSED (isolated infrastructure; no production system was touched)" || { echo "CUTOVER REHEARSAL FAILED"; exit 1; }
