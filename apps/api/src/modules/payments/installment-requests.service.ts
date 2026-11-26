@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import { withGuardian, withTenant, type PrismaClient } from "@school-kit/db";
 import {
   ConflictError, NotFoundError, installmentPolicySchema, installmentProposalSchema,
@@ -7,6 +7,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
+import { EventNotifierService } from "../notifications/event-notifier.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
 
 const defaultPolicy: InstallmentPolicy = {
@@ -15,7 +16,7 @@ const defaultPolicy: InstallmentPolicy = {
 
 @Injectable()
 export class InstallmentRequestsService {
-  constructor(private readonly plans: PaymentPlanService) {}
+  constructor(private readonly plans: PaymentPlanService, @Optional() private readonly events?: EventNotifierService) {}
 
   async policy(db: PrismaClient, schoolId: string): Promise<InstallmentPolicy> {
     const school = await db.school.findUnique({ where: { id: schoolId }, select: { installmentPolicy: true } });
@@ -66,17 +67,27 @@ export class InstallmentRequestsService {
 
   async decide(ctx: AuthContext, invoiceId: string, requestId: string, decision: InstallmentRequestDecision) {
     await assertUserActiveAndHasOneOf(ctx, ["owner", "admin", "bursar"]);
-    return withTenant(ctx.schoolId, async (db) => {
+    const result = await withTenant(ctx.schoolId, async (db) => {
       await this.lock(db, ctx.schoolId, invoiceId);
       const request = await this.request(db, ctx.schoolId, invoiceId, requestId, decision.revision);
-      if (decision.action === "REJECT") return this.update(db, request, ctx.userId, "REJECTED");
-      if (request.status !== "PENDING") throw new ConflictError("INSTALLMENT_REQUEST_CHANGED", "The guardian must respond to the counter-offer.");
-      if (decision.action === "COUNTER") {
-        await this.validate(db, ctx.schoolId, invoiceId, decision.schedule);
-        return this.update(db, request, ctx.userId, "COUNTERED", decision.schedule);
+      let dto: InstallmentRequestDto;
+      if (decision.action === "REJECT") {
+        dto = await this.update(db, request, ctx.userId, "REJECTED");
+      } else {
+        if (request.status !== "PENDING") throw new ConflictError("INSTALLMENT_REQUEST_CHANGED", "The guardian must respond to the counter-offer.");
+        if (decision.action === "COUNTER") {
+          await this.validate(db, ctx.schoolId, invoiceId, decision.schedule);
+          dto = await this.update(db, request, ctx.userId, "COUNTERED", decision.schedule);
+        } else {
+          dto = await this.approve(db, request, ctx.userId);
+        }
       }
-      return this.approve(db, request, ctx.userId);
+      return { dto, guardianId: request.guardianId };
     });
+    await this.events?.installmentRequestUpdated({
+      schoolId: ctx.schoolId, guardianId: result.guardianId, requestId, revision: result.dto.revision,
+    });
+    return result.dto;
   }
 
   async respond(ctx: GuardianAuthContext, studentId: string, invoiceId: string, requestId: string, revision: number, accept: boolean) {

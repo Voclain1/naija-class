@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import type { InvoiceStatus } from "@school-kit/types";
+import type { InvoiceStatus, PaystackWebhookEvent } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service.js";
 import { computeInstallmentsPaid, projectUntargetedPayments } from "./payment-plan.service.js";
@@ -173,6 +173,48 @@ describe("PaymentPlanService (integration)", () => {
       return invoice.id;
     });
   }
+
+  it("caps simultaneous targeted charges and keeps replayed funds unapplied", async () => {
+    const { PaymentPlanService } = await import("./payment-plan.service.js");
+    const { PaymentsService } = await import("./payments.service.js");
+    const { schoolId, ownerId } = await makeSchool("concurrent-target");
+    const invoiceId = await makeInvoice(schoolId, ownerId, { totalDue: 20000 });
+    const planService = new PaymentPlanService();
+    const plan = await planService.create(ctx(schoolId, ownerId), {
+      invoiceId, name: "Two instalments",
+      installments: [{ amount: 10000, dueDate: "2027-01-01" }, { amount: 10000, dueDate: "2027-02-01" }],
+    });
+    const installments = plan.installments;
+    const charges = await withTenant(schoolId, async (db) => {
+      const invoice = await db.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+      return Promise.all([0, 1].map(() => db.payment.create({
+        data: {
+          schoolId, invoiceId, studentId: invoice.studentId, installmentId: installments[1]!.id,
+          amount: 10000, method: "PAYSTACK", status: "PENDING",
+        },
+      })));
+    });
+    const events = charges.map((payment) => ({
+      event: "charge.success",
+      data: { reference: ["PSK", schoolId, payment.id].join("-"), amount: 10000, currency: "NGN", paid_at: "2026-11-26T12:00:00Z" },
+    } as PaystackWebhookEvent));
+    const service = new PaymentsService({} as never, {} as never, planService);
+    await Promise.all(events.map((event) => service.handleWebhook(event)));
+    await service.handleWebhook(events[0]!);
+    const result = await withTenant(schoolId, async (db) => ({
+      payments: await db.payment.findMany({
+        where: { invoiceId }, select: { status: true, amount: true, allocatedKobo: true },
+      }),
+      exceptions: await db.paystackPaymentException.findMany({ where: { invoiceId } }),
+      invoice: await db.invoice.findUniqueOrThrow({ where: { id: invoiceId } }),
+    }));
+    expect(result.payments.map((payment) => payment.allocatedKobo).sort()).toEqual([0, 10000]);
+    expect(result.payments.every((payment) => payment.amount === 10000 && payment.status === "SUCCESS")).toBe(true);
+    expect(result.invoice.totalPaid).toBe(10000);
+    expect(result.exceptions).toHaveLength(1);
+    expect(result.exceptions[0]?.unappliedKobo).toBe(10000);
+    expect((await planService.findByInvoice(ctx(schoolId, ownerId), invoiceId))?.installments.map((row) => row.paid)).toEqual([false, true]);
+  });
 
   // ── Tests ────────────────────────────────────────────────────────────────
 

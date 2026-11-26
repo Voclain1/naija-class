@@ -161,6 +161,29 @@ export class EventNotifierService {
     });
   }
 
+  async installmentRequestUpdated(args: {
+    schoolId: string;
+    guardianId: string;
+    requestId: string;
+    revision: number;
+  }): Promise<void> {
+    await this.safely("installmentRequestUpdated", async () => {
+      const school = await withTenant(args.schoolId, (db) => db.school.findUniqueOrThrow({
+        where: { id: args.schoolId },
+        select: { name: true },
+      }));
+      await this.dispatch.notifyOfEvent({
+        schoolId: args.schoolId,
+        principal: { type: "GUARDIAN", guardianId: args.guardianId },
+        eventType: "installment.request-updated",
+        eventId: args.requestId + ":" + args.revision,
+        title: school.name,
+        body: "Your school has updated an instalment request. Open the app to review it.",
+        data: { screen: "fees" },
+      });
+    });
+  }
+
   /**
    * Mid-morning: which form teachers have not taken today's register?
    *

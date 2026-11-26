@@ -33,7 +33,7 @@ export function StaffInstallmentRequests({ invoiceId, canDecide, onApprove }: {
 
   async function decide(request: InstallmentRequestDto, decision: InstallmentRequestDecision) {
     await update(async () => {
-      await apiFetch(path + "/" + request.id, { method: "POST", body: JSON.stringify(decision) });
+      await apiFetch(path + "/" + request.id, { method: "POST", body: decision });
       setCounterId(undefined);
       if (decision.action === "APPROVE") onApprove();
     });
@@ -57,7 +57,7 @@ export function StaffInstallmentRequests({ invoiceId, canDecide, onApprove }: {
       enabled: form.has("enabled"), maxInstallments: Number(form.get("count")),
       minimumFirstKobo: Number(form.get("minimum")), requireWithinTerm: form.has("term"),
     };
-    void update(() => apiFetch("/payment-plans/policy", { method: "PUT", body: JSON.stringify(policy) }));
+    void update(() => apiFetch("/payment-plans/policy", { method: "PUT", body: policy }));
   }
 
   return (
