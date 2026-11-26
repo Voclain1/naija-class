@@ -1,0 +1,49 @@
+name: Instalment recovery rehearsal
+on:
+  push:
+    branches: [ops/instalment-recovery-rehearsal]
+permissions:
+  contents: read
+  packages: write
+jobs:
+  rehearse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CANDIDATE_IMAGE: ghcr.io/voclain1/school-kit-api@sha256:58d4630e6a64aea0e852ebf336d12de2c90592347b986e77ceecb1e52adae2aa
+      RECOVERY_SOURCE: 2dfe5f8611858d270fd0eccca0bc8562aec0a01e
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RECOVERY_SOURCE }}
+          path: recovery-source
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: PUPPETEER_SKIP_DOWNLOAD=true pnpm install --frozen-lockfile
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        id: recovery
+        with:
+          context: recovery-source
+          file: recovery-source/apps/api/Dockerfile
+          push: true
+          tags: ghcr.io/voclain1/school-kit-api:instalment-recovery-${{ github.run_id }}
+          labels: org.opencontainers.image.revision=${{ env.RECOVERY_SOURCE }}
+          build-args: SENTRY_RELEASE=${{ env.RECOVERY_SOURCE }}
+          cache-from: type=gha,scope=api
+      - name: Rehearse isolated PostgreSQL 18 upgrade and image switches
+        env:
+          RECOVERY_IMAGE: ghcr.io/voclain1/school-kit-api@${{ steps.recovery.outputs.digest }}
+        run: |
+          printf 'Candidate %s\nRecovery %s\n' "$CANDIDATE_IMAGE" "$RECOVERY_IMAGE" | tee "$GITHUB_STEP_SUMMARY"
+          bash scripts/instalment-recovery-rehearsal.sh
