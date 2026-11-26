@@ -151,6 +151,49 @@ describe("paymentrequest.success — real database application", () => {
     expect(archivePaymentRequest).toHaveBeenCalledWith(`PRQ_${runId}`);
   });
 
+  it("never applies a verified cancelled link to the original or its replacement", async () => {
+    const { cancelled, replacement, link } = await withTenant(schoolId, async (db) => {
+      const data = {
+        schoolId, studentId: `replacement-${runId}`, termId: `term-${runId}`,
+        academicYearId: `year-${runId}`, items: [], totalAmount: 100_000, totalDiscount: 0, totalDue: 100_000,
+      };
+      const cancelled = await db.invoice.create({ data: { ...data, status: "CANCELLED", sequence: -1 } });
+      const replacement = await db.invoice.create({ data });
+      const link = await db.paymentLink.create({ data: {
+        schoolId, invoiceId: cancelled.id, createdBy: userId, requestId: 999002n,
+        requestCode: `PRQ_cancelled_${runId}`, paystackCustomerCode: "CUS_cancelled",
+        amount: 100_000, status: "LIVE",
+      } });
+      return { cancelled, replacement, link };
+    });
+    const lateReference = `${reference}-cancelled`;
+    const metadata = { schoolId, schoolKitPaymentLinkId: link.id, invoiceId: cancelled.id };
+    const getPaymentRequest = vi.fn(async () => ({
+      id: 999002, request_code: link.requestCode, amount: 100_000, currency: "NGN",
+      status: "success", split_code: "SPL_cp3", metadata, customer: { customer_code: "CUS_cancelled" },
+      transactions: [{ reference: lateReference, status: "success" }],
+    }));
+    const verifyTransaction = vi.fn(async () => ({
+      status: "success", reference: lateReference, amount: 100_000, currency: "NGN",
+      paid_at: new Date().toISOString(), split: { split_code: "SPL_cp3" },
+    }));
+    const service = new PaymentsService({ put: vi.fn() } as never, { getPaymentRequest, verifyTransaction } as never, new PaymentPlanService());
+    const event = {
+      event: "paymentrequest.success",
+      data: { reference: lateReference, status: "success", amount: 100_000, paid_at: null, metadata, transaction: { reference: lateReference } },
+    };
+    await service.handlePaymentRequestWebhook({ ...event, data: { ...event.data, metadata: { ...metadata, invoiceId: replacement.id } } });
+    expect(getPaymentRequest).not.toHaveBeenCalled();
+    await service.handlePaymentRequestWebhook(event);
+    expect(verifyTransaction).toHaveBeenCalledOnce();
+
+    await withTenant(schoolId, async (db) => {
+      expect(await db.payment.count({ where: { schoolId, invoiceId: { in: [cancelled.id, replacement.id] } } })).toBe(0);
+      expect(await db.invoice.findUniqueOrThrow({ where: { id: cancelled.id } })).toMatchObject({ status: "CANCELLED", totalPaid: 0 });
+      expect(await db.invoice.findUniqueOrThrow({ where: { id: replacement.id } })).toMatchObject({ status: "ISSUED", totalPaid: 0 });
+    });
+  });
+
   it("invalidates links after manual payment, refund, and invoice cancellation commits", async () => {
     archivePaymentRequest.mockClear();
     const paystack = { archivePaymentRequest };

@@ -915,13 +915,17 @@ describe("InvoiceGenerationService (integration)", () => {
       await svc.cancel(auth, original.id, reqCtx);
       await withTenant(schoolId, async (db) => {
         await db.feeItem.update({ where: { id: feeItemId }, data: { amount: 10_000_000 } });
+        await db.discountRule.create({ data: {
+          schoolId, studentId, name: "Updated scholarship", feeItemId, duration: "TERM", termId,
+          discountType: "PERCENTAGE", value: 1000, createdBy: ownerId,
+        } });
         await db.feeItem.createMany({ data: [
           { schoolId, categoryId: catId, name: "Books", amount: 50_000, classLevelId, termId, createdBy: ownerId },
           { schoolId, categoryId: catId, name: "Materials", amount: 75_000, classLevelId, termId, createdBy: ownerId },
         ] });
       });
       const [preview] = await svc.previewForArm(auth, input);
-      expect(preview).toMatchObject({ alreadyInvoiced: false, feeItemCount: 3, totalDue: 10_125_000 });
+      expect(preview).toMatchObject({ alreadyInvoiced: false, feeItemCount: 3, totalDue: 9_125_000 });
       const results = await Promise.all([
         svc.generateForArm(auth, input, reqCtx),
         svc.generateForArm(auth, input, reqCtx),
@@ -937,9 +941,9 @@ describe("InvoiceGenerationService (integration)", () => {
       await withTenant(schoolId, async (db) => {
         const rows = await db.invoice.findMany({ where: { schoolId, studentId, termId }, orderBy: { sequence: "asc" } });
         expect(rows.map(({ id, sequence, status, totalDue }) => ({ id, sequence, status, totalDue }))).toEqual([
-          { id: replacement.id, sequence: -2, status: "CANCELLED", totalDue: 10_125_000 },
+          { id: replacement.id, sequence: -2, status: "CANCELLED", totalDue: 9_125_000 },
           { id: original.id, sequence: -1, status: "CANCELLED", totalDue: 15_000_000 },
-          { id: expect.any(String), sequence: 0, status: "ISSUED", totalDue: 10_125_000 },
+          { id: expect.any(String), sequence: 0, status: "ISSUED", totalDue: 9_125_000 },
         ]);
         expect(await db.auditLog.count({ where: { schoolId, entityId: original.id, action: "invoice.cancel" } })).toBe(1);
         expect(await db.auditLog.count({ where: { schoolId, entityId: replacement.id, action: "invoice.issue" } })).toBe(1);

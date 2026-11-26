@@ -159,14 +159,8 @@ export interface PreviewLineDto {
    * already-billed arm it would promise "30 students, ₦1,350,000" when the
    * true answer was "0 created, 30 skipped".
    *
-   * This is computed by the SERVER from the same `@@unique([schoolId,
-   * studentId, termId])` row that generation itself keys on, deliberately
-   * rather than being re-derived on the client: the rule has a sharp edge
-   * (see below) and there must be exactly one implementation of it.
-   *
-   * NOTE THE EDGE: the uniqueness row is status-agnostic, so a **CANCELLED**
-   * invoice still sets this flag. Cancelling does not free the student to be
-   * re-billed by a bulk run — verified at runtime, not assumed.
+   * Computed by the server with the same eligibility rules as generation.
+   * A cancelled term invoice without payments is eligible for replacement.
    */
   alreadyInvoiced: boolean;
 }
