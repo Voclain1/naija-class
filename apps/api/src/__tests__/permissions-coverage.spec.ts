@@ -375,11 +375,22 @@ const PHASE_3_PAYMENT_PLAN_CONTROLLERS: Array<[string, Ctor]> = [
 describe("Phase 3 RBAC coverage: payment-plan route handlers declare @Permissions", () => {
   assertCoverage(PHASE_3_PAYMENT_PLAN_CONTROLLERS);
 
-  it("every Phase 3 payment-plan @Permissions value is a known Phase 3 permission", () => {
+  it("uses the school settings permission for the school-wide instalment policy", () => {
+    const policy = PaymentPlansController.prototype.setPolicy;
+    expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, policy)).toEqual(["school.update"]);
+  });
+
+  it("uses known Phase 3 permissions for invoice plan routes", () => {
     const unknown: string[] = [];
     for (const [name, ctor] of PHASE_3_PAYMENT_PLAN_CONTROLLERS) {
-      for (const p of handlerPermissions(ctor)) {
-        if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
+      const prototype = ctor.prototype as Record<string, object>;
+      for (const handler of routeHandlers(ctor)) {
+        // School-wide settings have their own stricter permission, asserted above.
+        if (name === "PaymentPlansController" && handler === "setPolicy") continue;
+        const permissions = (Reflect.getMetadata(PERMISSIONS_METADATA_KEY, prototype[handler]) ?? []) as string[];
+        for (const permission of permissions) {
+          if (!PHASE_3_SET.has(permission)) unknown.push(name + ":" + handler + ":" + permission);
+        }
       }
     }
     expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);

@@ -23,10 +23,10 @@ export class PortalPaymentsController {
     @CurrentGuardian() guardianCtx: GuardianAuthContext,
     @Param("id") studentId: string,
     @Param("invoiceId") invoiceId: string,
-    @Body(new ZodValidationPipe(portalPaySchema)) body: { returnTo: PortalPayReturnTo },
+    @Body(new ZodValidationPipe(portalPaySchema)) body: { returnTo: PortalPayReturnTo; installmentId?: string },
     @Ip() ip: string,
   ): Promise<PaystackInitResponseDto> {
-    return this.service.initiate(guardianCtx, studentId, invoiceId, { ipAddress: ip }, body.returnTo);
+    return this.service.initiate(guardianCtx, studentId, invoiceId, { ipAddress: ip }, body.returnTo, body.installmentId);
   }
 
   @Get("payments/:reference")

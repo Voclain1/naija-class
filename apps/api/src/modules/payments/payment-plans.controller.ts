@@ -1,3 +1,4 @@
+import { InstallmentRequestsService } from "./installment-requests.service.js";
 import {
   Body,
   Controller,
@@ -6,10 +7,13 @@ import {
   HttpCode,
   Param,
   Post,
+  Put,
   UseGuards,
 } from "@nestjs/common";
 import {
   createPaymentPlanSchema,
+  installmentPolicySchema, installmentRequestDecisionSchema,
+  type InstallmentPolicy, type InstallmentRequestDecision,
   type CreatePaymentPlanInput,
   type PaymentPlanDto,
 } from "@school-kit/types";
@@ -29,7 +33,7 @@ import { PaymentPlanService } from "./payment-plan.service.js";
 @Controller("payment-plans")
 @UseGuards(AuthGuard, PermissionsGuard)
 export class PaymentPlansController {
-  constructor(private readonly service: PaymentPlanService) {}
+  constructor(private readonly service: PaymentPlanService, private readonly requests: InstallmentRequestsService) {}
 
   // ─── GET /payment-plans/invoice/:invoiceId ────────────────────────────────
 
@@ -40,6 +44,29 @@ export class PaymentPlansController {
     @Param("invoiceId") invoiceId: string,
   ): Promise<PaymentPlanDto | null> {
     return this.service.findByInvoice(authCtx, invoiceId);
+  }
+
+  @Get("invoice/:invoiceId/requests")
+  @Permissions("payment-plan.read")
+  requestsForInvoice(@CurrentUser() ctx: AuthContext, @Param("invoiceId") invoiceId: string) {
+    return this.requests.staffView(ctx, invoiceId);
+  }
+
+  @Put("policy")
+  @Permissions("school.update")
+  setPolicy(@CurrentUser() ctx: AuthContext, @Body(new ZodValidationPipe(installmentPolicySchema)) policy: InstallmentPolicy) {
+    return this.requests.setPolicy(ctx, policy);
+  }
+
+  @Post("invoice/:invoiceId/requests/:requestId")
+  @Permissions("payment-plan.create")
+  decideRequest(
+    @CurrentUser() ctx: AuthContext,
+    @Param("invoiceId") invoiceId: string,
+    @Param("requestId") requestId: string,
+    @Body(new ZodValidationPipe(installmentRequestDecisionSchema)) decision: InstallmentRequestDecision,
+  ) {
+    return this.requests.decide(ctx, invoiceId, requestId, decision);
   }
 
   // ─── POST /payment-plans ──────────────────────────────────────────────────

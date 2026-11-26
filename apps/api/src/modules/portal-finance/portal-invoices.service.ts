@@ -10,6 +10,7 @@ import {
   type PortalInvoiceTermRefDto,
 } from "@school-kit/types";
 
+import { allocateSchedule } from "../payments/installment-progress.js";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
 
 // Invoice.termId is a plain FK, no Prisma relation (see schema.prisma's own
@@ -46,6 +47,17 @@ const INVOICE_SELECT = {
   totalDiscount: true,
   totalDue: true,
   totalPaid: true,
+  payments: {
+    where: { status: { in: ["SUCCESS", "REVERSED"] }, installmentId: { not: null } },
+    select: { id: true, installmentId: true, amount: true, allocatedKobo: true, status: true, paidAt: true, receiptNumber: true },
+    orderBy: [{ paidAt: "desc" }, { id: "desc" }],
+  },
+  paymentPlans: { select: {
+    installments: {
+      orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+      select: { id: true, amount: true, dueDate: true },
+    },
+  } },
   dueDate: true,
   issuedAt: true,
   createdAt: true,
@@ -55,6 +67,8 @@ const INVOICE_SELECT = {
 type InvoiceRow = Prisma.InvoiceGetPayload<{ select: typeof INVOICE_SELECT }>;
 
 function toPortalInvoiceDto(row: InvoiceRow, term: PortalInvoiceTermRefDto): PortalInvoiceDto {
+  const schedule = row.paymentPlans[0]?.installments;
+  const progress = schedule && allocateSchedule(schedule, row.totalPaid, row.payments?.filter(({ status }) => status === "SUCCESS") ?? []);
   return {
     id: row.id,
     studentId: row.studentId,
@@ -66,6 +80,18 @@ function toPortalInvoiceDto(row: InvoiceRow, term: PortalInvoiceTermRefDto): Por
     totalDiscount: row.totalDiscount,
     totalDue: row.totalDue,
     totalPaid: row.totalPaid,
+    ...(schedule && progress && { installments: schedule.map(({ id, amount, dueDate }, index) => ({
+      id, amount, dueDate: dueDate.toISOString().slice(0, 10), amountPaid: progress[index]!.amountPaid, outstanding: progress[index]!.outstanding,
+      paymentHistory: (row.payments ?? []).flatMap((payment) => payment.installmentId === id
+        ? [{
+            id: payment.id,
+            allocatedKobo: payment.allocatedKobo ?? payment.amount,
+            status: payment.status === "REVERSED" ? "REVERSED" as const : "SUCCESS" as const,
+            paidAt: payment.paidAt,
+            receiptNumber: payment.receiptNumber,
+          }]
+        : []),
+    })) }),
     dueDate: row.dueDate ? row.dueDate.toISOString().slice(0, 10) : null,
     issuedAt: row.issuedAt,
     createdAt: row.createdAt,

@@ -32,6 +32,21 @@ export interface PortalInvoiceTermRefDto {
   sequence: number;
 }
 
+export interface PortalInvoiceInstallmentDto {
+  id: string;
+  amount: number;
+  amountPaid: number;
+  outstanding: number;
+  dueDate: string;
+  paymentHistory?: {
+    id: string;
+    allocatedKobo: number;
+    paidAt: Date | null;
+    status: "SUCCESS" | "REVERSED";
+    receiptNumber: string | null;
+  }[];
+}
+
 export interface PortalInvoiceDto {
   id: string;
   studentId: string;
@@ -48,6 +63,7 @@ export interface PortalInvoiceDto {
   totalDiscount: number; // kobo
   totalDue: number; // kobo
   totalPaid: number; // kobo
+  installments?: PortalInvoiceInstallmentDto[];
   dueDate: string | null; // ISO date string (DATE col, no time)
   issuedAt: Date | null;
   createdAt: Date;

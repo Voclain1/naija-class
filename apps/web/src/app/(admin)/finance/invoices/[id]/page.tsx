@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffInstallmentRequests } from "./installment-requests";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -30,7 +31,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { useAuth } from "@/lib/auth/use-auth";
 import { formatKobo } from "@/lib/finance/format";
-import { canCancelInvoice } from "@/lib/finance/invoice-cancel";
+import { canCancelInvoice, hasPermission } from "@/lib/finance/invoice-cancel";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { archivePaymentLink, createPaymentLink, getInvoice, getPaymentLink } from "@/lib/finance/invoices-api";
 import {
@@ -116,7 +117,7 @@ export default function InvoiceDetailPage() {
   // used to decide whether this page offered the action; it now checks the
   // signed-in user's grant too, via the same shared helper the invoice list
   // uses — this page previously kept its own duplicate status set.
-  const { permissions } = useAuth();
+  const { permissions, roles } = useAuth();
 
   const [invoice, setInvoice] = useState<InvoiceDto | null>(null);
   const [student, setStudent] = useState<StudentDetailDto | null>(null);
@@ -125,6 +126,9 @@ export default function InvoiceDetailPage() {
   const [term, setTerm] = useState<TermDto | null>(null);
   const [payments, setPayments] = useState<PaymentDto[]>([]);
   const [plan, setPlan] = useState<PaymentPlanDto | null | undefined>(undefined); // undefined = loading
+  const [installmentLinks, setInstallmentLinks] = useState<Record<string, PaymentLinkStateDto>>({});
+  const [installmentLinkPending, setInstallmentLinkPending] = useState<string | null>(null);
+  const [installmentLinkError, setInstallmentLinkError] = useState<string | null>(null);
   const [paymentLink, setPaymentLink] = useState<PaymentLinkStateDto | undefined>(undefined);
   const [paymentLinkBusy, setPaymentLinkBusy] = useState(false);
   const [paymentLinkError, setPaymentLinkError] = useState<string | null>(null);
@@ -149,6 +153,7 @@ export default function InvoiceDetailPage() {
   const [paystackError, setPaystackError] = useState<string | null>(null);
 
   // Record payment form
+  const [recordInstallmentId, setRecordInstallmentId] = useState("");
   const [recording, setRecording] = useState(false);
   const [recordError, setRecordError] = useState<string | null>(null);
   // Branded receipts (docs/modules/branded-receipts.md D5): the payment just
@@ -256,6 +261,7 @@ export default function InvoiceDetailPage() {
       const recorded = await recordManualPayment({
         invoiceId: invoice.id,
         amount: amountKobo,
+        installmentId: recordInstallmentId || undefined,
         method: form.method,
         paidAt: new Date(form.paidAt).toISOString(),
         reference: form.reference || undefined,
@@ -265,6 +271,8 @@ export default function InvoiceDetailPage() {
         listPayments({ invoiceId: invoice.id }),
         getPaymentPlan(invoice.id).catch(() => null),
       ]);
+      setRecordInstallmentId("");
+      setInstallmentLinks({});
       setInvoice(updatedInvoice);
       setPayments(updatedPayments.data);
       setPlan(updatedPlan);
@@ -457,6 +465,57 @@ export default function InvoiceDetailPage() {
       setPaymentLinkError(financeErrorMessage(e));
     } finally {
       setPaymentLinkBusy(false);
+    }
+  }
+
+  async function preparePlanLinks() {
+    if (!invoice || !plan) return;
+    setInstallmentLinkPending("all");
+    setInstallmentLinkError(null);
+    try {
+      const links: Record<string, PaymentLinkStateDto> = {};
+      for (const item of plan.installments.filter((entry) => !entry.paid)) {
+        links[item.id] = await createPaymentLink(invoice.id, item.id);
+      }
+      setInstallmentLinks(links);
+      if (Object.values(links).some((link) => link.state !== "LIVE")) {
+        setInstallmentLinkError("Some links are still unavailable. Refresh before sharing the full plan.");
+      }
+    } catch (error) {
+      setInstallmentLinkError(financeErrorMessage(error));
+    } finally {
+      setInstallmentLinkPending(null);
+    }
+  }
+
+  function planShareText() {
+    if (!plan) return "";
+    return [
+      plan.name,
+      ...plan.installments.map((entry, index) => {
+        const link = installmentLinks[entry.id];
+        return [
+          "Instalment " + (index + 1), entry.dueDate, formatKobo(entry.amount),
+          entry.paid ? "Paid" : formatKobo(entry.outstanding ?? entry.amount) + " outstanding",
+          link?.state === "LIVE" && !entry.paid ? link.url : null,
+        ].filter(Boolean).join(" · ");
+      }),
+      "Sign into your SchoolKit parent portal to view the invoice and make a payment.",
+    ].join("\n");
+  }
+
+  async function updateInstallmentLink(installmentId: string, archive = false) {
+    if (!invoice) return;
+    setInstallmentLinkError(null);
+    setInstallmentLinkPending(installmentId);
+    try {
+      const action = archive ? archivePaymentLink : createPaymentLink;
+      const link = await action(invoice.id, installmentId);
+      setInstallmentLinks((previous) => ({ ...previous, [installmentId]: link }));
+    } catch (error) {
+      setInstallmentLinkError(financeErrorMessage(error));
+    } finally {
+      setInstallmentLinkPending(null);
     }
   }
 
@@ -796,12 +855,24 @@ export default function InvoiceDetailPage() {
                     <TableCell className="text-muted-foreground">
                       {p.paidAt ? new Date(p.paidAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" }) : "—"}
                     </TableCell>
-                    <TableCell>{METHOD_LABELS[p.method as ManualPaymentMethod] ?? p.method}</TableCell>
+                    <TableCell>
+                      {METHOD_LABELS[p.method as ManualPaymentMethod] ?? p.method}
+                      {p.installmentId && plan && (
+                        <span className="block text-xs text-muted-foreground">
+                          Instalment {plan.installments.findIndex((item) => item.id === p.installmentId) + 1}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{p.reference ?? "—"}</TableCell>
                     <TableCell
                       className={`text-right font-mono tabular-nums font-medium ${p.status === "REVERSED" ? "text-muted-foreground line-through" : ""}`}
                     >
                       {formatKobo(p.amount)}
+                      {Boolean(p.unappliedKobo) && (
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          {formatKobo(p.unappliedKobo ?? 0)} awaiting reconciliation
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={PAYMENT_STATUS_VARIANTS[p.status]}>
@@ -868,18 +939,39 @@ export default function InvoiceDetailPage() {
         {plan ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">{plan.name}</p>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {hasPermission(permissions, "payment.record") && plan.installments.some((entry) => !entry.paid) && (
+                <Button size="sm" variant="outline" disabled={installmentLinkPending !== null} onClick={() => void preparePlanLinks()}>
+                  Prepare payable links
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => void handleCopyPaymentLink(planShareText())}>Copy plan</Button>
+              <Button asChild size="sm" variant="outline">
+                <a href={"mailto:?subject=" + encodeURIComponent(plan.name) + "&body=" + encodeURIComponent(planShareText())}>Email plan</a>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <a href={buildNoRecipientWhatsAppUrl(planShareText())} target="_blank" rel="noreferrer">Share plan on WhatsApp</a>
+              </Button>
+            </div>
             <div className="rounded-lg border">
               <Table stackOnMobile>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Instalment</TableHead>
                     <TableHead>Due date</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Outstanding</TableHead>
                     <TableHead className="text-center">Status</TableHead>
+                    <TableHead>Payment link</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {plan.installments.map((inst) => (
+                  {plan.installments.map((inst, index) => {
+                    const link = installmentLinks[inst.id];
+                    return (
                     <TableRow key={inst.id}>
+                      <TableCell>{index + 1}</TableCell>
                       <TableCell className={inst.isOverdue ? "font-medium text-destructive" : "text-muted-foreground"}>
                         {inst.dueDate}
                         {inst.isOverdue && (
@@ -887,6 +979,8 @@ export default function InvoiceDetailPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatKobo(inst.amount)}</TableCell>
+                      <TableCell className="text-right">{inst.amountPaid === undefined ? "—" : formatKobo(inst.amountPaid)}</TableCell>
+                      <TableCell className="text-right">{inst.outstanding === undefined ? "—" : formatKobo(inst.outstanding)}</TableCell>
                       <TableCell className="text-center">
                         {inst.paid ? (
                           <Badge variant="success">✓ Paid</Badge>
@@ -894,11 +988,35 @@ export default function InvoiceDetailPage() {
                           <Badge variant="muted">Pending</Badge>
                         )}
                       </TableCell>
+                      <TableCell>
+                        {!inst.paid && !["CANCELLED", "REFUNDED"].includes(invoice.status) && (
+                          <div className="flex flex-wrap gap-2">
+                            {link?.state === "LIVE" ? (
+                              <>
+                                <Button size="sm" variant="outline" onClick={() => void handleCopyPaymentLink(link.url)}>Copy</Button>
+                                <Button asChild size="sm" variant="outline">
+                                  <a href={"mailto:?subject=School%20fee%20instalment&body=" + encodeURIComponent(link.url)}>Email</a>
+                                </Button>
+                                <Button asChild size="sm" variant="outline">
+                                  <a href={buildNoRecipientWhatsAppUrl(link.url)} target="_blank" rel="noreferrer">WhatsApp</a>
+                                </Button>
+                                <Button size="sm" variant="ghost" disabled={installmentLinkPending !== null}
+                                  onClick={() => void updateInstallmentLink(inst.id, true)}>Archive</Button>
+                              </>
+                            ) : (
+                              <Button size="sm" variant="outline" disabled={installmentLinkPending !== null}
+                                onClick={() => void updateInstallmentLink(inst.id)}>Get link</Button>
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
+            {installmentLinkError && <p role="alert" className="text-sm text-destructive">{installmentLinkError}</p>}
             {!hasSuccessPayment && (
               <div className="flex items-center gap-3">
                 <Button variant="destructive" size="sm" disabled={planDeleting} onClick={handleDeletePlan}>
@@ -1041,6 +1159,17 @@ export default function InvoiceDetailPage() {
         <div className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm sm:p-5">
           <h2 className="text-base font-semibold text-foreground">Record payment</h2>
           <form onSubmit={handleRecordPayment} className="space-y-3">
+            {plan && (
+              <label className="block text-sm text-muted-foreground">
+                Apply to
+                <select className={INPUT_CLASSES} value={recordInstallmentId} onChange={(event) => setRecordInstallmentId(event.target.value)}>
+                  <option value="">Invoice balance (earliest unpaid instalments)</option>
+                  {plan.installments.map((entry, index) => !entry.paid && (
+                    <option key={entry.id} value={entry.id}>Instalment {index + 1} · {formatKobo(entry.outstanding ?? entry.amount)} outstanding</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="inv-amount-naira-2" className="mb-1 block text-sm text-muted-foreground">Amount (₦)</label>
@@ -1118,6 +1247,13 @@ export default function InvoiceDetailPage() {
       )}
 
       {/* Cancel */}
+      {hasPermission(permissions, "payment-plan.read") && (
+        <StaffInstallmentRequests invoiceId={invoice.id}
+          canDecide={hasPermission(permissions, "payment-plan.create")}
+          canConfigure={roles.some((role) => ["owner", "admin"].includes(role.key))}
+          onApprove={() => window.location.reload()} />
+      )}
+
       {canCancelInvoice(invoice.status, permissions) && (
         <CancelInvoiceDialog onCancelled={handleCancelled}>
           {(open, busy) => (

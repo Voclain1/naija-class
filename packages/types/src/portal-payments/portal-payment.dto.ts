@@ -18,6 +18,8 @@ export interface PortalPaymentDto {
   invoiceId: string;
   studentId: string;
   amount: number; // kobo
+  allocatedKobo?: number;
+  unappliedKobo?: number;
   method: PaymentMethod;
   status: PaymentStatus;
   paidAt: Date | null;
