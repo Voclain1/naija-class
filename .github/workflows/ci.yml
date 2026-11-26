@@ -422,3 +422,12 @@ jobs:
             e2e/playwright-report
             e2e/test-results
           retention-days: 7
+
+      - name: Upload fictional instalment previews
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: instalment-previews
+          path: e2e/test-results/**/*-preview.png
+          if-no-files-found: ignore
+          retention-days: 7

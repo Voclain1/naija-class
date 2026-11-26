@@ -329,7 +329,6 @@ describe("Phase 4 E2E rollup (slice 8)", () => {
     const guardian = guardianCtx(roster.schoolId, roster.guardianId);
     const plans = new PaymentPlanService();
     const requests = new InstallmentRequestsService(plans);
-    const payments = new PortalPaymentsService(paystackStub, new PaymentsService(storage, paystackStub, plans));
     const paymentPlanDates = [1, 2, 3].map((offset) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10));
     const schedule = paymentPlanDates.map((dueDate) => ({ dueDate, amount: roster.invoiceDue / 3 }));
     expect((await requests.guardianView(guardian, roster.studentId, roster.invoiceId)).policy.enabled).toBe(false);
@@ -346,8 +345,8 @@ describe("Phase 4 E2E rollup (slice 8)", () => {
     expect(accepted.status).toBe("APPROVED");
     const plan = await plans.findByInvoice(actor, roster.invoiceId);
     const finalInstallment = plan!.installments[2]!;
-    const init = await payments.initiate(guardian, roster.studentId, roster.invoiceId, reqCtx, "portal", finalInstallment.id);
-    const settled = await payments.verify(guardian, init.reference);
+    const init = await portalPayments.initiate(guardian, roster.studentId, roster.invoiceId, reqCtx, "portal", finalInstallment.id);
+    const settled = await portalPayments.verify(guardian, init.reference);
     expect(settled.amount).toBe(finalInstallment.amount);
     expect(settled.status).toBe("SUCCESS");
     const summary = (await portalInvoices.listForStudent(guardian, roster.studentId)).data[0]!;
