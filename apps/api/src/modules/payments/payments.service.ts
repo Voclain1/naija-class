@@ -641,8 +641,9 @@ export class PaymentsService {
 
     const paidAt = transaction.paid_at ? new Date(transaction.paid_at) : new Date();
     const applied = await withTenant(schoolId, async (db) => {
+      await db.$queryRaw`SELECT id FROM invoices WHERE school_id = ${schoolId} AND id = ${invoiceId} FOR UPDATE`;
       const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
-      if (!invoice || invoice.schoolId !== schoolId) return null;
+      if (!invoice || invoice.schoolId !== schoolId || invoice.status === "CANCELLED" || invoice.status === "REFUNDED") return null;
       const claim = await db.paymentLink.updateMany({
         where: { id: linkId, schoolId, invoiceId, status: "LIVE" },
         data: { status: "PAID", paidAt, hostedUrl: null, failureCode: null },

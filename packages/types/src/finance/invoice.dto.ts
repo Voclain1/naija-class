@@ -21,7 +21,7 @@ export type InvoiceStatus = (typeof invoiceStatusValues)[number];
 
 export type InvoiceKind = "TERM" | "SUPPLEMENTARY";
 export function invoiceKind(sequence: number): InvoiceKind {
-  return sequence === 0 ? "TERM" : "SUPPLEMENTARY";
+  return sequence <= 0 ? "TERM" : "SUPPLEMENTARY";
 }
 
 // ---------------------------------------------------------------------------

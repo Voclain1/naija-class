@@ -532,7 +532,7 @@ export default function InvoicesPage() {
               Invoices will be created for every enrolled student in{" "}
               <strong className="text-foreground">{selectedArm.name}</strong> for{" "}
               <strong className="text-foreground">{selectedTerm.name}</strong>. Students who
-              already have an invoice for this term are skipped.
+              already have an invoice for this term are skipped unless it was cancelled.
             </p>
           )}
 
