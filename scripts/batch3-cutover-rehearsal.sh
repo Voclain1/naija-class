@@ -51,7 +51,6 @@ PORTAL_HOST=http://portal.rehearsal.test
 EOF
 cat > backup.env <<EOF
 BACKUP_BUCKET=rehearsal
-WALG_S3_PREFIX=s3://rehearsal/wal
 AWS_ACCESS_KEY_ID=fxaccess
 AWS_SECRET_ACCESS_KEY=fxsecretfxsecret
 AWS_ENDPOINT=http://minio:9000
@@ -119,6 +118,11 @@ S3=":s3,provider=Other,env_auth=false,access_key_id=fxaccess,secret_access_key=f
 s3() { docker run --rm --network "$net" --entrypoint rclone "$BACKUP" "$@"; }
 for _ in $(seq 1 30); do s3 lsd "$S3:" >/dev/null 2>&1 && break; sleep 2; done
 s3 lsd "$S3:" | grep -q rehearsal
+# Now that the object store is reachable, turn WAL archiving on exactly as production has it (PostgreSQL is
+# recreated HERE, in the isolated rehearsal only; the identity baseline below is recorded after this).
+echo 'WALG_S3_PREFIX=s3://rehearsal/wal' >> backup.env
+dcb up -d --no-deps --no-build --pull never --force-recreate postgres
+for _ in $(seq 1 90); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(dcb ps -q postgres)")" = healthy ] && break; sleep 2; done
 
 # ---- the OLD production state: the real pre-allocation schema and release ------------------------------------
 docker run --rm --network "$net" -e DIRECT_URL=postgresql://school_kit:fx-migrations@postgres:5432/school_kit \
