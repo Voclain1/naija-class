@@ -27,8 +27,8 @@ describe("dashboard header quick actions", () => {
       "record-payment",
       "add-student",
       "enter-scores",
-      "students",
       "report-cards",
+      "students",
       "messages",
       "announcements",
     ]);
@@ -81,6 +81,7 @@ describe("dashboard header quick actions", () => {
   it("labels attendance plainly and hides modules a school switched off", () => {
     const labels = Object.fromEntries(resolveDashboardActions(["*"]).map((a) => [a.key, a.label]));
     expect(labels["take-attendance"]).toBe("Attendance");
+    expect(labels["record-payment"]).toBe("Payments");
     const noComms = resolveDashboardActions(["*"], ["attendance", "fees", "students", "results"]);
     expect(noComms.map((a) => a.key)).not.toContain("messages");
     expect(noComms.map((a) => a.key)).not.toContain("announcements");

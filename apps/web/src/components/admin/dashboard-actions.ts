@@ -31,15 +31,16 @@ export interface DashboardAction {
 // in a two-column grid, so Take attendance shows as "Attendance".
 const DASHBOARD_LABELS: Partial<Record<DashboardActionKey, string>> = {
   "take-attendance": "Attendance",
+  "record-payment": "Payments",
 };
 
 // Extra shortcuts to pages staff open most. Each reuses the permission its nav
 // item already requires, so a role never sees a button that would 403.
 const EXTRA_ACTIONS: DashboardAction[] = [
-  { key: "students", label: "Students", href: "/students", permission: "student.read", emphasis: "secondary" },
   { key: "report-cards", label: "Report cards", href: "/report-cards", permission: "report-card.read", emphasis: "secondary" },
+  { key: "students", label: "Students", href: "/students", permission: "student.read", emphasis: "secondary" },
   { key: "messages", label: "Messages", href: "/messages", permission: "messages.read", emphasis: "secondary" },
-  { key: "announcements", label: "Announcements", href: "/announcements", permission: "announcement.create", emphasis: "secondary" },
+  { key: "announcements", label: "Notices", href: "/announcements", permission: "announcement.create", emphasis: "secondary" },
 ];
 
 const ACTIONS: DashboardAction[] = [
