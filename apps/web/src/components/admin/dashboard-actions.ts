@@ -10,7 +10,12 @@ import { PRIMARY_TASKS, type PrimaryTaskKey } from "./nav-items";
 // Every destination and gate below was verified against the running app rather
 // than assumed — see the notes on each.
 
-export type DashboardActionKey = PrimaryTaskKey;
+export type DashboardActionKey =
+  | PrimaryTaskKey
+  | "students"
+  | "report-cards"
+  | "messages"
+  | "announcements";
 
 export interface DashboardAction {
   key: DashboardActionKey;
@@ -21,7 +26,33 @@ export interface DashboardAction {
   emphasis: "primary" | "secondary";
 }
 
-const ACTIONS: DashboardAction[] = PRIMARY_TASKS;
+// The four daily tasks come from PRIMARY_TASKS (shared with the search dialog,
+// which keeps their long names). On the dashboard a shorter label reads better
+// in a two-column grid, so Take attendance shows as "Attendance".
+const DASHBOARD_LABELS: Partial<Record<DashboardActionKey, string>> = {
+  "take-attendance": "Attendance",
+  "record-payment": "Payments",
+};
+
+// Extra shortcuts to pages staff open most. Each reuses the permission its nav
+// item already requires, so a role never sees a button that would 403.
+const EXTRA_ACTIONS: DashboardAction[] = [
+  { key: "report-cards", label: "Report cards", href: "/report-cards", permission: "report-card.read", emphasis: "secondary" },
+  { key: "students", label: "Students", href: "/students", permission: "student.read", emphasis: "secondary" },
+  { key: "messages", label: "Messages", href: "/messages", permission: "messages.read", emphasis: "secondary" },
+  { key: "announcements", label: "Notices", href: "/announcements", permission: "announcement.create", emphasis: "secondary" },
+];
+
+const ACTIONS: DashboardAction[] = [
+  ...PRIMARY_TASKS.map(({ key, label, href, permission, emphasis }) => ({
+    key,
+    label: DASHBOARD_LABELS[key] ?? label,
+    href,
+    permission,
+    emphasis,
+  })),
+  ...EXTRA_ACTIONS,
+];
 
 /**
  * Filters the actions to what this user can actually do.
@@ -43,6 +74,7 @@ export function resolveDashboardActions(permissions: string[], selectedModules?:
 function taskModule(key: DashboardActionKey): string {
   if (key === "take-attendance") return "attendance";
   if (key === "record-payment") return "fees";
-  if (key === "add-student") return "students";
+  if (key === "add-student" || key === "students") return "students";
+  if (key === "messages" || key === "announcements") return "parent-communication";
   return "results";
 }

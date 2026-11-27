@@ -16,13 +16,22 @@ const BURSAR = [
 ];
 
 describe("dashboard header quick actions", () => {
-  it("gives an owner the four daily tasks, via the * wildcard", () => {
+  it("gives an owner every shortcut, via the * wildcard", () => {
     // An owner's grant is literally ["*"] — verified live at /auth/me, which
     // returns exactly one permission for an owner. A gate that looked for the
     // specific strings would hide every button from the one role that can do
     // everything.
     const actions = resolveDashboardActions(["*"]);
-    expect(actions.map((a) => a.key)).toEqual(["take-attendance", "record-payment", "add-student", "enter-scores"]);
+    expect(actions.map((a) => a.key)).toEqual([
+      "take-attendance",
+      "record-payment",
+      "add-student",
+      "enter-scores",
+      "report-cards",
+      "students",
+      "messages",
+      "announcements",
+    ]);
   });
 
   it("gives a bursar Record payment only", () => {
@@ -40,7 +49,7 @@ describe("dashboard header quick actions", () => {
       "student.create",
       "assessment-score.create",
     ]);
-    expect(actions).toHaveLength(4);
+    expect(actions.map((a) => a.key)).toEqual(["take-attendance", "record-payment", "add-student", "enter-scores"]);
   });
 
   it("returns nothing for a permission set that admits none of them", () => {
@@ -63,5 +72,18 @@ describe("dashboard header quick actions", () => {
     expect(byKey["record-payment"]).toBe("/finance/payments/record");
     expect(byKey["add-student"]).toBe("/students/intake");
     expect(byKey["enter-scores"]).toBe("/gradebook");
+    expect(byKey["students"]).toBe("/students");
+    expect(byKey["report-cards"]).toBe("/report-cards");
+    expect(byKey["messages"]).toBe("/messages");
+    expect(byKey["announcements"]).toBe("/announcements");
+  });
+
+  it("labels attendance plainly and hides modules a school switched off", () => {
+    const labels = Object.fromEntries(resolveDashboardActions(["*"]).map((a) => [a.key, a.label]));
+    expect(labels["take-attendance"]).toBe("Attendance");
+    expect(labels["record-payment"]).toBe("Payments");
+    const noComms = resolveDashboardActions(["*"], ["attendance", "fees", "students", "results"]);
+    expect(noComms.map((a) => a.key)).not.toContain("messages");
+    expect(noComms.map((a) => a.key)).not.toContain("announcements");
   });
 });
