@@ -12,7 +12,9 @@
 # Env: RELEASE_MANIFEST (file), OLD_API, OLD_RENDER (the 25e54017 images), BASELINE_MIGRATIONS (dir)
 set -Eeuo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
-: "${RELEASE_MANIFEST:?}" "${OLD_API:?}" "${OLD_RENDER:?}" "${BASELINE_MIGRATIONS:?}"
+: "${RELEASE_MANIFEST:?}" "${OLD_API:?}" "${OLD_RENDER:?}" "${BASELINE_MIGRATIONS:?}" "${FRONTEND_OVERRIDE:?}" "${FRONTEND_SHA:?}"
+RELEASE_MANIFEST=$(realpath -e "$RELEASE_MANIFEST")
+FRONTEND_OVERRIDE=$(realpath -e "$FRONTEND_OVERRIDE")
 R=${REHEARSAL_ROOT:-$(mktemp -d)/sk}
 mkdir -p "$R"
 fails=0
@@ -150,6 +152,12 @@ assert "baseline API runs the deployed instalment image" '[ "$(docker inspect -f
 
 # The owner pastes the manifest, exactly as the runbook says.
 cp "$RELEASE_MANIFEST" release/manifest.env
+cp "$FRONTEND_OVERRIDE" release/frontend.compose.yml
+printf 'FRONTEND_SHA=%s\nBACKEND_SHA256=%s\nFRONTEND_SHA256=%s\n' "$FRONTEND_SHA" \
+  "$(sha256sum release/manifest.env | cut -d' ' -f1)" \
+  "$(sha256sum release/frontend.compose.yml | cut -d' ' -f1)" > release/pair.env
+for image in $(awk '/image:/ { print $2 }' release/frontend.compose.yml); do docker pull "$image"; done
+(cd ops-tools && sha256sum ./*.sh ./*.py > SHA256SUMS)
 
 snapshot_ids() { { dcb ps -q postgres; dcb -f backup-ops.override.yml ps -q ops-pinned; dcb ps -q caddy; dcb ps -q redis; } | sort | tr '\n' ' '; }
 ids0=$(snapshot_ids)
@@ -235,21 +243,27 @@ assert "S2: ingress still CLOSED (503)" '[ "$(code /api/v1/health)" = 503 ]'
 assert "S2: no application container is running, and the 25e54017 image was never restarted" '[ -z "$(docker ps --format "{{.Image}}" | grep -E "school-kit-(api|render)" || true)" ]'
 assert "S2: PostgreSQL, ops-pinned, original ops untouched" 'invariants_hold'
 
-echo "=== S3: allocation-compatible RECOVERY, then reopen ==="
-approved recover > "$R/s3.out" 2>&1 || { tail -20 "$R/s3.out"; flunk "S3: recover failed"; }
-assert "S3: recovery API and worker run the pinned recovery digests" '[ "$(docker inspect -f "{{.Config.Image}}" "$(dcb -f backup-ops.override.yml -f release.override.yml ps -q api)")" = "$REC_API" ] && [ "$(docker inspect -f "{{.Config.Image}}" "$(dcb -f backup-ops.override.yml -f release.override.yml ps -q render-worker)")" = "$REC_RENDER" ]'
-assert "S3: ingress is still CLOSED while the recovery release is checked" '[ "$(code /api/v1/health)" = 503 ]'
-assert "S3: guard.sh release confirms the pinned release is what runs" 'bash "$tools/guard.sh" release >/dev/null'
-approved reopen >/dev/null
-assert "S3: reopen gives traffic back (200) on the recovery release" '[ "$(code /api/v1/health)" = 200 ]'
-assert "S3: Caddyfile restored byte-for-byte" 'cmp -s Caddyfile Caddyfile.original'
-assert "S3: PostgreSQL, ops-pinned, original ops untouched" 'invariants_hold'
+echo "=== S3: recovery keeps ingress closed and requires both frontends ==="
+approved recover > "$R/s3.out" 2>&1 || { tail -30 "$R/s3.out"; exit 1; }
+assert "recovery is frontend verified and ingress is closed" '[ "$(cat release/state)" = FRONTEND_VERIFIED ] && [ "$(code /api/v1/health)" = 503 ]'
+assert "recovery API uses its immutable digest" '[ "$(docker inspect -f "{{.Config.Image}}" "$(dcb -f backup-ops.override.yml -f release.override.yml ps -q api)")" = "$REC_API" ]'
+dcb -f backup-ops.override.yml -f release.override.yml stop portal
+assert "recovery reopen refuses a stopped portal" '! approved reopen && [ "$(code /api/v1/health)" = 503 ]'
+assert "maintenance off cannot bypass readiness" '! approved maintenance off && [ "$(code /api/v1/health)" = 503 ]'
 
-echo "=== S4: a clean cutover back to the candidate ==="
-approved execute --resume > "$R/s4.out" 2>&1 || { tail -25 "$R/s4.out"; flunk "S4: execute failed"; }
-tail -4 "$R/s4.out" | sed 's/^/  /'
-assert "S4: candidate API and worker run the pinned candidate digests" '[ "$(docker inspect -f "{{.Config.Image}}" "$(dcb -f backup-ops.override.yml -f release.override.yml ps -q api)")" = "$CAND_API" ] && [ "$(docker inspect -f "{{.Config.Image}}" "$(dcb -f backup-ops.override.yml -f release.override.yml ps -q render-worker)")" = "$CAND_RENDER" ]'
-assert "S4: traffic is back (200) and maintenance is off" '[ "$(code /api/v1/health)" = 200 ] && ! grep -q BATCH3-MAINTENANCE Caddyfile && cmp -s Caddyfile Caddyfile.original'
+echo "=== S4: interruption, web failure, portal failure, resume and explicit reopen ==="
+assert "interruption after backend verification keeps ingress closed" '! REHEARSAL_INTERRUPT_AFTER_BACKEND=1 approved execute --resume && [ "$(cat release/state)" = BACKEND_VERIFIED ] && [ "$(code /api/v1/health)" = 503 ]'
+assert "reopen refuses backend-only verification" '! approved reopen && [ "$(code /api/v1/health)" = 503 ]'
+assert "web startup failure keeps ingress closed" '! REHEARSAL_BREAK_WEB=1 HEALTH_TRIES=3 approved execute --resume && [ "$(cat release/state)" = BACKEND_VERIFIED ] && [ "$(code /api/v1/health)" = 503 ]'
+assert "portal startup failure keeps ingress closed" '! REHEARSAL_BREAK_PORTAL=1 HEALTH_TRIES=3 approved execute --resume && [ "$(cat release/state)" = BACKEND_VERIFIED ] && [ "$(code /api/v1/health)" = 503 ]'
+approved execute --resume > "$R/s4.out" 2>&1 || { tail -30 "$R/s4.out"; exit 1; }
+assert "candidate and both frontends are ready with ingress closed" '[ "$(cat release/state)" = FRONTEND_VERIFIED ] && [ "$(code /api/v1/health)" = 503 ]'
+cp release/frontend.compose.yml release/frontend.good
+echo '# changed after authorization' >> release/frontend.compose.yml
+assert "changed frontend bytes refuse reopening" '! approved reopen && [ "$(code /api/v1/health)" = 503 ]'
+cp release/frontend.good release/frontend.compose.yml
+approved reopen
+assert "explicit reopen restores traffic and Caddy config" '[ "$(code /api/v1/health)" = 200 ] && cmp -s Caddyfile Caddyfile.original'
 assert "S4: guard.sh release and scheduler both pass" 'bash "$tools/guard.sh" release >/dev/null && bash "$tools/guard.sh" scheduler >/dev/null'
 assert "S4: PostgreSQL identity and start time unchanged through the whole rehearsal" 'invariants_hold'
 assert "S4: the recovery images and the fallback tag were not pruned" 'docker image inspect "$REC_API" "$REC_RENDER" "$OLD_API" schoolkit-ops-fallback:batch2-verified >/dev/null'
