@@ -1350,6 +1350,24 @@ GitHub secrets `API_ENV_FILE`, `WEB_ENV_FILE` and `PORTAL_ENV_FILE`
 (`docs/runbooks/vps-migration.md`); read the Fly, Vercel and Neon notes above
 as history.
 
+**Routine releases (2026-11-27, `docs/runbooks/automated-release.md`).** A release is a
+manifest (`infra/vps/release/release_tool.py`): every image by `@sha256` digest, every migration
+with its checksum and a class (additive / data / breaking). `release.yml` (manual only; automatic
+deployment is NOT switched on) builds only the units whose inputs changed, and
+`infra/vps/release/release.sh` runs the release on the server, detached, as a resumable phase
+machine under one lock: preflight, drain, restore point (a verified dump when maintenance is
+needed), migrate, switch only the changed services, acceptance, local rollback or fix-forward.
+Hard rules for anyone editing it: it only ever creates, stops or recreates `api`, `render-worker`,
+`web`, `portal` and `cbt` (`--no-deps --no-build --pull never`, never `down`, `--remove-orphans`,
+a prune, or a volume operation); PostgreSQL, Redis, the pinned scheduler (`ops-pinned`), the
+stopped original `ops`, `backup.env` and every Caddy site that is not School Kit's are re-checked
+unchanged after every phase; rollback uses only images already on the server and is refused after a
+breaking migration; a schema release needs an owner approval bound to the manifest's hash; acceptance
+is read-only and never starts a payment or a message. It coexists with, and refuses to run during,
+`ops-tools/cutover.sh`; its data is in `deployments/`, never `release/`. Changing any of it means
+running `scripts/release-qualification/run.sh` (real PostgreSQL 18, Redis, Caddy and a local
+registry; the `release-qualification` workflow does it) and updating the runbook.
+
 **Recreating a Vercel project does NOT carry over its environment
 variables (confirmed 2026-07-17).** `school-kit-portal` was deleted and
 recreated during Slice 1 CP2 troubleshooting (to fix a stuck Root

@@ -1,0 +1,715 @@
+#!/usr/bin/env python3
+"""Release tooling for School Kit (stdlib only; runs in CI and on the VPS).
+
+Sub-commands (every one prints JSON or plain lines on stdout, errors on stderr,
+and exits non-zero on refusal, so shell callers can `set -e` on it):
+
+  build-manifest   build a release manifest from image digests + the migrations folder
+  validate         strict validation of a manifest file
+  plan             what would a release change, given the live database and the current release
+  rollback-check   may the application go back to an earlier release, given what the database holds
+  scan-sql         classify migration files (additive | data | breaking, destructive flag)
+  jget             read one field of a JSON file (dotted path), for shell scripts
+  event            append one JSON event to the history journal (atomic line, redacted)
+  state            read or atomically update the deployment state file
+  redact           stdin -> stdout with secrets and personal data masked
+
+Nothing here talks to Docker or to the database. The caller feeds in what the
+database holds (`--applied`, rows of _prisma_migrations) so every decision can
+be tested with fixtures.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import os
+import re
+import sys
+import tempfile
+
+SERVICES = ("api", "render-worker", "web", "portal", "cbt")
+REQUIRED_SERVICES = ("api", "render-worker", "web", "portal")
+# Apply order: background worker first, then the API, then the front ends.
+APPLY_ORDER = ("render-worker", "api", "web", "portal", "cbt")
+SHA = re.compile(r"^[0-9a-f]{40}$")
+DIGEST_REF = re.compile(r"^[a-z0-9][a-z0-9._/:-]*/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$")
+MIGRATION_NAME = re.compile(r"^[0-9]{14}_[a-z0-9_]+$")
+SCHEMA_VERSION = 1
+MANIFEST_KEYS = {
+    "schema", "release_id", "git_sha", "built_at", "pg_major", "images",
+    "migrate_image", "migrations", "schema_head", "migrations_digest", "note",
+    "inputs", "provenance",
+}
+OPTIONAL_KEYS = {"note", "inputs", "provenance"}
+UNITS = SERVICES + ("migrate",)
+MIGRATION_KEYS = {"name", "checksum", "class", "destructive", "findings"}
+CLASSES = ("additive", "data", "breaking")
+
+
+class Refusal(Exception):
+    """A deliberate, explained refusal (exit status 2)."""
+
+
+# --------------------------------------------------------------------------- SQL classification
+
+def _strip_sql(text: str) -> str:
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    text = re.sub(r"--[^\n]*", " ", text)
+    # Dollar-quoted function bodies are code, not statements: keep them out of
+    # the statement scan so `DELETE FROM` inside a function does not look like
+    # a migration-time delete. (The function itself is still classified.)
+    text = re.sub(r"\$([A-Za-z_]*)\$.*?\$\1\$", " $$body$$ ", text, flags=re.S)
+    return text
+
+
+# (regex, class, destructive, label). First match per rule is recorded; the
+# migration's class is the most severe one found (breaking > data > additive).
+RULES = [
+    (r"\bDROP\s+TABLE\b", "breaking", True, "DROP TABLE"),
+    (r"\bDROP\s+COLUMN\b", "breaking", True, "DROP COLUMN"),
+    (r"\bDROP\s+TYPE\b", "breaking", True, "DROP TYPE"),
+    (r"\bDROP\s+SCHEMA\b", "breaking", True, "DROP SCHEMA"),
+    (r"\bTRUNCATE\b", "breaking", True, "TRUNCATE"),
+    (r"\bDELETE\s+FROM\b", "data", True, "DELETE FROM"),
+    (r"\bDROP\s+FUNCTION\b", "breaking", False, "DROP FUNCTION (an older release may still call it)"),
+    (r"\bDROP\s+VIEW\b", "breaking", False, "DROP VIEW"),
+    (r"\bRENAME\s+(TO|COLUMN)\b", "breaking", False, "RENAME"),
+    (r"\bALTER\s+COLUMN\s+\S+\s+(SET\s+DATA\s+)?TYPE\b", "breaking", False, "ALTER COLUMN TYPE"),
+    (r"\bALTER\s+COLUMN\s+\S+\s+SET\s+NOT\s+NULL\b", "breaking", False, "SET NOT NULL"),
+    (r"\bADD\s+(COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?\S+\s+[^,;]*\bNOT\s+NULL\b(?![^,;]*\bDEFAULT\b)", "breaking", False,
+     "ADD COLUMN ... NOT NULL without DEFAULT"),
+    (r"\bADD\s+CONSTRAINT\b[^;]*\b(CHECK|UNIQUE|FOREIGN\s+KEY|EXCLUDE)\b", "breaking", False,
+     "ADD CONSTRAINT (an older release's writes may be refused)"),
+    (r"\bCREATE\s+UNIQUE\s+INDEX\b", "breaking", False, "CREATE UNIQUE INDEX (an older release's writes may be refused)"),
+    (r"\bDROP\s+(POLICY|TRIGGER)\b", "data", False, "DROP POLICY/TRIGGER"),
+    (r"\bUPDATE\s+(?!.*\bSET\s+search_path\b)\S+\s+SET\b", "data", False, "UPDATE (backfill)"),
+    (r"\bINSERT\s+INTO\b", "data", False, "INSERT INTO"),
+    (r"\bALTER\s+TABLE\b[^;]*\bDISABLE\s+ROW\s+LEVEL\s+SECURITY\b", "breaking", False, "DISABLE ROW LEVEL SECURITY"),
+    (r"\bNO\s+FORCE\s+ROW\s+LEVEL\s+SECURITY\b", "breaking", False, "NO FORCE ROW LEVEL SECURITY"),
+]
+_ORDER = {"additive": 0, "data": 1, "breaking": 2}
+
+
+_IDENT = r'(?:"?[A-Za-z_][A-Za-z0-9_]*"?\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?'
+_CREATED_TABLE = re.compile(r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?" + _IDENT, re.I)
+_ADDED_COLUMN = re.compile(r"\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?" + _IDENT + r"[^;]*?\bADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?([A-Za-z_][A-Za-z0-9_]*)\"?", re.I | re.S)
+_ALTER_TARGET = re.compile(r"\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?" + _IDENT, re.I)
+_TARGETS = {
+    # rule-label prefix -> regex whose group(1) is the table the statement acts on
+    "ADD CONSTRAINT": _ALTER_TARGET,
+    "SET NOT NULL": _ALTER_TARGET,
+    "ADD COLUMN": _ALTER_TARGET,
+    "CREATE UNIQUE INDEX": re.compile(r"\bON\s+(?:ONLY\s+)?" + _IDENT, re.I),
+    "UPDATE": re.compile(r"\bUPDATE\s+(?:ONLY\s+)?" + _IDENT, re.I),
+    "INSERT INTO": re.compile(r"\bINSERT\s+INTO\s+" + _IDENT, re.I),
+}
+
+
+def _statement_columns(stmt: str) -> set[str]:
+    """Columns a constraint is declared ON (the local side of a foreign key, the list of a UNIQUE or
+    PRIMARY KEY). Empty when the statement is not of one of those shapes: no exemption is then given."""
+    cols: set[str] = set()
+    for grp in re.findall(r"(?:FOREIGN\s+KEY|UNIQUE|PRIMARY\s+KEY)\s*\(([^)]*)\)", stmt, flags=re.I):
+        for c in grp.split(","):
+            c = c.strip().strip('"')
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", c):
+                cols.add(c)
+    return cols
+
+
+def classify_sql(text: str) -> dict:
+    """Most severe class over the statements, ignoring objects the migration itself creates.
+
+    A constraint, unique index or backfill on a table (or new column) created in the SAME migration
+    cannot reject or disturb an older release, which has never heard of it. Everything else that
+    could is `breaking` (older release may fail on the new schema) or `data` (rewrites rows, so it
+    needs a quiet system)."""
+    body = _strip_sql(text)
+    created = {m.group(1).lower() for m in _CREATED_TABLE.finditer(body)}
+    added: dict[str, set[str]] = {}
+    for m in _ADDED_COLUMN.finditer(body):
+        added.setdefault(m.group(1).lower(), set()).add(m.group(2).lower())
+    cls, destructive, findings = "additive", False, []
+    for stmt in (x for x in body.split(";") if x.strip()):
+        for pattern, rule_cls, rule_destructive, label in RULES:
+            if not re.search(pattern, stmt, flags=re.I | re.S):
+                continue
+            target = None
+            for prefix, rx in _TARGETS.items():
+                if label.startswith(prefix):
+                    t = rx.search(stmt)
+                    target = t.group(1).lower() if t else None
+                    break
+            if target and target in created:
+                continue
+            if label.startswith(("ADD CONSTRAINT", "SET NOT NULL")) and target in added:
+                touched = {c.lower() for c in _statement_columns(stmt)}
+                if touched and touched <= added[target]:
+                    continue
+            findings.append(label)
+            if _ORDER[rule_cls] > _ORDER[cls]:
+                cls = rule_cls
+            destructive = destructive or rule_destructive
+    return {"class": cls, "destructive": destructive, "findings": sorted(set(findings))}
+
+
+def prisma_checksum(path: str) -> str:
+    """Prisma stores the SHA-256 (hex) of migration.sql in _prisma_migrations.checksum."""
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
+def scan_migrations(folder: str) -> list[dict]:
+    out = []
+    for name in sorted(os.listdir(folder)):
+        sql = os.path.join(folder, name, "migration.sql")
+        if not os.path.isfile(sql):
+            continue
+        if not MIGRATION_NAME.match(name):
+            raise Refusal(f"unexpected migration folder name: {name}")
+        with open(sql, encoding="utf-8") as fh:
+            info = classify_sql(fh.read())
+        out.append({"name": name, "checksum": prisma_checksum(sql), **info})
+    return out
+
+
+def migrations_digest(migrations: list[dict]) -> str:
+    h = hashlib.sha256()
+    for m in migrations:
+        h.update(f"{m['name']} {m['checksum']}\n".encode())
+    return h.hexdigest()
+
+
+# --------------------------------------------------------------------------- manifest
+
+def _pairs(items):
+    out = {}
+    for pair in items or []:
+        k, sep, v = pair.partition("=")
+        if not sep or k not in UNITS:
+            raise Refusal(f"bad unit pair: {pair[:60]!r}")
+        out[k] = v
+    return out
+
+
+def need_build(previous: dict | None, inputs: dict, with_cbt: bool = False) -> list[str]:
+    """Units whose image must be built: no previous release, or their inputs differ from it. A unit
+    the previous release did not ship (the exam app) is built only when asked for."""
+    want = []
+    for unit in UNITS:
+        if unit == "cbt" and not with_cbt and not (previous and "cbt" in previous["images"]):
+            continue
+        if unit not in inputs:
+            raise Refusal(f"no inputs hash for unit {unit}")
+        if previous is None or previous.get("inputs", {}).get(unit) != inputs[unit]:
+            want.append(unit)
+            continue
+        have = previous["migrate_image"] if unit == "migrate" else previous["images"].get(unit)
+        if not have:
+            want.append(unit)
+    return want
+
+
+def build_manifest(a) -> dict:
+    migrations = scan_migrations(a.migrations_dir)
+    built = _pairs(a.built)
+    for pair in a.image:  # legacy form: every unit given is "built now"
+        svc, _, ref = pair.partition("=")
+        built[svc] = ref
+    if a.migrate_image:
+        built["migrate"] = a.migrate_image
+    inputs = _pairs(a.input)
+    previous = load_manifest(a.previous) if a.previous else None
+    images, provenance, used_inputs = {}, {}, {}
+    migrate_image = None
+    for unit in UNITS:
+        if unit in built:
+            ref, prov = built[unit], a.git_sha
+        elif previous is not None and unit in inputs and previous.get("inputs", {}).get(unit) == inputs[unit]:
+            ref = previous["migrate_image"] if unit == "migrate" else previous["images"].get(unit)
+            prov = previous.get("provenance", {}).get(unit, previous["git_sha"])
+            if not ref:
+                continue
+        else:
+            continue
+        if unit == "migrate":
+            migrate_image = ref
+        else:
+            images[unit] = ref
+        provenance[unit] = prov
+        if unit in inputs:
+            used_inputs[unit] = inputs[unit]
+    if migrate_image is None:
+        raise Refusal("the migration runner image is neither built nor reusable (its inputs changed or there is no previous release)")
+    for svc in REQUIRED_SERVICES:
+        if svc not in images:
+            raise Refusal(f"unit {svc} is neither built nor reusable: build it")
+    built_at = a.built_at or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    stamp = re.sub(r"[^0-9]", "", built_at)[:14]
+    manifest = {
+        "schema": SCHEMA_VERSION,
+        "release_id": f"{stamp[:8]}T{stamp[8:]}Z-{a.git_sha[:12]}",
+        "git_sha": a.git_sha,
+        "built_at": built_at,
+        "pg_major": int(a.pg_major),
+        "images": images,
+        "migrate_image": migrate_image,
+        "migrations": migrations,
+        "schema_head": migrations[-1]["name"] if migrations else "",
+        "migrations_digest": migrations_digest(migrations),
+        "provenance": provenance,
+    }
+    if used_inputs:
+        manifest["inputs"] = used_inputs
+    if a.note:
+        manifest["note"] = a.note
+    validate_manifest(manifest, registry_prefixes=a.registry_prefix or None)
+    return manifest
+
+
+def validate_manifest(m: dict, registry_prefixes=None) -> None:
+    if not isinstance(m, dict):
+        raise Refusal("manifest is not an object")
+    extra = set(m) - MANIFEST_KEYS
+    if extra:
+        raise Refusal(f"unexpected manifest keys: {sorted(extra)}")
+    missing = (MANIFEST_KEYS - OPTIONAL_KEYS) - set(m)
+    if missing:
+        raise Refusal(f"manifest is missing keys: {sorted(missing)}")
+    if m["schema"] != SCHEMA_VERSION:
+        raise Refusal(f"unsupported manifest schema {m['schema']!r}")
+    if not isinstance(m["git_sha"], str) or not SHA.match(m["git_sha"]):
+        raise Refusal("git_sha is not a 40-hex commit")
+    if not re.match(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$", str(m["release_id"])) or not m["release_id"].endswith(m["git_sha"][:12]):
+        raise Refusal("release_id must be <UTC stamp>-<first 12 of git_sha>")
+    if not isinstance(m["pg_major"], int) or not 12 <= m["pg_major"] <= 30:
+        raise Refusal("pg_major is not a plausible PostgreSQL major version")
+    images = m["images"]
+    if not isinstance(images, dict):
+        raise Refusal("images must be an object")
+    for svc in REQUIRED_SERVICES:
+        if svc not in images:
+            raise Refusal(f"images.{svc} is missing")
+    prefixes = registry_prefixes or [p for p in os.environ.get("RELEASE_REGISTRY_ALLOW", "ghcr.io/voclain1/").split(",") if p]
+    for svc, ref in list(images.items()) + [("migrate_image", m["migrate_image"])]:
+        if svc != "migrate_image" and svc not in SERVICES:
+            raise Refusal(f"unknown service {svc!r}")
+        if not isinstance(ref, str) or not DIGEST_REF.match(ref):
+            raise Refusal(f"{svc}: not an immutable name@sha256:<64 hex> reference (tags are refused)")
+        if not any(ref.startswith(p) for p in prefixes):
+            raise Refusal(f"{svc}: registry/namespace is not on the allow-list")
+    for key in ("inputs", "provenance"):
+        block = m.get(key, {})
+        if not isinstance(block, dict) or any(u not in UNITS for u in block):
+            raise Refusal(f"{key} must map known units to values")
+    for unit, sha in m.get("provenance", {}).items():
+        if not isinstance(sha, str) or not SHA.match(sha):
+            raise Refusal(f"provenance.{unit} is not a 40-hex commit")
+    for unit, h in m.get("inputs", {}).items():
+        if not isinstance(h, str) or not re.match(r"^[0-9a-f-]{8,80}$", h):
+            raise Refusal(f"inputs.{unit} is not a hash")
+    seen = set()
+    prev = ""
+    for mig in m["migrations"]:
+        if set(mig) != MIGRATION_KEYS:
+            raise Refusal(f"migration entry has unexpected shape: {mig.get('name')}")
+        if not MIGRATION_NAME.match(mig["name"]) or mig["name"] in seen:
+            raise Refusal(f"bad or duplicate migration name {mig['name']!r}")
+        if not re.match(r"^[0-9a-f]{64}$", mig["checksum"]):
+            raise Refusal(f"{mig['name']}: checksum is not SHA-256 hex")
+        if mig["class"] not in CLASSES:
+            raise Refusal(f"{mig['name']}: class must be one of {CLASSES}")
+        if mig["name"] < prev:
+            raise Refusal("migrations are not in ascending name order")
+        seen.add(mig["name"])
+        prev = mig["name"]
+    head = m["migrations"][-1]["name"] if m["migrations"] else ""
+    if m["schema_head"] != head:
+        raise Refusal("schema_head is not the last migration")
+    if m["migrations_digest"] != migrations_digest(m["migrations"]):
+        raise Refusal("migrations_digest does not match the migration list")
+
+
+def load_manifest(path: str) -> dict:
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def canonical_bytes(m: dict) -> bytes:
+    return (json.dumps(m, indent=2, sort_keys=True) + "\n").encode()
+
+
+# --------------------------------------------------------------------------- planning
+
+def parse_applied(path: str) -> list[dict]:
+    """Rows of _prisma_migrations as tab-separated: name, checksum, finished(t/f), rolled_back(t/f)."""
+    rows = []
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) != 4 or parts[2] not in ("t", "f") or parts[3] not in ("t", "f"):
+                raise Refusal(f"unparsable _prisma_migrations row: {line[:60]!r}")
+            rows.append({"name": parts[0], "checksum": parts[1], "finished": parts[2] == "t", "rolled_back": parts[3] == "t"})
+    return rows
+
+
+def make_plan(m: dict, current: dict | None, applied: list[dict]) -> dict:
+    blockers, notes = [], []
+    cur_images = (current or {}).get("images", {})
+    changed = [s for s in APPLY_ORDER if s in m["images"] and cur_images.get(s) != m["images"][s]]
+    if current is None:
+        notes.append("no current release is recorded: run `release.sh adopt` first")
+        blockers.append("NO_BASELINE")
+    live = {}
+    for row in applied:
+        if row["rolled_back"] or not row["finished"]:
+            continue  # neither a rolled-back attempt nor a FAILED one is applied; a failed one is reported as unresolved below
+        live[row["name"]] = row
+    unresolved = [r["name"] for r in applied if not r["finished"] and not r["rolled_back"]]
+    if unresolved:
+        blockers.append("UNRESOLVED_MIGRATION:" + ",".join(unresolved))
+    by_name = {x["name"]: x for x in m["migrations"]}
+    mismatched = [n for n, r in live.items() if n in by_name and r["checksum"] != by_name[n]["checksum"]]
+    if mismatched:
+        blockers.append("CHECKSUM_MISMATCH:" + ",".join(mismatched))
+    pending = [x for x in m["migrations"] if x["name"] not in live]
+    ahead = sorted(n for n in live if n not in by_name)
+    latest_applied = max(live) if live else ""
+    out_of_order = [x["name"] for x in pending if x["name"] < latest_applied]
+    if out_of_order:
+        blockers.append("OUT_OF_ORDER_MIGRATION:" + ",".join(out_of_order))
+    kind = "FORWARD"
+    if ahead:
+        known = {x["name"]: x for x in (current or {}).get("migrations", [])}
+        bad = [n for n in ahead if n not in known or known[n]["class"] == "breaking"]
+        if bad:
+            blockers.append("DATABASE_AHEAD_OF_RELEASE:" + ",".join(bad))
+        else:
+            kind = "ROLLBACK_LIKE"
+            notes.append("database holds migrations this release does not know; all are rollback-safe")
+    breaking = any(x["class"] == "breaking" for x in pending)
+    data = any(x["class"] == "data" for x in pending)
+    destructive = any(x["destructive"] for x in pending)
+    klass = "NOOP" if not changed and not pending else ("SCHEMA" if pending else "APP_ONLY")
+    return {
+        "release_id": m["release_id"],
+        "kind": kind,
+        "class": klass,
+        "services_changed": changed,
+        "pending": [{"name": x["name"], "class": x["class"], "destructive": x["destructive"], "findings": x["findings"]} for x in pending],
+        "needs_maintenance": breaking or data,
+        "breaking": breaking,
+        "destructive": destructive,
+        "rollback_allowed_after": not breaking,
+        "needs_approval": klass == "SCHEMA" or kind == "ROLLBACK_LIKE",
+        "blockers": blockers,
+        "notes": notes,
+    }
+
+
+def rollback_check(current: dict, target: dict, applied: list[dict]) -> dict:
+    reasons = []
+    live = {r["name"] for r in applied if r["finished"] and not r["rolled_back"]}
+    known = {x["name"]: x for x in current.get("migrations", [])}
+    target_names = {x["name"] for x in target["migrations"]}
+    extras = sorted(live - target_names)
+    for name in extras:
+        info = known.get(name)
+        if info is None:
+            reasons.append(f"{name}: applied but not in the current release's manifest (unknown compatibility)")
+        elif info["class"] == "breaking":
+            reasons.append(f"{name}: breaking migration; the earlier release may not work on this schema")
+    if target["pg_major"] != current["pg_major"]:
+        reasons.append("PostgreSQL major version differs between the two releases")
+    return {"allowed": not reasons, "extras": extras, "reasons": reasons}
+
+
+# --------------------------------------------------------------------------- Caddy maintenance rewriting
+MAINT_HEADER = '\theader Retry-After "120"\n\trespond "Maintenance in progress. Please retry shortly." 503\n'
+SK_HOST_BLOCK = re.compile(r"^\{\$(API|WEB|PORTAL)_HOST\} \{$")
+
+
+def maintenance_caddyfile(text: str, mark: str) -> str:
+    """Replace ONLY School Kit's three host blocks with a 503 + Retry-After; every other line (global
+    options, snippets, imports, any other site) is copied byte for byte."""
+    out, skip, n = [], False, 0
+    for line in text.splitlines(keepends=True):
+        if not skip and SK_HOST_BLOCK.match(line.rstrip("\n")):
+            out += [mark + "\n", line, MAINT_HEADER]
+            skip, n = True, n + 1
+            continue
+        if skip:
+            if line.rstrip("\n") == "}":
+                skip = False
+                out.append(line)
+            continue
+        out.append(line)
+    if n != 3:
+        raise Refusal(f"expected the API, web and portal host blocks (found {n}); refusing to guess")
+    return "".join(out)
+
+
+def maintenance_site(text: str) -> str:
+    """A site file (e.g. the school-address wildcard) in maintenance: same address line, same `tls`
+    block (so a certificate still loads), every handler replaced by a 503."""
+    lines = text.splitlines()
+    head = next((i for i, l in enumerate(lines) if l.rstrip().endswith("{") and not l.startswith((" ", "\t"))), None)
+    if head is None:
+        raise Refusal("site file has no top-level block")
+    out, depth, in_tls = [lines[head]], 0, False
+    for line in lines[head + 1:]:
+        stripped = line.strip()
+        # balanced inline placeholders such as {env.X} do not change the depth
+        depth_change = len(re.findall(r"\{(?![$a-z_.]+\})", stripped)) - len(re.findall(r"(?<![$a-z_.])\}", stripped))
+        if depth == 0 and re.match(r"^tls\s*\{", stripped):
+            in_tls = True
+        if in_tls:
+            out.append(line)
+        depth += depth_change
+        if in_tls and depth == 0:
+            in_tls = False
+        if depth < 0:
+            break
+    out.append(MAINT_HEADER.rstrip("\n"))
+    out.append("}")
+    return "\n".join(out) + "\n"
+
+
+def verify_maintenance_caddyfile(original: str, candidate: str, mark: str) -> None:
+    """The file on disk must be EXACTLY what the rewriter generates from the original. A truncated or
+    half-written file can still be a valid Caddyfile (a comment is valid), and Caddy would load it and
+    serve nothing; so validity is not enough, equality with the intended content is required."""
+    if candidate != maintenance_caddyfile(original, mark):
+        raise Refusal("the maintenance Caddyfile is not what was generated from the original (partial write?)")
+
+
+def verify_maintenance_site(original: str, candidate: str) -> None:
+    if candidate != maintenance_site(original):
+        raise Refusal("the maintenance site file is not what was generated from the original (partial write?)")
+
+
+# --------------------------------------------------------------------------- redaction
+
+_REDACTIONS = [
+    (re.compile(r"(?i)\b(postgres(?:ql)?|redis|amqp|mysql)://[^\s:@/]+:[^\s@/]+@"), r"\1://***:***@"),
+    (re.compile(r"\b(sk|pk|rk)_(live|test)_[A-Za-z0-9]{8,}"), r"\1_\2_***"),
+    (re.compile(r"\bwhsec_[A-Za-z0-9+/=]{8,}"), "whsec_***"),
+    (re.compile(r"\bre_[A-Za-z0-9]{12,}"), "re_***"),
+    (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"), "gh*_***"),
+    (re.compile(r"\bsk-ant-[A-Za-z0-9_-]{10,}"), "sk-ant-***"),
+    (re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{12,}"), r"\1 ***"),
+    (re.compile(r"(?i)(authorization|x-paystack-signature|x-hub-signature(?:-256)?|cookie|set-cookie)\s*[:=]\s*[^\r\n]+"), r"\1: ***"),
+    (re.compile(r"(?i)\b([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|ACCESS_KEY(?:_ID)?|HMAC_KEY|DSN)[A-Z0-9_]*)\s*=\s*\S+"), r"\1=***"),
+    (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"), "<email>"),
+    (re.compile(r"(?<![\d.])(?:\+?234|0)[789][01]\d{8}(?!\d)"), "<phone>"),
+    (re.compile(r"\b[0-9]{10}\b(?=.*\b(?:account|bvn|nin)\b)", re.I), "<number>"),
+    (re.compile(r"\b(?:eyJ[A-Za-z0-9_-]{8,}\.){2}[A-Za-z0-9_-]{8,}"), "<jwt>"),
+]
+
+
+def redact(text: str) -> str:
+    for pattern, repl in _REDACTIONS:
+        text = pattern.sub(repl, text)
+    return text
+
+
+# --------------------------------------------------------------------------- journal and state
+
+def now() -> str:
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def atomic_write(path: str, data: bytes, mode: int = 0o600) -> None:
+    d = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(prefix=".tmp.", dir=d)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def kv_pairs(items: list[str]) -> dict:
+    out = {}
+    for item in items:
+        k, sep, v = item.partition("=")
+        if not sep or not re.match(r"^[a-z_][a-z0-9_]*$", k):
+            raise Refusal(f"bad key=value: {item[:40]!r}")
+        if v in ("true", "false"):
+            out[k] = v == "true"
+        elif re.match(r"^-?[0-9]+$", v):
+            out[k] = int(v)
+        else:
+            out[k] = redact(v)
+    return out
+
+
+def append_event(path: str, kind: str, fields: dict) -> None:
+    line = json.dumps({"ts": now(), "event": kind, **fields}, sort_keys=True) + "\n"
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    try:
+        os.write(fd, line.encode())  # one write(2) = one atomic line for concurrent appenders
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def dotted(obj, path: str):
+    for part in path.split("."):
+        if isinstance(obj, list):
+            obj = obj[int(part)]
+        else:
+            obj = obj[part]
+    return obj
+
+
+# --------------------------------------------------------------------------- CLI
+
+def out(obj) -> None:
+    print(json.dumps(obj, indent=2, sort_keys=True))
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(prog="release_tool.py")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    b = sub.add_parser("build-manifest")
+    b.add_argument("--git-sha", required=True)
+    b.add_argument("--pg-major", required=True)
+    b.add_argument("--migrations-dir", required=True)
+    b.add_argument("--migrate-image")
+    b.add_argument("--image", action="append", default=[], help="service=ref@sha256:... (built now)")
+    b.add_argument("--built", action="append", default=[], help="unit=ref@sha256:... (built now; includes migrate)")
+    b.add_argument("--input", action="append", default=[], help="unit=inputs-hash")
+    b.add_argument("--previous", help="the release currently running; unchanged units are reused from it")
+    b.add_argument("--registry-prefix", action="append")
+    b.add_argument("--built-at")
+    b.add_argument("--note")
+    b.add_argument("--out", required=True)
+
+    v = sub.add_parser("validate")
+    v.add_argument("manifest")
+    v.add_argument("--registry-prefix", action="append")
+
+    pl = sub.add_parser("plan")
+    pl.add_argument("--manifest", required=True)
+    pl.add_argument("--current")
+    pl.add_argument("--applied", required=True)
+
+    rb = sub.add_parser("rollback-check")
+    rb.add_argument("--current", required=True)
+    rb.add_argument("--target", required=True)
+    rb.add_argument("--applied", required=True)
+
+    sc = sub.add_parser("scan-sql")
+    sc.add_argument("files", nargs="+")
+
+    jg = sub.add_parser("jget")
+    jg.add_argument("file")
+    jg.add_argument("path")
+
+    ev = sub.add_parser("event")
+    ev.add_argument("--file", required=True)
+    ev.add_argument("kind")
+    ev.add_argument("fields", nargs="*")
+
+    st = sub.add_parser("state")
+    st.add_argument("action", choices=["get", "set", "init"])
+    st.add_argument("--file", required=True)
+    st.add_argument("fields", nargs="*")
+
+    mc = sub.add_parser("maintenance-caddyfile")
+    mc.add_argument("infile"); mc.add_argument("outfile"); mc.add_argument("--mark", required=True)
+    ms = sub.add_parser("maintenance-site")
+    ms.add_argument("infile"); ms.add_argument("outfile")
+    mv = sub.add_parser("maintenance-verify")
+    mv.add_argument("original"); mv.add_argument("candidate"); mv.add_argument("--mark"); mv.add_argument("--site", action="store_true")
+    nb = sub.add_parser("need-build")
+    nb.add_argument("--previous"); nb.add_argument("--input", action="append", default=[]); nb.add_argument("--with-cbt", action="store_true")
+    sm = sub.add_parser("summary")
+    sm.add_argument("manifest")
+    sub.add_parser("redact")
+
+    a = p.parse_args(argv)
+    try:
+        if a.cmd == "build-manifest":
+            m = build_manifest(a)
+            atomic_write(a.out, canonical_bytes(m), 0o644)
+            print(a.out)
+        elif a.cmd == "need-build":
+            prev = load_manifest(a.previous) if a.previous and os.path.exists(a.previous) else None
+            print(json.dumps(need_build(prev, _pairs(a.input), a.with_cbt)))
+        elif a.cmd == "summary":
+            m = load_manifest(a.manifest)
+            m["migrations"] = {"count": len(m["migrations"]), "head": m["schema_head"],
+                               "by_class": {c: sum(1 for x in m["migrations"] if x["class"] == c) for c in CLASSES}}
+            out(m)
+        elif a.cmd == "validate":
+            validate_manifest(load_manifest(a.manifest), a.registry_prefix)
+            print("ok")
+        elif a.cmd == "plan":
+            m = load_manifest(a.manifest)
+            validate_manifest(m)
+            cur = load_manifest(a.current) if a.current and os.path.exists(a.current) else None
+            out(make_plan(m, cur, parse_applied(a.applied)))
+        elif a.cmd == "rollback-check":
+            res = rollback_check(load_manifest(a.current), load_manifest(a.target), parse_applied(a.applied))
+            out(res)
+            return 0 if res["allowed"] else 3
+        elif a.cmd == "scan-sql":
+            for f in a.files:
+                with open(f, encoding="utf-8") as fh:
+                    print(f, json.dumps(classify_sql(fh.read()), sort_keys=True))
+        elif a.cmd == "jget":
+            val = dotted(load_manifest(a.file), a.path)
+            print(val if isinstance(val, str) else json.dumps(val))
+        elif a.cmd == "event":
+            append_event(a.file, a.kind, kv_pairs(a.fields))
+        elif a.cmd == "state":
+            cur = {}
+            if os.path.exists(a.file):
+                with open(a.file, encoding="utf-8") as fh:
+                    cur = json.load(fh)
+            if a.action == "get":
+                out(cur)
+            else:
+                new = {} if a.action == "init" else cur
+                new.update(kv_pairs(a.fields))
+                new["updated_at"] = now()
+                atomic_write(a.file, (json.dumps(new, indent=2, sort_keys=True) + "\n").encode())
+        elif a.cmd == "maintenance-caddyfile":
+            with open(a.infile, encoding="utf-8") as fh:
+                atomic_write(a.outfile, maintenance_caddyfile(fh.read(), a.mark).encode(), 0o644)
+        elif a.cmd == "maintenance-site":
+            with open(a.infile, encoding="utf-8") as fh:
+                atomic_write(a.outfile, maintenance_site(fh.read()).encode(), 0o644)
+        elif a.cmd == "maintenance-verify":
+            with open(a.original, encoding="utf-8") as fo, open(a.candidate, encoding="utf-8") as fc:
+                if a.site:
+                    verify_maintenance_site(fo.read(), fc.read())
+                else:
+                    verify_maintenance_caddyfile(fo.read(), fc.read(), a.mark)
+        elif a.cmd == "redact":
+            sys.stdout.write(redact(sys.stdin.read()))
+    except Refusal as e:
+        print(f"REFUSED: {e}", file=sys.stderr)
+        return 2
+    except (OSError, ValueError, KeyError, IndexError) as e:
+        print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,29 @@
+#!/bin/sh
+set -u
+# the real image's entrypoint is the prisma CLI, so callers pass `migrate <command>`
+[ "${1:-}" = migrate ] && shift
+cmd=${1:-}; shift
+P="psql -X -q -v ON_ERROR_STOP=1 $DIRECT_URL"
+$P -c "CREATE TABLE IF NOT EXISTS _prisma_migrations (id varchar(36) PRIMARY KEY, checksum varchar(64) NOT NULL, finished_at timestamptz, migration_name varchar(255) NOT NULL, logs text, rolled_back_at timestamptz, started_at timestamptz NOT NULL DEFAULT now(), applied_steps_count int NOT NULL DEFAULT 0)" >/dev/null || exit 1
+case "$cmd" in
+  deploy)
+    if [ "$($P -At -c "SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL")" != 0 ]; then
+      echo "Error: P3009 migrate found failed migrations in the target database" >&2; exit 1; fi
+    for d in $(ls -1 /migrations | sort); do
+      sum=$(sha256sum "/migrations/$d/migration.sql" | cut -d' ' -f1)
+      if [ "$($P -At -c "SELECT count(*) FROM _prisma_migrations WHERE migration_name='$d' AND finished_at IS NOT NULL AND rolled_back_at IS NULL")" != 0 ]; then continue; fi
+      echo "Applying migration \`$d\`"
+      id=$(cat /proc/sys/kernel/random/uuid)
+      $P -c "INSERT INTO _prisma_migrations (id, checksum, migration_name) VALUES ('$id', '$sum', '$d')" >/dev/null
+      if $P --single-transaction -f "/migrations/$d/migration.sql" >/tmp/out 2>&1; then
+        $P -c "UPDATE _prisma_migrations SET finished_at = now(), applied_steps_count = 1 WHERE id = '$id'" >/dev/null
+      else
+        cat /tmp/out >&2; echo "Error: migration $d failed" >&2; exit 1
+      fi
+    done
+    echo "All migrations have been successfully applied." ;;
+  status) $P -At -c "SELECT migration_name, finished_at IS NOT NULL FROM _prisma_migrations ORDER BY migration_name" ;;
+  resolve) [ "$1" = --rolled-back ] || exit 2
+    $P -c "UPDATE _prisma_migrations SET rolled_back_at = now() WHERE migration_name = '$2' AND finished_at IS NULL AND rolled_back_at IS NULL" >/dev/null ;;
+  *) exit 2 ;;
+esac
