@@ -105,7 +105,7 @@ jobs:
 
   # ---------------------------------------------------------------------------------------------
   api-test:
-    name: api tests (shard ${{ matrix.shard }}/6)
+    name: api tests (${{ matrix.shard == 'slow' && 'the 94-second timing spec' || format('shard {0}/6', matrix.shard) }})
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
@@ -113,7 +113,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        # `slow` is ONE spec file (src/common/queue/worker-tuning.spec.ts, ~94 s of timing assertions) that
+        # would otherwise make whichever shard holds it twice as long as the rest. It runs in its own job
+        # in parallel, and every shard excludes it: nothing is dropped, the union is every spec file.
+        shard: [1, 2, 3, 4, 5, 6, "slow"]
     # Each shard owns its database: apps/api's tests run serially against one shared PostgreSQL (a
     # deliberate property: RLS bugs only show on a real server), and that stays true inside a shard.
     services:
@@ -148,9 +151,19 @@ jobs:
         run: |
           pnpm --filter @school-kit/db migrate:deploy
           pnpm --filter @school-kit/db seed
-      - name: API tests, shard ${{ matrix.shard }} of 6
+      - name: API tests
         working-directory: apps/api
-        run: pnpm exec vitest run --shard=${{ matrix.shard }}/6
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          slow=src/common/queue/worker-tuning.spec.ts
+          test -f "$slow"   # if the file moves, this fails loudly instead of the shards silently including or dropping it
+          if [ "$SHARD" = slow ]; then
+            pnpm exec vitest run "$slow"
+          else
+            pnpm exec vitest run --shard="$SHARD/6" --exclude "**/worker-tuning.spec.ts"
+          fi
       # CLAUDE.md calls `pnpm ai:eval` required before a prompt PR merges; it needs no key and takes
       # about two seconds, so it runs once, in shard 1.
       - name: AI evals

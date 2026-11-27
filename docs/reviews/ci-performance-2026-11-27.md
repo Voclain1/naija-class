@@ -32,7 +32,7 @@ changes ──┬─ static   lint + typecheck + web/portal/cbt unit tests      
 | Decision | Reason and evidence |
 |---|---|
 | Lint, typecheck and the front-end unit tests share one job | One `turbo run lint typecheck` runs all 25 tasks concurrently: 1 m 46 s locally. The front-end unit tests take 13 s + 2 s + 2 s; three runners for 17 s of work would each pay a minute of setup |
-| API tests in 6 shards, each its own database | `apps/api` runs 287 spec files serially against one PostgreSQL by design (RLS bugs only show on a real server). That property is kept *inside* a shard; sharding multiplies databases, it does not share one. Shard 1 of 6, run for real against PostgreSQL 18: 48 files, 705 tests, all passed, 2 m 42 s while competing with another job. One file (`worker-tuning.spec.ts`, a timing test) takes 94 s alone, which sets the floor for the shard that holds it |
+| API tests in 6 shards (+ one job for the 94 s timing spec), each its own database | `apps/api` runs 287 spec files serially against one PostgreSQL by design (RLS bugs only show on a real server). That property is kept *inside* a shard; sharding multiplies databases, it does not share one. Shard 1 of 6, run for real against PostgreSQL 18: 48 files, 705 tests, all passed, 2 m 42 s while competing with another job. One file (`worker-tuning.spec.ts`, a timing test) takes 94 s alone, which sets the floor for the shard that holds it |
 | Playwright in 5 shards | `playwright test --list` over the 5 shards gives 55 + 45 + 51 + 64 + 34 = **249 tests in 106 files**, identical to the unsharded list. No spec depends on another (no `globalSetup`, no `serial`, no project dependencies): each signs up its own school. Shard 5 run for real against the production builds: 34 tests, 2 m 27 s (31 passed; the 3 typography specs failed only for lack of an ffmpeg revision in this sandbox and passed when it was linked) |
 | The three Next.js builds happen once, in parallel, and are passed to the shards as an artifact | They were built twice (ci: web+portal; e2e: web+portal+cbt). They are also the compile check. `.next/cache` is cached by lockfile so an incremental build is shorter |
 | Change detection (`scripts/ci/changes.py`) is an allow-list of what may be skipped | An unrecognised path runs everything. Documentation no test reads, and the release tooling (which has its own job), may skip the heavy jobs. `docs/onboarding-guide.md`, `CLAUDE.md` and `AGENTS.md` are read by tests and are not skippable. Pushes to `main`, the nightly schedule and manual runs run everything, and the aggregate jobs fail if anything was skipped on such a run |
@@ -45,9 +45,42 @@ changes ──┬─ static   lint + typecheck + web/portal/cbt unit tests      
 
 ## 3. After
 
-*(filled from the exact-head run; see the pull request)*
+Measured on GitHub's runners on the same day as the "before" run above. Run 46068154766 (this
+change's first run; `ci.yml` is a global input, so **every job ran, nothing was skipped**):
 
-## 4. Not done, and why
+| Job | Wall time | What it is |
+|---|---|---|
+| what changed | 0 m 09 s | |
+| lint + typecheck + frontend tests | 2 m 09 s | setup 0:35 · `turbo run lint typecheck` 1:13 · web/portal/cbt unit tests 0:15 |
+| api tests, shards 2-6 | 2 m 08 s - 2 m 14 s | setup 0:55 · tests 0:49 - 1:02 |
+| api tests, shard 1 | 3 m 39 s | the same, but it held the 94 s timing spec (tests 2:26) |
+| build web, portal, cbt | 3 m 17 s | setup 0:40 · three builds in parallel 2:23 |
+| e2e shards 1-5 | about 4 m (shard 4, the largest at 64 tests: 3 m 59 s) | setup 1:05 · Playwright 2:50 |
+| release tooling and scripts | 0 m 09 s | |
+| PostgreSQL backup image | 1 m 10 s | cold layer cache |
+| **`lint + typecheck + test + build` (the aggregate)** | **3 m 56 s after the run started** | was 12 m 58 s |
+| **whole run, e2e included** | **8 m 01 s** | was min 13 m 20 s, **median 15 m 42 s**, max 19 m 07 s |
+
+The old-style CI on the other pull request (#570, run 46067975979, same day) took 8 m 02 s in its
+`Test` step alone and about 13 m 45 s for that job.
+
+Reading it honestly: the **routine unit/lint/typecheck/build path is 3 m 56 s**, inside the 3-6 minute
+target. A change that also needs the browser suite (any application change) is **8 m 01 s**: the
+critical path is `changes` 0:09 → `build` 3:17 → an e2e shard 4:00. That is half the old median but
+above 6 minutes; the next levers are below.
+
+**Shard 1 follow-up.** Shard 1 was the long pole of the API tests because it held one 94 s timing spec.
+That spec now runs as its own parallel job and every shard excludes it (the job fails loudly if the file
+moves). Checked locally: shard 1 of 6 then holds 48 other files, 710 tests, all passing, in 61 s.
+
+## 4. Next levers (not done)
+
+- **Overlap the e2e shards' setup with the build** (about -1 m): shards wait for the build artifact only
+  at the step that needs it, instead of for the whole `build` job.
+- **A sixth e2e shard** (about -30 s): the largest shard has 64 tests against an average of 50.
+- **A warm `.next/cache`**: the first run with a new lockfile pays a cold build; later runs are incremental.
+
+## 5. Not done, and why
 
 - **No cross-commit test-result reuse for a squash merge.** A merge to `main` re-runs everything on a tree
   the pull request already tested. The saving is real but needs a reliable "this tree was already green"
