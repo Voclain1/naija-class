@@ -52,8 +52,13 @@ jobs:
           cid=$(docker ps -q --filter label=com.docker.compose.project=school-kit --filter label=com.docker.compose.service=api)
           [ -n "$cid" ] || { echo "BLOCK API container unavailable"; exit 1; }
           image=$(docker inspect --format '{{.Config.Image}}' "$cid")
-          [[ "$image" == 'ghcr.io/voclain1/school-kit-api@sha256:58d4630e6a64aea0e852ebf336d12de2c90592347b986e77ceecb1e52adae2aa' ]] || { echo "BLOCK running API differs from the approved instalment baseline"; exit 1; }
-          echo "PASS running API matches the pinned instalment baseline"
+          case "$image" in
+            ghcr.io/voclain1/school-kit-api@sha256:58d4630e6a64aea0e852ebf336d12de2c90592347b986e77ceecb1e52adae2aa)
+              echo "PASS running API matches the pinned instalment baseline" ;;
+            ghcr.io/voclain1/school-kit-api@sha256:54c5fdbf9ca2af468f02676e33853ab67b5ee74a24bb9c907433c5d62a3792f9)
+              echo "PASS running API matches the deployed Batch 3 pin" ;;
+            *) echo "BLOCK running API differs from the approved baseline and Batch 3 pins"; exit 1 ;;
+          esac
           docker compose --env-file deploy.env -f docker-compose.yml exec -T postgres psql -U postgres -d school_kit -X -v ON_ERROR_STOP=1 -Atc "BEGIN READ ONLY; SELECT CASE WHEN to_regclass('public.paystack_webhook_inbox') IS NULL THEN 'Paystack inbox: not installed' ELSE 'Paystack inbox: installed; review rollback target' END; COMMIT;" </dev/null 2>/dev/null || { echo "BLOCK read-only schema inspection unavailable"; exit 1; }
           docker compose --env-file deploy.env -f docker-compose.yml exec -T postgres psql -U postgres -d school_kit -X -v ON_ERROR_STOP=1 -At <<'SQL' 2>/dev/null || { echo "BLOCK read-only SMS inventory unavailable"; exit 1; }
           BEGIN READ ONLY;
