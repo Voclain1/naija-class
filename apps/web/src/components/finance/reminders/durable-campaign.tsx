@@ -2,8 +2,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import type { ReminderSendOutcome } from "@school-kit/types";
+import type { ReminderCampaignReapprovalQuote, ReminderSendOutcome } from "@school-kit/types";
 import { Button } from "@/components/ui/button";
+import { apiFetch, ApiError } from "@/lib/api-client";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth/use-auth";
 import { hasPermission } from "@/lib/auth/has-permission";
@@ -30,7 +31,7 @@ function Mount(props: Props) {
     const s = new DurableCampaignSession(); setSession(s);
     if (campaignId) void s.loadCampaign(campaignId);
     else if (proposalId) void s.recoverProposal(proposalId);
-    else if (request) void s.start({ termId: request.termId, studentIds: [...new Set(request.studentIds)], options: { includePaymentPlans: !request.filters.excludePlans, overdueOnly: request.filters.overdueOnly } });
+    else if (request) void s.start({ termId: request.termId, studentIds: [...new Set(request.studentIds)], options: { includePaymentPlans: !request.filters.excludePlans, overdueOnly: request.filters.overdueOnly, ...request.deliveryOptions } });
     return () => s.dispose();
   }, [request, proposalId, campaignId]);
   return session ? <Panel session={session} onClose={props.onClose} /> : null;
@@ -54,6 +55,7 @@ function Panel({ session, onClose }: { session: DurableCampaignSession; onClose?
     const timer = setTimeout(() => void session.loadCampaign(c.id), c.heldForQuietHours ? 30000 : 3000);
     return () => clearTimeout(timer);
   }, [state.phase, c, session]);
+  const requiresReapproval = c?.haltReason === "PRICE_APPROVAL_REQUIRED" || c?.haltReason === "WHATSAPP_REVIEW_REQUIRED";
   const expired = p ? Date.parse(p.expiresAt) <= now : false;
   const isReview = state.phase === "review";
   const working = ["preparing", "recovering", "confirming", "refreshing", "acting", "status-loading"].includes(state.phase);
@@ -66,6 +68,13 @@ function Panel({ session, onClose }: { session: DurableCampaignSession; onClose?
       <p className="text-sm"><strong>Term:</strong> {p.termLabel ?? "Term unavailable"}</p>
       <dl className="grid grid-cols-3 gap-3 rounded-lg bg-muted/50 p-3 text-sm">{[["Selected students", p.counts.selected], ["Eligible students", p.counts.eligible], ["Planned sends", p.counts.plannedSends]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd className="text-lg font-semibold">{value}</dd></div>)}</dl>
       <p className="text-sm">Email {p.channels.email.enabled && p.channels.email.configured ? "available" : "unavailable"} · SMS {p.channels.sms.enabled && p.channels.sms.configured ? "available" : "unavailable"} · App alerts {p.channels.push.enabled ? "enabled" : "off"}. SMS sender: {p.channels.sms.sender === "SCHOOL" ? "school-approved name" : "SchoolKit"}.</p>
+      <section aria-label="Schedule and estimated costs" className="space-y-2 rounded-xl border bg-card p-3 text-sm">
+        <p><strong>Delivery:</strong> {p.options.scheduledFor ? new Date(p.options.scheduledFor).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Lagos" }) + " (Lagos)" : "Next available send window"}</p>
+        <p>Payment link: {p.options.includeInvoiceLink ? "Include when a single matching invoice has a valid link" : "Not requested"}. Mobile channel: {p.options.useWhatsApp ? "WhatsApp (school-owned Meta billing)" : "Existing push/SMS rules"}.</p>
+        {p.smsEstimate && <p>Potential SMS segments: {p.smsEstimate.segments} · Maximum estimate: {p.smsEstimate.maximumKobo === null ? "Unknown — pricing not configured" : formatKobo(BigInt(p.smsEstimate.maximumKobo))}</p>}
+        {p.whatsappEstimate && <p>WhatsApp recipients: {p.whatsappEstimate.recipients} · Maximum estimate: {p.whatsappEstimate.maximumKobo === null ? "Unknown — pricing not configured" : formatKobo(BigInt(p.whatsappEstimate.maximumKobo))}. The school&apos;s Meta account is charged directly.</p>}
+        <p className="text-xs text-muted-foreground">Estimates are not final charges. The server rechecks the invoice, recipient, payment link and channel before sending.</p>
+      </section>
       {p.batchErrors.map((e) => <p role="alert" key={e.code} className="text-sm text-destructive">{e.message}</p>)}
       {p.batchWarnings.map((w) => <p key={w.code} className="rounded-lg bg-muted/50 p-2 text-sm">{w.message}</p>)}
       <div className="max-h-64 overflow-auto rounded-lg border"><table className="w-full text-left text-sm"><caption className="sr-only">Server-reviewed reminder recipients</caption><thead className="sticky top-0 bg-card"><tr>{["Student", "Class", "Balance", "Decision", "Planned channels"].map((h) => <th key={h} className="p-2 font-medium">{h}</th>)}</tr></thead><tbody>{p.students.map((s) => <tr key={s.studentId} className="border-t"><td className="min-w-36 p-2">{s.name ?? "Student unavailable"}<p className="text-xs">{s.admissionNumber}</p></td><td className="p-2">{s.classLabel ?? "—"}</td><td className="whitespace-nowrap p-2">{formatKobo(s.balance)}</td><td className="min-w-32 p-2">{eligibility[s.eligibility]}</td><td className="min-w-36 p-2">{s.planned.emailGuardians} guardian email(s) · {s.planned.mobile === "NONE" ? "no mobile send" : reason(s.planned.mobile)}</td></tr>)}</tbody></table></div>
@@ -75,13 +84,15 @@ function Panel({ session, onClose }: { session: DurableCampaignSession; onClose?
     </>}
     {c && <section className="space-y-3 text-sm" aria-label="Saved campaign results">
       <p role="status" className="font-semibold">Campaign: {c.status === "RUNNING" ? "In progress" : c.status === "HALTED" ? "Halted" : "Completed"}</p>
+      {c.scheduledFor && <p>Scheduled for {new Date(c.scheduledFor).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Lagos" })} (Lagos time).</p>}
       {c.heldForQuietHours && <p className="rounded-lg bg-muted/50 p-3">Sends are held for quiet hours, 21:00–06:00 Lagos time.</p>}
       {c.haltReason && <p role="alert">Stopped: {reason(c.haltReason)}. Resume requires a fresh permission and feature check.</p>}
       <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(c.counts).map(([outcome, count]) => <div className="rounded-lg bg-muted/50 p-2" key={outcome}><dt>{SEND_LABELS[outcome as ReminderSendOutcome]}</dt><dd className="text-lg font-semibold">{count}</dd></div>)}</dl>
       {c.counts.UNKNOWN > 0 && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-950">Some sends may have gone out. Unknown sends are never retried automatically; check before contacting those families again.</p>}
       <div className="max-h-72 overflow-auto rounded-lg border"><table className="w-full text-left text-sm"><caption className="sr-only">Per-student send outcomes</caption><thead className="sticky top-0 bg-card"><tr><th className="p-2">Student</th><th className="p-2">Channel and outcome</th></tr></thead><tbody>{c.students.map((s) => <tr className="border-t" key={s.studentId}><td className="min-w-40 p-2">{s.name ?? "Student unavailable"}<p className="text-xs">{s.admissionNumber}</p></td><td className="min-w-48 p-2">{s.sends.map((send) => <p key={`${send.guardianId}:${send.slot}`}>Guardian {[...new Set(s.sends.map((item) => item.guardianId))].indexOf(send.guardianId) + 1} · {send.channelUsed ?? (send.slot === "EMAIL" ? "Email" : "Mobile")} · <strong>{SEND_LABELS[send.outcome]}</strong>{send.reason ? ` · ${reason(send.reason)}` : ""}</p>)}</td></tr>)}</tbody></table></div>
       <p className="text-xs text-muted-foreground">{c.limits}</p>
-      {c.status === "HALTED" && <label className="flex gap-2"><input type="checkbox" checked={resumeChecked} onChange={(e) => setResumeChecked(e.target.checked)} />Resume only sends that were never attempted. Unknown sends will stay unknown.</label>}
+      {c.status === "HALTED" && requiresReapproval && <CampaignReapproval key={c.id + ":" + c.haltedAt} campaignId={c.id} onDone={() => void session.loadCampaign(c.id)} />}
+      {c.status === "HALTED" && !requiresReapproval && <label className="flex gap-2"><input type="checkbox" checked={resumeChecked} onChange={(e) => setResumeChecked(e.target.checked)} />Resume only sends that were never attempted. Unknown sends will stay unknown.</label>}
     </section>}
     <DialogFooter className="flex-wrap gap-2">
       {!working && state.phase !== "unknown" && <Button variant="outline" onClick={close}>Back to reminder selection</Button>}
@@ -91,8 +102,38 @@ function Panel({ session, onClose }: { session: DurableCampaignSession; onClose?
       {isReview && <Button disabled={!checked || !p?.canConfirm || expired} onClick={() => void session.confirm()}>Confirm campaign</Button>}
       {c && state.phase === "live" && <Button variant="outline" onClick={() => void session.loadCampaign(c.id)}>Refresh campaign status</Button>}
       {c?.status === "RUNNING" && state.phase === "live" && <Button variant="outline" onClick={() => void session.act("halt")}>Halt remaining sends</Button>}
-      {c?.status === "HALTED" && state.phase === "live" && <Button disabled={!resumeChecked} onClick={() => void session.act("resume")}>Resume unattempted sends</Button>}
+      {c?.status === "HALTED" && !requiresReapproval && state.phase === "live" && <Button disabled={!resumeChecked} onClick={() => void session.act("resume")}>Resume unattempted sends</Button>}
     </DialogFooter>
     {c && <Link href={`/finance/reminders/runs/${encodeURIComponent(c.id)}`} className="text-xs underline">Permanent link to this campaign (your account only)</Link>}
   </DialogContent></Dialog>;
+}
+
+function CampaignReapproval({ campaignId, onDone }: { campaignId: string; onDone: () => void }) {
+  const [quote, setQuote] = useState<ReminderCampaignReapprovalQuote | null>(null);
+  const [approved, setApproved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const base = "/finance/reminder-campaigns/" + encodeURIComponent(campaignId);
+  const price = (value: string | null) => value === null ? "Unavailable" : formatKobo(BigInt(value));
+  async function load() {
+    if (busy) return;
+    setBusy(true); setError(""); setApproved(false); setQuote(null);
+    try { setQuote(await apiFetch<ReminderCampaignReapprovalQuote>(base + "/reapproval")); }
+    catch (e) { setError(e instanceof ApiError ? e.message : "Could not obtain updated pricing."); }
+    finally { setBusy(false); }
+  }
+  async function apply() {
+    if (busy || !quote || !approved) return;
+    setBusy(true); setError("");
+    try { await apiFetch(base + "/reapprove", { method: "POST", body: { previewHash: quote.previewHash } }); onDone(); }
+    catch (e) { setQuote(null); setApproved(false); setError(e instanceof ApiError ? e.message : "The approval outcome is uncertain. Refresh the saved campaign before taking another action."); }
+    finally { setBusy(false); }
+  }
+  return <div className="space-y-3 rounded-xl border p-4">
+    <h3 className="font-semibold">Review updated delivery costs</h3>
+    <p className="text-muted-foreground">This campaign needs a fresh approval. Previously attempted messages, including unknown sends, are not reopened.</p>
+    <Button variant="outline" disabled={busy} onClick={() => void load()}>Get current quote</Button>
+    {quote && <><dl className="space-y-1"><div>Remaining mobile slots: {quote.remainingMobileSlots}</div><div>SMS per segment: {price(quote.smsUnitKobo)}</div><div>WhatsApp per message: {price(quote.whatsappUnitKobo)}</div><div>Estimated maximum WhatsApp cost: {price(quote.maximumWhatsAppKobo)}</div></dl><p className="text-xs text-muted-foreground">A quote is not a guarantee of live provider template approval. A provider hold may still prevent delivery.</p><label className="flex gap-2"><input type="checkbox" checked={approved} disabled={busy} onChange={(e) => setApproved(e.target.checked)} />I approve these updated costs for unattempted eligible sends.</label><Button disabled={busy || !approved} onClick={() => void apply()}>Approve and continue</Button></>}
+    {error && <p role="alert" className="text-destructive">{error}</p>}
+  </div>;
 }

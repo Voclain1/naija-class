@@ -10,7 +10,7 @@ export interface CampaignState {
   recipients: ReminderStudent[]; batches: BatchState[]; removed: number;
   channels: NotificationPreferenceDto | null; message: string | null;
 }
-export interface CampaignRequest { termId: string; termLabel: string; studentIds: string[]; filters: ReminderFilters; canReadChannels: boolean; canReadGuardians?: boolean }
+export interface CampaignRequest { termId: string; termLabel: string; studentIds: string[]; filters: ReminderFilters; canReadChannels: boolean; canReadGuardians?: boolean; deliveryOptions?: { scheduledFor?: string; includeInvoiceLink?: boolean; useWhatsApp?: boolean } }
 const empty: CampaignState = { phase: "idle", recipients: [], batches: [], removed: 0, channels: null, message: null };
 const defaultApi = { list: listDebtors, send: sendReminders, channels: getNotificationPreferences };
 

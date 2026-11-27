@@ -6,7 +6,7 @@ import { resolveShareablePaymentLink, shareablePaymentLinkUrl } from "./shareabl
 
 const BALANCE = 4_500_000; // kobo
 
-const live = (amount: number): PaymentLinkStateDto => ({
+const live = (amount: number): Extract<PaymentLinkStateDto, { state: "LIVE" }> => ({
   state: "LIVE",
   id: "pl-1",
   url: "https://paystack.com/pay/PRQ_abc",
@@ -40,6 +40,12 @@ describe("shareablePaymentLinkUrl", () => {
     // one message would tell the parent two different amounts.
     expect(shareablePaymentLinkUrl(live(3_000_000), BALANCE)).toBeNull();
     expect(shareablePaymentLinkUrl(live(BALANCE + 1), BALANCE)).toBeNull();
+  });
+
+  it("never shares expired or malformed expiry links, even with a matching balance", () => {
+    expect(shareablePaymentLinkUrl({ ...live(BALANCE), expiresAt: "2000-01-01T00:00:00Z" }, BALANCE)).toBeNull();
+    expect(shareablePaymentLinkUrl({ ...live(BALANCE), expiresAt: "not a date" }, BALANCE)).toBeNull();
+    expect(shareablePaymentLinkUrl({ ...live(BALANCE), expiresAt: "2099-01-01T00:00:00Z" }, BALANCE)).toBe("https://paystack.com/pay/PRQ_abc");
   });
 
   it("returns null for a missing state", () => {

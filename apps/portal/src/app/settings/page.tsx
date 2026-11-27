@@ -13,6 +13,7 @@ import type { PortalEmailPreferencesDto } from "@school-kit/types";
 import { PageHeader, PageSkeleton } from "@school-kit/ui";
 
 import { SchoolBanner } from "@/components/school-banner";
+import { WhatsAppConsent } from "@/components/whatsapp-consent";
 import { portalJson } from "@/lib/portal-api";
 import { usePortalRouter } from "@/lib/portal-router";
 import { LegalLinks } from "@/components/legal-links";
@@ -79,6 +80,7 @@ export default function SettingsPage() {
           {error}
         </p>
       )}
+      <WhatsAppConsent />
       <LegalLinks className="mt-2" />
     </main>
   );

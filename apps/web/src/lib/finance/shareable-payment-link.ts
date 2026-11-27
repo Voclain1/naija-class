@@ -31,6 +31,7 @@ export function shareablePaymentLinkUrl(
 ): string | null {
   if (!state || state.state !== "LIVE") return null;
   if (state.amount !== balance) return null;
+  if (state.expiresAt && (!Number.isFinite(Date.parse(state.expiresAt)) || Date.parse(state.expiresAt) <= Date.now())) return null;
   return state.url || null;
 }
 
