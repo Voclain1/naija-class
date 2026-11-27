@@ -87,9 +87,9 @@ test("Record payment: search the student, Paid in full, receipt", async ({ brows
     expect(generated.ok(), await generated.text()).toBe(true);
     const child = students[0]!;
 
-    // The dashboard's Record Fee now opens this page, not the bills list.
+    // The dashboard's Payments shortcut opens the record-payment page, not the bills list.
     await page.goto("/dashboard");
-    await page.getByRole("link", { name: "Record payment" }).click({ timeout: 60_000 });
+    await page.getByRole("link", { name: "Payments", exact: true }).click({ timeout: 60_000 });
     await expect(page).toHaveURL(/\/finance\/payments\/record$/);
 
     // Search by admission number: unique to this run, whatever else is in the database.

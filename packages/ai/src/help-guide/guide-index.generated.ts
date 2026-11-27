@@ -185,7 +185,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
     "parents": [
       "Part 2 — Everyday jobs"
     ],
-    "text": "The form teacher normally takes the register each morning, from Attendance in their own menu (or the Roll Call button on their dashboard).\nPick the class and the date.\nPress Mark all present, then change the few who are Absent, Late or Excused.\nPress Save.\nIf you need to take a register yourself (for example when a teacher is away), press Take attendance on the Dashboard, press the Attendance today card, or choose Attendance in the main menu. Searching for “attendance” or “class register” opens the same page. Owners and admins can mark any class there.\nOnly the class's form teacher, you and your admins can mark a class register. If a teacher cannot see their class, check Step 8.",
+    "text": "The form teacher normally takes the register each morning, from Attendance in their own menu (or the Roll Call button on their dashboard).\nPick the class and the date.\nPress Mark all present, then change the few who are Absent, Late or Excused.\nPress Save.\nIf you need to take a register yourself (for example when a teacher is away), press Attendance on the Dashboard, press the Attendance today card, or choose Attendance in the main menu. Searching for “attendance” or “class register” opens the same page. Owners and admins can mark any class there.\nOnly the class's form teacher, you and your admins can mark a class register. If a teacher cannot see their class, check Step 8.",
     "searchable": true
   },
   {
