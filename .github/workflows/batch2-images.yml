@@ -276,6 +276,8 @@ jobs:
           sed -i 's/^ *//' "$RUNNER_TEMP/manifest.env"
       - name: Rehearse the guarded cutover, including its failure paths
         env:
+          FRONTEND_OVERRIDE: infra/vps/releases/messaging-approved/frontend.compose.yml
+          FRONTEND_SHA: 2ee1442788e6e5d173f38a554a80232250418398
           RELEASE_MANIFEST: ${{ runner.temp }}/manifest.env
           OLD_API: ghcr.io/voclain1/school-kit-api@sha256:58d4630e6a64aea0e852ebf336d12de2c90592347b986e77ceecb1e52adae2aa
           OLD_RENDER: ghcr.io/voclain1/school-kit-render:61b5c214cdc4c3908564321459b039c4f2dffcbb

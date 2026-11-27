@@ -39,16 +39,30 @@ workflow stays disabled. Its unused `BACKUP_ENV_FILE` lacks the live heartbeat
 key; the scoped procedure uses the existing live backup configuration and never
 copies or replaces it from GitHub.
 
-After approval, stage immutable application and recovery images and preserve
-both on the host. Review and install the checked operator tools and manifest,
-then verify the live scheduler, migration role, flags and API baseline.
-Use the guarded cutover to return retryable 503s, drain writers, capture the
-verified backup, apply migrations and start the candidate. Verify the inbox
-and financial integrity before reopening ingress. Deploy the approved frontend
-by digest with a targeted web/portal switch as applicable, preserving every
-other service and its environment. Prior to opening traffic, confirm queued
-callbacks can be recovered with the inbox-aware API. Never restore over
-new transactions or use an older allocation or attribution implementation.
+After approval, verify `RELEASE_SHA256SUMS` and the operator package's
+`SHA256SUMS` before installing them in the existing VPS project. The
+`release/` bundle contains the original backend manifest and frontend override,
+plus the exact release pair. Run `cutover.sh stage`, then `cutover.sh verify`.
+Confirm the printed image pins and checksums, then record consent from an
+interactive terminal using `cutover.sh authorize`. The four-hour authorization
+binds both artifact checksums, both frontend digests and the checksummed tools.
+
+With the approval flag set for the command only, `cutover.sh execute` closes the
+API, web and portal, drains writers, verifies the off-site backup and migrates.
+It verifies backend health and financial integrity, persists
+`BACKEND_VERIFIED`, then switches only web and portal to the approved digests.
+Both must answer internal health and reach the running backend before the script
+records `FRONTEND_VERIFIED`. Ingress stays closed. Review the evidence and use
+`cutover.sh reopen` with the per-command approval flag. Reopen rechecks all
+four image identities, backend and frontend health, finances, and the protected
+infrastructure. There is no separate maintenance-off route.
+
+After an interruption before reopening, inspect the saved phase and use
+`cutover.sh execute --resume` after correcting the cause. Recovery uses the
+pinned instalment- and inbox-aware API and render images and the same web and
+portal gates. Run the gated reopen only after reviewing recovery and inbox state.
+For a defect shared by both backend images, keep ingress closed and fix forward.
+Preserve the live database and archive.
 
 Production approvals, independent exact-head review, provider approval and
 paid-channel activation are separate gates. No production migration or
