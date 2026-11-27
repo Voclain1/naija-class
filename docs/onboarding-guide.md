@@ -374,7 +374,7 @@ The **form teacher** normally takes the register each morning, from **Attendance
 2. Press **Mark all present**, then change the few who are **Absent**, **Late** or **Excused**.
 3. Press **Save**.
 
-**If you need to take a register yourself** (for example when a teacher is away), press **Take attendance** on the Dashboard, press the **Attendance today** card, or choose **Attendance** in the main menu. Searching for “attendance” or “class register” opens the same page. Owners and admins can mark any class there.
+**If you need to take a register yourself** (for example when a teacher is away), press **Attendance** on the Dashboard, press the **Attendance today** card, or choose **Attendance** in the main menu. Searching for “attendance” or “class register” opens the same page. Owners and admins can mark any class there.
 
 Only the class's form teacher, you and your admins can mark a class register. If a teacher cannot see their class, check [Step 8](#step-8-choose-a-form-teacher-for-each-class).
 
