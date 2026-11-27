@@ -1,13 +1,17 @@
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+
+import { ConfigService } from "@nestjs/config";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 
 import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import { AuthService } from "../auth/auth.service.js";
+import { creditVerifiedMessagingTopUp, getMessagingReconciliation, getMessagingWallet, reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
+import { PAID_PAYMENT_EVENT, PaidMessagingService } from "../notifications/messaging/paid-messaging.service";
 import { buildPaymentConfirmationHtml, PaymentConfirmationService } from "./payment-confirmation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
 import { PaymentsService } from "./payments.service.js";
@@ -51,14 +55,14 @@ const paystackStub = {
   }),
 };
 
-function makeService(email: ReturnType<typeof fakeEmail>) {
+function makeService(email: ReturnType<typeof fakeEmail>, paid?: PaidMessagingService) {
   const storage = new StorageService(
     new FilesystemStorageDriver(path.join(os.tmpdir(), `sk-confirm-${runId}`), {
       baseUrl: "http://localhost:4000/api/v1",
       secret: "test-secret",
     }),
   );
-  const confirmations = new PaymentConfirmationService(email.service as never);
+  const confirmations = new PaymentConfirmationService(email.service as never, undefined, paid);
   return new PaymentsService(storage, paystackStub as never, new PaymentPlanService(), undefined, undefined, confirmations);
 }
 
@@ -127,7 +131,7 @@ async function setUp(suffix: string, guardians: { email: string | null }[]) {
     });
     const reference = `PSK-${schoolId}-${payment.id}`;
     await db.payment.update({ where: { id: payment.id }, data: { paystackReference: reference } });
-    return { schoolId, paymentId: payment.id, reference, guardianIds };
+    return { schoolId, ownerId: signed.user.id, paymentId: payment.id, reference, guardianIds };
   });
 }
 
@@ -156,6 +160,102 @@ describe("online payment confirmation email", () => {
       expect(s.html).toContain(reference);
       expect(s.html).toContain("will issue your receipt");
     }
+  });
+
+  it("holds a mismatched transaction without recording or confirming payment", async () => {
+    const email = fakeEmail();
+    const svc = makeService(email);
+    const { schoolId, paymentId, reference } = await setUp("amount", [{ email: `amount-${runId}@example.test` }]);
+    const event = success(reference);
+    await svc.handleWebhook({ ...event, data: { ...event.data, amount: 50_000_00 } });
+    const payment = await withTenant(schoolId, (db) => db.payment.findUniqueOrThrow({ where: { id: paymentId } }));
+    expect(await withTenant(schoolId, (db) => db.paystackPaymentException.findFirst({
+      where: { schoolId, reference, reason: "VERIFICATION_MISMATCH" },
+    }))).toMatchObject({ expectedKobo: 30_000_00, observedKobo: 50_000_00n });
+    expect(payment.status).toBe("PENDING");
+    expect(email.sent).toEqual([]);
+    await svc.handleWebhook(event);
+    expect(email.sent).toHaveLength(1);
+  });
+
+  it("queues once from committed payment, waits through quiet hours, and holds an ambiguous SMS reservation", async () => {
+    const { schoolId, ownerId, paymentId, reference, guardianIds } = await setUp("paid-outbound", [{ email: null }]);
+    const sendWalletReservedSms = vi.fn().mockResolvedValue({ status: "UNKNOWN", reason: "PROVIDER_NO_ANSWER" });
+    const config = {
+      MESSAGING_PAID_ENABLED: "on", MESSAGING_PAID_PLATFORM_DAILY_KOBO: "100000",
+      MESSAGING_TERMII_PAID_ACCOUNT_ID: "fictional-account",
+      MESSAGING_PAID_PAYMENT_PROFILES: JSON.stringify([{
+        schoolId, channel: "SMS", schoolDailyKobo: "10000", termiiAccountId: "fictional-account",
+        rates: [{
+          key: "TERMII_SMS", version: "fixture-1", evidence: "fictional rate sheet",
+          effectiveFrom: "2026-01-01T00:00:00Z", effectiveUntil: "2028-01-01T00:00:00Z", verifiedAt: "2026-01-01T00:00:00Z",
+          providerAmount: "50", rateNumerator: "1", rateDenominator: "1", taxBasisPoints: "0", marginBasisPoints: "0",
+        }],
+      }]),
+    };
+    const consent = { verifiedRecipient: async () => "+2348012345678" };
+    const preferences = { getEnabledChannels: async () => ({ sms: true }), getPaidChannels: async () => ({ walletSmsEnabled: true }) };
+    const termii = { isConfigured: true, sendWalletReservedSms };
+    const worker = new PaidMessagingService(
+      new ConfigService(config), consent as never, {} as never, preferences as never, termii as never,
+    );
+    await withTenant(schoolId, (db) => db.notificationPreference.create({
+      data: { schoolId, smsEnabled: true, walletSmsEnabled: true, updatedBy: ownerId },
+    }));
+    const service = makeService(fakeEmail(), worker);
+    const deliveries = () => withTenant(schoolId, (db) => db.notificationDelivery.findMany({
+      where: { schoolId, eventId: paymentId, eventType: PAID_PAYMENT_EVENT },
+    }));
+    expect(await deliveries()).toHaveLength(0);
+    const event = success(reference);
+    await service.handleWebhook({ ...event, data: { ...event.data, amount: 50_000_00 } });
+    expect(await deliveries()).toHaveLength(0);
+    const enqueue = worker.queueVerifiedPayment.bind(worker);
+    vi.spyOn(worker, "queueVerifiedPayment").mockImplementationOnce(async (...args) => {
+      await enqueue(...args);
+      throw new Error("simulated interruption before commit");
+    });
+    await expect(service.handleWebhook(event)).rejects.toThrow("simulated interruption");
+    expect(await deliveries()).toHaveLength(0);
+    expect(await withTenant(schoolId, (db) => db.payment.findUniqueOrThrow({ where: { id: paymentId } })))
+      .toMatchObject({ status: "PENDING" });
+    await Promise.all([service.handleWebhook(event), service.handleWebhook(event)]);
+    expect(await deliveries()).toHaveLength(1);
+    const day = new Date();
+    day.setUTCHours(10, 0, 0, 0);
+    const night = new Date(day);
+    night.setUTCHours(22);
+    await worker.processPending(night);
+    expect(sendWalletReservedSms).not.toHaveBeenCalled();
+    await creditVerifiedMessagingTopUp(schoolId, randomUUID(), 500n);
+    await Promise.all([worker.processPending(day), worker.processPending(day)]);
+    expect(sendWalletReservedSms).toHaveBeenCalledTimes(1);
+    const [delivery] = await deliveries();
+    expect(delivery).toMatchObject({ dispatchState: "UNKNOWN", dispatchRateVersion: "fixture-1", principalId: guardianIds[0] });
+    const held = await getMessagingWallet(schoolId);
+    expect(held.reservedKobo).toBeGreaterThan(0n);
+    await worker.processPending(new Date(day.getTime() + 3600_000));
+    expect(sendWalletReservedSms).toHaveBeenCalledTimes(1);
+    expect(await getMessagingWallet(schoolId)).toEqual(held);
+    await expect(reconcileNotificationReservation({
+      schoolId, deliveryId: delivery!.id, operatorId: randomUUID(), resolution: "SETTLE", evidenceRef: "fictional-ledger-report",
+      providerChargedKobo: held.reservedKobo + 1n,
+    })).rejects.toMatchObject({ code: "MESSAGING_CHARGE_MISMATCH" });
+    expect(await getMessagingWallet(schoolId)).toEqual(held);
+    expect((await getMessagingReconciliation(schoolId)).items[0]).toMatchObject({
+      status: "DISCREPANCY", chargedKobo: null, releasedKobo: null,
+    });
+    const charge = held.reservedKobo - 1n;
+    const settle = () => reconcileNotificationReservation({
+      schoolId, deliveryId: delivery!.id, operatorId: randomUUID(), resolution: "SETTLE",
+      evidenceRef: "fictional-ledger-report", providerChargedKobo: charge,
+    });
+    const outcomes = await Promise.all([settle(), settle()]);
+    expect(outcomes.map(({ status }) => status).sort()).toEqual(["ALREADY_RESOLVED", "RESOLVED"]);
+    expect(await getMessagingWallet(schoolId)).toEqual({ availableKobo: 500n - charge, reservedKobo: 0n });
+    expect((await getMessagingReconciliation(schoolId)).items[0]).toMatchObject({
+      status: "SETTLED", discrepancyRecorded: true, chargedKobo: String(charge), releasedKobo: "1",
+    });
   });
 
   it("skips a guardian with no email and one whose address bounced or complained", async () => {

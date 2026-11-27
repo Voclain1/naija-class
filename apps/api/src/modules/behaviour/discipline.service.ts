@@ -458,11 +458,11 @@ export class DisciplineService {
         title: ctx.school.name,
         body: DISCIPLINE_PUSH_BODY,
         data: { kind: "discipline-notice", studentId: ctx.action.studentId },
-        smsAvailable: this.termii.isConfigured && !!phone,
+        smsAvailable: !!phone && (await this.termii.legacyReadiness(authCtx.schoolId, "DISCIPLINE")).ready,
       });
       if (channel === "SMS" && phone) {
         try {
-          await this.termii.sendSms(phone, sms, sender);
+          await this.termii.sendSms(phone, sms, sender, { schoolId: authCtx.schoolId, eventType: "DISCIPLINE", eventId: actionId });
         } catch (err) {
           this.logger.error(`Discipline notice SMS to ${redactPhone(guardian.phone)} failed: ${String(err)}`);
           channel = "NONE";

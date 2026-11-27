@@ -13,7 +13,7 @@ name: ci
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/unified-messaging-infrastructure]
   push:
     branches: [main]
 
@@ -29,6 +29,39 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  backup-image:
+    name: PostgreSQL backup image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the PostgreSQL 18 backup image
+        run: docker build --build-arg PG_MAJOR=18 -t school-kit-backup-check infra/vps/postgres
+      - name: Verify pinned tools and generated R2 configuration
+        run: |
+          docker run --rm --network none --entrypoint sh school-kit-backup-check -ec '
+            rclone version | grep -Fx "rclone v1.76.0"
+            wal-g --version
+            test -x /ops/backup.sh
+            test -x /ops/restore-test.sh
+            docker_config_check() {
+              grep -Eq "^export RCLONE_CONFIG_BACKUP_$1=.*$2" /ops/env.sh
+            }
+            BACKUP_BUCKET=fixture /ops/entrypoint.sh &
+            pid=$!
+            trap "kill $pid 2>/dev/null || true" EXIT
+            n=0
+            until test -s /ops/env.sh && test -f /etc/cron.d/school-kit; do
+              n=$((n + 1))
+              test "$n" -lt 25
+              sleep 0.2
+            done
+            docker_config_check PROVIDER Cloudflare
+            docker_config_check REGION auto
+            docker_config_check NO_CHECK_BUCKET true
+            docker_config_check NO_HEAD true
+          '
+
   ci:
     name: lint + typecheck + test + build
     runs-on: ubuntu-latest

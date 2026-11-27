@@ -9,6 +9,11 @@
 # schema, so migrations must stay backward compatible, as today.
 set -euo pipefail
 NEW_TAG="${1:?usage: deploy.sh <image tag>}"
+if ! grep -qx 'VPS_MODE=rehearsal' "$(dirname "$0")/deploy.env" ||
+   grep -q '^VPS_MODE=\(live\|production\)$' "$(dirname "$0")/deploy.env"; then
+  echo 'Generic deployment and automatic rollback are rehearsal-only.' >&2
+  exit 1
+fi
 . "$(dirname "$0")/lib.sh"
 
 apps=(api render-worker web portal)
@@ -73,7 +78,8 @@ for i in $(seq 1 60); do
   if healthy; then
     echo "healthy on $NEW_TAG (was ${PREV_TAG:-none})"
     echo "$PREV_TAG" > .previous-tag
-    docker image prune -af --filter "until=336h" >/dev/null || true
+    # Retain image digests needed for database recovery. Reclaim space only
+    # after the operator checks which release and database tools are pinned.
     exit 0
   fi
   sleep 3

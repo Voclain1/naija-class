@@ -12,7 +12,6 @@ import {
   type InitPaystackPaymentInput,
   type PaymentDto,
   type PaystackInitResponseDto,
-  type PaystackWebhookEvent,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
@@ -22,7 +21,7 @@ import { Permissions } from "../../common/auth/permissions.decorator.js";
 import { PermissionsGuard } from "../../common/auth/permissions.guard.js";
 import { PaystackWebhookGuard } from "../../common/paystack/paystack-webhook.guard.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
-import { PayrollService } from "../payroll/payroll.service.js";
+import { PaystackWebhookInboxService } from "./paystack-webhook-inbox.service.js";
 import { PaymentsService } from "./payments.service.js";
 
 // Paystack-specific endpoints are on a SEPARATE controller (not a sub-route of
@@ -37,7 +36,7 @@ import { PaymentsService } from "./payments.service.js";
 export class PaystackController {
   constructor(
     private readonly service: PaymentsService,
-    private readonly payrollService: PayrollService,
+    private readonly inbox: PaystackWebhookInboxService,
   ) {}
 
   // POST /payments/paystack/init
@@ -55,25 +54,13 @@ export class PaystackController {
   }
 
   // POST /payments/paystack/webhook
-  // Receives Paystack webhook events. Always returns 200 — non-2xx triggers
-  // Paystack retries. Authenticated via HMAC-SHA512 signature (PaystackWebhookGuard);
-  // no user session required.
-  //
-  // Routes by event-name prefix: charge.* events are student-fee payments
-  // (PaymentsService), transfer.* events are staff salary payouts
-  // (PayrollService, added CP4b). Same webhook endpoint for both — Paystack
-  // sends every event type to the one URL configured in the dashboard.
+  // Acknowledge only after the authenticated event is durable. A worker
+  // processes the event after this request has returned.
   @Post("webhook")
   @HttpCode(200)
   @UseGuards(PaystackWebhookGuard)
-  async handleWebhook(@Body() event: PaystackWebhookEvent): Promise<{ status: string }> {
-    if (event.event.startsWith("paymentrequest.")) {
-      await this.service.handlePaymentRequestWebhook(event);
-    } else if (event.event.startsWith("transfer.")) {
-      await this.payrollService.handleTransferWebhook(event);
-    } else {
-      await this.service.handleWebhook(event);
-    }
+  async handleWebhook(@Body() event: unknown): Promise<{ status: string }> {
+    await this.inbox.capture(event);
     return { status: "ok" };
   }
 

@@ -1,11 +1,12 @@
 import { Injectable, Logger, Optional } from "@nestjs/common";
 
-import { withTenant } from "@school-kit/db";
+import { withTenant, type PrismaClient } from "@school-kit/db";
 import { formatKobo } from "@school-kit/types";
 
 import { EmailService } from "../../common/email/email.service.js";
 import { isSuppressedForAll } from "../announcements/announcement-email.shared.js";
 import { escapeHtml } from "../admissions/admissions.shared.js";
+import { PaidMessagingService } from "../notifications/messaging/paid-messaging.service";
 import { EventNotifierService } from "../notifications/event-notifier.service.js";
 
 // The family's confirmation of an ONLINE payment, in the school's name
@@ -36,7 +37,12 @@ export class PaymentConfirmationService {
   constructor(
     @Optional() private readonly email?: EmailService,
     @Optional() private readonly events?: EventNotifierService,
+    @Optional() private readonly paid?: PaidMessagingService,
   ) {}
+
+  async queuePaidConfirmation(db: PrismaClient, schoolId: string, paymentId: string, studentId: string): Promise<void> {
+    await this.paid?.queueVerifiedPayment(db, schoolId, paymentId, studentId);
+  }
 
   async onlinePaymentSucceeded(schoolId: string, paymentId: string): Promise<void> {
     // The app's "payment recorded" push, which cash payments already send.

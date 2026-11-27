@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { INestApplication } from "@nestjs/common";
+import { Global, Module, type INestApplication } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { APP_FILTER } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
@@ -13,6 +13,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { AiGenerationService } from "../common/ai/ai-generation.service";
 import { currentPeriodStart } from "../common/ai/ai.constants";
 import type { AuthContext } from "../common/auth/auth-context";
+import { REDIS_AUTH_CLIENT } from "../common/auth/redis-auth.provider";
 import { createSession } from "../common/auth/sessions";
 import { FeatureSwitchesService } from "../common/features/feature-switches.service";
 import { HttpExceptionFilter } from "../common/http-exception.filter";
@@ -36,6 +37,16 @@ import { deleteSchoolRows } from "../modules/platform-admin/school-deletion";
 //   - the prompt's approval gate is neither removed nor bypassed.
 //
 // Synthetic schools only. No model is called anywhere in this file.
+
+// The admin module now reaches AuthModule through payment notifications.
+// As in the governance/lifecycle HTTP specs, keep the auth cache inert so
+// these probes exercise real PostgreSQL sessions without external Redis I/O.
+@Global()
+@Module({
+  providers: [{ provide: REDIS_AUTH_CLIENT, useValue: { get: async () => null, set: async () => "OK", del: async () => 1, pttl: async () => -2, incr: async () => 1, expire: async () => 1 } }],
+  exports: [REDIS_AUTH_CLIENT],
+})
+class InertRedisAuthModule {}
 
 const reqCtx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
 const ASSISTANT_KEYS = ["assistant-workspace", "assistant-billing", "reminder-campaigns", "student-intake", "student-corrections"] as const;
@@ -68,7 +79,7 @@ describe("SchoolKit Assistant: controlled activation by the platform admin", () 
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), PlatformAdminModule],
+      imports: [ConfigModule.forRoot({ isGlobal: true }), InertRedisAuthModule, PlatformAdminModule],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
     app = moduleRef.createNestApplication();

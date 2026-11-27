@@ -1,3 +1,4 @@
+import { PaidMessagingService } from "../notifications/messaging/paid-messaging.service";
 import { createHash } from "node:crypto";
 import { Injectable, Optional } from "@nestjs/common";
 
@@ -73,6 +74,7 @@ export class InvoiceGenerationService {
     // Phase 9 / CP5.1 — the only writer of student_charges. Defaulted so the
     // many specs that build this service by hand keep working.
     @Optional() private readonly charges: StudentChargeService = new StudentChargeService(),
+    @Optional() private readonly paidNotifications?: PaidMessagingService,
   ) {}
 
   // ─── Generate ──────────────────────────────────────────────────────────────
@@ -186,6 +188,10 @@ export class InvoiceGenerationService {
             issuedBy: authCtx.userId,
           },
         });
+
+        await this.paidNotifications?.queueStudentsInTransaction(
+          db, authCtx.schoolId, "messaging.invoice-issued", invoice.id, [studentId],
+        );
 
         // audit_logs has FORCE RLS — basePrisma without the school GUC set would be
         // blocked. All audit writes in this service must go through withTenant.
@@ -421,6 +427,9 @@ export class InvoiceGenerationService {
         issuedBy: actor.userId,
       },
     });
+    await this.paidNotifications?.queueStudentsInTransaction(
+      db, actor.schoolId, "messaging.invoice-issued", invoice.id, [args.studentId],
+    );
     await db.auditLog.create({
       data: {
         schoolId: actor.schoolId,

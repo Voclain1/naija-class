@@ -1,5 +1,5 @@
 import * as crypto from "node:crypto";
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 
 import { Prisma, withTenant } from "@school-kit/db";
 import {
@@ -29,6 +29,7 @@ import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { EmailService } from "../../common/email/email.service.js";
 import { redactEmail, redactPhone } from "../../common/redact";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
+import { PaidMessagingService } from "../notifications/messaging/paid-messaging.service";
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service";
 import { smsSenderFor } from "../../common/termii/sms-sender";
 import { parentSiteUrl } from "../../common/school-site-url";
@@ -79,6 +80,7 @@ export class GuardiansService {
     private readonly email: EmailService,
     private readonly termii: TermiiService,
     private readonly notificationPreferences: NotificationPreferencesService,
+    @Optional() private readonly paidNotifications?: PaidMessagingService,
   ) {}
 
   // ----------------------------------------------------------------------
@@ -357,7 +359,7 @@ export class GuardiansService {
 
       const now = new Date();
 
-      await db.guardianInvitation.create({
+      const invitation = await db.guardianInvitation.create({
         data: {
           schoolId: authCtx.schoolId,
           guardianId: id,
@@ -390,7 +392,12 @@ export class GuardiansService {
         select: { name: true, smsSenderId: true, smsSenderStatus: true },
       });
 
+      await this.paidNotifications?.queueEventInTransaction(
+        db, authCtx.schoolId, "messaging.guardian-invitation", invitation.id, [id],
+      );
+
       return {
+        invitationId: invitation.id,
         portalInvitedAt: updated.portalInvitedAt as Date,
         email: existing.email,
         phone: existing.phone,
@@ -400,18 +407,13 @@ export class GuardiansService {
       };
     });
 
-    // The URL is always logged (not the raw token in isolation) as the
-    // manual-copy fallback the admin UI already relies on — see
-    // guardians-tab.tsx's inline copy-link panel. Real delivery (below) is
-    // best-effort on top of that fallback, not a replacement for it: the
-    // invitation row + audit log are already committed by this point, and
-    // acceptUrl is always returned regardless of send outcome, so a Resend/
-    // Termii failure never breaks the endpoint's response contract.
+    // The committed invitation's secret URL is returned to the authorized
+    // caller for the existing copy panel and legacy delivery. The WhatsApp
+    // journal only takes the internal invitation ID.
     const acceptUrl = parentSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
-    this.logger.log(`[GUARDIAN INVITATION] ${acceptUrl}`);
 
     await this.deliverInvitation({
-      schoolId: authCtx.schoolId,
+      schoolId: authCtx.schoolId, invitationId: result.invitationId,
       schoolName: result.schoolName,
       smsSender: result.smsSender,
       firstName: result.firstName,
@@ -496,7 +498,7 @@ export class GuardiansService {
         data: { revokedAt: now },
       });
 
-      await db.guardianInvitation.create({
+      const invitation = await db.guardianInvitation.create({
         data: {
           schoolId: authCtx.schoolId,
           guardianId: id,
@@ -529,7 +531,12 @@ export class GuardiansService {
         select: { name: true, smsSenderId: true, smsSenderStatus: true },
       });
 
+      await this.paidNotifications?.queueEventInTransaction(
+        db, authCtx.schoolId, "messaging.guardian-invitation", invitation.id, [id],
+      );
+
       return {
+        invitationId: invitation.id,
         portalInvitedAt: updated.portalInvitedAt as Date,
         email: existing.email,
         phone: existing.phone,
@@ -541,10 +548,9 @@ export class GuardiansService {
     });
 
     const acceptUrl = parentSiteUrl(await schoolSlugOf(authCtx.schoolId), `/invitations/${rawToken}`);
-    this.logger.log(`[GUARDIAN INVITATION RESEND] ${acceptUrl}`);
 
     await this.deliverInvitation({
-      schoolId: authCtx.schoolId,
+      schoolId: authCtx.schoolId, invitationId: result.invitationId,
       schoolName: result.schoolName,
       smsSender: result.smsSender,
       firstName: result.firstName,
@@ -753,6 +759,7 @@ export class GuardiansService {
   // invitation or removes acceptUrl from the response.
   private async deliverInvitation(params: {
     schoolId: string;
+    invitationId: string;
     schoolName: string;
     // The school's approved SMS sender name, else undefined for SchoolKit's.
     smsSender: string | undefined;
@@ -798,7 +805,7 @@ export class GuardiansService {
       }
     }
 
-    if (smsEnabled && params.phone) {
+    if (smsEnabled && params.phone && (await this.termii.legacyReadiness(params.schoolId, "GUARDIAN_INVITATION")).ready) {
       const normalized = normalizeNigerianPhone(params.phone);
       if (!normalized) {
         this.logger.warn(`Guardian invite SMS skipped — unrecognized phone format (${redactPhone(params.phone)})`);
@@ -808,6 +815,7 @@ export class GuardiansService {
             normalized,
             `${params.schoolName}: You've been invited to the parent portal. Set your password: ${params.acceptUrl}`,
             params.smsSender,
+            { schoolId: params.schoolId, eventType: "GUARDIAN_INVITATION", eventId: params.invitationId },
           );
         } catch (err) {
           this.logger.warn(

@@ -19,7 +19,7 @@ function makeEmailStub(overrides: Partial<EmailService> = {}): EmailService {
   return { isConfigured: false, send: vi.fn(async () => undefined), ...overrides } as EmailService;
 }
 function makeTermiiStub(overrides: Partial<TermiiService> = {}): TermiiService {
-  return { isConfigured: false, sendSms: vi.fn(async () => undefined), ...overrides } as TermiiService;
+  return { isConfigured: false, legacyReadiness: async () => ({ ready: overrides.isConfigured === true }), sendSms: vi.fn(async () => undefined), ...overrides } as TermiiService;
 }
 function makeNotificationPreferencesStub(
   overrides: Partial<NotificationPreferencesService> = {},
@@ -640,6 +640,7 @@ describe("FinanceService (integration)", () => {
         expect.stringMatching(/^234\d{10}$/),
         expect.any(String),
         undefined,
+        expect.objectContaining({ eventType: "FEE_REMINDER", eventId: expect.any(String) }),
       );
     });
 
@@ -686,6 +687,7 @@ describe("FinanceService (integration)", () => {
         expect.any(String),
         expect.stringContaining("850"),
         undefined,
+        expect.objectContaining({ eventType: "FEE_REMINDER", eventId: expect.any(String) }),
       );
       const debtors = await svc.listDebtors(ctx(schoolId, ownerId), termId);
       expect(debtors.map((d) => d.supplementary).sort()).toEqual([false, true]);

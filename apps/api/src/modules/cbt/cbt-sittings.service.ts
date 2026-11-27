@@ -1,4 +1,5 @@
-import { Injectable } from "@nestjs/common";
+import { PaidMessagingService } from "../notifications/messaging/paid-messaging.service";
+import { Injectable, Optional } from "@nestjs/common";
 
 import { Prisma, withTenant } from "@school-kit/db";
 import {
@@ -126,7 +127,10 @@ export function paperFigures(paper: PaperRow) {
 
 @Injectable()
 export class CbtSittingsService {
-  constructor(private readonly questions: QuestionBankService) {}
+  constructor(
+    private readonly questions: QuestionBankService,
+    @Optional() private readonly paidNotifications?: PaidMessagingService,
+  ) {}
 
   // -------------------------------------------------------------------------
   // Scope — the question bank's pairs, as for exam papers
@@ -420,6 +424,9 @@ export class CbtSittingsService {
           publishedAt: builtAt,
         },
       });
+      await this.paidNotifications?.queueStudentsInTransaction(
+        db, authCtx.schoolId, "messaging.exam-published", id, candidates.map(({ studentId }) => studentId),
+      );
       await this.audit(db, authCtx, AUDIT.publish, id, meta, { candidateCount: candidates.length });
       const fresh = await this.load(db, scope, id);
       return this.toDto(fresh, undefined);

@@ -1,0 +1,49 @@
+# The scoped cutover preserves the live backup configuration and pinned scheduler.
+# BACKUP_ENV_FILE belongs to the disabled generic deployment workflow.
+name: backup-config-reconcile
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  validator-tests:
+    if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validator tests on fictional files (verdicts and no value leakage)
+        run: bash scripts/backup-env-test.sh
+  compare:
+    needs: validator-tests
+    if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/unified-messaging-infrastructure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Verify live backup configuration and scheduler without changes
+        env:
+          VPS_DEPLOY_ENABLED: ${{ vars.VPS_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+          [[ "${VPS_DEPLOY_ENABLED:-false}" == false ]]
+          ssh vps 'cd /opt/school-kit && python3 - validate backup.env' < infra/vps/ops-tools/backup_env.py
+          ssh vps 'cd /opt/school-kit && bash -se' <<'REMOTE'
+          set -euo pipefail
+          test -f backup-ops.override.yml
+          c=$(docker ps -q --filter label=com.docker.compose.project=school-kit --filter label=com.docker.compose.service=ops-pinned)
+          [[ -n "$c" && "$c" != *$'\n'* ]]
+          [ "$(docker inspect -f '{{.Image}}' "$c")" = "$(docker image inspect -f '{{.Id}}' ghcr.io/voclain1/school-kit-postgres@sha256:1c0ac5407c14975abad8240218366477a6c2515c6d7fbc6a379a121577d4429d)" ]
+          docker top "$c" -eo pid,comm | awk '$1 ~ /^[0-9]+$/ && $2 == "cron" { n++ } END { exit n != 1 }'
+          echo 'PASS production pinned backup scheduler is present and running one cron.'
+          REMOTE

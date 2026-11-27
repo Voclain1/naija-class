@@ -336,6 +336,22 @@ describe("Platform admin — school lifecycle (2026-10-07)", () => {
       expect(audit?.metadata).toMatchObject({ slug: doomed.slug, studentCount: 1, staffCount: 1, guardianCount: 1 });
     });
 
+    it("preserves a school with a pending messaging wallet checkout", async () => {
+      const school = await makeSchool("wallet");
+      const people = await fillSchool(school.id, "wallet");
+      await withTenant(school.id, (db) => db.messagingWalletTopUp.create({
+        data: {
+          reference: `fictional-wallet-${school.id}`, schoolId: school.id,
+          clientRequestId: "test-checkout", createdBy: people.userId, amountKobo: 500,
+        },
+      }));
+      const check = await pa("get", `schools/${school.id}/deletion-check`);
+      expect(check.body).toMatchObject({ deletable: false, blockers: ["HAS_PAYMENTS"], paymentCount: 0 });
+      const res = await pa("post", `schools/${school.id}/delete`).send({ confirmSlug: school.slug });
+      expect(res.status).toBe(409);
+      expect(res.body.error.message).toContain("messaging wallet activity");
+    });
+
     it("a school that has recorded a payment cannot be deleted, even with the right slug", async () => {
       const school = await makeSchool("paid");
       const people = await fillSchool(school.id, "paid");

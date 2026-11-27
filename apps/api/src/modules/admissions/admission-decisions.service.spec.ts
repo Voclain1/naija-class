@@ -61,6 +61,7 @@ class FakeEmail {
 }
 class FakeTermii {
   isConfigured = true;
+  async legacyReadiness() { return { ready: true }; }
   async sendSms() {}
 }
 

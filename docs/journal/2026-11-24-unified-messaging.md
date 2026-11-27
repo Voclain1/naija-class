@@ -1,0 +1,92 @@
+# Unified messaging foundations
+
+Started the frontend contract, then hardened the reminder worker and
+Paystack payment-link creation. Added a gated Meta delivery webhook, prepaid wallet with verified top-ups,
+and scheduled campaigns with optional links for one current invoice.
+Tests use local PostgreSQL and fictional provider fixtures. No production credential or rollout switch was configured.
+
+The [rollout runbook](../runbooks/unified-messaging.md) records the pending
+integrations and acceptance gates.
+
+## Muse QA continuation
+
+Added school-owned Embedded Signup with tenant-bound encrypted credentials,
+verified consent and STOP handling, a signed Termii report inbox, and a
+default-off paid payment confirmation worker. Payment confirmation checks
+the expected transaction amount in kobo. Provider reclassification blocks
+automated Meta sends until reviewed again. Uncertain SMS reservations remain
+held for provider-evidenced operator reconciliation.
+
+## Engineering continuation
+
+Added signed central-account Termii routing from exact provider references,
+atomic paid event jobs for invoice generation and the academic and guardian
+workflows, partial settlement with discrepancy reporting, and budget guards
+on legacy SMS. Added append-only platform emergency controls, gated Meta
+number registration and template submission, and encrypted inbound history
+with configured retention. All changes remain on draft PR #563. See the
+rollout runbook for remaining engineering and external checks.
+
+## Remediation continuation
+
+Added Paystack signing-secret rotation and a durable callback inbox, fee-aware
+top-up credit and recovery, serialized invoice mutations, exception records,
+local validity and archive-race handling, and 24-hour wallet escalations.
+Legacy SMS remains subject to the shared spending ceiling and writes a
+tenant-scoped authorization event. The original Muse report was unavailable
+in the workspace, so audit and acceptance claims are limited to supplied
+findings and executed tests.
+
+### Closing sprint
+
+Reviewed the attached Muse criteria against the backend continuation. Added
+bounded legacy SMS migration controls, payment time cutoffs and replacement,
+operator review and replay, and independently approved email continuation.
+The isolated focused run passed 593 tests. Track exact-head CI and unresolved
+provider and financial approval gates in the disposition report. Keep PR #563
+in draft and leave PR #564 unchanged.
+
+## Batch 1 production evidence continuation — 2026-11-25
+
+Reviewed exact head `8552751`: the main CI/build job and Playwright passed,
+and the read-only VPS metadata job confirmed the running image matched its
+recorded tag, the existing API was healthy and the inbox was not installed.
+The candidate configuration job failed, so no cutover approval is justified.
+
+Added a read-only Termii account evidence script using the documented balance
+and sender-list GET endpoints. It prints only the wallet currency, whether
+positive capacity exists, and the `SchoolKit` sender status; it redacts the
+credential, balance, account identity and raw responses and never sends an
+SMS. The VPS preflight now also reports aggregate counts for approved school
+sender IDs, explicit notification SMS opt-ins, saved admission SMS settings
+and new legacy-authorization audit rows. These indicators do not claim that a
+provider accepted or delivered historical messages. Added the missing
+isolated emergency-stop case alongside the existing authorized,
+unauthorized and exhausted-budget coverage.
+
+No secret could be safely amended: GitHub does not reveal the existing
+`API_ENV_FILE`, and overwriting it without the full value would discard
+unrelated production credentials. No rate, school authorization or ceiling
+was invented. The supported safe deployment decision while Termii approval
+is outstanding remains `MESSAGING_LEGACY_SMS_MIGRATION_MODE=off`, with the
+existing Termii credential preserved, but using that choice requires the
+owner to confirm that no legitimate production SMS service is currently
+active. Paid messaging, top-ups, Meta/WhatsApp onboarding and Termii reports
+remain off; deployment approval remains unset; no merge or deployment was
+performed.
+# 2026-11-25 — Batch 1 production configuration continuation
+
+- Recorded the owner's production fact: SMS has always been disabled; no
+  school has used Termii or another SMS provider. Existing email notifications
+  and manual WhatsApp sharing remain outside this change.
+- Made Termii evidence conditional on activation: it is mandatory unless all
+  four SMS/paid gates are explicitly `off`.
+- Added a one-time, non-deploying reconciliation that preserves the current
+  Contabo API environment and the original GitHub candidate before preparing
+  the seven approved overrides. Backups are restricted to the deploy account;
+  output contains key names/counts only, never values.
+- Added redacted live database aggregates for Paystack reference uniqueness and
+  receipt invariants. These do not claim to identify webhook versus callback
+  delivery.
+- No live payment or SMS is sent. The PR stays draft and
+  `UNIFIED_MESSAGING_CUTOVER_APPROVED` stays unset.

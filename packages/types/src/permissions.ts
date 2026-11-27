@@ -114,6 +114,9 @@ export const OWNER_ONLY_PERMISSIONS = [
   "academic-year.delete",
   "term.delete",
   "enrollment.delete",
+  "messaging-wallet.top-up",
+  "messaging-whatsapp.manage",
+  "messaging-paid.manage",
 ] as const;
 
 // Phase 2 / Slice 1 — grading configuration permissions. REFERENCE-ONLY for
@@ -880,6 +883,9 @@ export const ASSET_PERMISSIONS = ["asset.read", "asset.manage"] as const;
 export const WEBSITE_MANAGE_PERMISSIONS = ["website.manage"] as const;
 
 export const ALL_PERMISSIONS = [
+  "messaging-wallet.top-up",
+  "messaging-whatsapp.manage",
+  "messaging-paid.manage",
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
   ...PHASE_2_PERMISSIONS,

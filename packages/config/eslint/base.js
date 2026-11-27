@@ -145,6 +145,27 @@ export const baseConfig = [
       "**/prisma/seed.ts",
       "**/prisma/seed.mts",
 
+      // The signed Meta webhook routes using only opaque account IDs and
+      // owning school IDs from its provisioned account directory.
+      "**/notifications/messaging/meta-webhook.service.ts",
+      // Termii's account-level inbox holds opaque references and signed
+      // billing data. Exact pre-tenant lookup returns only the school ID.
+      // Delivery and wallet updates run under withTenant.
+      "**/notifications/messaging/termii-reports.service.ts",
+      // Authenticated Paystack pre-tenant inbox. Tenant mutations run in the
+      // normal payment, wallet and payroll services.
+      "**/payments/paystack-webhook-inbox.service.ts",
+      // Top-up recovery enumerates school IDs only, then verifies tenant-scoped intents.
+      "**/notifications/messaging/messaging-top-up.service.ts",
+      // Cross-tenant retention sweep: basePrisma lists school IDs only.
+      "**/notifications/messaging/meta-inbound-history.service.ts",
+      // Operator revisions and the shared daily cap are platform metadata.
+      // No contacts or messages are read through these global tables.
+      "**/notifications/messaging/messaging-review-controls.ts",
+      "**/common/messaging-emergency-control.ts",
+      "**/common/messaging-spend-limits.ts",
+      "**/common/termii/termii.service.ts",
+
       // Test files: setup/teardown legitimately uses basePrisma to manage
       // test schools (the schools table itself has no RLS). The RLS spec
       // intentionally tests cross-tenant behaviour via basePrisma.

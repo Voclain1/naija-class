@@ -242,11 +242,11 @@ export class HostelExeatService {
         title: ctx.school.name,
         body: message,
         data: { kind: "hostel-exeat", studentId: exeat.studentId },
-        smsAvailable: this.termii.isConfigured && !!phone,
+        smsAvailable: !!phone && (await this.termii.legacyReadiness(authCtx.schoolId, "HOSTEL_EXEAT")).ready,
       });
       if (channel === "SMS" && phone) {
         try {
-          await this.termii.sendSms(phone, `${ctx.school.name}: ${message}`, smsSenderFor(ctx.school));
+          await this.termii.sendSms(phone, `${ctx.school.name}: ${message}`, smsSenderFor(ctx.school), { schoolId: authCtx.schoolId, eventType: "HOSTEL_EXEAT", eventId: exeat.id });
         } catch (err) {
           this.logger.error(`Exeat SMS to ${redactPhone(guardian.phone)} failed: ${String(err)}`);
           channel = "NONE";

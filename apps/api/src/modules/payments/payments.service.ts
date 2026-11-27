@@ -774,6 +774,7 @@ export class PaymentsService {
           ],
       });
       await this.paymentPlan.recomputeInstallmentsPaid(db, invoiceId, newTotalPaid);
+      await this.confirmations?.queuePaidConfirmation(db, schoolId, payment.id, invoice.studentId);
       return { id: payment.id, allocated };
     });
     if (applied) {
@@ -1250,6 +1251,7 @@ export class PaymentsService {
     // 7. Update installment paid flags if an installment plan exists.
     if (allocated) {
       await this.paymentPlan.recomputeInstallmentsPaid(db, payment.invoiceId, newTotalPaid);
+      await this.confirmations?.queuePaidConfirmation(db, payment.schoolId, payment.id, payment.studentId);
     }
     return true;
   }

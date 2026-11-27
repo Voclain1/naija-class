@@ -72,6 +72,7 @@ const SECURITY_DEFINER_FUNCTIONS = [
   // Opening the website from the app, already signed in (2026-09-23).
   // Pre-tenant by definition: the browser arrives with a token and no school.
   "auth_resolve_web_handoff_token",
+  "messaging_resolve_termii_school",
 ] as const;
 
 interface SecurityDefinerRow {

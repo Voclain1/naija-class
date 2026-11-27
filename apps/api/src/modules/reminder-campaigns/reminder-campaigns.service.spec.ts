@@ -31,6 +31,7 @@ class FakePort extends ReminderSendPort {
   pushAnswer: (req: NotificationRequest) => DeliveryChannel = (req) => (req.smsAvailable ? "SMS" : "NONE");
   emailConfigured() { return this.emailReady; }
   smsConfigured() { return this.smsReady; }
+  override async smsPricePerSegmentKobo(): Promise<bigint | null> { return 12n; }
   async enabledChannels() { return { ...this.channels }; }
   async sendEmail(p: { to: string; html: string; idempotencyKey: string }) { this.emails.push(p); return this.emailOutcome(); }
   async sendSms(to: string, text: string) { this.texts.push({ to, text }); return this.smsOutcome(); }
@@ -141,7 +142,7 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     await basePrisma.$disconnect();
   });
 
-  const prepare = (ids: string[], opts: { includePaymentPlans?: boolean; overdueOnly?: boolean } = {}, who = A.bursar.auth, termId = A.termId) =>
+  const prepare = (ids: string[], opts: { includePaymentPlans?: boolean; overdueOnly?: boolean; scheduledFor?: string; includeInvoiceLink?: boolean; useWhatsApp?: boolean } = {}, who = A.bursar.auth, termId = A.termId) =>
     service.prepare(who, { clientRequestId: randomUUID(), termId, studentIds: ids, options: { includePaymentPlans: false, overdueOnly: false, ...opts } }, null);
   const confirm = (p: ReminderCampaignProposalDto, who = A.bursar.auth) => service.confirm(who, p.id, p.previewHash, null);
   const run = (id: string, now = DAY) => service.processCampaign(A.schoolId, id, { now });
@@ -149,6 +150,18 @@ describe("fee reminder campaigns against PostgreSQL", () => {
   const sendsOf = (id: string) => withTenant(A.schoolId, (db) => db.reminderCampaignSend.findMany({ where: { campaignId: id }, orderBy: [{ studentId: "asc" }, { channel: "asc" }] }));
 
   // ---------------------------------------------------------------------
+  it("sends independently reviewed email when the selected WhatsApp channel has no eligible recipients", async () => {
+    const review = await prepare([A.bo.id], { useWhatsApp: true });
+    expect(review.canConfirm).toBe(true);
+    expect(review.students[0]?.planned).toMatchObject({ emailGuardians: 1, mobile: "NONE" });
+    const campaign = await confirm(review);
+    await run(campaign.id);
+    expect(port.emails).toHaveLength(1);
+    expect(port.texts).toHaveLength(0);
+    expect(port.pushes).toHaveLength(0);
+    expect((await service.getCampaign(A.bursar.auth, campaign.id)).status).toBe("COMPLETED");
+  });
+
   it("previews per student with server figures and exclusions, and sends nothing", async () => {
     const p = await prepare([...all(), B.ada.id]);
     expect(p.canConfirm).toBe(true);
@@ -169,6 +182,17 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     expect(withPlans.students.find((s) => s.studentId === A.plan.id)!.eligibility).toBe("ELIGIBLE");
     const overdue = await prepare(all(), { overdueOnly: true });
     expect(overdue.students.find((s) => s.studentId === A.bo.id)!.eligibility).toBe("NOT_OVERDUE");
+  });
+
+  it("shows a configured cost ceiling for all potential campaign SMS segments", async () => {
+    const rate = vi.spyOn(port, "smsPricePerSegmentKobo").mockResolvedValue(null);
+    const unpriced = await prepare([A.bo.id]);
+    expect(unpriced.smsEstimate).toMatchObject({ maximumKobo: null });
+    rate.mockResolvedValue(12n);
+    const priced = await prepare([A.bo.id]);
+    expect(priced.smsEstimate?.segments).toBeGreaterThan(0);
+    expect(priced.smsEstimate?.maximumKobo).toBe(String(12 * priced.smsEstimate!.segments));
+    await expect(confirm(unpriced)).rejects.toMatchObject({ code: "REMINDER_PREVIEW_STALE" });
   });
 
   it("scopes by class IDENTITY on the server: two levels both with an arm called \"A\", only the requested one is reminded", async () => {
@@ -308,6 +332,142 @@ describe("fee reminder campaigns against PostgreSQL", () => {
     const dto2 = await service.getCampaign(A.bursar.auth, c2.id, DAY());
     expect(dto2.counts).toMatchObject({ SKIPPED: 3, ACCEPTED: 0 });
     expect(dto2.students[0]!.sends.every((s) => s.reason === "ON_PAYMENT_PLAN")).toBe(true);
+  });
+
+  it("excludes later slots in the same batch when the first send is followed by a full payment", async () => {
+    const c = await confirm(await prepare([A.bo.id]));
+    vi.spyOn(port, "sendEmail").mockImplementationOnce(async (message) => {
+      port.emails.push(message);
+      await withTenant(A.schoolId, (db) => db.invoice.update({
+        where: { id: A.boInv.id }, data: { totalPaid: 20_000_00, status: "PAID" },
+      }));
+      return { status: "ACCEPTED", providerRef: "fictional-email" };
+    });
+    expect(await run(c.id)).toBe("DONE");
+    expect(port.emails).toHaveLength(1);
+    expect(port.texts).toHaveLength(0);
+    expect((await service.getCampaign(A.bursar.auth, c.id, DAY())).students[0]?.sends)
+      .toEqual([expect.objectContaining({ outcome: "ACCEPTED" }), expect.objectContaining({ outcome: "SKIPPED", reason: "NO_BALANCE" })]);
+  });
+
+  it("attaches only the opted-in live link matching a single current invoice balance", async () => {
+    await basePrisma.school.update({
+      where: { id: A.schoolId },
+      data: { paystackPaymentsEnabled: true, paystackSplitCode: "SPL_fictional", paystackSubaccountCode: "ACCT_fictional" },
+    });
+    const code = `PRQ_${randomUUID().replace(/-/g, "")}`;
+    const url = `https://paystack.com/pay/${code}`;
+    await withTenant(A.schoolId, (db) => db.paymentLink.create({
+      data: {
+        schoolId: A.schoolId, invoiceId: A.boInv.id, amount: 20_000_00,
+        createdBy: A.bursar.auth.userId, status: "LIVE", requestCode: code, hostedUrl: url,
+      },
+    }));
+    const withLink = await confirm(await prepare([A.ada.id, A.bo.id], { includeInvoiceLink: true }));
+    await run(withLink.id);
+    expect(port.emails.filter((email) => email.html.includes(url))).toHaveLength(1);
+    expect(port.emails.find((email) => email.html.includes(url))?.html).toContain("Bo Debtor");
+    expect(port.texts.every((sms) => !sms.text.includes(url))).toBe(true);
+    port.emails.length = 0;
+    const stale = await confirm(await prepare([A.bo.id], { includeInvoiceLink: true }));
+    await withTenant(A.schoolId, (db) => db.invoice.update({
+      where: { id: A.boInv.id }, data: { status: "PARTIALLY_PAID", totalPaid: 5_000_00 },
+    }));
+    await run(stale.id, () => new Date(DAY().getTime() + 2 * 60_000));
+    expect(port.emails).toHaveLength(1);
+    expect(port.emails[0]?.html).not.toContain(url);
+    expect(port.emails[0]?.html).toContain("15,000");
+  });
+
+  it("quotes and queues WhatsApp only for the verified guardian and a matching single live invoice", async () => {
+    vi.spyOn(port, "whatsappRate").mockResolvedValue(35n);
+    const queued = vi.spyOn(port, "queueWhatsApp").mockResolvedValue(true);
+    await basePrisma.school.update({
+      where: { id: A.schoolId }, data: { paystackPaymentsEnabled: true, paystackSplitCode: "SPL_fictional" },
+    });
+    await withTenant(A.schoolId, async (db) => {
+      await db.notificationPreference.update({ where: { schoolId: A.schoolId }, data: { paidWhatsAppEnabled: true } });
+      await db.messagingSchoolMetaConnection.create({
+        data: { schoolId: A.schoolId, wabaId: "76421", phoneNumberId: "76422", encryptedToken: "fictional" },
+      });
+      await db.messagingGuardianConsent.create({
+        data: { schoolId: A.schoolId, guardianId: A.mum.id, phone: "2348031234567",
+          consentVersion: "whatsapp-transactional-v1", verifiedAt: DAY() },
+      });
+      await db.paymentLink.create({
+        data: { schoolId: A.schoolId, invoiceId: A.boInv.id, amount: 20_000_00, createdBy: A.bursar.auth.userId,
+          status: "LIVE", currency: "NGN", requestCode: "PRQ_fictional", hostedUrl: "https://paystack.com/pay/PRQ_fictional" },
+      });
+    });
+    const prepared = await prepare([A.ada.id, A.bo.id], { useWhatsApp: true });
+    expect(prepared.whatsappEstimate).toEqual({ recipients: 1, maximumKobo: "35" });
+    expect(prepared.students.find((student) => student.studentId === A.ada.id)?.planned.mobile).toBe("NONE");
+    const campaign = await confirm(prepared);
+    await run(campaign.id);
+    expect(port.texts).toHaveLength(0);
+    expect(queued).toHaveBeenCalledTimes(1);
+    expect(queued).toHaveBeenCalledWith(expect.objectContaining({ invoiceId: A.boInv.id, guardianId: A.mum.id }));
+  });
+
+  it("requires a fresh approval before an SMS unit price increases", async () => {
+    const campaign = await confirm(await prepare([A.bo.id]));
+    const price = vi.spyOn(port, "smsPricePerSegmentKobo").mockResolvedValue(13n);
+    await run(campaign.id);
+    expect(port.texts).toHaveLength(0);
+    expect(port.emails).toHaveLength(1);
+    expect(await service.getCampaign(A.bursar.auth, campaign.id, DAY()))
+      .toMatchObject({ status: "HALTED", haltReason: "PRICE_APPROVAL_REQUIRED" });
+    await expect(service.resume(A.bursar.auth, campaign.id, null)).rejects.toMatchObject({ code: "CAMPAIGN_REAPPROVAL_REQUIRED" });
+    const firstReview = await service.getReapprovalQuote(A.bursar.auth, campaign.id);
+    expect(firstReview).toMatchObject({ remainingMobileSlots: 1, smsUnitKobo: "13" });
+    price.mockResolvedValue(14n);
+    await expect(service.reapprove(A.bursar.auth, campaign.id, firstReview.previewHash, null)).rejects.toMatchObject({ httpStatus: 409 });
+    const approved = await service.getReapprovalQuote(A.bursar.auth, campaign.id);
+    await service.reapprove(A.bursar.auth, campaign.id, approved.previewHash, null);
+    await run(campaign.id);
+    expect(port.texts).toHaveLength(1);
+    expect(port.emails).toHaveLength(1);
+  });
+
+  it("allows configured repeat intervals while keeping channels in the same campaign together", async () => {
+    vi.spyOn(port, "frequencyMinutes").mockReturnValue(90);
+    const first = await confirm(await prepare([A.bo.id]));
+    const second = await confirm(await prepare([A.bo.id]));
+    await run(first.id);
+    expect(port.emails).toHaveLength(1);
+    expect(port.texts).toHaveLength(1);
+    await run(second.id);
+    expect(port.emails).toHaveLength(1);
+    expect(port.texts).toHaveLength(1);
+    const skipped = await service.getCampaign(A.bursar.auth, second.id, DAY());
+    expect(skipped.counts.SKIPPED).toBe(2);
+    expect(skipped.students.flatMap((student) => student.sends).every((send) => send.reason === "FREQUENCY_LIMIT")).toBe(true);
+  });
+
+  it("holds a durable schedule until the scheduled date and rechecks eligibility when due", async () => {
+    const due = new Date();
+    due.setUTCDate(due.getUTCDate() + 1);
+    due.setUTCHours(10, 0, 0, 0);
+    const c = await confirm(await prepare([A.bo.id], { scheduledFor: due.toISOString() }));
+    expect(c.scheduledFor).toBe(due.toISOString());
+    expect(await run(c.id, () => new Date(due.getTime() - 60_000))).toBe("HELD");
+    expect(port.emails).toHaveLength(0);
+    const runner = new ReminderCampaignRunnerService(service);
+    const process = service.processCampaign.bind(service);
+    const attempted = vi.spyOn(service, "processCampaign").mockImplementation((schoolId, campaignId, options) =>
+      campaignId === c.id ? process(schoolId, campaignId, options) : Promise.resolve("DONE"));
+    await runner.runOnce({ now: () => new Date(due.getTime() - 60_000) });
+    expect(attempted).not.toHaveBeenCalledWith(A.schoolId, c.id, expect.anything());
+    await withTenant(A.schoolId, (db) => db.invoice.update({
+      where: { id: A.boInv.id }, data: { status: "PAID", totalPaid: 20_000_00 },
+    }));
+    await runner.runOnce({ now: () => due });
+    expect(attempted).toHaveBeenCalledWith(A.schoolId, c.id, expect.anything());
+    expect(port.emails).toHaveLength(0);
+    expect((await service.getCampaign(A.bursar.auth, c.id, due)).counts.SKIPPED).toBe(2);
+    const stale = await prepare([A.ada.id], { scheduledFor: new Date(Date.now() - 60_000).toISOString() });
+    expect(stale.batchErrors.map((error) => error.code)).toContain("SCHEDULE_ELAPSED");
+    expect(stale.canConfirm).toBe(false);
   });
 
   it("two confirmations at once make one campaign; two workers at once send each slot once", async () => {

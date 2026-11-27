@@ -46,6 +46,7 @@ class FakeDispatch {
 class FakeTermii {
   isConfigured = true;
   sent: { to: string; message: string; sender?: string }[] = [];
+  async legacyReadiness() { return { ready: true }; }
   async sendSms(to: string, message: string, sender?: string) {
     this.sent.push({ to, message, sender });
   }

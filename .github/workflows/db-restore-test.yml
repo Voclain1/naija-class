@@ -3,14 +3,19 @@
 # WAL-G base backups listed. Active once VPS_DEPLOY_ENABLED is "true".
 name: db-restore-test
 
+# MANUAL ONLY since Batch 2: it creates a scratch database (restore_test) on the production PostgreSQL
+# instance, and the original `ops` container is retained STOPPED, so the old scheduled `exec -T ops` would
+# fail. It targets the pinned scheduler. For an isolated restore use the PITR/dump procedure instead.
 on:
-  schedule:
-    - cron: "0 4 1 * *"
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "restore-into-scratch-database-on-production-instance" to run'
+        required: true
 
 jobs:
   restore:
-    if: github.event_name == 'workflow_dispatch' || vars.VPS_DEPLOY_ENABLED == 'true'
+    if: github.event.inputs.confirm == 'restore-into-scratch-database-on-production-instance'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -19,4 +24,4 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - run: ssh vps 'cd /opt/school-kit && docker compose --env-file deploy.env exec -T ops /ops/restore-test.sh'
+      - run: ssh vps 'cd /opt/school-kit && docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml exec -T ops-pinned /ops/restore-test.sh'

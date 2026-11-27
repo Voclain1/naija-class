@@ -1,0 +1,31 @@
+# Publish checksummed operator tooling as a CI artifact.
+name: batch2-ops-tools
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  ship:
+    if: github.event.pull_request.number == 563 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/unified-messaging-infrastructure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Checksum operator tools
+        run: |
+          set -euo pipefail
+          cd infra/vps/ops-tools
+          printf '%s\n' "$HEAD_SHA" > HEAD_SHA
+          sha256sum *.sh *.py HEAD_SHA > SHA256SUMS
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: messaging-ops-tools
+          path: infra/vps/ops-tools/
+          if-no-files-found: error

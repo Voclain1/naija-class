@@ -18,44 +18,24 @@ credentials; they receive a subaccount code created on this integration. See
 
 | Key | Where to use |
 |---|---|
-| **Test Secret Key** (`sk_test_...`) | Staging Fly app only |
+| **Test Secret Key** (`sk_test_...`) | Isolated test/rehearsal API only |
 | **Test Public Key** (`pk_test_...`) | Staging / local frontend only |
-| **Live Secret Key** (`sk_live_...`) | Production Fly app only |
+| **Live Secret Key** (`sk_live_...`) | Production VPS API only |
 | **Live Public Key** (`pk_live_...`) | Production frontend only |
 
 Never commit either key to the repository. Never set a live key on the staging app.
 
 ---
 
-## 2. Set secrets on Fly.io
+## 2. Configure the API credentials
 
-### Staging
-
-```bash
-flyctl secrets set --app school-kit-api-staging \
-  PAYSTACK_SECRET_KEY="sk_test_..." \
-  PAYSTACK_PUBLIC_KEY="pk_test_..."
-```
-
-Verify:
-
-```bash
-flyctl secrets list --app school-kit-api-staging
-```
-
-`PAYSTACK_SECRET_KEY` and `PAYSTACK_PUBLIC_KEY` should appear (values are
-redacted in the list output).
-
-### Production
-
-```bash
-flyctl secrets set --app school-kit-api \
-  PAYSTACK_SECRET_KEY="sk_live_..." \
-  PAYSTACK_PUBLIC_KEY="pk_live_..."
-```
-
-**Do not mix test and live keys.** The API checks for `PAYSTACK_SECRET_KEY` at
-startup and throws if the variable is absent — the app will not start.
+Production runs on the VPS. Maintain the existing live Paystack credentials
+in the private GitHub `API_ENV_FILE` deployment secret; the deployment
+workflow recreates the VPS API environment from it. Never print, commit,
+or replace working credentials just to change the webhook URL.
+Use test-only credentials on an isolated rehearsal stack. See
+[vps-migration.md](vps-migration.md) and [unified-messaging.md](unified-messaging.md)
+for deployment and controlled authentication transition requirements.
 
 ---
 
@@ -66,12 +46,17 @@ set:
 
 | Environment | Webhook URL |
 |---|---|
-| Staging | `https://school-kit-api-staging.fly.dev/api/v1/payments/paystack/webhook` |
-| Production | `https://school-kit-api.fly.dev/api/v1/payments/paystack/webhook` |
+| Isolated rehearsal | Its own public test host, path `/api/v1/payments/paystack/webhook` |
+| Production | `https://api.schoolkit.ng/api/v1/payments/paystack/webhook` |
 
-Paystack sends a POST with `x-paystack-signature` (HMAC-SHA512 of the raw body
-using the secret key). The API verifies this before processing; unsigned requests
-are rejected with 401.
+The existing production handler authenticates the raw body with
+`x-paystack-signature` (HMAC-SHA512 keyed by the API secret).
+For the messaging cutover, modern timestamped signing is the default; the
+explicit bounded legacy transition remains available for accounts without
+modern keys. See the unified messaging runbook. Unsigned or invalid events
+must be rejected; a malformed modern header must never downgrade to legacy.
+Owner reported updating the live URL on 25 November 2026; delivery to the
+new host still needs evidence.
 
 Events to enable: **`charge.success`** and **`charge.failed`** at minimum.
 

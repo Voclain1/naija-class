@@ -386,6 +386,7 @@ Discipline for every function in this category:
 
 | Function | Migration | Purpose | Deliberately omits |
 |---|---|---|---|
+| `messaging_resolve_termii_school(account, reference)` | `20270106120000_shared_termii_routing` | Finds a single tenant by exact authenticated provider account and SMS reference before applying that tenant’s RLS. Ambiguous references return no match. | Contacts, content, credentials, financial data, and delivery IDs. |
 | `auth_check_signup_uniqueness(email, phone)` | `20260515000000_add_signup_uniqueness_function` | Distinguishes `EMAIL_TAKEN` vs `PHONE_TAKEN` at signup (FORCE RLS strips P2002 target). | Row ids, names, school_id — returns only two booleans. |
 | `auth_resolve_session(token_hash)` | `20260516000000_add_auth_lookup_functions`; return shape extended `20261007120000_platform_admin_school_lifecycle` | AuthGuard session lookup pre-tenant; resolves bearer token to `{ session_id, user_id, school_id, expires_at, user_is_active, school_suspended }`. `school_suspended` (2026-10-07) is the platform-admin suspension of the whole school, returned beside the person's own signal so the guard can answer `SCHOOL_SUSPENDED`. | `password_hash`, email/phone/names, roles/permissions. |
 | `auth_lookup_user_for_login(email)` | `20260516000000_add_auth_lookup_functions` | Login service user lookup pre-tenant; returns `{ user_id, school_id, password_hash, is_active }`. | phone, names, role grants, session rows. |

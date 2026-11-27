@@ -361,11 +361,11 @@ export class SickbayService {
         title: ctx.school.name,
         body: SICKBAY_PUSH_BODY,
         data: { kind: "sickbay-visit", studentId: ctx.visit.studentId },
-        smsAvailable: ctx.visit.sentHome && this.termii.isConfigured && !!phone,
+        smsAvailable: ctx.visit.sentHome && !!phone && (await this.termii.legacyReadiness(authCtx.schoolId, "SICKBAY")).ready,
       });
       if (channel === "SMS" && phone && ctx.visit.sentHome) {
         try {
-          await this.termii.sendSms(phone, sms, sender);
+          await this.termii.sendSms(phone, sms, sender, { schoolId: authCtx.schoolId, eventType: "SICKBAY", eventId: visitId });
         } catch (err) {
           this.logger.error(`Sickbay SMS to ${redactPhone(guardian.phone)} failed: ${String(err)}`);
           channel = "NONE";

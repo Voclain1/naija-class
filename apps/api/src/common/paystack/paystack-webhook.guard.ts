@@ -1,65 +1,38 @@
-import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
-import type { RawBodyRequest } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Injectable, type RawBodyRequest } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { UnauthorizedError } from "@school-kit/types";
 import type { Request } from "express";
 
-import { UnauthorizedError } from "@school-kit/types";
-
+import { readPaystackSigningKeys, verifyModernPaystackSignature } from "./paystack-signature.js";
+import { paystackWebhookMode } from "./paystack-webhook-mode.js";
 import { PaystackService } from "./paystack.service.js";
-
-// Guards the Paystack webhook endpoint.
-//
-// Paystack signs every webhook delivery with HMAC-SHA512 over the raw request
-// body, sending the hex digest in the `x-paystack-signature` header. We must
-// verify this BEFORE acting on the event — it is the only authentication on an
-// otherwise public endpoint.
-//
-// IMPORTANT: rawBody: true must be set in NestFactory.create() so that
-// req.rawBody is populated before JSON parsing occurs. Without the raw bytes
-// we cannot reproduce the HMAC Paystack computed. The guard fails closed: if
-// req.rawBody is absent or the signature is missing / invalid, it throws
-// UnauthorizedException.
 
 @Injectable()
 export class PaystackWebhookGuard implements CanActivate {
-  constructor(private readonly paystack: PaystackService) {}
+  constructor(private readonly paystack: PaystackService, private readonly config: ConfigService) {}
 
   canActivate(ctx: ExecutionContext): boolean {
-    const req = ctx
-      .switchToHttp()
-      .getRequest<RawBodyRequest<Request>>();
-
-    const signature = req.headers["x-paystack-signature"];
-    if (!signature || typeof signature !== "string") {
-      throw new UnauthorizedError(
-        "MISSING_PAYSTACK_SIGNATURE",
-        "Paystack webhook signature is missing.",
-      );
-    }
-
+    const req = ctx.switchToHttp().getRequest<RawBodyRequest<Request>>();
     const rawBody = req.rawBody;
-    if (!rawBody || rawBody.length === 0) {
-      throw new UnauthorizedError(
-        "MISSING_RAW_BODY",
-        "Raw body not available for signature verification.",
-      );
+    if (!rawBody?.length) throw new UnauthorizedError("MISSING_RAW_BODY", "Raw webhook body is unavailable.");
+
+    const mode = paystackWebhookMode(this.config);
+    const modern = req.headers["paystack-signature"];
+    if (modern !== undefined) {
+      // The receiving endpoint has a single configured mode. A signed body
+      // or a header value supplied by the sender cannot select the keyring.
+      const keyring = mode === "live" ? "PAYSTACK_WEBHOOK_LIVE_KEYS" : mode === "test" ? "PAYSTACK_WEBHOOK_TEST_KEYS" : undefined;
+      if (keyring && verifyModernPaystackSignature(rawBody, modern, readPaystackSigningKeys(this.config.get(keyring)))) return true;
+    } else if (this.config.get<string>("PAYSTACK_WEBHOOK_REQUIRE_MODERN") === "off") {
+      const legacy = req.headers["x-paystack-signature"];
+      const apiKey = this.config.get<string>("PAYSTACK_SECRET_KEY");
+      const matchesMode = apiKey?.startsWith(mode === "live" ? "sk_live_" : "sk_test_") && mode !== "legacy";
+      // Transitional compatibility. Never run this branch after a modern
+      // header was supplied, including malformed or unknown key IDs.
+      if (matchesMode && apiKey && !apiKey.endsWith("_replace_me") && typeof legacy === "string" && /^[0-9a-f]{128}$/.test(legacy) &&
+          this.paystack.verifyWebhookSignature(rawBody, legacy)) return true;
     }
 
-    let valid: boolean;
-    try {
-      valid = this.paystack.verifyWebhookSignature(rawBody, signature);
-    } catch {
-      // timingSafeEqual throws if the two buffers differ in length (e.g. a
-      // non-hex signature produces a different-length buffer). Treat as invalid.
-      valid = false;
-    }
-
-    if (!valid) {
-      throw new UnauthorizedError(
-        "INVALID_PAYSTACK_SIGNATURE",
-        "Paystack webhook signature verification failed.",
-      );
-    }
-
-    return true;
+    throw new UnauthorizedError("INVALID_PAYSTACK_SIGNATURE", "Paystack webhook signature verification failed.");
   }
 }

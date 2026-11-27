@@ -15,6 +15,7 @@ import {
   type ReminderSkipReason,
 } from "@school-kit/types";
 
+import { escapeHtml } from "../admissions/admissions.shared";
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { MS_PER_DAY, startOfDay, toIsoDate, weekStart } from "../../common/dates/week.util.js";
 import { buildCollectionByGroup } from "./collection-by-group.js";
@@ -571,7 +572,7 @@ export class FinanceService implements OnModuleInit {
   ): Promise<SendRemindersResult> {
     const channels = await this.notificationPreferences.getEnabledChannels(authCtx.schoolId);
     const emailAttemptable = channels.email && this.email.isConfigured;
-    const smsAttemptable = channels.sms && this.termii.isConfigured;
+    const smsAttemptable = channels.sms && (await this.termii.legacyReadiness(authCtx.schoolId, "FEE_REMINDER")).ready;
     // Phase 6 / Slice 5. Push needs no configuration check of its own: Expo
     // requires no API key (possession of a token is the authorization), so
     // unlike email and SMS there is no "configured" state that can be false.
@@ -586,7 +587,7 @@ export class FinanceService implements OnModuleInit {
       this.logger.warn(
         `Reminders skipped for school ${authCtx.schoolId} — no enabled/configured channel ` +
           `(emailEnabled=${channels.email}, emailConfigured=${this.email.isConfigured}, ` +
-          `smsEnabled=${channels.sms}, smsConfigured=${this.termii.isConfigured}, ` +
+          `smsEnabled=${channels.sms}, smsReady=${smsAttemptable}, ` +
           `pushEnabled=${channels.push})`,
       );
       return { sent: 0, skipped: dto.studentIds.length, skippedBy: { ...NO_SKIPS }, noChannel: true };
@@ -767,6 +768,7 @@ export class FinanceService implements OnModuleInit {
                 normalized,
                 buildReminderSms({ studentName, schoolName: school.name, balance, dueDate: dueDateStr }),
                 smsSender,
+                { schoolId: authCtx.schoolId, eventType: "FEE_REMINDER", eventId: studentId },
               );
               sentAny = true;
             } catch (err) {
@@ -859,18 +861,20 @@ export function buildReminderHtml(opts: {
   schoolName: string;
   balance: number;
   dueDate: string | null;
+  /** A server-validated hosted payment link for this balance. */
+  paymentUrl?: string;
 }): string {
   const dueLine = opts.dueDate
-    ? `<p>Due date: <strong>${opts.dueDate}</strong></p>`
+    ? `<p>Due date: <strong>${escapeHtml(opts.dueDate)}</strong></p>`
     : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>Fee Reminder</title></head>
 <body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
-  <h2 style="color:#1a1a1a">${opts.schoolName}</h2>
-  <p>Dear ${opts.guardianFirstName},</p>
-  <p>This is a reminder that the following outstanding school fees are due for <strong>${opts.studentName}</strong>:</p>
+  <h2 style="color:#1a1a1a">${escapeHtml(opts.schoolName)}</h2>
+  <p>Dear ${escapeHtml(opts.guardianFirstName)},</p>
+  <p>This is a reminder that the following outstanding school fees are due for <strong>${escapeHtml(opts.studentName)}</strong>:</p>
   <table style="border-collapse:collapse;width:100%">
     <tr>
       <td style="padding:8px;border:1px solid #e5e7eb">Outstanding balance</td>
@@ -878,8 +882,8 @@ export function buildReminderHtml(opts: {
     </tr>
   </table>
   ${dueLine}
-  <p>Please contact the school to arrange payment.</p>
-  <p style="color:#6b7280;font-size:13px">This message was sent by ${opts.schoolName} via School Kit.</p>
+  ${opts.paymentUrl ? `<p><a href="${escapeHtml(opts.paymentUrl)}">Pay this invoice on Paystack</a></p>` : "<p>Please contact the school to arrange payment.</p>"}
+  <p style="color:#6b7280;font-size:13px">This message was sent by ${escapeHtml(opts.schoolName)} via School Kit.</p>
 </body>
 </html>`;
 }

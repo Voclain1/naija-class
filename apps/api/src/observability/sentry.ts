@@ -16,9 +16,13 @@ import { redactString, redactValue } from "@school-kit/types";
 
 let initialised = false;
 
+function isMetaWebhook(url: string | undefined): boolean {
+  return typeof url === "string" && /\/webhooks\/meta(?:\/|[?#]|$)/.test(url);
+}
+
 /** Routes whose request bodies never reach an error report. */
 export function dropsRequestBody(url: string | undefined): boolean {
-  return typeof url === "string" && /\/assistant\//.test(url);
+  return (typeof url === "string" && /\/webhooks\/termii(?:[/?#]|$)/.test(url)) || (typeof url === "string" && /\/messaging\/whatsapp\/(?:signup|connection\/register|templates)(?:[/?#]|$)/.test(url)) || isMetaWebhook(url) || (typeof url === "string" && /\/assistant\//.test(url));
 }
 
 export function initSentry(): void {
@@ -45,10 +49,22 @@ export function initSentry(): void {
     tracesSampleRate: 0,
     // Default integrations include Http, Console, OnUncaughtException,
     // OnUnhandledRejection — exactly what we want.
+    beforeBreadcrumb(breadcrumb) {
+      const url: unknown = breadcrumb.data?.url;
+      // Meta's debug-token protocol carries the business token in the query.
+      if (typeof url === "string" && /graph\.facebook\.com\/[^/]+\/(?:debug_token|oauth\/(?:access_token|revoke))(?:[?#]|$)/i.test(url)) return null;
+      return breadcrumb;
+    },
     beforeSend(event) {
       // Strip auth headers entirely — never useful in a stack trace, always
       // sensitive. Replace cookies the same way.
       const req = event.request;
+      if (req && isMetaWebhook(req.url)) {
+        // The challenge embeds a verification secret in its query string.
+        req.url = req.url?.split("?")[0];
+        req.query_string = undefined;
+        req.headers = undefined;
+      }
       if (req?.headers) {
         const headers = { ...req.headers };
         delete headers.authorization;

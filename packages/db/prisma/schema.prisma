@@ -29,7 +29,6 @@ datasource db {
 
 model School {
   installmentPolicy Json? @map("installment_policy")
-  paystackPaymentExceptions PaystackPaymentException[]
   id                        String       @id @default(uuid())
   name                      String
   slug                      String       @unique // for subdomains: <slug>.schoolkit.ng
@@ -367,6 +366,18 @@ model School {
   admissionNumberCounters AdmissionNumberCounter[]
   reportExports           ReportExport[]
   previousAddresses       SchoolPreviousAddress[]
+
+  messagingInboundMessages MessagingInboundMessage[]
+  paystackPaymentExceptions PaystackPaymentException[]
+  messagingWalletEntries  MessagingWalletEntry[]
+  messagingWalletTopUps   MessagingWalletTopUp[]
+  metaSignupSession       MessagingMetaSignupSession?
+  metaSchoolConnection    MessagingSchoolMetaConnection?
+  metaMessagingAccount    MessagingMetaAccount?
+  metaMessagingEvents     MessagingMetaEvent[]
+  termiiMessagingEvents   MessagingTermiiEvent[]
+  messagingGuardianConsents MessagingGuardianConsent[]
+  reminderFrequency         MessagingReminderFrequency[]
 
   @@map("schools")
 }
@@ -1171,6 +1182,8 @@ model Guardian {
   @@unique([schoolId, email])
   @@index([schoolId])
   @@index([schoolId, phone]) // backs the link-existing picker's phone search
+  messagingConsents MessagingGuardianConsent[]
+
   @@map("guardians")
 }
 
@@ -1283,6 +1296,8 @@ model NotificationPreference {
   emailEnabled Boolean  @default(true) @map("email_enabled")
   smsEnabled   Boolean  @default(false) @map("sms_enabled")
   pushEnabled  Boolean  @default(false) @map("push_enabled")
+  paidWhatsAppEnabled Boolean @default(false) @map("paid_whatsapp_enabled")
+  walletSmsEnabled Boolean @default(false) @map("wallet_sms_enabled")
   updatedBy    String   @map("updated_by")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -3503,8 +3518,22 @@ model NotificationDelivery {
   channel       String // PUSH | SMS | EMAIL | NONE — what the rail chose
   sentAt        DateTime      @default(now()) @map("sent_at")
 
+  providerRef       String?   @map("provider_ref")
+  providerAccountId String?   @map("provider_account_id")
+  providerState     String?   @map("provider_state")
+  providerStateAt   DateTime? @map("provider_state_at")
+  dispatchState     String?   @map("dispatch_state")
+  dispatchClaimedAt DateTime? @map("dispatch_claimed_at")
+  dispatchNotBefore DateTime? @map("dispatch_not_before")
+  dispatchReason    String?   @map("dispatch_reason")
+  dispatchRateVersion String? @map("dispatch_rate_version")
+  dispatchEstimateKobo Int?   @map("dispatch_estimate_kobo")
+  financialEscalatedAt DateTime? @map("financial_escalated_at")
+
   @@unique([schoolId, eventType, eventId, principalType, principalId])
   @@index([schoolId, sentAt])
+  @@unique([schoolId, providerAccountId, providerRef], map: "notification_deliveries_provider_ref_idx")
+  @@index([schoolId, dispatchState, sentAt], map: "notification_deliveries_dispatch_idx")
   @@map("notification_deliveries")
 }
 
@@ -5734,6 +5763,8 @@ model WorkflowProposal {
 // Created by confirming a reviewed workflow proposal; its sends are an outbox
 // holding ids and states only, never contact details, text or amounts.
 model ReminderCampaign {
+  approvedSmsUnitKobo Int? @map("approved_sms_unit_kobo")
+  approvedWhatsAppUnitKobo Int? @map("approved_whatsapp_unit_kobo")
   id                  String                 @id @default(uuid())
   schoolId            String                 @map("school_id")
   proposalId          String                 @unique @map("proposal_id")
@@ -5745,6 +5776,9 @@ model ReminderCampaign {
   templateVersion     String                 @map("template_version")
   includePaymentPlans Boolean                @map("include_payment_plans")
   overdueOnly         Boolean                @map("overdue_only")
+  scheduledFor        DateTime?              @map("scheduled_for")
+  includeInvoiceLink  Boolean                @default(false) @map("include_invoice_link")
+  useWhatsApp         Boolean                @default(false) @map("use_whatsapp")
   createdAt           DateTime               @default(now()) @map("created_at")
   updatedAt           DateTime               @default(now()) @map("updated_at")
   haltedAt            DateTime?              @map("halted_at")
@@ -5760,6 +5794,7 @@ model ReminderCampaignSend {
   schoolId    String           @map("school_id")
   campaignId  String           @map("campaign_id")
   studentId   String           @map("student_id")
+  invoiceId   String?   @map("invoice_id")
   guardianId  String           @map("guardian_id")
   channel     String
   channelUsed String?          @map("channel_used")
@@ -5954,6 +5989,243 @@ model SchoolAiTermsEvent {
 
   @@index([schoolId, recordedAt(sort: Desc)])
   @@map("school_ai_terms_events")
+}
+
+model MessagingWalletEntry {
+  releasedKobo Int    @default(0) @map("released_kobo")
+  id         String   @id
+  schoolId   String   @map("school_id")
+  reference  String
+  kind       String
+  amountKobo Int      @map("amount_kobo")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([schoolId, kind, reference], map: "messaging_wallet_entries_school_id_kind_reference_key")
+  @@index([schoolId, createdAt(sort: Desc), id(sort: Desc)], map: "messaging_wallet_history_idx")
+  @@map("messaging_wallet_entries")
+}
+
+model MessagingMetaAccount {
+  schoolId      String @id @map("school_id")
+  wabaId        String @map("waba_id")
+  phoneNumberId String @unique @map("phone_number_id")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@map("messaging_meta_accounts")
+}
+
+model MessagingMetaEvent {
+  id            String    @id
+  schoolId      String    @map("school_id")
+  wabaId        String    @map("waba_id")
+  phoneNumberId String    @map("phone_number_id")
+  providerRef   String    @map("provider_ref")
+  state         String
+  occurredAt    DateTime  @map("occurred_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  processedAt   DateTime? @map("processed_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, wabaId, phoneNumberId, providerRef, state, occurredAt], map: "messaging_meta_events_dedup_key")
+  @@index([schoolId, processedAt, createdAt], map: "messaging_meta_events_pending_idx")
+  @@map("messaging_meta_events")
+}
+
+model MessagingWalletTopUp {
+  recoveryAttempts Int @default(0) @map("recovery_attempts")
+  nextRecoveryAt DateTime? @map("next_recovery_at")
+  estimatedFeeKobo Int? @map("estimated_fee_kobo")
+  actualFeeKobo Int? @map("actual_fee_kobo")
+  reconciliationCode String? @map("reconciliation_code")
+  verifiedAt DateTime? @map("verified_at")
+  reference       String   @id
+  schoolId        String   @map("school_id")
+  clientRequestId String   @map("client_request_id")
+  createdBy       String   @map("created_by")
+  amountKobo      Int      @map("amount_kobo")
+  checkoutUrl     String?  @map("checkout_url")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([schoolId, clientRequestId])
+  @@map("messaging_wallet_top_ups")
+}
+
+model MessagingPlatformReservationDaily {
+  day          DateTime @id @db.Date
+  reservedKobo BigInt   @map("reserved_kobo")
+
+  @@map("messaging_platform_reservations_daily")
+}
+
+model MessagingMetaSignupSession {
+  schoolId  String    @id @map("school_id")
+  ownerId   String    @map("owner_id")
+  stateHash String    @map("state_hash")
+  expiresAt DateTime  @map("expires_at")
+  claimedAt DateTime? @map("claimed_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@map("messaging_meta_signup_sessions")
+}
+
+model MessagingSchoolMetaConnection {
+  schoolId       String    @id @map("school_id")
+  wabaId         String    @unique @map("waba_id")
+  phoneNumberId  String    @unique @map("phone_number_id")
+  encryptedToken String?   @map("encrypted_token")
+  activationPending Boolean @default(false) @map("activation_pending")
+  displayPhone String? @map("display_phone")
+  connectedAt    DateTime  @default(now()) @map("connected_at")
+  disconnectedAt DateTime? @map("disconnected_at")
+  revokedAt      DateTime? @map("revoked_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@map("messaging_school_meta_connections")
+}
+
+model MessagingTermiiEvent {
+  id          String    @id
+  schoolId    String    @map("school_id")
+  accountId   String    @map("account_id")
+  reportId    String    @map("report_id")
+  providerRef String    @map("provider_ref")
+  state       String
+  receivedAt  DateTime  @default(now()) @map("received_at")
+  processedAt DateTime? @map("processed_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, accountId, reportId, providerRef, state], map: "messaging_termii_event_dedup")
+  @@index([schoolId, processedAt, receivedAt], map: "messaging_termii_events_pending_idx")
+  @@map("messaging_termii_events")
+}
+
+model MessagingGuardianConsent {
+  schoolId           String    @map("school_id")
+  guardianId         String    @map("guardian_id")
+  phone              String
+  consentVersion     String    @map("consent_version")
+  challengeHash      String?   @map("challenge_hash")
+  challengeExpiresAt DateTime? @map("challenge_expires_at")
+  challengeIssuedAt  DateTime? @map("challenge_issued_at")
+  verifiedAt         DateTime? @map("verified_at")
+  withdrawnAt        DateTime? @map("withdrawn_at")
+
+  school   School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+
+  @@id([schoolId, guardianId])
+  @@index([schoolId, phone], map: "messaging_guardian_consents_school_phone_idx")
+  @@map("messaging_guardian_consents")
+}
+
+model MessagingReminderFrequency {
+  schoolId    String   @map("school_id")
+  studentId   String   @map("student_id")
+  guardianId  String   @map("guardian_id")
+  campaignId  String   @map("campaign_id")
+  attemptedAt DateTime @map("attempted_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@id([schoolId, studentId, guardianId])
+  @@map("messaging_reminder_frequency")
+}
+
+/// Account-scoped authenticated callback inbox. Tenant routing uses the exact provider reference.
+model MessagingTermiiInbox {
+  chargedKobo Int? @map("charged_kobo")
+  billingContractRef String? @map("billing_contract_ref")
+  accountId   String   @map("account_id")
+  reportId    String   @map("report_id")
+  providerRef String   @map("provider_ref")
+  state       String
+  receivedAt  DateTime @default(now()) @map("received_at")
+
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at")
+
+  @@id([accountId, reportId, providerRef, state])
+  @@index([accountId, nextAttemptAt, receivedAt], map: "messaging_termii_inbox_account_attempt_idx")
+  @@map("messaging_termii_inbox")
+}
+
+model MessagingEmergencyControl {
+  revision    BigInt   @id @default(autoincrement())
+  channel     String
+  stopped     Boolean
+  actorId     String   @map("actor_id")
+  evidenceRef String   @map("evidence_ref")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([channel, revision(sort: Desc)], map: "messaging_emergency_controls_latest_idx")
+  @@map("messaging_emergency_controls")
+}
+
+model MessagingInboundMessage {
+  id            String   @id
+  schoolId      String   @map("school_id")
+  guardianId    String   @map("guardian_id")
+  providerRef   String   @map("provider_ref")
+  encryptedText String   @map("encrypted_text")
+  occurredAt    DateTime @map("occurred_at")
+  expiresAt     DateTime @map("expires_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, providerRef])
+  @@index([schoolId, guardianId, occurredAt(sort: Desc), id(sort: Desc)], map: "messaging_inbound_history_idx")
+  @@index([schoolId, expiresAt], map: "messaging_inbound_expiry_idx")
+  @@map("messaging_inbound_messages")
+}
+
+model MessagingSpendLimitRevision {
+  revision    BigInt   @id @default(autoincrement())
+  scope       String
+  dailyKobo   Int?     @map("daily_kobo")
+  actorId     String   @map("actor_id")
+  evidenceRef String   @map("evidence_ref")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([scope, revision(sort: Desc)], map: "messaging_spend_limit_latest_idx")
+  @@map("messaging_spend_limit_revisions")
+}
+
+model MessagingReviewRevision {
+  revision    BigInt   @id @default(autoincrement())
+  scope       String
+  reviewKey   String   @map("review_key")
+  snapshot    Json
+  actorId     String   @map("actor_id")
+  evidenceRef String   @map("evidence_ref")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([scope, reviewKey, revision(sort: Desc)], map: "messaging_review_latest_idx")
+  @@map("messaging_review_revisions")
+}
+
+model PaystackWebhookInbox {
+  mode          String
+  eventKey      String    @map("event_key")
+  eventType     String    @map("event_type")
+  payload       Json?
+  attempts      Int       @default(0)
+  receivedAt    DateTime  @default(now()) @map("received_at")
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at")
+  claimId       String?   @map("claim_id")
+  claimedUntil  DateTime? @map("claimed_until")
+  processedAt   DateTime? @map("processed_at")
+  deadAt        DateTime? @map("dead_at")
+
+  @@id([mode, eventKey])
+  @@map("paystack_webhook_inbox")
 }
 
 model PaystackPaymentException {

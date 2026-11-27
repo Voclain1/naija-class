@@ -3,6 +3,7 @@ import { Injectable } from "@nestjs/common";
 import { withTenant } from "@school-kit/db";
 import type {
   NotificationPreferenceDto,
+  MessagingPaidPreferences,
   UpdateNotificationPreferencesInput,
 } from "@school-kit/types";
 
@@ -108,6 +109,33 @@ export class NotificationPreferencesService {
       });
 
       return toDto(updated);
+    });
+  }
+
+  async getPaidChannels(schoolId: string): Promise<MessagingPaidPreferences> {
+    return withTenant(schoolId, async (db) => {
+      const row = await db.notificationPreference.findUnique({
+        where: { schoolId }, select: { paidWhatsAppEnabled: true, walletSmsEnabled: true },
+      });
+      return row ?? { paidWhatsAppEnabled: false, walletSmsEnabled: false };
+    });
+  }
+
+  async updatePaid(authCtx: AuthContext, dto: MessagingPaidPreferences): Promise<MessagingPaidPreferences> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner"]);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const { schoolId, userId } = authCtx;
+      const row = await db.notificationPreference.upsert({
+        where: { schoolId },
+        create: { schoolId, ...DEFAULTS, ...dto, updatedBy: userId },
+        update: { ...dto, updatedBy: userId },
+        select: { id: true, paidWhatsAppEnabled: true, walletSmsEnabled: true },
+      });
+      await db.auditLog.create({ data: {
+        schoolId, userId, action: "notification-preferences.paid-update",
+        entityType: "notification_preference", entityId: row.id, metadata: { ...dto },
+      } });
+      return { paidWhatsAppEnabled: row.paidWhatsAppEnabled, walletSmsEnabled: row.walletSmsEnabled };
     });
   }
 

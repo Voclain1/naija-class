@@ -35,10 +35,12 @@ export async function sendWhatsappAlert(
   if (!token || !phoneNumberId || !to || !send.template) return "off";
 
   const version = env.WHATSAPP_GRAPH_VERSION || GRAPH_VERSION_DEFAULT;
+  if (!/^v\d+\.\d+$/.test(version)) return "failed";
   const language = env.WHATSAPP_TEMPLATE_LANGUAGE || "en";
   try {
     const res = await fetchImpl(`https://graph.facebook.com/${version}/${encodeURIComponent(phoneNumberId)}/messages`, {
       method: "POST",
+      redirect: "error",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         messaging_product: "whatsapp",

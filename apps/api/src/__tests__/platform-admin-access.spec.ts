@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Test } from "@nestjs/testing";
 import { ConfigModule } from "@nestjs/config";
 import { APP_FILTER } from "@nestjs/core";
-import type { INestApplication } from "@nestjs/common";
+import { Global, Module, type INestApplication } from "@nestjs/common";
 import request from "supertest";
 
 import {
@@ -18,6 +18,7 @@ import {
 } from "@school-kit/db";
 import { AuthService } from "../modules/auth/auth.service";
 import * as password from "../common/auth/password";
+import { REDIS_AUTH_CLIENT } from "../common/auth/redis-auth.provider";
 import { createSession } from "../common/auth/sessions";
 
 import { HttpExceptionFilter } from "../common/http-exception.filter";
@@ -38,6 +39,16 @@ import { InvitationsModule } from "../modules/invitations/invitations.module";
 // native CommonJS global here, unlike the workspace's ESM packages
 // (see CLAUDE.md's "ESM module resolution" note, which is about
 // packages/*, not apps/api itself).
+
+// The admin module now reaches AuthModule through payment notifications.
+// As in the governance/lifecycle HTTP specs, keep the auth cache inert so
+// these probes exercise real PostgreSQL sessions without external Redis I/O.
+@Global()
+@Module({
+  providers: [{ provide: REDIS_AUTH_CLIENT, useValue: { get: async () => null, set: async () => "OK", del: async () => 1, pttl: async () => -2, incr: async () => 1, expire: async () => 1 } }],
+  exports: [REDIS_AUTH_CLIENT],
+})
+class InertRedisAuthModule {}
 
 let phoneCounter = 0;
 function randomPhone(): string {
@@ -70,7 +81,7 @@ describe("Platform admin access (2026-08-02)", () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), PlatformAdminModule, InvitationsModule],
+      imports: [ConfigModule.forRoot({ isGlobal: true }), InertRedisAuthModule, PlatformAdminModule, InvitationsModule],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
     app = moduleRef.createNestApplication();
@@ -295,6 +306,68 @@ describe("Platform admin access (2026-08-02)", () => {
       .get("/api/v1/platform-admin/schools")
       .set("Authorization", `Bearer ${res.body.token}`);
     expect(dataRes.status).toBe(200);
+  });
+
+  it("restricts messaging emergency controls to platform admins and preserves the audit revision", async () => {
+    const url = "/api/v1/platform-admin/messaging/emergency-controls";
+    const body = { channel: "SMS", stopped: false, evidenceRef: "fictional-control-test" };
+    const form = (token: string) => request(app.getHttpServer()).post(url).set("Authorization", `Bearer ${token}`).send(body);
+    expect((await form(ownerAToken)).status).toBe(403);
+    const accepted = await form(platformAdminToken);
+    expect(accepted.status).toBe(201);
+    expect(accepted.body).toMatchObject({ stopped: false, revision: expect.any(String) });
+    const revision = BigInt(accepted.body.revision);
+    expect(await basePrisma.messagingEmergencyControl.findUnique({ where: { revision } }))
+      .toMatchObject({ actorId: platformAdminUserId, evidenceRef: body.evidenceRef });
+    await expect(basePrisma.messagingEmergencyControl.delete({ where: { revision } })).rejects.toThrow();
+  });
+
+  it("writes versioned spending ceilings and exposes the school scope only to platform admins", async () => {
+    const url = `/api/v1/platform-admin/schools/${schoolA}/messaging/spending-limit`;
+    const body = { dailyKobo: "25", evidenceRef: "fictional-school-budget" };
+    const write = (token: string) => request(app.getHttpServer()).post(url).set("Authorization", `Bearer ${token}`).send(body);
+    expect((await write(ownerAToken)).status).toBe(403);
+    const result = await write(platformAdminToken);
+    expect(result.status).toBe(201);
+    expect(result.body).toMatchObject({ dailyKobo: "25", revision: expect.any(String) });
+    expect(await basePrisma.messagingSpendLimitRevision.findUnique({ where: { revision: BigInt(result.body.revision) } }))
+      .toMatchObject({ actorId: platformAdminUserId, scope: schoolA, dailyKobo: 25 });
+    expect((await request(app.getHttpServer()).get(url).set("Authorization", `Bearer ${platformAdminToken}`)).body)
+      .toEqual(result.body);
+  });
+
+  it("records provider activation separately from emergency controls", async () => {
+    const url = "/api/v1/platform-admin/messaging/provider-activation";
+    const payload = { channel: "SMS", enabled: true, evidenceRef: "fictional-release" };
+    const post = (token: string) => request(app.getHttpServer()).post(url).set("Authorization", `Bearer ${token}`).send(payload);
+    expect((await post(ownerAToken)).status).toBe(403);
+    const result = await post(platformAdminToken);
+    expect(result.status).toBe(201);
+    expect(result.body).toMatchObject({ enabled: true, revision: expect.any(String) });
+    expect(await basePrisma.messagingReviewRevision.findUnique({ where: { revision: BigInt(result.body.revision) } }))
+      .toMatchObject({ actorId: platformAdminUserId, scope: "platform", reviewKey: "provider:SMS", snapshot: true });
+  });
+
+  it("publishes immutable effective prices and can suspend a school template review", async () => {
+    const root = `/api/v1/platform-admin/schools/${schoolA}/messaging`;
+    const post = (path: string, token: string, body: unknown) => request(app.getHttpServer()).post(`${root}/${path}`)
+      .set("Authorization", `Bearer ${token}`).send(body as object);
+    const rate = {
+      key: "TERMII_SMS", version: "fictional-fixture", evidence: "fictional-rate-sheet",
+      effectiveFrom: "2020-01-01T00:00:00Z", effectiveUntil: "2090-01-01T00:00:00Z", verifiedAt: "2020-01-01T00:00:00Z",
+      providerAmount: "5", rateNumerator: "1", rateDenominator: "1", taxBasisPoints: "0", marginBasisPoints: "0",
+    };
+    const catalog = { evidenceRef: "fictional-approved-rate", rates: [rate] };
+    expect((await post("price-catalog", ownerAToken, catalog)).status).toBe(403);
+    expect((await post("price-catalog", platformAdminToken, { ...catalog, rates: [rate, { ...rate, version: "overlaps" }] })).status).toBe(400);
+    const price = await post("price-catalog", platformAdminToken, catalog);
+    expect(price.status).toBe(201);
+    const revision = BigInt(price.body.revision);
+    expect(await basePrisma.messagingReviewRevision.findUnique({ where: { revision } }))
+      .toMatchObject({ actorId: platformAdminUserId, scope: schoolA, snapshot: [rate] });
+    await expect(basePrisma.messagingReviewRevision.delete({ where: { revision } })).rejects.toThrow();
+    expect((await post("templates/fee_invoice_issued/review", platformAdminToken,
+      { evidenceRef: "fictional-provider-reclassification", review: null })).status).toBe(201);
   });
 
   it("a real platform-admin session positively returns schools from BOTH seeded schools", async () => {

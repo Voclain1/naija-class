@@ -6,7 +6,8 @@ import { AuthModule } from "../auth/auth.module";
 import { CalendarModule } from "../calendar/calendar.module";
 import { EventNotifierService } from "./event-notifier.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
-import { NotificationPreferencesService } from "./notification-preferences.service";
+import { NotificationPreferencesModule } from "./notification-preferences.module";
+import { PaidMessagingModule } from "./messaging/paid-messaging.module";
 import { TeacherRemindersService } from "./teacher-reminders.service";
 
 // The SENDING half of notifications, without the worker.
@@ -21,13 +22,12 @@ import { TeacherRemindersService } from "./teacher-reminders.service";
 // import THIS, and the worker stays in NotificationsModule, which the app
 // boots once.
 @Module({
-  imports: [AuthModule, CalendarModule, BullModule.registerQueue({ name: PUSH_QUEUE })],
+  imports: [AuthModule, CalendarModule, NotificationPreferencesModule, PaidMessagingModule, BullModule.registerQueue({ name: PUSH_QUEUE })],
   providers: [
-    NotificationPreferencesService,
     NotificationDispatchService,
     EventNotifierService,
     TeacherRemindersService,
   ],
-  exports: [NotificationPreferencesService, NotificationDispatchService, EventNotifierService],
+  exports: [NotificationPreferencesModule, NotificationDispatchService, EventNotifierService],
 })
 export class NotificationDispatchModule {}

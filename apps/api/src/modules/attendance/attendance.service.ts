@@ -168,10 +168,9 @@ export class AttendanceService {
         byStatus,
       });
 
-      return {
-        result: { count: input.records.length },
-        absentStudentIds: input.records.filter((r) => r.status === "ABSENT").map((r) => r.studentId),
-      };
+      const absentStudentIds = input.records.filter((r) => r.status === "ABSENT").map((r) => r.studentId);
+      await this.events.queuePaidAbsence?.(db, authCtx.schoolId, input.date, lagosTodayIso(), absentStudentIds);
+      return { result: { count: input.records.length }, absentStudentIds };
     });
 
     // Told AFTER the register is committed, and outside its transaction: a

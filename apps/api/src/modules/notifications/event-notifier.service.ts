@@ -1,9 +1,10 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 
-import { withTenant } from "@school-kit/db";
+import { withTenant, type PrismaClient } from "@school-kit/db";
 
 import { CalendarService } from "../calendar/calendar.service";
 import { computeSchoolDays } from "../reports/school-days";
+import { PaidMessagingService } from "./messaging/paid-messaging.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
 
 // Who hears about what (docs/modules/notifications-v1.md N1).
@@ -50,6 +51,7 @@ export class EventNotifierService {
   constructor(
     private readonly dispatch: NotificationDispatchService,
     private readonly calendar: CalendarService,
+    @Optional() private readonly paid?: PaidMessagingService,
   ) {}
 
   /**
@@ -375,6 +377,22 @@ export class EventNotifierService {
         });
       }
     });
+  }
+
+  async queuePaidAbsence(
+    db: PrismaClient, schoolId: string, date: string, today: string, students: readonly string[],
+  ): Promise<void> {
+    if (date === today) await this.paid?.queueStudentsInTransaction(
+      db, schoolId, "messaging.absence", date, students, new Date(Date.now() + ABSENCE_GRACE_MS),
+    );
+  }
+
+  async queuePaidResults(
+    db: PrismaClient, schoolId: string, termId: string, classArmId: string, students: readonly string[],
+  ): Promise<void> {
+    await this.paid?.queueStudentsInTransaction(
+      db, schoolId, "messaging.results-released", `${termId}:${classArmId}`, students,
+    );
   }
 
   private async schoolDay(

@@ -20,7 +20,7 @@ function makeEmailStub(overrides: Partial<EmailService> = {}): EmailService {
   return { send: vi.fn(async () => undefined), ...overrides } as EmailService;
 }
 function makeTermiiStub(overrides: Partial<TermiiService> = {}): TermiiService {
-  return { sendSms: vi.fn(async () => undefined), ...overrides } as TermiiService;
+  return { legacyReadiness: async () => ({ ready: true }), sendSms: vi.fn(async () => undefined), ...overrides } as TermiiService;
 }
 function makeNotificationPreferencesStub(
   overrides: Partial<NotificationPreferencesService> = {},
@@ -1026,6 +1026,7 @@ describe("GuardiansService", () => {
         expect.stringMatching(/^234\d{10}$/),
         expect.any(String),
         undefined,
+        expect.objectContaining({ eventType: "GUARDIAN_INVITATION", eventId: expect.any(String) }),
       );
     });
 

@@ -457,6 +457,42 @@ describe("InvoiceGenerationService (integration)", () => {
   // ── generateForArm ─────────────────────────────────────────────────────────
 
   describe("generateForArm", () => {
+    it("commits a composed invoice and its notification together, with one job after retry", async () => {
+      const { schoolId, ownerId } = await makeSchool("atomic-message");
+      const { academicYearId, termId, classLevelId, classArmId } = await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const studentId = await makeStudent(schoolId, "atomic-message");
+      await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
+      const guardian = await withTenant(schoolId, (db) => db.guardian.create({
+        data: { schoolId, firstName: "Fictional", lastName: "Guardian", phone: randomPhone(), relationship: "MOTHER" },
+      }));
+      const service = new InvoiceGenerationService(undefined, undefined, {
+        queueStudentsInTransaction: (db: typeof basePrisma, tenantId: string, eventType: string, eventId: string) =>
+          db.notificationDelivery.create({
+            data: {
+              schoolId: tenantId, eventType, eventId, principalId: guardian.id, principalType: "GUARDIAN",
+              channel: "WHATSAPP", dispatchState: "QUEUED",
+            },
+          }),
+      } as never);
+      const generate = (db: typeof basePrisma) => service.generateForArmInTransaction(
+        ctx(schoolId, ownerId), { termId, classArmId }, reqCtx, db,
+      );
+      const counts = () => withTenant(schoolId, async (db) => [
+        await db.invoice.count({ where: { schoolId } }),
+        await db.notificationDelivery.count({ where: { schoolId, eventType: "messaging.invoice-issued" } }),
+      ]);
+
+      await expect(withTenant(schoolId, async (db) => {
+        expect((await generate(db)).created).toBe(1);
+        throw new Error("rollback composed invoice");
+      })).rejects.toThrow("rollback composed invoice");
+      expect(await counts()).toEqual([0, 0]);
+      expect((await withTenant(schoolId, generate)).created).toBe(1);
+      expect((await withTenant(schoolId, generate)).created).toBe(0);
+      expect(await counts()).toEqual([1, 1]);
+    });
+
     it("creates one ISSUED invoice per enrolled student with correct snapshot", async () => {
       const { schoolId, ownerId } = await makeSchool("gen-happy");
       const { academicYearId, termId, classLevelId, classArmId } =

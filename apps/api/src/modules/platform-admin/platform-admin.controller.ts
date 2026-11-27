@@ -1,11 +1,14 @@
+import { withTenant } from "@school-kit/db";
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Ip,
   Param,
   Patch,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -13,6 +16,7 @@ import {
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import {
+  NotFoundError,
   platformAdminAuditLogQuerySchema,
   platformAdminCreateSchoolSchema,
   platformAdminListUsersQuerySchema,
@@ -88,12 +92,23 @@ import {
   type PlatformAdminVoiceStatusDto,
 } from "@school-kit/types";
 import type { Request } from "express";
+import { z } from "zod";
 
 import { CurrentPlatformAdmin } from "../../common/auth/current-platform-admin.decorator";
 import type { PlatformAdminContext } from "../../common/auth/platform-admin-context";
 import { PlatformAdminGuard } from "../../common/auth/platform-admin.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AssistantActivationService } from "./assistant-activation.service";
+import { messagingEmergencyState, writeMessagingEmergencyState } from "../../common/messaging-emergency-control";
+import { messagingSpendLimit, writeMessagingSpendLimit } from "../../common/messaging-spend-limits";
+import type { MessagingEmergencyChannel, MessagingEmergencyWrite, MessagingProviderActivationWrite, MessagingRateReviewWrite, MessagingSpendLimitWrite, MessagingTemplateReviewWrite } from "@school-kit/types";
+import { messagingProviderActivation, messagingRateCatalogState, writeMessagingProviderActivation, writeMessagingRateCatalog, writeMessagingTemplateReview } from "../notifications/messaging/messaging-review-controls";
+import { PaymentsService } from "../payments/payments.service";
+import { PaystackWebhookInboxService } from "../payments/paystack-webhook-inbox.service";
+import { MessagingTopUpService } from "../notifications/messaging/messaging-top-up.service";
+import { MetaConnectionsService } from "../notifications/messaging/meta-connections.service";
+import { messagingPlatformControls } from "../notifications/messaging/paid-messaging-policy";
+import { getMessagingReconciliation, getMessagingWallet, reconcileNotificationReservation } from "../notifications/messaging/messaging-wallet";
 import { VoiceAdminService } from "./voice-admin.service";
 import { PlatformAdminService } from "./platform-admin.service";
 
@@ -101,12 +116,27 @@ import { PlatformAdminService } from "./platform-admin.service";
 // super-admin" note. /platform-admin/login is the ONLY public route here
 // (mirrors PortalAuthController's "no guard on the credential endpoint
 // itself" precedent); every other route requires PlatformAdminGuard.
+const reviewRef = z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/);
+const rateReviewInput = z.object({ evidenceRef: reviewRef, rates: z.array(z.record(z.string())).max(100) }).strict();
+const templateReviewInput = z.object({
+  evidenceRef: reviewRef,
+  review: z.object({
+    wabaId: z.string(), providerTemplateId: z.string(), approvedBody: z.string(), language: z.string(),
+    category: z.enum(["UTILITY", "MARKETING", "AUTHENTICATION"]), bodyFields: z.array(z.string()).max(20),
+    paymentButtonIndex: z.number().int().optional(),
+  }).strict().nullable(),
+}).strict();
+
 @Controller("platform-admin")
 export class PlatformAdminController {
   constructor(
     private readonly platformAdminService: PlatformAdminService,
     private readonly assistantActivation: AssistantActivationService,
     private readonly voiceAdmin: VoiceAdminService,
+    private readonly metaConnections: MetaConnectionsService,
+    private readonly paystackInbox: PaystackWebhookInboxService,
+    private readonly payments: PaymentsService,
+    private readonly messagingTopUps: MessagingTopUpService,
   ) {}
 
   // POST /platform-admin/login — same tighter-than-global throttle as
@@ -123,6 +153,282 @@ export class PlatformAdminController {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });
+  }
+
+  @Get("messaging/controls")
+  @UseGuards(PlatformAdminGuard)
+  async messagingControls() {
+    const [SMS, WHATSAPP, platformSpendLimit, smsActivation, whatsappActivation] = await Promise.all([
+      messagingEmergencyState("SMS"), messagingEmergencyState("WHATSAPP"), messagingSpendLimit("platform"),
+      messagingProviderActivation("SMS"), messagingProviderActivation("WHATSAPP"),
+    ]);
+    return {
+      ...messagingPlatformControls(process.env), emergency: { SMS, WHATSAPP }, platformSpendLimit,
+      providerActivation: { SMS: smsActivation, WHATSAPP: whatsappActivation },
+    };
+  }
+
+  @Post("messaging/emergency-controls")
+  @UseGuards(PlatformAdminGuard)
+  updateMessagingEmergencyControls(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(z.object({
+      channel: z.enum(["SMS", "WHATSAPP"]),
+      stopped: z.boolean(),
+      evidenceRef: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/),
+    }).strict())) body: MessagingEmergencyWrite & { channel: MessagingEmergencyChannel },
+  ) {
+    const { channel, ...control } = body;
+    return writeMessagingEmergencyState(channel, admin.userId, control);
+  }
+
+  @Post("messaging/spending-limit")
+  @UseGuards(PlatformAdminGuard)
+  updatePlatformMessagingLimit(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(z.object({
+      dailyKobo: z.string().regex(/^(0|[1-9]\d{0,9})$/).nullable(),
+      evidenceRef: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/),
+    }).strict())) body: MessagingSpendLimitWrite,
+  ) {
+    return writeMessagingSpendLimit("platform", admin.userId, body);
+  }
+
+  @Get("schools/:schoolId/messaging/spending-limit")
+  @UseGuards(PlatformAdminGuard)
+  readSchoolMessagingLimit(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    return messagingSpendLimit(schoolId);
+  }
+
+  @Post("schools/:schoolId/messaging/spending-limit")
+  @UseGuards(PlatformAdminGuard)
+  updateSchoolMessagingLimit(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(z.object({
+      dailyKobo: z.string().regex(/^(0|[1-9]\d{0,9})$/).nullable(),
+      evidenceRef: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/),
+    }).strict())) body: MessagingSpendLimitWrite,
+  ) {
+    return writeMessagingSpendLimit(schoolId, admin.userId, body);
+  }
+
+  @Post("messaging/provider-activation")
+  @UseGuards(PlatformAdminGuard)
+  updateMessagingProviderActivation(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(z.object({
+      channel: z.enum(["SMS", "WHATSAPP"]), enabled: z.boolean(), evidenceRef: reviewRef,
+    }).strict())) body: MessagingProviderActivationWrite & { channel: MessagingEmergencyChannel },
+  ) {
+    const { channel, ...activation } = body;
+    return writeMessagingProviderActivation(channel, admin.userId, activation);
+  }
+
+  @Get("messaging/price-catalog")
+  @UseGuards(PlatformAdminGuard)
+  readPlatformMessagingPrices() {
+    return messagingRateCatalogState("platform");
+  }
+
+  @Get("schools/:schoolId/messaging/price-catalog")
+  @UseGuards(PlatformAdminGuard)
+  readSchoolMessagingPrices(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    return messagingRateCatalogState(schoolId);
+  }
+
+  @Post("messaging/price-catalog")
+  @UseGuards(PlatformAdminGuard)
+  publishPlatformMessagingPrices(
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(rateReviewInput)) body: MessagingRateReviewWrite,
+  ) {
+    return writeMessagingRateCatalog("platform", admin.userId, body);
+  }
+
+  @Post("schools/:schoolId/messaging/price-catalog")
+  @UseGuards(PlatformAdminGuard)
+  publishSchoolMessagingPrices(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(rateReviewInput)) body: MessagingRateReviewWrite,
+  ) {
+    return writeMessagingRateCatalog(schoolId, admin.userId, body);
+  }
+
+  @Post("schools/:schoolId/messaging/templates/:name/review")
+  @UseGuards(PlatformAdminGuard)
+  reviewSchoolMessagingTemplate(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @Param("name") name: string,
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(templateReviewInput)) body: MessagingTemplateReviewWrite,
+  ) {
+    return writeMessagingTemplateReview(schoolId, name, admin.userId, body);
+  }
+
+  @Get("schools/:schoolId/messaging/wallet")
+  @UseGuards(PlatformAdminGuard)
+  async messagingWallet(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    const wallet = await getMessagingWallet(schoolId);
+    return { availableKobo: String(wallet.availableKobo), reservedKobo: String(wallet.reservedKobo) };
+  }
+
+  @Get("schools/:schoolId/messaging/top-up-reconciliation")
+  @UseGuards(PlatformAdminGuard)
+  messagingTopUpReconciliation(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    return withTenant(schoolId, async (db) => {
+      const rows = await db.messagingWalletTopUp.findMany({
+        where: { schoolId, verifiedAt: null }, take: 100, orderBy: { createdAt: "asc" },
+        select: { reference: true, reconciliationCode: true, amountKobo: true, recoveryAttempts: true, createdAt: true },
+      });
+      return { items: rows.map((row) => ({ ...row, amountKobo: String(row.amountKobo) })) };
+    });
+  }
+
+  @Post("schools/:schoolId/messaging/top-up-reconciliation/:reference/recover")
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(PlatformAdminGuard)
+  recoverMessagingTopUp(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @Param("reference", new ZodValidationPipe(z.string().min(1).max(120))) reference: string,
+    @Body(new ZodValidationPipe(z.object({ evidenceRef: reviewRef }).strict())) input: { evidenceRef: string },
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+  ) {
+    return this.messagingTopUps.recoverForOperator(schoolId, reference, admin.userId, input.evidenceRef);
+  }
+
+  @Get("payments/webhooks/dead-letters")
+  @UseGuards(PlatformAdminGuard)
+  paystackWebhookDeadLetters() {
+    return this.paystackInbox.listDeadLetters();
+  }
+
+  @Post("payments/webhooks/dead-letters/:eventKey/replay")
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(PlatformAdminGuard)
+  replayPaystackWebhook(
+    @Param("eventKey", new ZodValidationPipe(z.string().regex(/^[0-9a-f]{64}$/))) eventKey: string,
+    @Body(new ZodValidationPipe(z.object({ evidenceRef: reviewRef }).strict())) input: { evidenceRef: string },
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+  ) {
+    return this.paystackInbox.replayDeadLetter(eventKey, admin.userId, input.evidenceRef);
+  }
+
+  @Get("schools/:schoolId/payments/reconciliation")
+  @UseGuards(PlatformAdminGuard)
+  paystackPaymentReconciliation(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    return withTenant(schoolId, async (db) => {
+      const rows = await db.paystackPaymentException.findMany({
+        where: { schoolId }, take: 100, orderBy: { createdAt: "desc" },
+        select: {
+          reference: true, invoiceId: true, reason: true, expectedKobo: true, observedKobo: true,
+          observedCurrency: true, unappliedKobo: true, createdAt: true, reviewStatus: true, reviewedAt: true,
+        },
+      });
+      return { items: rows.map((row) => ({
+        ...row,
+        expectedKobo: row.expectedKobo === null ? null : String(row.expectedKobo),
+        observedKobo: row.observedKobo === null ? null : String(row.observedKobo),
+        unappliedKobo: row.unappliedKobo === null ? null : String(row.unappliedKobo),
+      })) };
+    });
+  }
+
+  @Post("schools/:schoolId/payments/reconciliation/review")
+  @UseGuards(PlatformAdminGuard)
+  @HttpCode(200)
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
+  reviewPaymentException(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @Body(new ZodValidationPipe(z.object({
+      reference: z.string().min(1).max(220),
+      reason: z.string().regex(/^[A-Z_]{1,64}$/),
+      status: z.enum(["ACKNOWLEDGED", "PROVIDER_ESCALATED", "EVIDENCE_RECORDED"]),
+      evidenceRef: reviewRef,
+    }).strict())) input: {
+      reference: string; reason: string; status: "ACKNOWLEDGED" | "PROVIDER_ESCALATED" | "EVIDENCE_RECORDED"; evidenceRef: string;
+    },
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+  ) {
+    return withTenant(schoolId, async (db) => {
+      const reviewedAt = new Date();
+      const result = await db.paystackPaymentException.updateMany({
+        where: { schoolId, reference: input.reference, reason: input.reason },
+        data: { reviewStatus: input.status, reviewedAt },
+      });
+      if (!result.count) throw new NotFoundError("Payment exception not found.");
+      await db.auditLog.create({
+        data: {
+          schoolId, userId: admin.userId, action: "payment.reconciliation.review", entityType: "paystack_exception",
+          entityId: input.reference, metadata: { reason: input.reason, status: input.status, evidenceRef: input.evidenceRef },
+        },
+      });
+      return { status: input.status, reviewedAt };
+    });
+  }
+
+  @Post("schools/:schoolId/payments/reconciliation/reverify")
+  @UseGuards(PlatformAdminGuard)
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async reverifyPaymentException(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @Body(new ZodValidationPipe(z.object({
+      reference: z.string().regex(/^PSK-[a-f0-9-]{36}-[a-f0-9-]{36}$/),
+      evidenceRef: reviewRef,
+    }).strict())) input: { reference: string; evidenceRef: string },
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+  ) {
+    await withTenant(schoolId, async (db) => {
+      const exception = await db.paystackPaymentException.findFirst({
+        where: { schoolId, reference: input.reference }, select: { reference: true },
+      });
+      if (!exception) throw new NotFoundError("Payment exception not found.");
+      await db.auditLog.create({
+        data: {
+          schoolId, userId: admin.userId, action: "payment.reconciliation.reverify", entityType: "paystack_exception",
+          entityId: input.reference, metadata: { evidenceRef: input.evidenceRef },
+        },
+      });
+    });
+    const payment = await this.payments.verifyAndApply(schoolId, input.reference);
+    return {
+      reference: input.reference, paymentStatus: payment.status,
+      allocatedKobo: payment.allocatedKobo ?? null, unappliedKobo: payment.unappliedKobo ?? null,
+    };
+  }
+
+  @Get("schools/:schoolId/messaging/reconciliation")
+  @UseGuards(PlatformAdminGuard)
+  messagingReconciliation(@Param("schoolId", new ParseUUIDPipe()) schoolId: string) {
+    return getMessagingReconciliation(schoolId);
+  }
+
+  @Delete("schools/:schoolId/messaging/whatsapp")
+  @UseGuards(PlatformAdminGuard)
+  disconnectSchoolWhatsApp(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+  ) {
+    return this.metaConnections.disconnectSchool(schoolId, admin.userId);
+  }
+
+  @Post("schools/:schoolId/messaging/deliveries/:deliveryId/reconcile")
+  @UseGuards(PlatformAdminGuard)
+  reconcileMessagingDelivery(
+    @Param("schoolId", new ParseUUIDPipe()) schoolId: string,
+    @Param("deliveryId", new ParseUUIDPipe()) deliveryId: string,
+    @CurrentPlatformAdmin() admin: PlatformAdminContext,
+    @Body(new ZodValidationPipe(z.object({
+      resolution: z.enum(["SETTLE", "RELEASE"]),
+      evidenceRef: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/),
+      providerChargedKobo: z.string().regex(/^(0|[1-9]\d{0,9})$/),
+    }).strict())) body: { resolution: "SETTLE" | "RELEASE"; evidenceRef: string; providerChargedKobo: string },
+  ) {
+    return reconcileNotificationReservation({ ...body, schoolId, deliveryId, operatorId: admin.userId, providerChargedKobo: BigInt(body.providerChargedKobo) });
   }
 
   @Get("schools")

@@ -188,7 +188,49 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state (updated 2026-11-17)
+## Latest state (updated 2026-11-25)
+
+Batch 1 production evidence work continues on draft PR #563 without merge or
+deployment. The owner confirmed that SchoolKit has never activated an SMS
+provider; email and manual WhatsApp are the only existing notification paths.
+The candidate therefore explicitly keeps legacy SMS, Termii reports and paid
+messaging off. Termii account/sender/DND/rate/capacity evidence remains a hard
+activation prerequisite, but no longer blocks infrastructure checks while all
+four SMS gates are explicitly off.
+
+The preflight now prepares the exact seven approved Batch 1 overrides from the
+complete stored `API_ENV_FILE`, proves that unrelated candidate settings are
+unchanged, and retains mode-0600 running/original/proposed backups in a
+mode-0700 directory on the Contabo VPS. It does not replace the running file,
+update the GitHub secret, deploy, send SMS, or charge Paystack. The GitHub
+secret still cannot be read back through the repository API; the proposed
+backup must be installed as the complete secret through an authorized secret
+write path. Keep `UNIFIED_MESSAGING_CUTOVER_APPROVED` unset.
+
+The closing sprint on draft PR #563 adds producer-scoped legacy SMS budgets,
+local payment-link cutoffs, zero-allocation acknowledgments and audited Paystack
+inbox operations. The [disposition report](reviews/unified-messaging-closing-sprint.md)
+and [62-scenario matrix](reviews/unified-messaging-muse-acceptance.md) describe
+the verified behavior and remaining merge gates. PR #564 is separate.
+
+Unified messaging remediation continues on draft PR #563. Use the
+[runbook](runbooks/unified-messaging.md) for webhook key rotation, legacy SMS
+migration and payment recovery. Frontend PR #564 remains separate.
+
+
+PR #563 remains a draft on `feat/unified-messaging-infrastructure`. The
+continuation adds shared Termii routing, partial settlement, protected legacy
+SMS egress, atomic paid jobs, emergency controls, gated Meta management, and
+inbound retention. See the [messaging runbook](runbooks/unified-messaging.md)
+and [journal](journal/2026-11-24-unified-messaging.md) for remaining scope.
+
+
+Unified messaging foundations are on `feat/unified-messaging-infrastructure`.
+See [the contract](modules/unified-messaging.md) and [the rollout
+runbook](runbooks/unified-messaging.md). Paid payment confirmations now have a default-off worker. School-owned Meta
+connections, versioned consent, the Meta and Termii inboxes, and manual
+wallet reconciliation are covered with simulated providers. Remaining
+event and provider activation work is listed in the runbook.
 
 - 2026-11-26: Instalment checkout work is in draft #566, with an allocation-aware finance prerequisite in draft #567. See the [instalment journal](journal/2026-11-26-instalments.md) for migration ownership and release gates.
 

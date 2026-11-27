@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { Kobo } from "../messaging/contract.js";
+
 // Durable fee reminder campaigns (2026-11-09, docs/modules/reminder-campaigns.md).
 //
 //   PREPARE  POST /finance/reminder-campaigns/proposals              -> a reviewed preview
@@ -41,6 +43,11 @@ export const prepareReminderCampaignSchema = z
          * confirm, by class ID (two levels can both have an arm called "A").
          */
         classArmIds: z.array(z.string().uuid()).min(1).max(20).optional(),
+        /** An optional explicit send time. Quiet hours can delay it further. */
+        scheduledFor: z.string().datetime({ offset: true }).optional(),
+        /** Include an existing, live link only for a single matching outstanding invoice. */
+        includeInvoiceLink: z.boolean().optional(),
+        useWhatsApp: z.boolean().optional(),
       })
       .strict()
       .default({ includePaymentPlans: false, overdueOnly: false }),
@@ -72,7 +79,7 @@ export const REMINDER_ELIGIBILITY = [
 ] as const;
 export type ReminderEligibility = (typeof REMINDER_ELIGIBILITY)[number];
 
-export const REMINDER_BATCH_ERROR_CODES = ["TERM_NOT_FOUND", "NO_CHANNEL", "NOTHING_TO_SEND"] as const;
+export const REMINDER_BATCH_ERROR_CODES = ["TERM_NOT_FOUND", "NO_CHANNEL", "NOTHING_TO_SEND", "SCHEDULE_ELAPSED", "WHATSAPP_UNAVAILABLE"] as const;
 export type ReminderBatchErrorCode = (typeof REMINDER_BATCH_ERROR_CODES)[number];
 
 export const REMINDER_BATCH_WARNING_CODES = [
@@ -109,7 +116,7 @@ export interface ReminderCampaignStudentPreview {
   overdue: boolean;
   eligibility: ReminderEligibility;
   /** Planned slots if eligible: one email per guardian with a usable address, one push-or-SMS. */
-  planned: { emailGuardians: number; mobile: "PUSH_OR_SMS" | "PUSH_ONLY" | "SMS_ONLY" | "NONE" };
+  planned: { emailGuardians: number; mobile: "PUSH_OR_SMS" | "PUSH_ONLY" | "SMS_ONLY" | "WHATSAPP" | "NONE" };
 }
 
 export interface ReminderChannelState {
@@ -129,8 +136,11 @@ export interface ReminderCampaignProposalDto {
   termId: string;
   termLabel: string | null;
   templateVersion: string;
-  options: { includePaymentPlans: boolean; overdueOnly: boolean };
+  options: { includePaymentPlans: boolean; overdueOnly: boolean; scheduledFor?: string; includeInvoiceLink?: boolean; useWhatsApp?: boolean };
   channels: ReminderChannelState;
+  /** Includes every potential SMS fallback. Null price means no rate is configured. */
+  smsEstimate?: { segments: number; maximumKobo: Kobo | null };
+  whatsappEstimate?: { recipients: number; maximumKobo: Kobo | null };
   counts: { selected: number; eligible: number; excluded: Record<Exclude<ReminderEligibility, "ELIGIBLE">, number>; plannedSends: number };
   batchErrors: ReminderProblem<ReminderBatchErrorCode>[];
   batchWarnings: ReminderProblem<ReminderBatchWarningCode>[];
@@ -156,6 +166,8 @@ export const REMINDER_HALT_REASONS = [
   "SCHOOL_UNAVAILABLE",
   "CONFIRMER_ACCESS_REVOKED",
   "NO_CHANNEL",
+  "PRICE_APPROVAL_REQUIRED",
+  "WHATSAPP_REVIEW_REQUIRED",
 ] as const;
 export type ReminderHaltReason = (typeof REMINDER_HALT_REASONS)[number];
 
@@ -176,7 +188,7 @@ export interface ReminderCampaignSendDto {
   guardianId: string;
   /** The planned slot: an email to this guardian, or one push-or-SMS for the child. */
   slot: "EMAIL" | "MOBILE";
-  channelUsed: "EMAIL" | "PUSH" | "SMS" | null;
+  channelUsed: "EMAIL" | "PUSH" | "SMS" | "WHATSAPP" | null;
   outcome: ReminderSendOutcome;
   reason: string | null;
   finishedAt: string | null;
@@ -192,6 +204,7 @@ export interface ReminderCampaignDto {
   createdAt: string;
   haltedAt: string | null;
   completedAt: string | null;
+  scheduledFor?: string | null;
   /** True while sends are held for quiet hours (21:00–06:00 Lagos). */
   heldForQuietHours: boolean;
   counts: Record<ReminderSendOutcome, number>;
@@ -215,3 +228,18 @@ export const REMINDER_CAMPAIGN_CONFLICT_CODES = {
   notHalted: "REMINDER_CAMPAIGN_NOT_HALTED",
   stillOff: "REMINDER_CAMPAIGN_FEATURE_OFF",
 } as const;
+
+export interface ReminderCampaignReapprovalQuote {
+  previewHash: string;
+  remainingMobileSlots: number;
+  smsUnitKobo: string | null;
+  whatsappUnitKobo: string | null;
+  /** Upper bound for WhatsApp. SMS units are segments, with the final quote checked at dispatch. */
+  maximumWhatsAppKobo: string | null;
+}
+
+export const reapproveReminderCampaignSchema = z.object({
+  previewHash: z.string().regex(/^[0-9a-f]{64}$/),
+}).strict();
+
+export type ReapproveReminderCampaignInput = z.infer<typeof reapproveReminderCampaignSchema>;
