@@ -5,16 +5,16 @@
 #   cutover.sh stage            validate release/manifest.env, pull every image BY DIGEST, check revision labels
 #   cutover.sh authorize        owner types the authorisation phrase; binds head SHA + manifest hash, 4 h
 #   cutover.sh verify           read-only gates (no authorisation needed)
-#   cutover.sh execute [--resume]  the maintenance window: 503, drain, snapshot, migrate, candidate, reopen
+#   cutover.sh execute [--resume]  the maintenance window: 503, drain, snapshot, migrate, candidate, web and portal, then hold for reopen
 #   cutover.sh resolve-migration   after fixing a failed migration's cause: mark it rolled back
 #   cutover.sh recover          allocation-compatible recovery release (never the pre-allocation image)
-#   cutover.sh reopen           give traffic back once a running release passes the financial gate
-#   cutover.sh maintenance on|off
+#   cutover.sh reopen           give traffic back once a running release passes all readiness gates
+#   cutover.sh maintenance on (use reopen to restore traffic)
 #
 # Hard properties (each is asserted by the isolated rehearsal, .github/workflows/batch2-images.yml):
 #   * every state-changing mode needs: a valid, unexpired AUTHORIZATION bound to this manifest AND the owner
 #     exporting UNIFIED_MESSAGING_CUTOVER_APPROVED=true for that one command (this script never sets it);
-#   * only `api` and `render-worker` are ever named; PostgreSQL, Redis, ops, ops-pinned, web and portal are
+#   * only the four application services are targeted; PostgreSQL, Redis, ops and ops-pinned are
 #     never recreated, rebuilt, removed or pruned; no --remove-orphans, no --build, no image prune;
 #   * PostgreSQL's identity, ops-pinned and the stopped original ops are re-checked after every phase;
 #   * the old application is stopped and its queues drained BEFORE the first migration;
@@ -32,14 +32,19 @@ mkdir -p release; chmod 700 release
 MANIFEST=release/manifest.env
 AUTH=release/AUTHORIZATION
 STATE=release/state
+FRONTEND=release/frontend.compose.yml
+PAIR=release/pair.env
+PROTECTED=release/protected
+exec 9>release/cutover.lock
+flock -n 9 || die "another cutover command is active"
 REHEARSAL=0; [ "${CUTOVER_MODE:-production}" = rehearsal ] && REHEARSAL=1
 IMG_RE='^ghcr\.io/voclain1/school-kit-(api|render|migrate|postgres)@sha256:[0-9a-f]{64}$'
-PHASES=(NONE STAGED MAINT_ON DRAINED SNAPSHOT_DONE MIGRATED CANDIDATE_UP REOPENED)
+PHASES=(NONE STAGED MAINT_ON DRAINED SNAPSHOT_DONE MIGRATED BACKEND_VERIFIED FRONTEND_VERIFIED REOPENED)
 
 dcr() { dco "$@"; }
 dvar() { sed -n "s/^$1=//p" deploy.env | head -n 1; }
 state_get() { if [ -s "$STATE" ]; then cat "$STATE"; else echo NONE; fi; }
-state_set() { printf '%s\n' "$1" > "$STATE"; info "phase -> $1"; }
+state_set() { printf '%s\n' "$1" > "$STATE.new"; mv -f "$STATE.new" "$STATE"; info "phase -> $1"; }
 rank() { local i; for i in "${!PHASES[@]}"; do [ "${PHASES[$i]}" = "$1" ] && { echo "$i"; return; }; done; echo -1; }
 done_phase() { [ "$(rank "$(state_get)")" -ge "$(rank "$1")" ]; }
 
@@ -62,16 +67,28 @@ load_manifest() {
     case $seen in *" $need "*) ;; *) die "manifest: $need is missing" ;; esac
   done
   M_HASH=$(sha256sum "$MANIFEST" | cut -d' ' -f1)
+  read -r k F_HEAD < <(sed -n '1s/=/ /p' "$PAIR") || die "frontend release pair missing"
+  [ "$k" = FRONTEND_SHA ] && [[ $F_HEAD =~ ^[0-9a-f]{40}$ ]] || die "invalid frontend commit"
+  F_WEB=$(sed -n 's|^    image: \(ghcr.io/voclain1/school-kit-web@sha256:[0-9a-f]\{64\}\)$|\1|p' "$FRONTEND")
+  F_PORTAL=$(sed -n 's|^    image: \(ghcr.io/voclain1/school-kit-portal@sha256:[0-9a-f]\{64\}\)$|\1|p' "$FRONTEND")
+  [ -n "$F_WEB" ] && [ -n "$F_PORTAL" ] || die "invalid frontend image pins"
+  F_HASH=$(sha256sum "$FRONTEND" | cut -d' ' -f1)
+  TOOL_HASH=$(sha256sum "$here/SHA256SUMS" | cut -d' ' -f1)
+  (cd "$here" && sha256sum -c SHA256SUMS >/dev/null) || die "operator package checksum failed"
+  cmp -s "$PAIR" <(printf 'FRONTEND_SHA=%s\nBACKEND_SHA256=%s\nFRONTEND_SHA256=%s\n' "$F_HEAD" "$M_HASH" "$F_HASH") || die "release pair checksum mismatch"
 }
 require_authorization() {
   load_manifest
   [ "${UNIFIED_MESSAGING_CUTOVER_APPROVED:-}" = true ] || die "the owner must export UNIFIED_MESSAGING_CUTOVER_APPROVED=true for this one command (it is never set permanently)"
   [ -s "$AUTH" ] || die "no authorisation: run 'cutover.sh authorize'"
-  local word what head hash expires
-  read -r word what head hash expires < "$AUTH"
+  local word what head hash frontend frontend_hash web portal tooling expires
+  read -r word what head hash frontend frontend_hash web portal tooling expires < "$AUTH"
   [ "$word" = AUTHORIZE ] && [ "$what" = batch3 ] || die "authorisation file is malformed"
   [ "$head" = "$M_HEAD_SHA" ] || die "authorisation is for a different head commit"
   [ "$hash" = "$M_HASH" ] || die "authorisation does not match this manifest (it changed after authorising)"
+  [ "$frontend" = "$F_HEAD" ] && [ "$frontend_hash" = "$F_HASH" ] \
+    && [ "$web" = "$F_WEB" ] && [ "$portal" = "$F_PORTAL" ] && [ "$tooling" = "$TOOL_HASH" ] \
+    || die "authorisation does not match the frontend or operator checksums"
   [[ $expires =~ ^[0-9]+$ ]] && [ "$(date +%s)" -lt "$expires" ] || die "authorisation has expired"
 }
 
@@ -83,7 +100,16 @@ REDIS_ID=$(identity "$(dc ps -q redis)")
 PINNED_OPS_ID=$(identity "$(dco ps -q ops-pinned)")
 
 # Re-checked after every phase.
+protected_snapshot() {
+  printf '%s\n' "$PG_ID" "$REDIS_ID" "$PINNED_OPS_ID"
+  local old; old=$(dc ps -aq ops)
+  if [ -n "$old" ]; then identity "$old"; fi
+  sha256sum backup.env "$OVERRIDE"
+}
 invariants() {
+  if [ -e "$PROTECTED" ]; then
+    cmp -s "$PROTECTED" <(protected_snapshot) || die "protected infrastructure differs from the start of cutover"
+  fi
   [ "$(identity "$(dc ps -q redis)")" = "$REDIS_ID" ] || die "Redis identity changed"
   [ "$(identity "$(dco ps -q ops-pinned)")" = "$PINNED_OPS_ID" ] || die "ops-pinned identity changed"
   [ "$(identity "$(dc ps -q postgres)")" = "$PG_ID" ] || die "PostgreSQL was recreated or restarted during the cutover: STOP"
@@ -108,7 +134,7 @@ gates() {
   else python3 "$here/backup_env.py" validate backup.env >/dev/null && ok "backup.env valid (R2 rules, no empty or duplicate values)" || { bad "backup.env fails validation: run guard.sh config"; fails=1; }; fi
   bash "$here/guard.sh" scheduler >/dev/null && ok "scheduler guard passes (ops-pinned healthy, original ops stopped, fallback present)" || { bad "scheduler guard failed: run guard.sh scheduler"; fails=1; }
   local ref
-  for ref in "$M_CANDIDATE_API" "$M_CANDIDATE_RENDER" "$M_RECOVERY_API" "$M_RECOVERY_RENDER" "$M_MIGRATE" "$M_BACKUP_OPS"; do
+  for ref in "$M_CANDIDATE_API" "$M_CANDIDATE_RENDER" "$M_RECOVERY_API" "$M_RECOVERY_RENDER" "$M_MIGRATE" "$M_BACKUP_OPS" "$F_WEB" "$F_PORTAL"; do
     if docker image inspect "$ref" >/dev/null 2>&1; then ok "image present by digest: ${ref%%@*}"; else bad "image not staged: ${ref%%@*}"; fails=1; fi
   done
   local label
@@ -119,6 +145,10 @@ gates() {
   for ref in "$M_RECOVERY_API" "$M_RECOVERY_RENDER"; do
     label=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$ref" 2>/dev/null || true)
     [ "$label" = "$M_RECOVERY_SHA" ] || { bad "revision label of ${ref%%@*} is not the recovery commit"; fails=1; }
+  done
+  for ref in "$F_WEB" "$F_PORTAL"; do
+    label=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$ref" 2>/dev/null || true)
+    [ "$label" = "$F_HEAD" ] || { bad "frontend image revision mismatch"; fails=1; }
   done
   # Paid messaging and unauthorised SMS must be OFF in the configuration the candidate will read.
   local k v
@@ -132,7 +162,9 @@ gates() {
     [[ $by =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [ "$(date -u +%F)" \< "$by" ] && ok "legacy-signature review date is in the future" || { bad "PAYSTACK_WEBHOOK_LEGACY_REVIEW_BY missing or past: the owner must re-authorise it"; fails=1; }
   fi
   [ "$(df -Pk /var/lib/docker | awk 'NR == 2 { printf "%d", $4 / 1048576 }')" -ge 5 ] && ok "at least 5 GiB free" || { bad "less than 5 GiB free"; fails=1; }
-  grep -c '^{\$API_HOST} {$' Caddyfile | grep -qx 1 && ok "Caddyfile has exactly one API host block" || { bad "Caddyfile API host block not found exactly once"; fails=1; }
+  for k in API WEB PORTAL; do
+    [ "$(grep -Fxc "{\$${k}_HOST} {" Caddyfile)" = 1 ] || { bad "Caddyfile needs exactly one $k host block"; fails=1; }
+  done
   return "$fails"
 }
 
@@ -149,15 +181,22 @@ caddy_apply() { # file: validate inside the caddy container, overwrite IN PLACE 
   dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || return 1
 }
 maintenance_on() {
-  if grep -q '^# BATCH3-MAINTENANCE$' Caddyfile; then info "maintenance already on"; return 0; fi
+  if ! grep -q '^# BATCH3-MAINTENANCE$' Caddyfile; then
   [ -e Caddyfile.pre-batch3 ] || cp -p Caddyfile Caddyfile.pre-batch3
   awk 'BEGIN { skip = 0 }
-       /^\{\$API_HOST\} \{$/ { print "# BATCH3-MAINTENANCE"; print; print "\theader Retry-After \"120\""; print "\trespond \"Maintenance in progress. Please retry shortly.\" 503"; skip = 1; next }
+       /^\{\$(API|WEB|PORTAL)_HOST\} \{$/ { print "# BATCH3-MAINTENANCE"; print; print "\theader Retry-After \"120\""; print "\trespond \"Maintenance in progress. Please retry shortly.\" 503"; skip = 1; next }
        skip && /^\}$/ { skip = 0 }
        skip { next }
        { print }' Caddyfile.pre-batch3 > Caddyfile.maintenance
   grep -q 'respond "Maintenance' Caddyfile.maintenance || die "could not build the maintenance Caddyfile"
   caddy_apply Caddyfile.maintenance || { cat Caddyfile.pre-batch3 > Caddyfile; dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || true; die "caddy refused the maintenance configuration; original restored"; }
+  else
+    caddy_apply Caddyfile.maintenance || die "could not reassert maintenance after interruption"
+  fi
+  require_closed
+}
+require_closed() {
+  [ "$(grep -c '^# BATCH3-MAINTENANCE$' Caddyfile)" = 3 ] || die "maintenance must cover API, web and portal"
   [ "$(edge_code /api/v1/health)" = 503 ] || die "the edge does not answer 503 on /api/v1/health"
   [ "$(edge_code /api/v1/payments/paystack/webhook)" = 503 ] || die "the edge does not answer 503 on the webhook path"
   [ -n "$(edge_retry_after /api/v1/payments/paystack/webhook)" ] || die "503 carries no Retry-After header"
@@ -236,6 +275,14 @@ release_override() { # candidate|recovery
     printf 'services:\n  api:\n    image: %s\n' "$api"
     if [ "$brk" = 1 ]; then printf '    command: ["node", "-e", "process.exit(3)"]\n    restart: "no"\n'; fi
     printf '  render-worker:\n    image: %s\n' "$render"
+    printf '  web:\n    image: %s\n' "$F_WEB"
+    if [ "$REHEARSAL" = 1 ] && [ "${REHEARSAL_BREAK_WEB:-}" = 1 ]; then
+      printf '    command: ["node", "-e", "process.exit(4)"]\n    restart: "no"\n'
+    fi
+    printf '  portal:\n    image: %s\n' "$F_PORTAL"
+    if [ "$REHEARSAL" = 1 ] && [ "${REHEARSAL_BREAK_PORTAL:-}" = 1 ]; then
+      printf '    command: ["node", "-e", "process.exit(5)"]\n    restart: "no"\n'
+    fi
   } > release.override.yml.new
   mv -f release.override.yml.new release.override.yml
 }
@@ -266,11 +313,51 @@ finance_gate() {
   [ "$dup" = 0 ] && [ "$over" = 0 ] && migrations_ok
 }
 
+matches_image() {
+  local cid expected
+  cid=$(dcr ps -q "$1") && [ -n "$cid" ] || return 1
+  expected=$(docker image inspect -f '{{.Id}}' "$2") || return 1
+  [ "$(docker inspect -f '{{.Config.Image}} {{.Image}} {{.State.Running}}' "$cid")" = "$2 $expected true" ]
+}
+backend_ready() {
+  if ! { matches_image api "$M_CANDIDATE_API" && matches_image render-worker "$M_CANDIDATE_RENDER"; }; then
+    matches_image api "$M_RECOVERY_API" && matches_image render-worker "$M_RECOVERY_RENDER" || return 1
+  fi
+  HEALTH_TRIES=1 healthy && finance_gate
+}
+frontend_ready() {
+  local cid
+  matches_image "$1" "$2" || return 1
+  cid=$(dcr ps -q "$1") || return 1
+  docker exec "$cid" node -e '
+    Promise.all(process.argv.slice(1).map(async url => {
+      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error("unhealthy");
+    })).catch(() => process.exit(1))
+  ' "http://127.0.0.1:3000$3" http://api:4000/api/v1/health >/dev/null 2>&1
+}
+deploy_frontend() {
+  require_closed
+  backend_ready || die "backend lost readiness before frontend switch"
+  dcr up -d --no-deps --no-build --pull never web portal || die "frontend startup failed; ingress remains closed"
+  local i
+  for i in $(seq 1 "${HEALTH_TRIES:-60}"); do
+    if frontend_ready web "$F_WEB" / && frontend_ready portal "$F_PORTAL" /api/health; then
+      invariants
+      state_set FRONTEND_VERIFIED
+      return
+    fi
+    sleep 3
+  done
+  die "web or guardian portal failed readiness; ingress remains closed"
+}
+
 case $mode in
 stage)
   # CI writes release/manifest.proposed ONLY after every rehearsal for that exact head passed. Installing it
   # as the manifest needs the owner to type the first 12 characters of the head commit they approved.
   if [ -s release/manifest.proposed ] && ! cmp -s release/manifest.proposed "$MANIFEST" 2>/dev/null; then
+    [ ! -e "$PROTECTED" ] || die "cannot replace an active release manifest"
     [ -t 0 ] || die "a new proposed manifest exists; installing it is interactive"
     prop=$(sed -n 's/^HEAD_SHA=//p' release/manifest.proposed | head -n 1)
     [[ $prop =~ ^[0-9a-f]{40}$ ]] || die "the proposed manifest has no valid HEAD_SHA"
@@ -282,7 +369,7 @@ stage)
   fi
   load_manifest
   [ "$(df -Pk /var/lib/docker | awk 'NR == 2 { printf "%d", $4 / 1048576 }')" -ge 5 ] || die "less than 5 GiB free for image extraction"
-  for ref in "$M_CANDIDATE_API" "$M_CANDIDATE_RENDER" "$M_RECOVERY_API" "$M_RECOVERY_RENDER" "$M_MIGRATE" "$M_BACKUP_OPS"; do
+  for ref in "$M_CANDIDATE_API" "$M_CANDIDATE_RENDER" "$M_RECOVERY_API" "$M_RECOVERY_RENDER" "$M_MIGRATE" "$M_BACKUP_OPS" "$F_WEB" "$F_PORTAL"; do
     if [ "$REHEARSAL" = 0 ]; then docker pull "$ref" >/dev/null; fi
     docker image inspect "$ref" >/dev/null || die "cannot stage ${ref%%@*}"
   done
@@ -292,15 +379,18 @@ authorize)
   load_manifest
   [ -t 0 ] || die "authorisation is interactive"
   echo "You are authorising the Batch 3 cutover for head ${M_HEAD_SHA:0:12} with manifest ${M_HASH:0:12}, valid 4 hours."
+  printf 'Backend checksum: %s\nFrontend commit and checksum: %s %s\nWeb: %s\nPortal: %s\nOperator checksums: %s\n' "$M_HASH" "$F_HEAD" "$F_HASH" "$F_WEB" "$F_PORTAL" "$TOOL_HASH"
   echo "Type exactly:  I AUTHORISE THE BATCH 3 CUTOVER"
   read -r phrase; [ "$phrase" = "I AUTHORISE THE BATCH 3 CUTOVER" ] || die "phrase did not match; nothing written"
-  printf 'AUTHORIZE batch3 %s %s %s\n' "$M_HEAD_SHA" "$M_HASH" "$(( $(date +%s) + 14400 ))" > "$AUTH"
+  printf 'AUTHORIZE batch3 %s %s %s %s %s %s %s %s\n' \
+    "$M_HEAD_SHA" "$M_HASH" "$F_HEAD" "$F_HASH" "$F_WEB" "$F_PORTAL" "$TOOL_HASH" "$(( $(date +%s) + 14400 ))" > "$AUTH.new"
+  mv -f "$AUTH.new" "$AUTH"
   ok "authorisation recorded (expires in 4 hours). The window command also needs UNIFIED_MESSAGING_CUTOVER_APPROVED=true, exported by you at that moment." ;;
 verify)
   if gates; then ok "ALL GATES PASS (read-only; nothing was changed)"; else bad "gates failed"; fi ;;
 maintenance)
   require_authorization
-  case ${1:-} in on) maintenance_on ;; off) maintenance_off ;; *) die "maintenance on|off" ;; esac
+  case ${1:-} in on) maintenance_on ;; *) die "use reopen to restore traffic" ;; esac
   invariants ;;
 resolve-migration)
   require_authorization
@@ -314,9 +404,17 @@ execute)
   resume=0; [ "${1:-}" = --resume ] && resume=1
   cur=$(state_get)
   if [ "$cur" != NONE ] && [ "$cur" != STAGED ] && [ "$cur" != REOPENED ] && [ "$resume" = 0 ]; then die "an earlier run stopped at $cur; use --resume (after fixing the cause) or recover"; fi
-  if [ "$cur" = REOPENED ]; then state_set STAGED; fi
+  [ "$cur" != REOPENED ] || die "this cutover already reopened"
+  [ "$(rank "$cur")" -ge 0 ] || die "unknown cutover state"
+  if [ -e "$PROTECTED" ]; then invariants; fi
   gates || { echo "GATES FAILED: nothing was changed" >&2; exit 10; }
-  if ! done_phase MAINT_ON; then maintenance_on; state_set MAINT_ON; invariants; fi
+  if [ ! -e "$PROTECTED" ]; then
+    protected_snapshot > "$PROTECTED.new"
+    mv -f "$PROTECTED.new" "$PROTECTED"
+  fi
+  maintenance_on
+  if ! done_phase MAINT_ON; then state_set MAINT_ON; fi
+  invariants
   if ! done_phase DRAINED; then drain; state_set DRAINED; invariants; fi
   if ! done_phase SNAPSHOT_DONE; then snapshot; state_set SNAPSHOT_DONE; invariants; fi
   if ! done_phase MIGRATED; then
@@ -330,36 +428,50 @@ execute)
     migrations_ok || { echo "post-migration verification FAILED; staying in maintenance" >&2; exit 20; }
     state_set MIGRATED; invariants
   fi
-  if ! done_phase CANDIDATE_UP; then
+  if ! matches_image api "$M_CANDIDATE_API" || ! matches_image render-worker "$M_CANDIDATE_RENDER"; then
+    state_set MIGRATED
     if ! start_release candidate; then
       stop_release
       echo "CANDIDATE DID NOT BECOME HEALTHY. Ingress stays CLOSED (503); the candidate is stopped; the pre-allocation image is NOT started." >&2
       echo "Next: 'cutover.sh recover' (allocation-compatible recovery release) or fix forward." >&2
       invariants; exit 30
     fi
-    state_set CANDIDATE_UP; invariants
   fi
-  finance_gate || { echo "financial gate FAILED; staying in maintenance" >&2; exit 30; }
-  maintenance_off
-  [ "$(edge_code /api/v1/health)" = 200 ] || { echo "the edge does not answer 200 after reopening; closing again" >&2; maintenance_on; exit 30; }
-  state_set REOPENED; invariants
-  ok "CUTOVER COMPLETE: candidate serving traffic by digest; PostgreSQL, ops-pinned and the stopped original ops unchanged"
-  echo "Now run the post-deployment acceptance checks (docs/runbooks/batch2-acceptance-and-batch3.md)." ;;
+  backend_ready || die "backend financial or runtime gate failed; ingress remains closed"
+  state_set BACKEND_VERIFIED
+  invariants
+  if [ "$REHEARSAL" = 1 ] && [ "${REHEARSAL_INTERRUPT_AFTER_BACKEND:-}" = 1 ]; then
+    kill -TERM "$$"
+  fi
+  release_override candidate
+  deploy_frontend
+  ok "candidate ready with ingress closed; run cutover.sh reopen after review" ;;
 recover)
   require_authorization
+  [ -s "$PROTECTED" ] || die "protected infrastructure baseline is missing"
+  invariants
   migrations_ok || die "recovery requires the completed instalment and inbox schema"
+  gates || die "release gates failed before recovery"
   maintenance_on
+  state_set MIGRATED
   stop_release
   if ! start_release recovery; then stop_release; echo "RECOVERY RELEASE DID NOT BECOME HEALTHY. Stay in maintenance and fix forward." >&2; invariants; exit 40; fi
-  finance_gate || { echo "financial gate FAILED on the recovery release; stay in maintenance" >&2; exit 40; }
-  state_set RECOVERY_UP; invariants
+  backend_ready || die "recovery financial or runtime gate failed"
+  state_set BACKEND_VERIFIED
+  invariants
+  deploy_frontend
   ok "allocation-compatible recovery release is running with ingress still CLOSED"
   echo "Review inbox/dead-letter state and replay through the audited endpoint, then: cutover.sh reopen" ;;
 reopen)
   require_authorization
-  case $(state_get) in CANDIDATE_UP|RECOVERY_UP) ;; *) die "reopen needs a release that passed its checks (state is $(state_get))" ;; esac
-  healthy || die "the running release is not healthy"
-  finance_gate || die "financial gate failed"
+  [ "$(state_get)" = FRONTEND_VERIFIED ] || die "reopen requires FRONTEND_VERIFIED"
+  [ -s "$PROTECTED" ] || die "protected infrastructure baseline is missing"
+  maintenance_on
+  gates || die "release configuration failed readiness"
+  backend_ready || die "backend health, identity or financial gate failed"
+  frontend_ready web "$F_WEB" / || die "web readiness failed"
+  frontend_ready portal "$F_PORTAL" /api/health || die "guardian portal readiness failed"
+  invariants
   maintenance_off
   [ "$(edge_code /api/v1/health)" = 200 ] || { maintenance_on; die "edge did not answer 200; closed again"; }
   state_set REOPENED; invariants; ok "ingress reopened" ;;

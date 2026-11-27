@@ -1,0 +1,7 @@
+# Proposal only. Source 2ee1442788e6e5d173f38a554a80232250418398.
+# Keep installed application overlays; apply after backend approval and health checks.
+services:
+  web:
+    image: ghcr.io/voclain1/school-kit-web@sha256:28f9b1cf3eae66fc8b23a7d3299287cf5ae133414e48fdc5999250924d3889c5
+  portal:
+    image: ghcr.io/voclain1/school-kit-portal@sha256:19343eb615d0b69bdf91e12bf5165042cf3f3fcd63f30c6b988f1d0a47b77886
