@@ -1,0 +1,29 @@
+name: CI setup
+description: >-
+  pnpm + Node 22 with the pnpm store cached, dependencies installed from the lockfile, and (by
+  default) the Prisma client generated and the workspace packages built. One copy of what every
+  CI job used to repeat.
+inputs:
+  packages:
+    description: "Generate the Prisma client and build packages/* (every job except pure tooling needs it)"
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v6
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 22
+        cache: pnpm
+    - name: Install dependencies
+      shell: bash
+      env:
+        PUPPETEER_SKIP_DOWNLOAD: "true"   # only the jobs that render PDFs fetch Chrome, from their own cache
+      run: pnpm install --frozen-lockfile
+    - name: Prisma generate and build workspace packages
+      if: inputs.packages == 'true'
+      shell: bash
+      # Order matters: packages/db imports ./generated/prisma, so generate must precede the build.
+      run: |
+        pnpm --filter @school-kit/db generate
+        pnpm -r --filter "./packages/*" build

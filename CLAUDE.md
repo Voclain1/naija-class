@@ -915,6 +915,18 @@ and fix verification in `docs/deferred.md`. If `e2e (Playwright)` starts
 failing again, it is NOT automatically this same issue — investigate fresh
 rather than assuming a recurrence.
 
+**CI structure (2026-11-27, `docs/reviews/ci-performance-2026-11-27.md`).** `ci.yml` is parallel
+jobs, not one serial one: `changes` (which jobs a pull request needs; `scripts/ci/changes.py`
+skips only what it positively recognises, an unknown file runs everything, and pushes to main,
+the nightly schedule and manual runs always run everything) → `static` (lint, typecheck,
+web/portal/cbt unit tests) · `api-test` in 6 shards, each with its own PostgreSQL 18 (proved by
+`scripts/ci/db-init.sh`, which fails on any other major) · `build` (web, portal, cbt, once) →
+`e2e-test` in 5 Playwright shards. Two aggregate jobs keep the names `lint + typecheck + test + build`
+and `e2e (Playwright)`: branch protection and `release.yml`'s "CI is green" gate read those names, so
+never rename them. A new spec file needs nothing (shards split by file); a new workspace that needs
+tests needs a line in `scripts/ci/changes.py` and a test in `test_changes.py`. Coverage is a nightly
+job. The real-stack release qualification is its own workflow (`release-qualification.yml`).
+
 ### Next.js route groups vs URL segments
 
 - Route groups: folders wrapped in parens like `(auth)`, `(admin)`. 

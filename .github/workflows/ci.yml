@@ -1,13 +1,27 @@
-# School Kit — CI
+# School Kit: CI
 #
-# Runs on every PR opened against `main` and every push to `main`.
-# Closes Phase 0 acceptance criterion #9 (CI passes on every PR).
+# Routine CI for every pull request and every push to main, restructured (2026-11-27,
+# docs/reviews/ci-performance-2026-11-27.md) from one 13-minute serial job plus one 12-minute e2e
+# job into parallel jobs, each short:
 #
-# Two jobs that run side by side (2026-10-12): `ci` (lint, typecheck, unit
-# tests, builds) and `e2e`. Until then e2e waited for ci, so a PR took the two
-# back to back (~9 + ~15 minutes). Neither uses the other's output. `ci` stays
-# one job: splitting lint / typecheck / test would re-pay the install and
-# database setup per runner to save under a minute.
+#   changes ──┬─ static (lint, typecheck, web/portal/cbt unit tests)  ┐
+#             ├─ api-test  x6 shards (own PostgreSQL 18)              ├─ ci   "lint + typecheck + test + build"
+#             ├─ build (web, portal, cbt, once) ──┬───────────────────────┘
+#             │                                   └─ e2e-test x5 shards ── e2e  "e2e (Playwright)"
+#             ├─ tooling (release tooling unit tests, shellcheck, scripts)
+#             └─ backup-image
+#
+# The two aggregate jobs keep their old names ("lint + typecheck + test + build" and
+# "e2e (Playwright)"): branch protection and release.yml's "CI is green" gate read those names.
+#
+# What is NOT weakened: every test that ran before still runs, with the same assertions, against the
+# same PostgreSQL major as production (18, and each database job proves it). On a pull request a job is
+# skipped only when scripts/ci/changes.py recognises every changed file as unable to affect it; an
+# unrecognised file runs everything. Pushes to main, the nightly schedule and manual runs ALWAYS run
+# everything, and the aggregates fail if any job was skipped on such a run.
+#
+# Extended checks live elsewhere on purpose: the real-stack release qualification is
+# release-qualification.yml; nightly here adds unit-test coverage (api, web), which is reporting only.
 
 name: ci
 
@@ -16,27 +30,316 @@ on:
     branches: [main, feat/unified-messaging-infrastructure]
   push:
     branches: [main]
+  schedule:
+    - cron: "17 3 * * *"   # nightly: everything, plus coverage
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: true   # a newer push supersedes this run
 
-# Pre-empt GitHub's 2026-06-02 forced migration of Node 20 actions to Node 24.
-# actions/checkout@v4 and pnpm/action-setup@v4 still declare runtime node20 in
-# their action.yml; this flag opts them into the new runtime now so we surface
-# any incompatibilities here rather than as a surprise breakage on June 2nd.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TURBO_TELEMETRY_DISABLED: 1
 
 jobs:
+  # ---------------------------------------------------------------------------------------------
+  changes:
+    name: what changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      static: ${{ steps.c.outputs.static }}
+      api: ${{ steps.c.outputs.api }}
+      frontend_apps: ${{ steps.c.outputs.frontend_apps }}
+      build: ${{ steps.c.outputs.build }}
+      e2e: ${{ steps.c.outputs.e2e }}
+      tooling: ${{ steps.c.outputs.tooling }}
+      backup_image: ${{ steps.c.outputs.backup_image }}
+      all: ${{ steps.c.outputs.all }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2   # the pull request's merge commit and its base parent
+      - name: Decide what this change needs
+        id: c
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            python3 scripts/ci/changes.py --base HEAD^1 --head HEAD | tee -a "$GITHUB_OUTPUT"
+          else
+            python3 scripts/ci/changes.py --all | tee -a "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------------------------
+  static:
+    name: lint + typecheck + frontend tests
+    needs: changes
+    if: needs.changes.outputs.static == 'true' || needs.changes.outputs.frontend_apps != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/ci-setup
+      - name: Restore Turbo's cache (content-addressed, so a partial hit is always safe)
+        uses: actions/cache@v6
+        with:
+          path: node_modules/.cache/turbo
+          key: turbo-static-${{ github.sha }}
+          restore-keys: turbo-static-
+      # one turbo invocation runs lint and typecheck of every workspace concurrently
+      - name: Lint and typecheck every workspace
+        if: needs.changes.outputs.static == 'true'
+        run: pnpm turbo run lint typecheck --cache-dir=node_modules/.cache/turbo
+      # web, portal and cbt unit tests take 13 s, 2 s and 2 s together: not worth a runner each
+      - name: Frontend unit tests
+        if: needs.changes.outputs.frontend_apps != '[]'
+        env:
+          APPS: ${{ needs.changes.outputs.frontend_apps }}
+        run: |
+          set -euo pipefail
+          bash scripts/ci/write-env.sh
+          for app in $(python3 -c 'import json,os; print(" ".join(json.loads(os.environ["APPS"])))'); do
+            echo "== $app"; pnpm --filter "@school-kit/$app" test
+          done
+
+  # ---------------------------------------------------------------------------------------------
+  api-test:
+    name: api tests (shard ${{ matrix.shard }}/6)
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    # Each shard owns its database: apps/api's tests run serially against one shared PostgreSQL (a
+    # deliberate property: RLS bugs only show on a real server), and that stays true inside a shard.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env: { POSTGRES_USER: school_kit, POSTGRES_PASSWORD: school_kit, POSTGRES_DB: school_kit }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U school_kit -d school_kit" --health-interval 3s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 3s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/ci-setup
+      # The render integration spec needs real Chromium. Puppeteer's postinstall only downloads on a
+      # pnpm-store MISS, so the browser has its own cache and an explicit, idempotent install.
+      - name: Cache Puppeteer browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/puppeteer
+          key: puppeteer-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Chrome for Puppeteer
+        run: pnpm --filter @school-kit/api exec puppeteer browsers install chrome
+      - name: CI environment
+        run: bash scripts/ci/write-env.sh
+      - name: Prepare PostgreSQL (and prove it is the production major)
+        run: bash scripts/ci/db-init.sh 18
+      - name: Migrate and seed
+        run: |
+          pnpm --filter @school-kit/db migrate:deploy
+          pnpm --filter @school-kit/db seed
+      - name: API tests, shard ${{ matrix.shard }} of 6
+        working-directory: apps/api
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}/6
+      # CLAUDE.md calls `pnpm ai:eval` required before a prompt PR merges; it needs no key and takes
+      # about two seconds, so it runs once, in shard 1.
+      - name: AI evals
+        if: matrix.shard == 1
+        run: pnpm ai:eval
+
+  # ---------------------------------------------------------------------------------------------
+  # The three Next.js production builds, made ONCE. They are the "does it compile" check CI always
+  # had (the old ci job built web and portal, the e2e job built web, portal and cbt again) and the
+  # exact servers every Playwright shard runs against.
+  build:
+    name: build web, portal, cbt
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/ci-setup
+      - name: CI environment
+        run: bash scripts/ci/write-env.sh
+      - name: Cache Next.js incremental build output
+        uses: actions/cache@v6
+        with:
+          path: |
+            apps/web/.next/cache
+            apps/portal/.next/cache
+            apps/cbt/.next/cache
+          key: next-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: next-${{ hashFiles('pnpm-lock.yaml') }}-
+      # NEXT_PUBLIC_* are baked in at build time, so the local addresses the e2e servers use are given
+      # here; unset, a production build would link to the live portal and exam app. NODE_ENV is unset
+      # because .env says "test" and `next build` only prerenders under its own "production".
+      - name: Build web, portal and cbt
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          NEXT_PUBLIC_PORTAL_URL: http://localhost:3002
+          NEXT_PUBLIC_CBT_URL: http://localhost:3003
+          NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN: localhost:3002
+        run: |
+          set -a; . ./.env; set +a
+          unset NODE_ENV
+          pnpm --filter @school-kit/web build &
+          pnpm --filter @school-kit/portal build &
+          pnpm --filter @school-kit/cbt build &
+          fail=0; for pid in $(jobs -p); do wait "$pid" || fail=1; done; exit $fail
+      - name: Package the builds for the e2e shards
+        run: tar -C . -cf "$RUNNER_TEMP/next-builds.tar" --exclude='.next/cache' apps/web/.next apps/portal/.next apps/cbt/.next
+      - uses: actions/upload-artifact@v7
+        with:
+          name: next-builds
+          path: ${{ runner.temp }}/next-builds.tar
+          compression-level: 1
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------------------------
+  e2e-test:
+    name: e2e shard ${{ matrix.shard }}/5
+    needs: [changes, build]
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env: { POSTGRES_USER: school_kit, POSTGRES_PASSWORD: school_kit, POSTGRES_DB: school_kit }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U school_kit -d school_kit" --health-interval 3s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 3s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/ci-setup
+      - name: CI environment
+        run: bash scripts/ci/write-env.sh
+      - name: Prepare PostgreSQL (and prove it is the production major)
+        run: bash scripts/ci/db-init.sh 18
+      - name: Migrate and seed
+        run: |
+          pnpm --filter @school-kit/db migrate:deploy
+          pnpm --filter @school-kit/db seed
+      # chromium (~110 MB) keyed on the e2e workspace's pinned @playwright/test version
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('e2e/package.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+      - name: Install Playwright chromium
+        run: pnpm --filter @school-kit/e2e exec playwright install --with-deps chromium
+      - uses: actions/download-artifact@v8
+        with:
+          name: next-builds
+          path: ${{ runner.temp }}
+      - name: Unpack the production builds
+        run: tar -C . -xf "$RUNNER_TEMP/next-builds.tar"
+      # playwright.config.ts's webServer starts the API (dev) and `next start` for web, portal and cbt
+      - name: Playwright, shard ${{ matrix.shard }} of 5
+        env:
+          CI: "true"
+          E2E_NEXT_START: "1"
+        run: pnpm --filter @school-kit/e2e exec playwright test --shard=${{ matrix.shard }}/5
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ matrix.shard }}
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+      - name: Upload fictional instalment previews
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: instalment-previews-${{ matrix.shard }}
+          path: e2e/test-results/**/*-preview.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------------------------
+  tooling:
+    name: release tooling and scripts
+    needs: changes
+    if: needs.changes.outputs.tooling == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Python unit tests (release tooling, CI change detection)
+        run: |
+          set -euo pipefail
+          for t in infra/vps/release/test_*.py scripts/ci/test_*.py; do
+            [ -f "$t" ] || continue
+            echo "== $t"; python3 -W error::ResourceWarning -m unittest -v "$t"
+          done
+      - name: Shell script tests
+        run: |
+          set -euo pipefail
+          for t in scripts/ops-tools-test.sh scripts/backup-env-test.sh scripts/release/*.test.sh scripts/__tests__/*.test.sh; do
+            [ -f "$t" ] || continue
+            echo "== $t"; bash "$t"
+          done
+      - name: shellcheck
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(ls infra/vps/release/*.sh scripts/release/*.sh scripts/release-qualification/*.sh scripts/ci/*.sh 2>/dev/null || true)
+          [ "${#files[@]}" -eq 0 ] || shellcheck -S warning "${files[@]}"
+      - name: Workflow and action files parse
+        run: |
+          python3 - <<'PY'
+          import glob, sys
+          import yaml
+          bad = 0
+          for f in glob.glob(".github/workflows/*.yml") + glob.glob(".github/actions/*/action.yml"):
+              try:
+                  yaml.safe_load(open(f))
+              except Exception as e:
+                  print("BAD", f, e); bad = 1
+          sys.exit(bad)
+          PY
+
   backup-image:
     name: PostgreSQL backup image
+    needs: changes
+    if: needs.changes.outputs.backup_image == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - name: Build the PostgreSQL 18 backup image
-        run: docker build --build-arg PG_MAJOR=18 -t school-kit-backup-check infra/vps/postgres
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the PostgreSQL 18 backup image (layer-cached)
+        uses: docker/build-push-action@v7
+        with:
+          context: infra/vps/postgres
+          build-args: PG_MAJOR=18
+          load: true
+          tags: school-kit-backup-check
+          cache-from: type=gha,scope=backup-image
+          cache-to: type=gha,scope=backup-image,mode=max
       - name: Verify pinned tools and generated R2 configuration
         run: |
           docker run --rm --network none --entrypoint sh school-kit-backup-check -ec '
@@ -62,188 +365,45 @@ jobs:
             docker_config_check NO_HEAD true
           '
 
-  ci:
-    name: lint + typecheck + test + build
+  # ---------------------------------------------------------------------------------------------
+  # Nightly, reporting only (no threshold): unit-test coverage. Not in the routine path because
+  # collecting it slows the suite and it cannot be merged across shards without more machinery.
+  coverage:
+    name: coverage (nightly)
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    # Database tests use the production PostgreSQL major. We use the
-    # pgvector/pgvector:pg18 image (not vanilla postgres:18) because Prisma's
-    # schema declares the `vector` extension and we'd otherwise need to
-    # apt-install the extension binary on a stock image. Note that GH Actions
-    # service containers cannot mount host volumes at start time, so the init
-    # SQL under infra/postgres/init/ is applied via psql in a step below
-    # rather than as docker-entrypoint-initdb.d.
+    timeout-minutes: 30
     services:
       postgres:
         image: pgvector/pgvector:pg18
-        env:
-          POSTGRES_USER: school_kit
-          POSTGRES_PASSWORD: school_kit
-          POSTGRES_DB: school_kit
-        ports:
-          - 5432:5432
+        env: { POSTGRES_USER: school_kit, POSTGRES_PASSWORD: school_kit, POSTGRES_DB: school_kit }
+        ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U school_kit -d school_kit"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
+          --health-cmd "pg_isready -U school_kit -d school_kit" --health-interval 3s --health-timeout 5s --health-retries 20
       redis:
         image: redis:7-alpine
-        ports:
-          - 6379:6379
+        ports: ["6379:6379"]
         options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
+          --health-cmd "redis-cli ping" --health-interval 3s --health-timeout 3s --health-retries 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      # The render integration spec (slice 5 cp2) needs real Chromium. Puppeteer's
-      # postinstall downloads Chrome only on a pnpm-store cache MISS; `cache: pnpm`
-      # above caches the pnpm STORE keyed on the lockfile, so a lockfile-unchanged
-      # PR restores a warm store, pnpm SKIPS the postinstall, and ~/.cache/puppeteer
-      # (never part of that cache) is empty → "Could not find Chrome". Restoring the
-      # browser cache BEFORE install lets a present Chrome short-circuit the
-      # postinstall download; the explicit install step below is the belt that
-      # guarantees it regardless of cache state.
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/ci-setup
       - name: Cache Puppeteer browsers
         uses: actions/cache@v6
         with:
           path: ~/.cache/puppeteer
           key: puppeteer-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # Explicit Chrome install — idempotent (a no-op when the cache above hit).
-      # Installs the exact Chrome build puppeteer 25.x expects into
-      # ~/.cache/puppeteer, independent of the pnpm store cache.
-      - name: Install Chrome for Puppeteer
-        run: pnpm --filter @school-kit/api exec puppeteer browsers install chrome
-
-      # The repo-root `.env` is what every local command reads: the API
-      # (ConfigModule's envFilePath), the API's tests (apps/api/vitest.config.ts
-      # loads the same file, 2026-10-12), and packages/db's migrate and seed
-      # scripts (`dotenv -e ../../.env`). CI writes a CI-only one so the same
-      # commands run unchanged. None of the keys here are real — Sentry/PostHog
-      # DSNs are deliberately blank (the no-op-when-DSN-empty contract was
-      # verified in Slice 8a), and Anthropic/Paystack/etc. are never called
-      # from tests.
-      - name: Write CI .env
-        run: |
-          cat > .env <<'EOF'
-          NODE_ENV=test
-          DATABASE_URL=postgresql://app_user:app_user@localhost:5432/school_kit?schema=public
-          DIRECT_URL=postgresql://school_kit:school_kit@localhost:5432/school_kit?schema=public
-          REDIS_URL=redis://localhost:6379
-          BETTER_AUTH_SECRET=ci-test-secret-not-used-for-real-auth-0000000000000000
-          BETTER_AUTH_URL=http://localhost:3001
-          API_PORT=4000
-          API_URL=http://localhost:4000
-          CORS_ORIGIN=http://localhost:3001
-          CORS_ORIGIN_PORTAL=http://localhost:3002
-          CORS_ORIGIN_CBT=http://localhost:3003
-          WEB_BASE_URL=http://localhost:3001
-          PORTAL_BASE_URL=http://localhost:3002
-          NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
-          # MUST contain the literal "placeholder": that substring is how
-          # AiGenerationService and the live-generation eval both decide a key
-          # is not real (apps/api/src/common/ai/ai-generation.service.ts).
-          # With any other value CI reports AI as CONFIGURED and builds a real
-          # Anthropic client around a bogus key — which is what broke
-          # ai.module.spec.ts on PR #158, and would send a live request the
-          # first time a CI test touches a generate path. Matches the value
-          # deploy-staging.yml already uses.
-          ANTHROPIC_API_KEY=sk-ant-placeholder-not-used-in-ci
-          PAYSTACK_SECRET_KEY=sk_test_not_used_in_ci
-          PAYSTACK_PUBLIC_KEY=pk_test_not_used_in_ci
-          PAYSTACK_SETUP_EMAIL=payments-not-used-in-ci@schoolkit.ng
-          TERMII_API_KEY=not-used-in-ci
-          TERMII_SENDER_ID=SchoolKit
-          RESEND_API_KEY=re_not_used_in_ci
-          R2_ACCOUNT_ID=not-used-in-ci
-          R2_ACCESS_KEY_ID=not-used-in-ci
-          R2_SECRET_ACCESS_KEY=not-used-in-ci
-          R2_BUCKET=school-kit-ci
-          SENTRY_DSN_API=
-          NEXT_PUBLIC_SENTRY_DSN=
-          SENTRY_ENVIRONMENT=ci
-          NEXT_PUBLIC_POSTHOG_KEY=
-          NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
-          EOF
-
-      # Postgres service containers don't support docker-entrypoint-initdb.d
-      # volume mounts in GH Actions, so we apply the same SQL that docker-compose
-      # auto-runs locally. Both scripts are idempotent.
-      - name: Apply DB extensions + app_user role
-        env:
-          PGPASSWORD: school_kit
-        run: |
-          psql -h localhost -U school_kit -d school_kit -v ON_ERROR_STOP=1 \
-            -f infra/postgres/init/01-extensions.sql
-          psql -h localhost -U school_kit -d school_kit -v ON_ERROR_STOP=1 \
-            -f infra/postgres/init/02-app-role.sql
-
-      - name: Prisma generate
-        run: pnpm --filter @school-kit/db generate
-
-      # Compile every packages/* workspace to its dist/ output. Downstream
-      # steps (seed, test, build, lint) consume these packages via their
-      # compiled entry points (main/types/exports point at dist/, see
-      # CLAUDE.md → ESM module resolution). Without this step, the seed
-      # script's `import from "@school-kit/types"` resolves to a missing
-      # dist/index.js on a fresh CI runner. Locally, dist/ survives from
-      # a prior `pnpm build` and hides the gap. apps/* are excluded —
-      # they're built later or run directly from source (Next, Vitest+SWC).
-      #
-      # NOTE: Ordering matters. Prisma generate MUST run before this step
-      # because packages/db/src/* imports from ./generated/prisma/ — if
-      # the client isn't generated, packages/db's tsc -p tsconfig.json
-      # fails with ERR_MODULE_NOT_FOUND on the generated path.
-      - name: Build workspace packages
-        run: pnpm -r --filter "./packages/*" build
-
-      - name: Prisma migrate deploy
-        run: pnpm --filter @school-kit/db migrate:deploy
-
-      # Migrations create schema; seeds populate reference data the app code
-      # assumes exists. Tests in apps/api call AuthService.signupOwner which
-      # looks up the 'owner' system role by key — without this step, 31/117
-      # tests fail with "System role 'owner' is not seeded." Seed is
-      # idempotent (findFirst + update OR create) and only touches the
-      # non-RLS `roles` table, so it's safe to re-run on every CI build.
-      - name: Seed DB (system roles)
-        run: pnpm --filter @school-kit/db seed
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      # VITEST_COVERAGE=1 turns on coverage in apps/api and apps/web (their
-      # vitest configs); declared in turbo.json so Turbo passes it through.
-      - name: Test
-        run: pnpm test
+      - run: pnpm --filter @school-kit/api exec puppeteer browsers install chrome
+      - run: bash scripts/ci/write-env.sh
+      - run: bash scripts/ci/db-init.sh 18
+      - run: |
+          pnpm --filter @school-kit/db migrate:deploy
+          pnpm --filter @school-kit/db seed
+      - name: Unit tests with coverage (api, web)
         env:
           VITEST_COVERAGE: "1"
-
-      # Prints each app's line coverage on the run's summary page. Reporting
-      # only, no threshold: the number is there to be seen, not to fail a PR.
+        run: pnpm --filter @school-kit/api --filter @school-kit/web test
       - name: Coverage summary
         run: |
           node -e '
@@ -255,212 +415,72 @@ jobs:
               const t = JSON.parse(fs.readFileSync(file, "utf8")).total;
               rows.push(`| ${app} | ${t.lines.pct}% | ${t.branches.pct}% | ${t.functions.pct}% |`);
             }
-            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "### Unit test coverage\n\n" + rows.join("\n") + "\n");
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "### Unit test coverage (nightly)\n\n" + rows.join("\n") + "\n");
           '
 
-      # CLAUDE.md calls `pnpm ai:eval` "required before any prompt PR merges",
-      # but until now nothing enforced it — it was a manual gate, so a prompt
-      # change could merge without ever running it, and the eval sources were
-      # neither linted nor typechecked (packages/ai's tsconfig covers src/**
-      # only). Phase 7 / CP4 makes it real: the suite is designed to gate
-      # WITHOUT any API key, and the two cases that need one (live generation,
-      # curriculum grounding) skip loudly rather than passing silently.
-      - name: AI evals
-        run: pnpm ai:eval
+  # ---------------------------------------------------------------------------------------------
+  # The two aggregates. Their NAMES are the contract with branch protection and release.yml.
+  # A job that was skipped is fine on a pull request that cannot affect it; a job that FAILED or was
+  # CANCELLED never is; and when the run is a push to main, a schedule or a manual run (changes.all)
+  # nothing may be skipped at all, which catches a mis-wired condition rather than hiding it.
+  ci:
+    name: lint + typecheck + test + build
+    needs: [changes, static, api-test, build, tooling, backup-image]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every required job passed (or was legitimately skipped)
+        env:
+          NEEDS: ${{ toJson(needs) }}
+          ALL: ${{ needs.changes.outputs.all }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          full = os.environ["EVENT"] != "pull_request" or os.environ["ALL"] == "true"
+          bad = []
+          for name, n in needs.items():
+              r = n["result"]
+              print(f"{name:16} {r}")
+              if r in ("failure", "cancelled"):
+                  bad.append(f"{name} {r}")
+              if full and r == "skipped" and name not in ("changes",):
+                  bad.append(f"{name} was skipped on a run that must run everything")
+          if needs["changes"]["result"] != "success":
+              bad.append("changes did not succeed")
+          if bad:
+              print("FAILED:", "; ".join(bad)); sys.exit(1)
+          PY
 
-      - name: Build (web)
-        run: pnpm --filter @school-kit/web build
-
-      # Phase 4 slice 1 CP1 — apps/portal has no dependent tests/E2E yet, but
-      # a build-passes check is the cheapest possible regression gate for a
-      # brand-new Next.js app until slice 2 gives it real logic to test.
-      - name: Build (portal)
-        run: pnpm --filter @school-kit/portal build
-
-  # Slice 9 — Playwright E2E smoke. Closes Phase 0 acceptance criterion #8.
-  # Runs alongside `ci`, not after it (2026-10-12): it builds and seeds its
-  # own database and uses nothing `ci` produces, and waiting added ~9 minutes
-  # to every PR. The cost is that a PR failing lint still spends e2e's runner
-  # minutes. The DB-setup steps duplicate the ci job by design; a composite
-  # action only pays off at 3+ consumers.
   e2e:
     name: e2e (Playwright)
+    needs: [changes, build, e2e-test]
+    if: always()
     runs-on: ubuntu-latest
-    # 30, not 20 (2026-10-07): the suite reached 127 tests and a run on a
-    # slower runner was cancelled at test 86 with nothing failing. A hang
-    # still ends here; the per-test 180s timeout catches a single stuck test.
-    # 45, not 30 (2026-10-16): at 160 tests a green run takes ~28 minutes, and
-    # one dev-server memory restart (a 3-minute retry) cancelled the run on
-    # its last spec with nothing failing (PR #441).
-    # 60, not 45 (2026-10-18): with the dev server's larger heap a green run
-    # took 44m38s (PR #457), too close to the limit.
-    timeout-minutes: 60
-
-    services:
-      postgres:
-        image: pgvector/pgvector:pg18
-        env:
-          POSTGRES_USER: school_kit
-          POSTGRES_PASSWORD: school_kit
-          POSTGRES_DB: school_kit
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U school_kit -d school_kit"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
+    timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # Same .env shape the ci job above writes — kept verbatim so each job
-      # is self-contained. See the ci job's "Write CI .env" comment for the
-      # deferral that will collapse this duplication.
-      - name: Write CI .env
-        run: |
-          cat > .env <<'EOF'
-          NODE_ENV=test
-          DATABASE_URL=postgresql://app_user:app_user@localhost:5432/school_kit?schema=public
-          DIRECT_URL=postgresql://school_kit:school_kit@localhost:5432/school_kit?schema=public
-          REDIS_URL=redis://localhost:6379
-          BETTER_AUTH_SECRET=ci-test-secret-not-used-for-real-auth-0000000000000000
-          BETTER_AUTH_URL=http://localhost:3001
-          API_PORT=4000
-          API_URL=http://localhost:4000
-          CORS_ORIGIN=http://localhost:3001
-          WEB_BASE_URL=http://localhost:3001
-          PORTAL_BASE_URL=http://localhost:3002
-          NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
-          # MUST contain the literal "placeholder": that substring is how
-          # AiGenerationService and the live-generation eval both decide a key
-          # is not real (apps/api/src/common/ai/ai-generation.service.ts).
-          # With any other value CI reports AI as CONFIGURED and builds a real
-          # Anthropic client around a bogus key — which is what broke
-          # ai.module.spec.ts on PR #158, and would send a live request the
-          # first time a CI test touches a generate path. Matches the value
-          # deploy-staging.yml already uses.
-          ANTHROPIC_API_KEY=sk-ant-placeholder-not-used-in-ci
-          PAYSTACK_SECRET_KEY=sk_test_not_used_in_ci
-          PAYSTACK_PUBLIC_KEY=pk_test_not_used_in_ci
-          PAYSTACK_SETUP_EMAIL=payments-not-used-in-ci@schoolkit.ng
-          TERMII_API_KEY=not-used-in-ci
-          TERMII_SENDER_ID=SchoolKit
-          RESEND_API_KEY=re_not_used_in_ci
-          R2_ACCOUNT_ID=not-used-in-ci
-          R2_ACCESS_KEY_ID=not-used-in-ci
-          R2_SECRET_ACCESS_KEY=not-used-in-ci
-          R2_BUCKET=school-kit-ci
-          SENTRY_DSN_API=
-          NEXT_PUBLIC_SENTRY_DSN=
-          SENTRY_ENVIRONMENT=ci
-          NEXT_PUBLIC_POSTHOG_KEY=
-          NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
-          EOF
-
-      - name: Apply DB extensions + app_user role
+      - name: Every e2e shard passed (or e2e legitimately did not apply)
         env:
-          PGPASSWORD: school_kit
+          NEEDS: ${{ toJson(needs) }}
+          ALL: ${{ needs.changes.outputs.all }}
+          EVENT: ${{ github.event_name }}
         run: |
-          psql -h localhost -U school_kit -d school_kit -v ON_ERROR_STOP=1 \
-            -f infra/postgres/init/01-extensions.sql
-          psql -h localhost -U school_kit -d school_kit -v ON_ERROR_STOP=1 \
-            -f infra/postgres/init/02-app-role.sql
-
-      - name: Prisma generate
-        run: pnpm --filter @school-kit/db generate
-
-      - name: Build workspace packages
-        run: pnpm -r --filter "./packages/*" build
-
-      - name: Prisma migrate deploy
-        run: pnpm --filter @school-kit/db migrate:deploy
-
-      - name: Seed DB (system roles)
-        run: pnpm --filter @school-kit/db seed
-
-      # Cache chromium (~110 MB) keyed on the e2e workspace's pinned
-      # @playwright/test version. A bump to the playwright version
-      # invalidates the cache; otherwise we reuse the existing browser
-      # download.
-      - name: Cache Playwright browsers
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('e2e/package.json') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
-
-      - name: Install Playwright chromium
-        run: pnpm --filter @school-kit/e2e exec playwright install --with-deps chromium
-
-      # webServer in playwright.config.ts spawns the api + web dev servers
-      # (reuseExistingServer: false in CI). CI=true bumps retries to 2
-      # for resilience against transient slow-compile flakes.
-      # The e2e suite runs the web, portal and exam apps from production builds
-      # (`next start`), not `next dev`: see E2E_NEXT_START in
-      # e2e/playwright.config.ts for the measurement behind it. NODE_ENV is
-      # unset because .env says "test" and `next build` only prerenders under
-      # its own "production". The NEXT_PUBLIC_* values are baked in at build
-      # time, so the local addresses are given here; unset, a production build
-      # would link to the live portal and exam app.
-      - name: Build web, portal and exam apps for e2e
-        env:
-          NODE_OPTIONS: --max-old-space-size=6144
-          NEXT_PUBLIC_PORTAL_URL: http://localhost:3002
-          NEXT_PUBLIC_CBT_URL: http://localhost:3003
-          NEXT_PUBLIC_SCHOOL_ADDRESS_DOMAIN: localhost:3002
-        run: |
-          set -a; . ./.env; set +a
-          unset NODE_ENV
-          pnpm --filter @school-kit/web build
-          pnpm --filter @school-kit/portal build
-          pnpm --filter @school-kit/cbt build
-
-      - name: Run Playwright tests
-        env:
-          CI: "true"
-          E2E_NEXT_START: "1"
-        run: pnpm --filter @school-kit/e2e test:e2e
-
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-report
-          path: |
-            e2e/playwright-report
-            e2e/test-results
-          retention-days: 7
-
-      - name: Upload fictional instalment previews
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: instalment-previews
-          path: e2e/test-results/**/*-preview.png
-          if-no-files-found: ignore
-          retention-days: 7
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          full = os.environ["EVENT"] != "pull_request" or os.environ["ALL"] == "true"
+          bad = []
+          for name, n in needs.items():
+              r = n["result"]
+              print(f"{name:10} {r}")
+              if r in ("failure", "cancelled"):
+                  bad.append(f"{name} {r}")
+              if full and r == "skipped" and name != "changes":
+                  bad.append(f"{name} was skipped on a run that must run everything")
+          if needs["changes"]["result"] != "success":
+              bad.append("changes did not succeed")
+          if bad:
+              print("FAILED:", "; ".join(bad)); sys.exit(1)
+          PY
