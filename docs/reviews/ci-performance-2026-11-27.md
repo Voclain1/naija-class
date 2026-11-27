@@ -69,9 +69,24 @@ target. A change that also needs the browser suite (any application change) is *
 critical path is `changes` 0:09 → `build` 3:17 → an e2e shard 4:00. That is half the old median but
 above 6 minutes; the next levers are below.
 
-**Shard 1 follow-up.** Shard 1 was the long pole of the API tests because it held one 94 s timing spec.
-That spec now runs as its own parallel job and every shard excludes it (the job fails loudly if the file
-moves). Checked locally: shard 1 of 6 then holds 48 other files, 710 tests, all passing, in 61 s.
+**Second run, after the timing spec got its own job** (run 46069503506, head 75c6ead, again everything ran):
+
+| | |
+|---|---|
+| `lint + typecheck + test + build` (aggregate) | **3 m 10 s** after the run started (was 12 m 58 s) |
+| api tests | shards 1-6: 1 m 50 s - 2 m 24 s; the 94 s timing spec in its own job: 2 m 52 s |
+| lint + typecheck + frontend tests | 0 m 55 s (Turbo restored every task from the previous run's cache; a changed source file reruns only its tasks) |
+| build web, portal, cbt | 2 m 03 s (warm `.next/cache`) |
+| e2e shards | 2 m 41 s (34 tests) - 4 m 52 s; shard 2 took **7 m 04 s**, see below |
+| whole run | **9 m 22 s**; the other four e2e shards had finished by 7 m 08 s |
+
+**The slow shard is a known flake, not the sharding.** Shard 2 held `tests/exam-papers.spec.ts`; its
+first attempt hit the 180 s per-test timeout and the retry passed in 5.4 s (Playwright reports it as
+`1 flaky`; CI has run with `retries: 2` for exactly this). `ci.yml`'s old comments already record "a
+dev-server memory restart (a 3-minute retry)". Sharding does not cause it, but it does not hide it
+either: one such retry is 3 minutes on one shard, where on the old single worker it was 3 minutes in a
+44-minute run. Without it the whole run was about 7 m 15 s. Finding why that test's first attempt
+hangs is worth doing and is not part of this change.
 
 ## 4. Next levers (not done)
 
