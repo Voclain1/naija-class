@@ -1,0 +1,80 @@
+name: Messaging production acceptance read only
+on:
+  push:
+    branches: [ops/messaging-production-acceptance]
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Inspect release metadata and aggregate database health
+        run: |
+          ssh vps 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/school-kit
+          [ "$(cat release/state)" = REOPENED ]
+          printf '%s\n' \
+            '1fdc638b4e8771c42bcd554ea7641066d7330231a01da6d75e3cddd401e70b53  release/manifest.env' \
+            '2fd349fde3601a331618e47fa33f554c8d70d7720929349042797fd7ebc81897  release/frontend.compose.yml' \
+            '38f5cf0babc5a954897af2ba5ba5c40ca12b44118c180f56ae90a0e2da12d242  .batch3-807c84f/ops-tools/SHA256SUMS' | sha256sum -c -
+          cid() {
+            docker ps -q --filter label=com.docker.compose.project=school-kit --filter "label=com.docker.compose.service=$1"
+          }
+          ref() { sed -n "s/^$1=//p" release/manifest.env; }
+          check() {
+            local running expected c
+            c=$(cid "$1")
+            [ -n "$c" ]
+            running=$(docker inspect -f '{{.Config.Image}} {{.Image}}' "$c")
+            expected=$(docker image inspect -f '{{.Id}}' "$2")
+            [ "$running" = "$2 $expected" ]
+            echo "PASS $1 $2"
+          }
+          check api "$(ref CANDIDATE_API)"
+          check render-worker "$(ref CANDIDATE_RENDER)"
+          check web "$(sed -n 's/^    image: \(.*school-kit-web@.*\)$/\1/p' release/frontend.compose.yml)"
+          check portal "$(sed -n 's/^    image: \(.*school-kit-portal@.*\)$/\1/p' release/frontend.compose.yml)"
+          check ops-pinned "$(ref BACKUP_OPS)"
+          for image in "$(ref RECOVERY_API)" "$(ref RECOVERY_RENDER)"; do
+            docker image inspect "$image" >/dev/null
+          done
+          echo 'PASS recovery images retained'
+          identity() { docker inspect -f '{{.Id}} {{.State.StartedAt}}' "$1"; }
+          cmp -s release/protected <(
+            for service in postgres redis ops-pinned; do identity "$(cid "$service")"; done
+            old=$(docker ps -aq --filter label=com.docker.compose.project=school-kit --filter label=com.docker.compose.service=ops)
+            if [ -n "$old" ]; then identity "$old"; fi
+            sha256sum backup.env backup-ops.override.yml
+          )
+          echo 'PASS protected container identities, start times and backup configuration match pre-cutover'
+          SK_DIR=/opt/school-kit .batch3-807c84f/ops-tools/guard.sh scheduler
+          pg=$(cid postgres)
+          read -r applied rolled unresolved <<< "$(docker exec "$pg" psql -XqAt -v ON_ERROR_STOP=1 -U postgres -d school_kit -F ' ' -c "BEGIN READ ONLY; SELECT count(*) FILTER (WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL), count(*) FILTER (WHERE rolled_back_at IS NOT NULL), count(*) FILTER (WHERE finished_at IS NULL AND rolled_back_at IS NULL) FROM _prisma_migrations; COMMIT;")"
+          echo "Migration records: applied=$applied rolled_back=$rolled unresolved=$unresolved"
+          [ "$applied" = 209 ] && [ "$unresolved" = 0 ]
+          docker exec -i "$pg" psql -XqAt -v ON_ERROR_STOP=1 -U postgres -d school_kit <<'SQL'
+          BEGIN READ ONLY;
+          SELECT 'Payments with instalment attribution: ' || count(*) FROM payments WHERE installment_id IS NOT NULL;
+          SELECT 'Payment links with instalment attribution: ' || count(*) FROM payment_links WHERE installment_id IS NOT NULL;
+          SELECT 'Instalment requests: ' || count(*) FROM installment_requests;
+          SELECT 'Duplicate Paystack reference groups: ' || count(*) FROM (SELECT school_id, paystack_reference FROM payments WHERE paystack_reference IS NOT NULL GROUP BY 1,2 HAVING count(*) > 1) d;
+          SELECT 'Excessive allocations: ' || count(*) FROM payments WHERE allocated_kobo > amount;
+          SELECT 'Unprocessed webhook inbox rows: ' || count(*) FROM paystack_webhook_inbox WHERE processed_at IS NULL;
+          COMMIT;
+          SQL
+          docker exec "$(cid api)" node -e '
+            const keys = ["MESSAGING_PAID_ENABLED","MESSAGING_TOP_UPS_ENABLED","MESSAGING_TOP_UP_RECOVERY_ENABLED","MESSAGING_META_SIGNUP_ENABLED","MESSAGING_META_WEBHOOK_ENABLED","MESSAGING_META_PHONE_REGISTRATION_ENABLED","MESSAGING_META_TEMPLATE_SUBMISSION_ENABLED","MESSAGING_META_INBOUND_HISTORY_ENABLED","MESSAGING_TERMII_REPORTS_ENABLED","MESSAGING_LEGACY_SMS_ENABLED","MESSAGING_LEGACY_SMS_MIGRATION_MODE"];
+            const active = keys.filter(key => !["", "off", "false", "0"].includes((process.env[key] || "").toLowerCase()));
+            if (active.length) { console.error("Unexpected messaging gates: " + active.join(", ")); process.exit(1); }
+            console.log("PASS production messaging flags disabled");
+          '
+          REMOTE
