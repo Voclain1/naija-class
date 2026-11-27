@@ -26,17 +26,19 @@ runs:
         bash scripts/release/package-tools.sh "$RUNNER_TEMP/release-tools.tar"
         scp -q "$RUNNER_TEMP/release-tools.tar" vps:/tmp/school-kit-release-tools.tar
         # the installer verifies every file against the bundle's SHA256SUMS before swapping the directory in
-        ssh vps 'RELEASE_BUNDLE=/tmp/school-kit-release-tools.tar bash -s' < infra/vps/release/install.sh
-        ssh vps 'rm -f /tmp/school-kit-release-tools.tar'
+        scp -q infra/vps/release/install.sh vps:/tmp/school-kit-install.sh
+        ssh -n vps 'RELEASE_BUNDLE=/tmp/school-kit-release-tools.tar bash /tmp/school-kit-install.sh'
+        ssh -n vps 'rm -f /tmp/school-kit-install.sh'
+        ssh -n vps 'rm -f /tmp/school-kit-release-tools.tar'
     - name: Copy the manifest and its checksum
       shell: bash
       run: |
         set -euo pipefail
         sha=$(sha256sum "${{ inputs.manifest }}" | cut -d' ' -f1)
         id=$(python3 infra/vps/release/release_tool.py jget "${{ inputs.manifest }}" release_id)
-        ssh vps 'umask 077; mkdir -p /opt/school-kit/deployments/incoming'
+        ssh -n vps 'umask 077; mkdir -p /opt/school-kit/deployments/incoming'
         scp -q "${{ inputs.manifest }}" "vps:/opt/school-kit/deployments/incoming/$id.json"
-        remote=$(ssh vps "sha256sum /opt/school-kit/deployments/incoming/$id.json | cut -d' ' -f1")
+        remote=$(ssh -n vps "sha256sum /opt/school-kit/deployments/incoming/$id.json | cut -d' ' -f1")
         [ "$sha" = "$remote" ] || { echo "::error::manifest checksum differs after the copy"; exit 1; }
         echo "RELEASE_ID=$id" >> "$GITHUB_ENV"; echo "MANIFEST_SHA=$sha" >> "$GITHUB_ENV"
     - name: Stage the images (by digest; no runtime change)
@@ -47,8 +49,8 @@ runs:
         set -euo pipefail
         t=/opt/school-kit/release-tools
         printf '%s' "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u '${{ inputs.ghcr-user }}' --password-stdin" >/dev/null
-        trap 'ssh vps "docker logout ghcr.io" >/dev/null 2>&1 || true' EXIT
-        ssh vps "$t/release.sh stage /opt/school-kit/deployments/incoming/$RELEASE_ID.json"
+        trap 'ssh -n vps "docker logout ghcr.io" >/dev/null 2>&1 || true' EXIT
+        ssh -n vps "$t/release.sh stage /opt/school-kit/deployments/incoming/$RELEASE_ID.json"
     - name: Record the owner's approval (gated releases only)
       if: inputs.approve == 'true'
       shell: bash
@@ -56,19 +58,19 @@ runs:
         set -euo pipefail
         t=/opt/school-kit/release-tools
         flag=""; [ "${{ inputs.allow-destructive }}" = true ] && flag="--allow-destructive"
-        ssh vps "RELEASE_APPROVED=true RELEASE_APPROVAL_PHRASE='APPROVE ${MANIFEST_SHA:0:12}' $t/release.sh approve /opt/school-kit/deployments/incoming/$RELEASE_ID.json $flag --by 'github:${{ inputs.approved-by }}'"
+        ssh -n vps "RELEASE_APPROVED=true RELEASE_APPROVAL_PHRASE='APPROVE ${MANIFEST_SHA:0:12}' $t/release.sh approve /opt/school-kit/deployments/incoming/$RELEASE_ID.json $flag --by 'github:${{ inputs.approved-by }}'"
     - name: Start the release (detached on the server) and follow it
       shell: bash
       run: |
         set -euo pipefail
         t=/opt/school-kit/release-tools
-        ssh vps "$t/release.sh apply /opt/school-kit/deployments/incoming/$RELEASE_ID.json --trigger ${{ inputs.trigger }} --detach"
+        ssh -n vps "$t/release.sh apply /opt/school-kit/deployments/incoming/$RELEASE_ID.json --trigger ${{ inputs.trigger }} --detach"
         rc=0; bash scripts/release/poll-release.sh vps 2700 || rc=$?
         {
           echo "### Release $RELEASE_ID"
           echo "exit status: $rc"
           echo '```'
-          ssh vps "$t/release.sh status; $t/release.sh history 12" 2>&1 | python3 infra/vps/release/release_tool.py redact || true
+          ssh -n vps "$t/release.sh status; $t/release.sh history 12" 2>&1 | python3 infra/vps/release/release_tool.py redact || true
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
         exit "$rc"

@@ -4,7 +4,8 @@
 # is running (the tools are never replaced under a running release) and keeps the previous copy.
 #
 #   scripts/release/package-tools.sh bundle.tar && scp bundle.tar vps:/tmp/rt.tar
-#   ssh vps 'RELEASE_BUNDLE=/tmp/rt.tar bash -s' < infra/vps/release/install.sh     (works on a fresh server too)
+#   scp infra/vps/release/install.sh vps:/tmp/ && ssh -n vps 'RELEASE_BUNDLE=/tmp/rt.tar bash /tmp/install.sh'   (works on a fresh server too)
+# The installer itself is copied to the server and run BY PATH (bash /tmp/install.sh), never piped to `bash -s`.
 # Without RELEASE_BUNDLE the bundle is read from standard input.
 #
 # It writes nothing outside $SK_DIR/release-tools and $SK_DIR/release-tools.previous.
@@ -19,7 +20,7 @@ tar -C "$new" -xf "${RELEASE_BUNDLE:--}" --no-same-owner --no-same-permissions
 ( cd "$new" && sha256sum -c --quiet SHA256SUMS ) || { echo "BLOCK checksum verification failed; nothing was installed" >&2; rm -rf "$new"; exit 1; }
 extra=$(cd "$new" && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort | comm -23 - <(awk '{print $2}' SHA256SUMS | sort) || true)
 [ -z "$extra" ] || { echo "BLOCK files not covered by SHA256SUMS: $extra" >&2; rm -rf "$new"; exit 1; }
-for f in release.sh acceptance.sh lib.sh monitor.sh cleanup.sh release_tool.py gates.conf; do [ -f "$new/$f" ] || { echo "BLOCK $f is missing from the bundle" >&2; rm -rf "$new"; exit 1; }; done
+for f in release.sh acceptance.sh lib.sh monitor.sh cleanup.sh snapshot.sh release_tool.py gates.conf; do [ -f "$new/$f" ] || { echo "BLOCK $f is missing from the bundle" >&2; rm -rf "$new"; exit 1; }; done
 python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$new/release_tool.py" || { echo "BLOCK release_tool.py does not parse" >&2; rm -rf "$new"; exit 1; }
 for f in "$new"/*.sh; do bash -n "$f" || { echo "BLOCK $(basename "$f") has a syntax error" >&2; rm -rf "$new"; exit 1; }; done
 chmod 755 "$new"/*.sh "$new/release_tool.py"

@@ -330,6 +330,50 @@ class CaddyMaintenance(unittest.TestCase):
         self.assertIn("503", out)
 
 
+def route(host, upstream, group=None):
+    r = {"match": [{"host": [host]}], "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}]}
+    if group:
+        r["group"] = group
+    return r
+
+
+class CaddyEquivalence(unittest.TestCase):
+    def cfg(self, *routes):
+        return {"apps": {"http": {"servers": {"srv0": {"routes": list(routes)}}}}, "admin": {"x": 1}}
+
+    def test_a_pure_renumbering_of_group_ids_is_equivalent(self):
+        a = self.cfg(route("a.test", "x:1", "group0"), route("b.test", "y:2", "group1"), route("b.test", "z:3", "group1"))
+        b = self.cfg(route("a.test", "x:1", "group4"), route("b.test", "y:2", "group7"), route("b.test", "z:3", "group7"))
+        self.assertEqual(t.caddy_servers(a), t.caddy_servers(b))
+
+    def test_a_real_change_is_not_hidden_by_the_normalisation(self):
+        base = self.cfg(route("a.test", "x:1", "group0"))
+        for changed in (self.cfg(route("a.test", "OTHER:1", "group0")), self.cfg(route("c.test", "x:1", "group0")), self.cfg()):
+            self.assertNotEqual(t.caddy_servers(base), t.caddy_servers(changed))
+
+    def test_group_structure_is_still_compared(self):
+        shared = self.cfg(route("a.test", "x:1", "group0"), route("b.test", "y:2", "group0"))
+        apart = self.cfg(route("a.test", "x:1", "group0"), route("b.test", "y:2", "group1"))
+        self.assertNotEqual(t.caddy_servers(shared), t.caddy_servers(apart))
+
+    def test_one_site_is_compared_alone_so_other_sites_cannot_renumber_it(self):
+        before = self.cfg(route("sk.test", "api:1", "group0"), route("bg.test", "bg:9", "group1"))
+        during = self.cfg(route("bg.test", "bg:9", "group0"))          # sk.test's group is gone: bg.test is now group0
+        self.assertNotEqual(t.caddy_servers(before), t.caddy_servers(during))
+        self.assertEqual(t.caddy_site_routes(before, "bg.test"), t.caddy_site_routes(during, "bg.test"))
+        changed = self.cfg(route("bg.test", "EVIL:9", "group0"))
+        self.assertNotEqual(t.caddy_site_routes(before, "bg.test"), t.caddy_site_routes(changed, "bg.test"))
+
+    def test_cli(self):
+        with tempfile.TemporaryDirectory() as d:
+            pa, pb = os.path.join(d, "a.json"), os.path.join(d, "b.json")
+            json.dump(self.cfg(route("a.test", "x:1", "group0")), open(pa, "w"))
+            json.dump(self.cfg(route("a.test", "x:1", "group9")), open(pb, "w"))
+            self.assertEqual(t.main(["caddy-equivalent", pa, pb]), 0)
+            self.assertEqual(t.main(["caddy-equivalent", pa, pb, "--host", "a.test"]), 0)
+            self.assertEqual(t.main(["caddy-equivalent", pa, pb, "--host", "absent.test"]), 3)   # a site that is not there is never "equivalent"
+
+
 class JournalAndState(unittest.TestCase):
     def test_state_is_atomic_and_merges(self):
         with tempfile.TemporaryDirectory() as d:

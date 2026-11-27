@@ -11,12 +11,13 @@ set -Eeuo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib.sh
 . "$here/lib.sh"
+exec </dev/null
 cd "$SK_DIR"
 apply=0; [ "${1:-}" = --apply ] && apply=1
 KEEP_RELEASES=${RELEASE_KEEP_RELEASES:-3}
 FALLBACK_TAG=${FALLBACK_TAG:-schoolkit-ops-fallback:batch2-verified}
 [ -f "$D/current" ] || { echo "BLOCK no adopted release: refusing to decide what is old" >&2; exit 1; }
-terminal() { case "$(state_get phase)" in ''|COMPLETE|ROLLED_BACK|ABORTED) return 0 ;; *) return 1 ;; esac; }
+terminal() { case "$(state_get phase)" in ''|ROLLED_BACK|ABORTED) return 0 ;; COMPLETE) [ "$(state_get accepted)" = true ] ;; *) return 1 ;; esac; }
 terminal || { echo "BLOCK a release is in state $(state_get phase): no cleanup now" >&2; exit 1; }
 exec 9>"$D/apply.lock"; flock -n 9 || { echo "BLOCK a release is running" >&2; exit 5; }
 

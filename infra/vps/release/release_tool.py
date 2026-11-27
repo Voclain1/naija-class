@@ -493,6 +493,58 @@ def verify_maintenance_site(original: str, candidate: str) -> None:
         raise Refusal("the maintenance site file is not what was generated from the original (partial write?)")
 
 
+# --------------------------------------------------------------------------- Caddy routing equivalence
+# `caddy adapt` names route groups group0, group1, ... in the order it meets them across the WHOLE
+# Caddyfile. Adding or removing one site that uses `handle` renumbers every later site's groups without
+# changing any routing. A byte or JSON comparison of two configs would call that a difference, and a
+# check that "ignores group names" outright would also miss a real change. Normalisation here renames
+# groups by first appearance within the compared subset, consistently (one name to one name), so the
+# STRUCTURE (which routes share a group) is still compared, and only the arbitrary numbers are not.
+_GROUP = re.compile(r"^group\d+$")
+
+
+def caddy_normalize(obj):
+    names: dict[str, str] = {}
+
+    def walk(o):
+        if isinstance(o, dict):
+            out = {}
+            for k, v in o.items():  # insertion order = the order Caddy emitted
+                if k == "group" and isinstance(v, str) and _GROUP.match(v):
+                    out[k] = names.setdefault(v, f"G{len(names)}")
+                else:
+                    out[k] = walk(v)
+            return out
+        if isinstance(o, list):
+            return [walk(x) for x in o]
+        return o
+
+    return walk(obj)
+
+
+def _hosts_of(route) -> list[str]:
+    hosts: list[str] = []
+    for m in route.get("match", []) or []:
+        hosts += [h for h in (m.get("host") or []) if isinstance(h, str)]
+    return hosts
+
+
+def caddy_site_routes(config: dict, host: str) -> str:
+    """The routes of one site (those matching `host`), normalised on their own so that a renumbering caused
+    by OTHER sites cannot show up as a difference in THIS one."""
+    routes = []
+    for srv in (config.get("apps", {}).get("http", {}).get("servers", {}) or {}).values():
+        for r in srv.get("routes", []) or []:
+            if host in _hosts_of(r):
+                routes.append(r)
+    return json.dumps(caddy_normalize(routes), sort_keys=True)
+
+
+def caddy_servers(config: dict) -> str:
+    """Normalised routing of the whole HTTP app (what 'the same Caddy configuration' means for equivalence)."""
+    return json.dumps(caddy_normalize(config.get("apps", {}).get("http", {}).get("servers", {})), sort_keys=True)
+
+
 # --------------------------------------------------------------------------- redaction
 
 _REDACTIONS = [
@@ -639,6 +691,8 @@ def main(argv=None) -> int:
     nb.add_argument("--previous"); nb.add_argument("--input", action="append", default=[]); nb.add_argument("--with-cbt", action="store_true")
     sm = sub.add_parser("summary")
     sm.add_argument("manifest")
+    ce = sub.add_parser("caddy-equivalent", help="exit 0 when two `caddy adapt` / live configs route identically (group ids normalised)")
+    ce.add_argument("a"); ce.add_argument("b"); ce.add_argument("--host", help="compare only the routes of this host")
     sub.add_parser("redact")
 
     a = p.parse_args(argv)
@@ -700,6 +754,14 @@ def main(argv=None) -> int:
                     verify_maintenance_site(fo.read(), fc.read())
                 else:
                     verify_maintenance_caddyfile(fo.read(), fc.read(), a.mark)
+        elif a.cmd == "caddy-equivalent":
+            ca, cb = load_manifest(a.a), load_manifest(a.b)
+            if a.host:
+                same = caddy_site_routes(ca, a.host) == caddy_site_routes(cb, a.host) and caddy_site_routes(ca, a.host) != "[]"
+            else:
+                same = caddy_servers(ca) == caddy_servers(cb)
+            print("equivalent" if same else "DIFFERENT")
+            return 0 if same else 3
         elif a.cmd == "redact":
             sys.stdout.write(redact(sys.stdin.read()))
     except Refusal as e:

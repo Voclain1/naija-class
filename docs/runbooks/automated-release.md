@@ -99,7 +99,7 @@ release that is not rollback-safe, an unreadable `_prisma_migrations`, or no rec
 Exit codes of `release.sh apply`: `0` done · `1` failed and the previous release is serving (or it
 stopped before changing anything) · `3` refused · `4` system busy or a precondition outside the
 release (registry/disk), nothing changed, retry later · `5` another release command is running ·
-`6` fix-forward required · `7` rollback failed.
+`6` fix-forward required · `7` rollback failed · **`9` premature exit**: the process ended (for any reason, *including exit status 0*) with no recorded outcome. That is a failure, not a success; state and maintenance are left exactly as they were, and `release.sh resume` continues.
 
 ## 4. Commands (on the server: `/opt/school-kit/release-tools/release.sh`)
 
@@ -164,6 +164,35 @@ tokens, signatures, e-mail addresses, phone numbers and JWTs are masked at the p
 Restore from backup is a separate, deliberate decision (`docs/runbooks/batch2-acceptance-and-batch3.md`
 and the PITR procedure); the release records the restore point name in `state.json` for it.
 
+## 6a. The 2026-11-27 incident, and what the tooling does about it
+
+A deployment script was fed to `bash` through a heredoc. A `docker compose exec -T redis ...` inside it forwarded the script's own
+standard input to the container and consumed the rest of the script (1,916 bytes). Bash reached end-of-file and exited **0**, with
+production still in maintenance. Nothing failed; nothing had finished. The permanent rules (each has a qualification scenario):
+
+1. **Scripts run from files.** `release.sh` and every helper is a file run by path; the installer and the pre-release dump script are
+   copied to the server and run by path (`snapshot.sh` is copied into the scheduler with `docker cp`). No `bash -s`, no heredoc piped
+   to `docker exec` or `ssh` (`scripts/release/stdin-safety.test.sh` fails the build if one appears).
+2. **Standard input is closed** for every command that does not need it (`exec </dev/null` at the top of every entry point; `ssh -n`
+   in the workflows). A command that needs input gets it from an explicit redirection.
+3. **A premature exit is a failure, whatever its status.** An EXIT guard turns any end of `apply` that is not a recorded final state
+   into exit 9, records `premature_exit`, writes an alert and leaves maintenance on. `COMPLETE` is final only with `accepted=true`
+   and `deployments/acceptance/<release>.json`, written (and synced) after acceptance passed and before the outcome; the workflow
+   poller treats `COMPLETE` without it as a failure.
+4. **Recovery is deterministic**: phases are persisted, `status` says INTERRUPTED, `resume` continues at the next phase.
+5. **Maintenance survives a Caddy restart** (it is the Caddyfile on disk).
+6. **Partial Caddyfile writes cannot strand the edge.** Before any byte of Caddy's configuration changes, a durable record
+   (`caddy.record.json`: sha256 of the original and maintenance Caddyfile and school-address site, whose full copies sit beside it)
+   is written. A write cannot be atomic (a rename would break the single-file bind mount), so a crash can leave a prefix, and a Caddy
+   restart then loads it (a comment-only file is a valid, empty configuration). Every release command first compares the files with
+   the record and puts back a whole version; `status` and the monitor report "PARTIAL WRITE".
+7. **BetGenius, custom school domains and every other site** are never rewritten and are compared after the release.
+8. **Route-group ids**: `caddy adapt` numbers groups (`group0`, `group1`...) across the whole Caddyfile, so changing one site
+   renumbers the others. Acceptance compares routing after normalising group ids by first appearance (the structure of who shares a
+   group is still compared, so a real change is not hidden), compares the running configuration (admin API) with what the file adapts
+   to, and keeps the byte fingerprint as well.
+9. **Rollback uses local images only**: the only `docker pull` in the tooling is in staging (a test enforces it).
+
 ## 7. Safety properties (each is a qualification scenario)
 
 - Only `api`, `render-worker`, `web`, `portal` and `cbt` are ever stopped or recreated. Never
@@ -223,4 +252,4 @@ and the PITR procedure); the release records the restore point name in `state.js
 
 `scripts/release-qualification/run.sh` (≈ 25 minutes; needs Docker). Also run by the
 `release-qualification` workflow whenever the tooling changes. See the evidence document for what each
-of the 21 scenarios proves and what it measured.
+of the 28 scenarios proves and what it measured.

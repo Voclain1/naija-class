@@ -210,6 +210,23 @@ check_edge() { # mode
   if [ "$portal" = 200 ]; then say "$1" ok "the parent portal answers 200 through Caddy"; else say "$1" bad "the parent portal answers $portal through Caddy"; fail=1; fi
   return $fail
 }
+# Routing equivalence. `caddy adapt` numbers route groups (group0, group1...) across the whole Caddyfile, so a harmless
+# renumbering must not read as a change, while a real change must still be caught (see release_tool.caddy_normalize).
+caddy_adapt() { caddy_exec caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile; }
+caddy_live() { caddy_exec wget -qO- http://127.0.0.1:2019/config/; }
+check_caddy_routing() {
+  local t; t=$(mktemp -d); local rc=0
+  if [ -f "$D/caddy.adapted.before.json" ]; then
+    caddy_adapt > "$t/now.json" 2>/dev/null || { bad "could not adapt the live Caddyfile"; rm -rf "$t"; return 1; }
+    if TOOL caddy-equivalent "$D/caddy.adapted.before.json" "$t/now.json" >/dev/null; then ok "the routing is equivalent to before the release (route-group numbering ignored, every route and handler compared)"; else bad "the Caddy routing differs from before the release"; rc=1; fi
+  else warn "no pre-release routing snapshot: the before/after routing comparison is skipped"; fi
+  # the configuration Caddy is RUNNING must be the one the file on disk adapts to (a reload that did not take is a silent failure)
+  if caddy_live > "$t/live.json" 2>/dev/null && [ -s "$t/live.json" ]; then
+    [ -s "$t/now.json" ] || caddy_adapt > "$t/now.json" 2>/dev/null || true
+    if TOOL caddy-equivalent "$t/now.json" "$t/live.json" >/dev/null; then ok "Caddy is running the configuration its Caddyfile describes"; else bad "Caddy's running configuration is not what its Caddyfile adapts to"; rc=1; fi
+  else warn "Caddy's admin endpoint could not be read; running-configuration check skipped"; fi
+  rm -rf "$t"; return "$rc"
+}
 check_caddy_untouched() {
   [ -f "$D/caddy.fingerprint" ] || { warn "no Caddy fingerprint was recorded for this release"; return 0; }
   if [ "$(caddy_fingerprint)" = "$(cat "$D/caddy.fingerprint")" ]; then ok "Caddyfile and every site file (BetGenius, school domains, the rest) are byte-for-byte as before the release"; else bad "Caddyfile or a site file differs from before the release"; return 1; fi
@@ -232,12 +249,14 @@ run_acceptance() { # manifest scope
   if [ "$scope" = edge ] || [ "$scope" = all ]; then
     retry_transient "edge routing" check_edge || CHECK_FAILED=1
     check_caddy_untouched || CHECK_FAILED=1
+    check_caddy_routing || CHECK_FAILED=1
   fi
   if [ "$CHECK_FAILED" = 0 ]; then ok "acceptance ($scope) passed"; else bad "acceptance ($scope) FAILED"; fi
   return "$CHECK_FAILED"
 }
 
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  exec </dev/null
   cd "$SK_DIR"
   MANIFEST=${1:?usage: acceptance.sh <manifest.json> internal|edge|all [--save-baseline F|--baseline F]}
   scope=${2:?scope}; shift 2

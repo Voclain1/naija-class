@@ -14,6 +14,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$here/lib.sh"
 # shellcheck source=acceptance.sh
 . "$here/acceptance.sh"
+exec </dev/null
 cd "$SK_DIR"
 CHECK_FAILED=0
 cur=$(cat "$D/current" 2>/dev/null || true)
@@ -29,7 +30,8 @@ phase=$(state_get phase)
 exec 8>"$D/apply.lock"
 if flock -n 8; then lock=free; else lock=held; fi
 case $phase in
-  ''|COMPLETE|ROLLED_BACK|ABORTED) ok "no release is half way (state: ${phase:-none})" ;;
+  ''|ROLLED_BACK|ABORTED) ok "no release is half way (state: ${phase:-none})" ;;
+  COMPLETE) [ "$(state_get accepted)" = true ] && ok "the last release is COMPLETE with its acceptance record" || bad "state is COMPLETE but there is no acceptance record" ;;
   FIX_FORWARD_REQUIRED|ROLLBACK_FAILED) bad "release state is $phase: an operator must act (release.sh status)" ;;
   *) if [ "$lock" = free ]; then bad "release $(state_get release_id) is INTERRUPTED at $phase: release.sh resume"; else info "a release is running ($phase)"; fi ;;
 esac
@@ -38,6 +40,7 @@ if [ -f "$D/MAINTENANCE" ]; then
   if [ "$lock" = free ]; then bad "maintenance has been on for ${since} minutes with no release running"; else info "maintenance on for ${since} minutes (a release is running)"; fi
 fi
 free=$(free_gib); [ "${free:-0}" -ge "${RELEASE_MONITOR_MIN_FREE_GIB:-8}" ] && ok "free disk ${free} GiB" || bad "free disk ${free:-?} GiB is below ${RELEASE_MONITOR_MIN_FREE_GIB:-8} GiB"
+if caddy_partial; then bad "Caddy's files are a partial write (neither the original nor the maintenance version)"; fi
 check_images || CHECK_FAILED=1
 check_backups || CHECK_FAILED=1
 [ "$(sql -c "SELECT coalesce(last_failed_time > last_archived_time, false) FROM pg_stat_archiver")" = f ] && ok "the WAL archiver is not failing" || bad "the WAL archiver is failing"

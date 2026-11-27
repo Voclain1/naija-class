@@ -1363,7 +1363,12 @@ a prune, or a volume operation); PostgreSQL, Redis, the pinned scheduler (`ops-p
 stopped original `ops`, `backup.env` and every Caddy site that is not School Kit's are re-checked
 unchanged after every phase; rollback uses only images already on the server and is refused after a
 breaking migration; a schema release needs an owner approval bound to the manifest's hash; acceptance
-is read-only and never starts a payment or a message. It coexists with, and refuses to run during,
+is read-only and never starts a payment or a message. Release scripts are run FROM FILES, never fed through a pipe or heredoc, and every
+subprocess has its standard input closed (`exec </dev/null`; the incident of 2026-11-27: a `docker compose exec -T` swallowed the
+rest of a heredoc-fed deployment script, bash hit end-of-file and exited 0 with production still in maintenance); an apply that
+ends without a recorded outcome is a FAILURE (exit 9) even if it exited 0, and COMPLETE exists only with its durable acceptance
+record; Caddy files are changed only after a durable recovery record exists, and route-group numbering is normalised (never ignored)
+when comparing routing. It coexists with, and refuses to run during,
 `ops-tools/cutover.sh`; its data is in `deployments/`, never `release/`. Changing any of it means
 running `scripts/release-qualification/run.sh` (real PostgreSQL 18, Redis, Caddy and a local
 registry; the `release-qualification` workflow does it) and updating the runbook.

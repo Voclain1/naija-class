@@ -4,6 +4,6 @@
 set -euo pipefail
 src=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../infra/vps/release" && pwd)
 t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
-cp "$src"/{release.sh,acceptance.sh,lib.sh,monitor.sh,cleanup.sh,install.sh,release_tool.py,gates.conf} "$t/"
-( cd "$t" && sha256sum release.sh acceptance.sh lib.sh monitor.sh cleanup.sh install.sh release_tool.py gates.conf > SHA256SUMS )
+cp "$src"/{release.sh,acceptance.sh,lib.sh,monitor.sh,cleanup.sh,install.sh,snapshot.sh,release_tool.py,gates.conf} "$t/"
+( cd "$t" && sha256sum release.sh acceptance.sh lib.sh monitor.sh cleanup.sh install.sh snapshot.sh release_tool.py gates.conf > SHA256SUMS )
 if [ -n "${1:-}" ]; then tar -C "$t" -cf "$1" .; else tar -C "$t" -cf - .; fi

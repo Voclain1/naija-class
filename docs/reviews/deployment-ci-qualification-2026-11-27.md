@@ -64,8 +64,13 @@ local registry):
 | s21 | cleanup and monitor | PASS | 110s |
 | s22 | scoped build: only the changed unit is restarted; unchanged units keep digest and commit | PASS | 53s |
 | s23 | tool installer: verified, atomic, never under a running release | PASS | 4s |
+| s24 | incident: stdin swallowed by a subprocess (reproduced with real containers) and made impossible | PASS | 124s |
+| s25 | premature exit, including status 0, is a failure; acceptance must be durably recorded | PASS | 164s |
+| s26 | partial Caddyfile write, Caddy restart onto it, recovery from the durable record | PASS | 74s |
+| s27 | route-group renumbering on real Caddy: ignored; a real routing change: caught | PASS | 70s |
+| s28 | lifecycle gauntlet: kill, Caddy restart, torn Caddyfile, resume, rollback with the registry down | PASS | 156s |
 
-**23 of 23 scenarios passed; 231 individual checks passed, 0 failed.** The wall time of a scenario
+**28 of 28 scenarios passed; 291 individual checks passed, 0 failed.** The wall time of a scenario
 includes building a fresh stack and, for the faulted ones, waiting out the timeouts the scenario sets.
 
 ## 4. What the qualification found (and what was done)
@@ -85,9 +90,29 @@ by the table above.
 | 7 | s17 | An alert said a release stopped but not why | Alerts carry the last problem recorded |
 | 8 | harness | The migration stand-in did not honour the real image's `migrate <command>` entry; the harness overrode the disk floor it was testing; one scenario compared against an older manifest; Docker will not delete an image a running container uses, so "rollback image missing" can only happen after the old container is replaced | Fixed; the scenarios now remove the image at that moment, for real |
 
-The 56 unit tests in `infra/vps/release/test_release_tool.py` cover the classifier, manifest
+The 61 unit tests in `infra/vps/release/test_release_tool.py` cover the classifier, manifest
 validation, planning, rollback compatibility, scoped builds, redaction and the Caddy rewriter,
 including the truncation case from #1.
+
+## 4a. The 2026-11-27 production incident, reproduced and closed
+
+A deployment script fed to bash through a heredoc was truncated when `docker compose exec -T`
+forwarded the shell's stdin to Redis and consumed 1,916 bytes of it. Bash reached end-of-file and
+exited 0 while production stayed in maintenance. s24a reproduces this on real containers (exit 0,
+completion marker absent); the same sequence run from a file, with stdin closed, completes.
+
+| # | Lesson | Where it is enforced | Proved by |
+|---|---|---|---|
+| 1 | Run scripts from files, not stdin-fed heredocs | installer is copied then run by path; `snapshot.sh` is `docker cp`'d; `stdin-safety.test.sh` rejects heredoc/pipe-fed shells | s24, s23, `stdin-safety.test.sh` |
+| 2 | Isolate stdin of non-interactive subprocesses | `exec </dev/null` at every entry point (except interactive `approve`), `ssh -n` | s24 |
+| 3 | Any premature exit, even 0, is a failure unless acceptance is durably recorded | EXIT trap `premature_guard` exits 9; COMPLETE needs `accepted=true` and `acceptance/<id>.json`; the poller treats COMPLETE without it as exit 9 | s25, `poll-release.test.sh` |
+| 4 | Persisted phases, deterministic interruption recovery | phase machine, `resume` | s04, s05, s25, s28 |
+| 5 | Maintenance survives an unexpected Caddy restart | maintenance is a rewritten Caddyfile, not a runtime change | s06, s26, s28 |
+| 6 | Partial Caddyfile writes are repairable | `caddy.record.json` (hashes of original and maintenance files) written before any change; `caddy_recover` | s07, s26, s28 |
+| 7 | Custom school domains and unrelated sites preserved (BetGenius) | only School Kit's host blocks and the school-address site are touched; others re-checked byte for byte | s03, s20, s26, s27, s28 |
+| 8 | Auto-generated Caddy route-group ids do not mask or fake routing changes | per-site comparison with group renaming by first appearance; group structure still compared | s27 (real Caddy renumbered group9 to group7), unit tests |
+| 9 | Rollback needs no GHCR | rollback uses local images only; the single `docker pull` is in staging, guarded statically | s09, s28 |
+| 10 | Full lifecycle on real Docker, Redis, PostgreSQL, Caddy, with interruption and failure injection | `scripts/release-qualification/run.sh` | all 28, especially s28 |
 
 ## 5. Measured behaviour
 

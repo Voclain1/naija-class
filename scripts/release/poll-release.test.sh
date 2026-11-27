@@ -11,10 +11,11 @@ line=$(sed -n "${n}p" "$T/script"); [ -n "$line" ] || line=$(tail -n 1 "$T/scrip
 case $line in fail) exit 255 ;; ok\ *) echo "${line#ok }" ;; esac
 S
 chmod +x "$T/ssh"
-st() { printf '{"run":"%s","state":{"phase":"%s","error":"%s"}}' "$1" "$2" "${3:-}"; }
+st() { printf '{"run":"%s","state":{"phase":"%s","error":"%s","accepted":%s}}' "$1" "$2" "${3:-}" "$([ "$2" = COMPLETE ] && echo "${ACC:-true}" || echo false)"; }
 run() { rm -f "$T/n"; printf '%s\n' "$@" > "$T/script"; RELEASE_SSH="$T/ssh" POLL_INTERVAL=0 POLL_MAX_LOST=3 bash "$here/poll-release.sh" vps 20 >"$T/out" 2>&1; echo $?; }
 export T
 chk "running then complete -> 0" "$(run "ok $(st RUNNING QUIESCED)" "ok $(st RUNNING SWITCHED)" "ok $(st IDLE COMPLETE)")" 0
+chk "COMPLETE without a durable acceptance record is a failure, not a success -> 9" "$(ACC=false run "ok $(ACC=false st IDLE COMPLETE)")" 9
 chk "survives lost SSH sessions while the release runs -> 0" "$(run "ok $(st RUNNING QUIESCED)" fail fail "ok $(st RUNNING SWITCHED)" fail "ok $(st IDLE COMPLETE)")" 0
 chk "rolled back -> 1" "$(run "ok $(st RUNNING SWITCHED)" "ok $(st IDLE ROLLED_BACK)")" 1
 chk "aborted before any change -> 1" "$(run "ok $(st IDLE ABORTED preflight)")" 1

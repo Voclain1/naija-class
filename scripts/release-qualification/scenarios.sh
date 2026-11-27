@@ -59,7 +59,7 @@ s02() {
 s03() {
   stack_reset || return 1
   snapshot_protected > "$W/prot"
-  local bg0 sc0; bg0=$(sha256sum "$SK/sites/betgenius.caddy" | cut -c1-16); sc0=$(sha256sum "$SK/sites/custom-school.caddy" | cut -c1-16)
+  local bg0 sc0; bg0=$(sha256sum "$SK/sites/zz-betgenius.caddy" | cut -c1-16); sc0=$(sha256sum "$SK/sites/zz-custom-school.caddy" | cut -c1-16)
   local cf0; cf0=$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1)
   approve data
   RELEASE_FAULTS=pause_after_QUIESCED R apply "$W/m/data.json" --detach >/dev/null
@@ -77,8 +77,8 @@ s03() {
   check "the pre-release dump was written off-site and read back" bash -c "docker exec $(cid_of ops-pinned) ls /store/skq-bucket/dumps/pre-release | grep -q 'pre-release.*dump.sha256'"
   check "maintenance is off" eq "$(edge $APIH /api/v1/health)" 200
   check "the original Caddyfile was restored byte for byte" eq "$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1)" "$cf0"
-  check "BetGenius site file is byte-identical" eq "$(sha256sum "$SK/sites/betgenius.caddy" | cut -c1-16)" "$bg0"
-  check "the custom school domain file is byte-identical" eq "$(sha256sum "$SK/sites/custom-school.caddy" | cut -c1-16)" "$sc0"
+  check "BetGenius site file is byte-identical" eq "$(sha256sum "$SK/sites/zz-betgenius.caddy" | cut -c1-16)" "$bg0"
+  check "the custom school domain file is byte-identical" eq "$(sha256sum "$SK/sites/zz-custom-school.caddy" | cut -c1-16)" "$sc0"
   check "PostgreSQL, Redis, scheduler never restarted" protected_same "$W/prot" hard
   check "the data migration applied" eq "$(psql_q -c "SELECT count(*) FROM _prisma_migrations WHERE migration_name LIKE '%backfill_legacy_ref' AND finished_at IS NOT NULL")" 1
 }
@@ -387,9 +387,9 @@ s20() { # acceptance: genuine failures are detected, and fast
   check "a checksum marker without its dump is not a backup" bash -c "! ACC '$m' internal >/dev/null 2>&1"
   docker exec "$(cid_of ops-pinned)" sh -c 'd=$(date -u +%Y-%m-%dT%H%M%SZ); touch /store/skq-bucket/dumps/daily/school-kit-$d.dump'
   check "a fresh complete pair passes" eq "$(ACC "$m" internal >/dev/null 2>&1; echo $?)" 0
-  echo "# tampered" >> "$SK/sites/betgenius.caddy"
+  echo "# tampered" >> "$SK/sites/zz-betgenius.caddy"
   check "a changed site file (BetGenius) is detected at the edge" bash -c "! ACC '$m' edge >/dev/null 2>&1"
-  sed -i '/# tampered/d' "$SK/sites/betgenius.caddy"
+  sed -i '/# tampered/d' "$SK/sites/zz-betgenius.caddy"
   docker stop "$(cid_of web)" >/dev/null
   t0=$SECONDS; out=$(RELEASE_ACCEPT_WINDOW=6 ACC "$m" internal 2>&1); rc=$?
   check "a front end that is down fails after the startup window, labelled as not ready" bash -c "[ $rc -ne 0 ]"
@@ -446,13 +446,167 @@ s23() { # the tool installer: verified, atomic, never under a running release
   check "the installed copy is unchanged" eq "$(sha256sum "$t/sk/release-tools/release.sh" | cut -c1-16)" "$before"
   cp "$t/bundle.tar" "$t/extra.tar"; mkdir -p "$t/y"; tar -C "$t/y" -xf "$t/bundle.tar"; echo "x" > "$t/y/surprise.sh"; tar -C "$t/y" -cf "$t/extra.tar" .
   SK_DIR="$t/sk" RELEASE_BUNDLE="$t/extra.tar" bash "$TOOLS/install.sh" >/dev/null 2>&1; check "a file not covered by SHA256SUMS is refused" eq "$?" 1
-  mkdir -p "$t/z"; tar -C "$t/z" -xf "$t/bundle.tar"; echo 'if then fi fi' >> "$t/z/lib.sh"; (cd "$t/z" && sha256sum release.sh acceptance.sh lib.sh monitor.sh cleanup.sh install.sh release_tool.py gates.conf > SHA256SUMS); tar -C "$t/z" -cf "$t/syntax.tar" .
+  mkdir -p "$t/z"; tar -C "$t/z" -xf "$t/bundle.tar"; echo 'if then fi fi' >> "$t/z/lib.sh"; (cd "$t/z" && sha256sum release.sh acceptance.sh lib.sh monitor.sh cleanup.sh install.sh snapshot.sh release_tool.py gates.conf > SHA256SUMS); tar -C "$t/z" -cf "$t/syntax.tar" .
   SK_DIR="$t/sk" RELEASE_BUNDLE="$t/syntax.tar" bash "$TOOLS/install.sh" >/dev/null 2>&1; check "a correctly checksummed bundle with a shell syntax error is refused" eq "$?" 1
   ( exec 8>"$t/sk/deployments/apply.lock"; flock -n 8; sleep 4 ) & sleep 1
   SK_DIR="$t/sk" RELEASE_BUNDLE="$t/bundle.tar" bash "$TOOLS/install.sh" >/dev/null 2>&1; check "the tools are never replaced under a running release (exit 5)" eq "$?" 5
   wait
   SK_DIR="$t/sk" RELEASE_BUNDLE="$t/bundle.tar" bash "$TOOLS/install.sh" >/dev/null 2>&1; check "and install once the release has ended; the previous copy is kept" bash -c "[ $? -eq 0 ] && [ -d $t/sk/release-tools.previous ]"
 }
+caddy_adapt_to() { (cd "$SK" && docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml exec -T caddy caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile </dev/null) > "$1" 2>/dev/null; }
+caddy_groups_of() { python3 -c '
+import json,sys
+def groups(o):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k == "group" and isinstance(v, str): yield v
+            else: yield from groups(v)
+    elif isinstance(o, list):
+        for x in o: yield from groups(x)
+c=json.load(open(sys.argv[1])); out=[]
+for srv in c["apps"]["http"]["servers"].values():
+    for r in srv["routes"]:
+        if any(sys.argv[2] in (m.get("host") or []) for m in r.get("match",[])): out += list(groups(r))
+print(",".join(out))' "$1" "$2"; }
+s24() { # the production incident: a command inside a script fed through standard input swallows the rest of it
+  stack_reset || return 1
+  local dcx; dcx="cd $SK && docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml"
+  rm -f "$W"/marker.*
+  # (a) REPRODUCTION with real containers: `docker compose exec -T redis` inside a heredoc-fed bash eats the remaining script
+  bash -s <<EOF
+$dcx exec -T redis cat > /dev/null
+touch "$W/marker.a"
+echo "everything after the exec is lost"
+EOF
+  local rc=$?
+  check "REPRODUCED: the heredoc-fed script exits with status 0 ..." eq "$rc" 0
+  check "... although the work after the docker compose exec never ran" test ! -e "$W/marker.a"
+  # (b) the same commands as a FILE are immune: bash reads the file, not the stream the container is reading
+  printf '%s\n' "$dcx exec -T redis cat > /dev/null" "touch $W/marker.b" > "$W/script.sh"; bash "$W/script.sh" </dev/null
+  check "the same script run from a file completes" test -e "$W/marker.b"
+  # (c) and stdin isolation protects even the heredoc form
+  bash -s <<EOF
+$dcx exec -T redis cat > /dev/null </dev/null
+touch "$W/marker.c"
+EOF
+  check "a heredoc-fed script whose subprocess has its stdin isolated completes" test -e "$W/marker.c"
+  # (d) the release tooling ignores whatever feeds it
+  yes 'garbage that docker exec -i would swallow' | R apply "$W/m/app.json" >/dev/null 2>&1; rc=${PIPESTATUS[1]}
+  check "apply completes (exit 0) even with a stream attached to its standard input" eq "$rc" 0
+  check "and it is COMPLETE with its durable acceptance record" eq "$(state phase):$(state accepted):$(test -s "$SK/deployments/acceptance/$(rid app).json" && echo file)" "COMPLETE:true:file"
+  yes junk | ACC "$SK/deployments/releases/$(current)/manifest.json" all >/dev/null 2>&1; rc=${PIPESTATUS[1]}; check "acceptance.sh ignores standard input too" eq "$rc" 0
+  # (e) the snapshot (it used to be a heredoc piped into the scheduler) runs as a file
+  approve data >/dev/null; yes junk | R apply "$W/m/data.json" >/dev/null 2>&1; rc=${PIPESTATUS[1]}
+  check "a maintenance release, with a stream on stdin, takes its verified dump and completes" eq "$rc:$(state phase)" "0:COMPLETE"
+  check "the verified-dump completion line was recorded" bash -c "grep -q 'SNAPSHOT .* verified off-site' $SK/deployments/snapshot.txt"
+  check "static guards: no stdin-fed script, no heredoc into docker/ssh, stdin closed, one docker pull (staging)" bash "$ROOT/scripts/release/stdin-safety.test.sh"
+}
+s25() { # a premature exit is a FAILURE, including exit status 0, unless acceptance was durably recorded
+  stack_reset || return 1
+  approve data >/dev/null
+  snapshot_protected > "$W/prot"
+  RELEASE_FAULTS=exit0_after_MIGRATED R apply "$W/m/data.json"; local rc=$?
+  check "the process tried to exit 0 mid-release: the tooling turns that into a failure (exit 9)" eq "$rc" 9
+  check "state shows the last completed phase and records the unexpected exit" eq "$(state phase):$(state exit_unexpected):$(state accepted)" "MIGRATED:true:false"
+  check "the journal says premature_exit" contains "$(hist)" '"event": "premature_exit"'
+  check "an alert names the phase and says maintenance is still on" bash -c "grep -q 'ended at phase MIGRATED' $SK/deployments/alerts/*premature*"
+  check "ingress is STILL closed (maintenance was not abandoned)" eq "$(edge $APIH /api/v1/health)" 503
+  check "status says INTERRUPTED, never success" contains "$(R status)" "run:         INTERRUPTED"
+  check "the monitor flags it" bash -c "! rel bash $TOOLS/monitor.sh >/dev/null 2>&1"
+  R resume; rc=$?
+  check "resume completes it" eq "$rc:$(state phase):$(state accepted)" "0:COMPLETE:true"
+  check "the durable acceptance record exists" test -s "$SK/deployments/acceptance/$(rid data).json"
+  check "maintenance is off" eq "$(edge $APIH /api/v1/health)" 200
+  # the last moment: everything verified, the process "exits 0" just before the outcome is recorded
+  R apply "$W/m/data2.json" >/dev/null 2>&1
+  RELEASE_FAULTS=exit0_after_VERIFIED R apply "$W/m/data3.json"; rc=$?
+  check "exit 0 after verification but before the acceptance record is still a failure (exit 9)" eq "$rc:$(state accepted)" "9:false"
+  R resume >/dev/null 2>&1; check "and resume records it" eq "$(state phase):$(state accepted):$(current)" "COMPLETE:true:$(rid data3)"
+  # a COMPLETE with no acceptance record (hand-edited, or from a crash) is not a completed release
+  python3 "$TOOLS/release_tool.py" state set --file "$SK/deployments/state.json" accepted=false >/dev/null
+  check "COMPLETE without the record reads as INTERRUPTED" contains "$(R status)" "run:         INTERRUPTED"
+  R apply "$W/m/app.json" >/dev/null 2>&1; check "and no new release may start on top of it (exit 3)" eq "$?" 3
+  check "PostgreSQL, Redis and the scheduler were never restarted by any of it" protected_same "$W/prot" hard
+}
+s26() { # the process dies in the middle of writing the Caddyfile, then Caddy restarts and loads what is on disk
+  stack_reset || return 1
+  snapshot_protected > "$W/prot"
+  local orig bg0; orig=$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1); bg0=$(sha256sum "$SK/sites/zz-betgenius.caddy" | cut -c1-16)
+  approve data >/dev/null
+  RELEASE_FAULTS=kill_in_caddy_write R apply "$W/m/data.json" >/dev/null 2>&1; local rc=$?
+  check "the release process was killed in the middle of the write" neq "$rc" 0
+  check "the durable record exists (written BEFORE the first byte changed)" test -s "$SK/deployments/caddy.record.json"
+  check "the Caddyfile on disk is a PREFIX of a file: neither the original nor the maintenance version" bash -c "[ \"\$(sha256sum $SK/Caddyfile | cut -d' ' -f1)\" != '$orig' ] && [ \$(wc -c < $SK/Caddyfile) -lt 100 ]"
+  check "status says so" contains "$(R status)" "PARTIAL WRITE"
+  check "the monitor flags it" bash -c "! rel bash $TOOLS/monitor.sh >/dev/null 2>&1"
+  docker restart "$(cid_of caddy)" >/dev/null; sleep 4
+  local dark; dark=$(edge $APIH /api/v1/health)
+  check "WORST CASE shown: Caddy restarted onto the partial file serves nothing (neither 200 nor a 503)" bash -c "[ '$dark' != 200 ] && [ '$dark' != 503 ]"
+  check "...and takes BetGenius down with it (why this matters)" neq "$(edge $BGH /)" 200
+  R resume; rc=$?
+  check "resume repairs Caddy from the record and completes the release" eq "$rc:$(state phase):$(state accepted)" "0:COMPLETE:true"
+  check "the run says it repaired from the durable record" contains "$(run_log)" "repaired from the durable record"
+  check "the original Caddyfile is back byte for byte" eq "$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1)" "$orig"
+  check "BetGenius is served again and its file is untouched" eq "$(edge $BGH /):$(sha256sum "$SK/sites/zz-betgenius.caddy" | cut -c1-16)" "200:$bg0"
+  check "the API edge answers" eq "$(edge $APIH /api/v1/health)" 200
+  check "PostgreSQL, Redis and the scheduler untouched" protected_same "$W/prot" hard
+}
+s27() { # `caddy adapt` renumbers route groups; that must not read as a change, and a real change must still be caught
+  stack_reset || return 1
+  caddy_adapt_to "$W/adapt.before.json" || return 1
+  check "the unrelated sites really have numbered route groups before the release" bash -c "grep -q 'group[0-9]' $W/adapt.before.json"
+  approve data >/dev/null
+  RELEASE_FAULTS=pause_after_QUIESCED R apply "$W/m/data.json" --detach >/dev/null; wait_state QUIESCED 60
+  caddy_adapt_to "$W/adapt.during.json"
+  local g1 g2; g1=$(caddy_groups_of "$W/adapt.before.json" "$BGH"); g2=$(caddy_groups_of "$W/adapt.during.json" "$BGH")
+  say "    BetGenius route groups: before=[$g1] during maintenance=[$g2]"
+  check "PHENOMENON on real Caddy: BetGenius' route-group ids CHANGED while its routing did not" neq "$g1" "$g2"
+  check "a naive comparison of the whole adapted configs differs" bash -c "! cmp -s $W/adapt.before.json $W/adapt.during.json"
+  local h
+  for h in "$BGH" "$SCHOOLH"; do
+    python3 "$TOOLS/release_tool.py" caddy-equivalent "$W/adapt.before.json" "$W/adapt.during.json" --host "$h" >/dev/null; check "$h routes are equivalent before and during (group numbers normalised)" eq "$?" 0
+  done
+  python3 "$TOOLS/release_tool.py" caddy-equivalent "$W/adapt.before.json" "$W/adapt.during.json" >/dev/null; check "the WHOLE routing is NOT equivalent during the window (School Kit's blocks are 503)" eq "$?" 3
+  continue_run; wait_run_done 120
+  check "release completed, which includes the before/after routing and running-config checks" eq "$(state phase)" COMPLETE
+  check "acceptance reported the routing equivalent to before the release" contains "$(run_log)" "routing is equivalent to before the release"
+  check "acceptance reported Caddy is running what its Caddyfile describes" contains "$(run_log)" "Caddy is running the configuration its Caddyfile describes"
+  # a REAL routing change to an unrelated site must be caught even though group ids are normalised away
+  printf '\nhttp://evil.test:8080 {\n\trespond "x" 200\n}\n' >> "$SK/sites/zz-betgenius.caddy"
+  (cd "$SK" && docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile </dev/null >/dev/null 2>&1)
+  check "a real change (a new route on an unrelated site) FAILS the edge acceptance" bash -c "! ACC '$SK/deployments/releases/$(current)/manifest.json' edge >/dev/null 2>&1"
+  check "...and the reason is the routing, not a number" contains "$(ACC "$SK/deployments/releases/$(current)/manifest.json" edge 2>&1)" "routing differs"
+  sed -i '/evil.test/,$d' "$SK/sites/zz-betgenius.caddy"
+  (cd "$SK" && docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile </dev/null >/dev/null 2>&1)
+  # a file edited on disk but never loaded: Caddy is RUNNING something else
+  printf '\nhttp://late.test:8080 {\n\trespond "x" 200\n}\n' >> "$SK/sites/zz-betgenius.caddy"
+  check "an edit that was never loaded is detected (running config differs from the file)" contains "$(ACC "$SK/deployments/releases/$(current)/manifest.json" edge 2>&1)" "running configuration is not what its Caddyfile adapts to"
+  sed -i '/late.test/,$d' "$SK/sites/zz-betgenius.caddy"
+}
+s28() { # the whole lifecycle, chained: kill, Caddy restart, a torn Caddyfile, resume, then a failed release rolled back with no registry
+  stack_reset || return 1
+  snapshot_protected > "$W/prot"
+  local orig bg0 rc; orig=$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1); bg0=$(sha256sum "$SK/sites/zz-betgenius.caddy" | cut -c1-16)
+  approve data >/dev/null
+  RELEASE_FAULTS=kill_after_QUIESCED R apply "$W/m/data.json" >/dev/null 2>&1
+  check "1. killed with the window open: INTERRUPTED, edge closed" eq "$(state phase):$(edge $APIH /api/v1/health)" "QUIESCED:503"
+  docker restart "$(cid_of caddy)" >/dev/null; sleep 4
+  check "2. Caddy restarted: maintenance survives (503) and BetGenius is served" eq "$(edge $APIH /api/v1/health):$(edge $BGH /)" "503:200"
+  head -c 60 "$SK/Caddyfile" > "$W/torn" && cat "$W/torn" > "$SK/Caddyfile"; docker restart "$(cid_of caddy)" >/dev/null; sleep 4
+  check "3. the Caddyfile is torn by something else and Caddy restarts onto it: the edge is dark" neq "$(edge $APIH /api/v1/health)" 503
+  check "   the tooling sees it" contains "$(R status)" "PARTIAL WRITE"
+  R resume; rc=$?
+  check "4. resume repairs Caddy and completes with acceptance recorded" eq "$rc:$(state phase):$(state accepted)" "0:COMPLETE:true"
+  check "   Caddyfile and BetGenius are byte-identical to the start; the edge is open" eq "$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1):$(sha256sum "$SK/sites/zz-betgenius.caddy" | cut -c1-16):$(edge $APIH /api/v1/health)" "$orig:$bg0:200"
+  docker stop skq-registry >/dev/null
+  R apply "$W/m/datacrash.json"; rc=$?
+  check "5. next release cannot start; the registry is DOWN: rolled back from local images (exit 1)" eq "$rc:$(state phase)" "1:ROLLED_BACK"
+  check "   the data release is serving again, edge open, BetGenius served" eq "$(running_image api):$(edge $APIH /api/v1/health):$(edge $BGH /)" "$(img data api):200:200"
+  check "   nothing pulled from the registry during the rollback" bash -c "! grep -q 'pulling' $SK/deployments/run.log"
+  check "   PostgreSQL, Redis and the scheduler were never restarted" protected_same "$W/prot" hard
+  docker start skq-registry >/dev/null; registry_up
+}
+
 run_scenarios() {
   scenario s01 "application-only release: scoped, maintenance-free, no protected restarts" s01
   scenario s02 "additive schema release: approval gate, no maintenance, checksum recorded" s02
@@ -476,5 +630,10 @@ run_scenarios() {
   scenario s20 "automated acceptance: every genuine failure class is detected" s20
   scenario s21 "cleanup and monitor" s21
   scenario s22 "scoped build: only the changed unit is restarted; unchanged units keep digest and commit" s22
+  scenario s24 "incident: stdin swallowed by a subprocess (reproduced with real containers) and made impossible" s24
+  scenario s25 "premature exit, including status 0, is a failure; acceptance must be durably recorded" s25
+  scenario s26 "partial Caddyfile write, Caddy restart onto it, recovery from the durable record" s26
+  scenario s27 "route-group renumbering on real Caddy: ignored; a real routing change: caught" s27
+  scenario s28 "lifecycle gauntlet: kill, Caddy restart, torn Caddyfile, resume, rollback with the registry down" s28
   scenario s23 "tool installer: verified, atomic, never under a running release" s23
 }

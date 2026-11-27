@@ -135,9 +135,50 @@ caddy_exec() { rdc exec -T caddy "$@"; }
 caddy_apply() { # file: validate inside the container, overwrite IN PLACE (a bind-mounted file keeps its inode), CHECK the write, reload
   caddy_exec sh -c 'cat > /tmp/Caddyfile.candidate' < "$1" || return 1
   caddy_exec caddy validate --config /tmp/Caddyfile.candidate --adapter caddyfile >/dev/null 2>&1 || return 1
+  # test-only: the process dies half way through the write (a prefix of the file on disk)
+  if fault kill_in_caddy_write; then head -c 40 "$1" > Caddyfile; kill -9 $$; fi
   cat "$1" > Caddyfile
+  sync Caddyfile 2>/dev/null || true
   cmp -s "$1" Caddyfile || return 1          # the bytes on disk are the bytes intended, not a prefix of them
   caddy_exec caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || return 1
+}
+# --- durable recovery record. Written BEFORE the first byte of Caddy's configuration changes: the sha256 of the
+# original and of the maintenance version of the Caddyfile and of the school-address site, whose full copies live
+# beside it. The in-place write is not atomic (a rename would break the single-file bind mount), so a crash can leave
+# a PREFIX of a file on disk, and a Caddy restart then loads it (a comment-only Caddyfile is a valid, empty config:
+# the edge goes dark). `caddy_recover` compares what is on disk with the record and puts back a whole version.
+sha_of() { [ -f "$1" ] && sha256sum "$1" | cut -d' ' -f1 || echo -; }
+caddy_record_write() {
+  sync "$D/Caddyfile.pre-release" "$D/Caddyfile.maintenance" 2>/dev/null || true
+  printf '{"original_sha":"%s","maintenance_sha":"%s","site_original_sha":"%s","site_maintenance_sha":"%s"}\n' \
+    "$(sha_of "$D/Caddyfile.pre-release")" "$(sha_of "$D/Caddyfile.maintenance")" \
+    "$(sha_of "$D/sites.pre-release/school-addresses.caddy")" "$(sha_of "$D/school-addresses.maintenance")" > "$D/caddy.record.json.new"
+  sync "$D/caddy.record.json.new" 2>/dev/null || true
+  mv -f "$D/caddy.record.json.new" "$D/caddy.record.json"
+}
+caddy_partial() { # 0 when a record exists and Caddyfile (or the site file) is neither of its two recorded versions
+  [ -f "$D/caddy.record.json" ] || return 1
+  local cur o m so sm
+  cur=$(sha_of Caddyfile); o=$(TOOL jget "$D/caddy.record.json" original_sha); m=$(TOOL jget "$D/caddy.record.json" maintenance_sha)
+  [ "$cur" = "$o" ] || [ "$cur" = "$m" ] || return 0
+  so=$(TOOL jget "$D/caddy.record.json" site_original_sha); sm=$(TOOL jget "$D/caddy.record.json" site_maintenance_sha)
+  if [ "$so" != - ]; then cur=$(sha_of sites/school-addresses.caddy); [ "$cur" = "$so" ] || [ "$cur" = "$sm" ] || return 0; fi
+  return 1
+}
+caddy_recover() {
+  caddy_partial || return 0
+  local want_maint=0 src sha so sm
+  [ ! -f "$D/MAINTENANCE" ] || want_maint=1
+  warn "Caddy's files are neither the original nor the maintenance version (a write was interrupted): repairing from the durable record"
+  if [ "$want_maint" = 1 ]; then src="$D/Caddyfile.maintenance"; sha=$(TOOL jget "$D/caddy.record.json" maintenance_sha)
+  else src="$D/Caddyfile.pre-release"; sha=$(TOOL jget "$D/caddy.record.json" original_sha); fi
+  [ "$(sha_of "$src")" = "$sha" ] || { log "BLOCK the recovery copy $src does not match the record: cannot repair automatically; the original is in $D"; return 1; }
+  so=$(TOOL jget "$D/caddy.record.json" site_original_sha); sm=$(TOOL jget "$D/caddy.record.json" site_maintenance_sha)
+  if [ "$so" != - ]; then
+    if [ "$want_maint" = 1 ]; then cp "$D/school-addresses.maintenance" sites/school-addresses.caddy; else cp -p "$D/sites.pre-release/school-addresses.caddy" sites/school-addresses.caddy; fi
+  fi
+  caddy_apply "$src" || { log "BLOCK the repaired Caddyfile was refused by Caddy"; return 1; }
+  ok "Caddy's files repaired from the durable record ($([ "$want_maint" = 1 ] && echo maintenance || echo original) version)"
 }
 # Put School Kit's Caddyfile and school-address site back exactly as they were before the window.
 # Idempotent; safe to call when there is nothing to restore. Never leaves the edge half-changed.
@@ -145,7 +186,7 @@ caddy_restore_original() {
   [ -e "$D/Caddyfile.pre-release" ] || return 0
   if [ -f "$D/sites.pre-release/school-addresses.caddy" ]; then cp -p "$D/sites.pre-release/school-addresses.caddy" sites/school-addresses.caddy; fi
   caddy_apply "$D/Caddyfile.pre-release" || return 1
-  rm -f "$D/Caddyfile.maintenance" "$D/school-addresses.maintenance" "$D/MAINTENANCE"
+  rm -f "$D/Caddyfile.maintenance" "$D/school-addresses.maintenance" "$D/MAINTENANCE" "$D/caddy.record.json"
   rm -rf "$D/sites.pre-release"
   mv -f "$D/Caddyfile.pre-release" "$D/Caddyfile.pre-release.restored" 2>/dev/null || true
 }
@@ -170,8 +211,9 @@ maintenance_on() { # release-id
       cp -p sites/school-addresses.caddy "$D/sites.pre-release/school-addresses.caddy"
       TOOL maintenance-site sites/school-addresses.caddy "$D/school-addresses.maintenance" || { log "BLOCK could not build the school-address maintenance site"; return 1; }
       TOOL maintenance-verify "$D/sites.pre-release/school-addresses.caddy" "$D/school-addresses.maintenance" --site || { log "BLOCK the school-address maintenance site is incomplete"; return 1; }
-      cp "$D/school-addresses.maintenance" sites/school-addresses.caddy
     fi
+    caddy_record_write                       # durable record FIRST; only then does any byte of Caddy's configuration change
+    [ ! -f "$D/school-addresses.maintenance" ] || cp "$D/school-addresses.maintenance" sites/school-addresses.caddy
     # From here on the edge has changed. Any failure puts the original back before returning.
     if ! caddy_apply "$D/Caddyfile.maintenance"; then
       log "BLOCK caddy refused the maintenance configuration; restoring the original"

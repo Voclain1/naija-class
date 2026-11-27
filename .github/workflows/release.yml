@@ -75,7 +75,7 @@ jobs:
       - name: Read what the server runs now (read-only)
         run: |
           mkdir -p "$RUNNER_TEMP/prev"
-          if ssh vps '/opt/school-kit/release-tools/release.sh show-current' > "$RUNNER_TEMP/prev/manifest.json" 2>/dev/null; then echo "previous release found"; else rm -f "$RUNNER_TEMP/prev/manifest.json"; echo "no baseline on the server: every unit will be built"; fi
+          if ssh -n vps '/opt/school-kit/release-tools/release.sh show-current' > "$RUNNER_TEMP/prev/manifest.json" 2>/dev/null; then echo "previous release found"; else rm -f "$RUNNER_TEMP/prev/manifest.json"; echo "no baseline on the server: every unit will be built"; fi
       - name: Public build settings (hashes only reach the inputs)
         env:
           WEB_ENV_FILE: ${{ secrets.WEB_ENV_FILE }}
@@ -212,7 +212,7 @@ jobs:
         id: m
         run: |
           set -euo pipefail
-          prev=(); if ssh vps '/opt/school-kit/release-tools/release.sh show-current' > "$RUNNER_TEMP/prev.json" 2>/dev/null; then prev=(--previous "$RUNNER_TEMP/prev.json"); fi
+          prev=(); if ssh -n vps '/opt/school-kit/release-tools/release.sh show-current' > "$RUNNER_TEMP/prev.json" 2>/dev/null; then prev=(--previous "$RUNNER_TEMP/prev.json"); fi
           args=()
           while IFS='=' read -r k v; do args+=(--input "$k=$v"); done < "$RUNNER_TEMP/inputs/inputs.txt"
           for f in "$RUNNER_TEMP"/digests/digest-*.txt; do [ -f "$f" ] || continue; IFS='=' read -r k v < "$f"; args+=(--built "$k=$v"); done
@@ -250,11 +250,13 @@ jobs:
           set -euo pipefail
           bash scripts/release/package-tools.sh "$RUNNER_TEMP/rt.tar"
           scp -q "$RUNNER_TEMP/rt.tar" vps:/tmp/school-kit-release-tools.tar
-          ssh vps 'RELEASE_BUNDLE=/tmp/school-kit-release-tools.tar bash -s' < infra/vps/release/install.sh
-          ssh vps 'rm -f /tmp/school-kit-release-tools.tar; umask 077; mkdir -p /opt/school-kit/deployments/incoming'
+          scp -q infra/vps/release/install.sh vps:/tmp/school-kit-install.sh
+          ssh -n vps 'RELEASE_BUNDLE=/tmp/school-kit-release-tools.tar bash /tmp/school-kit-install.sh'
+          ssh -n vps 'rm -f /tmp/school-kit-install.sh'
+          ssh -n vps 'rm -f /tmp/school-kit-release-tools.tar; umask 077; mkdir -p /opt/school-kit/deployments/incoming'
           id="${{ needs.manifest.outputs.release_id }}"
           scp -q "$RUNNER_TEMP/m/manifest.json" "vps:/opt/school-kit/deployments/incoming/$id.json"
-          plan=$(ssh vps "/opt/school-kit/release-tools/release.sh plan /opt/school-kit/deployments/incoming/$id.json") || { echo "$plan"; echo "::error::the plan has blockers"; exit 1; }
+          plan=$(ssh -n vps "/opt/school-kit/release-tools/release.sh plan /opt/school-kit/deployments/incoming/$id.json") || { echo "$plan"; echo "::error::the plan has blockers"; exit 1; }
           echo "$plan" | python3 infra/vps/release/release_tool.py redact
           class=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["class"])' <<<"$plan")
           echo "class=$class" >> "$GITHUB_OUTPUT"

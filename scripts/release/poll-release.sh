@@ -6,7 +6,7 @@
 #
 #   poll-release.sh <ssh-host-alias> [timeout-seconds]
 #
-# Exit: 0 COMPLETE · 1 ROLLED_BACK/ABORTED (failed, but safe) · 4 ABORTED because the system was busy (retry later)
+# Exit: 0 COMPLETE with its durable acceptance record · 1 ROLLED_BACK/ABORTED (failed, but safe) · 4 ABORTED because the system was busy (retry later)
 #       6 FIX_FORWARD_REQUIRED · 7 ROLLBACK_FAILED · 8 lost contact (the release may still be running)
 #       9 INTERRUPTED on the server (run `release.sh resume`) · 10 timed out
 # Environment: POLL_INTERVAL (10), POLL_MAX_LOST (30 consecutive failed polls), RELEASE_TOOLS (/opt/school-kit/release-tools),
@@ -20,13 +20,15 @@ tools=${RELEASE_TOOLS:-/opt/school-kit/release-tools}
 ssh_=${RELEASE_SSH:-ssh}
 lost=0; last=""; start=$(date +%s)
 while :; do
-  if out=$($ssh_ "$host" "$tools/release.sh status --json" 2>/dev/null) && [ -n "$out" ]; then
+  if out=$($ssh_ -n "$host" "$tools/release.sh status --json" 2>/dev/null) && [ -n "$out" ]; then
     lost=0
     phase=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["state"].get("phase",""))' <<<"$out" 2>/dev/null || echo "")
     run=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["run"])' <<<"$out" 2>/dev/null || echo "")
     if [ "$phase:$run" != "$last" ]; then echo "$(date -u +%FT%TZ) phase=$phase run=$run"; last="$phase:$run"; fi
+    acc=$(python3 -c 'import json,sys; print(str(json.load(sys.stdin)["state"].get("accepted", False)).lower())' <<<"$out" 2>/dev/null || echo false)
     case $phase:$run in
-      COMPLETE:IDLE) echo "release complete"; exit 0 ;;
+      COMPLETE:IDLE) if [ "$acc" = true ]; then echo "release complete (acceptance recorded)"; exit 0; fi
+                     echo "::error::the server says COMPLETE but holds no durable acceptance record: treating the release as FAILED"; exit 9 ;;
       ROLLED_BACK:IDLE) echo "::error::the release failed and the previous release was restored"; exit 1 ;;
       ABORTED:IDLE) err=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["state"].get("error",""))' <<<"$out"); echo "::error::the release stopped before changing anything ($err)"; [ "$err" = quiesce ] && exit 4; exit 1 ;;
       FIX_FORWARD_REQUIRED:*) echo "::error::FIX-FORWARD REQUIRED: the database changed and the previous release cannot run on it; ingress is in maintenance"; exit 6 ;;

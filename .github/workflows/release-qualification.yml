@@ -46,6 +46,8 @@ jobs:
         run: python3 -W error::ResourceWarning -m unittest -v infra/vps/release/test_release_tool.py
       - name: Poll-release tests (fake ssh)
         run: bash scripts/release/poll-release.test.sh
+      - name: Stdin-safety guards (the swallowed-script incident class)
+        run: bash scripts/release/stdin-safety.test.sh
       - name: shellcheck
         run: shellcheck -S warning infra/vps/release/*.sh scripts/release/*.sh scripts/release-qualification/*.sh
       - name: Workflows parse

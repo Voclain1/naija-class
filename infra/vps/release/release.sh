@@ -31,7 +31,31 @@ APPLY_ORDER=(render-worker api web portal cbt)
 PHASES=(NONE PLANNED STAGED PREFLIGHT_OK QUIESCED SNAPSHOT_DONE MIGRATED SWITCHED VERIFIED COMPLETE)
 rank() { local i; for i in "${!PHASES[@]}"; do [ "${PHASES[$i]}" = "$1" ] && { echo "$i"; return; }; done; echo -1; }
 phase_ge() { [ "$(rank "$(state_get phase)")" -ge "$(rank "$1")" ]; }
-terminal() { case "$(state_get phase)" in ''|COMPLETE|ROLLED_BACK|ABORTED) return 0 ;; *) return 1 ;; esac; }
+# COMPLETE is final ONLY with its durable acceptance record (state `accepted`, plus acceptance/<release>.json). A process that
+# stops early, whatever exit status it reports, therefore never looks like a finished release.
+terminal() { case "$(state_get phase)" in ''|ROLLED_BACK|ABORTED) return 0 ;; COMPLETE) [ "$(state_get accepted)" = true ] ;; *) return 1 ;; esac; }
+record_acceptance() { # durable, synced record that acceptance passed for $M_ID
+  mkdir -p "$D/acceptance"
+  printf '{"release_id":"%s","manifest_sha256":"%s","accepted_at":"%s","scope":"internal+edge"}\n' "$M_ID" "$M_SHA" "$(date -u +%FT%TZ)" > "$D/acceptance/$M_ID.json.new"
+  sync "$D/acceptance/$M_ID.json.new" 2>/dev/null || true
+  mv -f "$D/acceptance/$M_ID.json.new" "$D/acceptance/$M_ID.json"
+  sync "$D/acceptance" 2>/dev/null || true
+}
+# Any exit of an apply that is not a recorded final state is a FAILURE, including exit status 0: a script that is cut short
+# (end-of-input, a swallowed heredoc, `exit 0` in the wrong place) reports success having done a fraction of the work.
+RUN_ACTIVE=0
+premature_guard() {
+  local rc=$? ph acc
+  trap - EXIT
+  [ "$RUN_ACTIVE" = 1 ] || exit "$rc"
+  ph=$(state_get phase); acc=$(state_get accepted)
+  case $ph in ROLLED_BACK|ABORTED|FIX_FORWARD_REQUIRED|ROLLBACK_FAILED) exit "$rc" ;; COMPLETE) [ "$acc" = true ] && exit "$rc" ;; esac
+  event premature_exit release_id="$(state_get release_id)" phase="${ph:-none}" status="$rc"
+  state_set exit_unexpected=true >/dev/null
+  log "BLOCK the release process ended (status $rc) at phase ${ph:-none} without a recorded outcome: this is a FAILURE. Ingress and state are left exactly as they are; 'release.sh status' then 'release.sh resume'."
+  notify premature-exit "release $(state_get release_id) ended at phase ${ph:-none} with exit status $rc and no recorded outcome. Maintenance, if on, is still on. Run release.sh resume."
+  exit 9
+}
 pj() { python3 -c 'import json,sys
 d=json.load(sys.stdin); v=d[sys.argv[1]]
 print(json.dumps(v) if isinstance(v,(list,dict)) else (str(v).lower() if isinstance(v,bool) else v))' "$1"; }
@@ -91,7 +115,7 @@ cmd_adopt() {
   mkdir -p "$D/releases/$M_ID"; cp "$M" "$D/releases/$M_ID/manifest.json"
   echo "$M_ID" > "$D/current"; rm -f "$D/previous"
   protected_save
-  state_set release_id="$M_ID" manifest_sha256="$M_SHA" phase=COMPLETE trigger=adopt mutated=false >/dev/null
+  state_set release_id="$M_ID" manifest_sha256="$M_SHA" phase=COMPLETE trigger=adopt mutated=false accepted=true >/dev/null
   event adopted release_id="$M_ID" manifest_sha256="$M_SHA"
   ok "adopted $M_ID as the baseline release; the overlays recorded: ${#extras[@]}"
 }
@@ -197,7 +221,8 @@ step_preflight() {
   if [ "$RELEASE_TRIGGER" = auto ] || [ "${RELEASE_ALLOW_STALE_BACKUP:-}" != 1 ]; then check_backups; else warn "backup freshness check skipped by RELEASE_ALLOW_STALE_BACKUP=1 (manual only)"; fi
   SAVE_BASELINE="$D/baseline/$M_ID.env" check_integrity
   protected_save
-  if maintenance_active && [ -e "$D/Caddyfile.pre-release" ]; then caddy_fingerprint_original > "$D/caddy.fingerprint"; else caddy_fingerprint > "$D/caddy.fingerprint"; fi
+  if maintenance_active && [ -e "$D/Caddyfile.pre-release" ]; then caddy_fingerprint_original > "$D/caddy.fingerprint"; rm -f "$D/caddy.adapted.before.json"
+  else caddy_fingerprint > "$D/caddy.fingerprint"; caddy_adapt > "$D/caddy.adapted.before.json" 2>/dev/null || { rm -f "$D/caddy.adapted.before.json"; warn "could not record Caddy's adapted routing before the release"; }; fi
   [ "$CHECK_FAILED" = 0 ] || return 1
   ok "preflight passed for $M_ID"
 }
@@ -222,24 +247,12 @@ step_snapshot() {
   if [ "$NEEDS_MAINT" = true ]; then
     local c rc=0; c=$(cid ops-pinned)
     backup_busy "$c" || rc=$?; [ "$rc" -eq 1 ] || { log "BLOCK a backup is running or could not be inspected (status $rc)"; return 1; }
-    docker exec -i -e TS="$(date -u +%Y%m%dT%H%M%SZ)" -e RP="$rp" "$c" sh -s <<'SNAP' | TOOL redact | tee -a "$D/snapshot.txt" || return 1
-set -eu
-. /ops/env.sh
-umask 077
-s=$(mktemp -d); trap 'rm -rf "$s"' EXIT
-f="$s/school-kit-pre-release-$TS.dump"
-pg_dump -Fc -f "$f"
-[ "$(wc -c < "$f")" -gt 1024 ]
-pg_restore --list "$f" >/dev/null
-d=$(sha256sum "$f"); d=${d%% *}
-printf '%s  %s\n' "$d" "$(basename "$f")" > "$f.sha256"
-remote="backup:${BACKUP_BUCKET}/dumps/pre-release/$(basename "$f")"
-rclone copyto "$f" "$remote"
-rclone copyto "$remote" "$s/readback"
-a=$(sha256sum "$s/readback"); [ "${a%% *}" = "$d" ]
-rclone copyto "$f.sha256" "$remote.sha256"
-echo "SNAPSHOT $(basename "$f") verified off-site"
-SNAP
+    # run as a FILE inside the scheduler, with no stdin: never a heredoc piped to `sh -s`
+    docker cp "$here/snapshot.sh" "$c:/tmp/release-snapshot.sh" >/dev/null || return 1
+    local out; out=$(docker exec -e TS="$(date -u +%Y%m%dT%H%M%SZ)" "$c" sh /tmp/release-snapshot.sh 2>&1) || { printf '%s\n' "$out" | TOOL redact | tail -n 20; docker exec "$c" rm -f /tmp/release-snapshot.sh >/dev/null 2>&1 || true; return 1; }
+    docker exec "$c" rm -f /tmp/release-snapshot.sh >/dev/null 2>&1 || true
+    printf '%s\n' "$out" | TOOL redact | tee -a "$D/snapshot.txt"
+    grep -q '^SNAPSHOT .* verified off-site$' <<<"$out" || { log "BLOCK the snapshot script ended without its completion line: treating it as failed"; return 1; }
   fi
   # Point-in-time marker for both kinds (the WAL archive makes it a restore target).
   sql -c "SELECT pg_create_restore_point('$rp')" >/dev/null || return 1
@@ -384,6 +397,7 @@ run_step() { # name fn
   state_set phase="$1" >/dev/null; event phase name="$1" release_id="$M_ID"
   if fault "kill_after_$1"; then log "FAULT killing the release process after $1"; kill -9 $$; fi
   if fault "rmprev_after_$1"; then docker rmi -f "$(TOOL jget "$(current_manifest)" images.api)" >/dev/null 2>&1 || true; fi
+  if fault "exit0_after_$1"; then log "FAULT exiting with status 0 after $1"; exit 0; fi
   if fault "pause_after_$1"; then while [ ! -f "$D/.continue" ]; do sleep 1; done; rm -f "$D/.continue"; fi
 }
 pipeline() {
@@ -419,6 +433,7 @@ cmd_apply() {
   cutover_busy && fail_exit 3 "the coordinated cutover is in progress (release/state); a routine release cannot start"
   [ -n "$(current_id)" ] || fail_exit 3 "no baseline release: run release.sh adopt --manifest <current manifest> first"
   if [ "$RELEASE_TRIGGER" = auto ] && [ ! -f "$D/AUTO_ENABLED" ]; then fail_exit 3 "automatic deployment is not switched on at this server (no $D/AUTO_ENABLED)"; fi
+  caddy_recover || fail_exit 1 "Caddy's files are in a state that could not be repaired automatically"
   load_manifest "$mfile"
   local prior; prior=$(state_get phase)
   if [ "$resume" = 1 ]; then
@@ -427,14 +442,16 @@ cmd_apply() {
     event resumed release_id="$M_ID" from="$prior"
   else
     case $prior in
-      ''|COMPLETE|ROLLED_BACK|ABORTED) ;;
+      ''|ROLLED_BACK|ABORTED) ;;
+      COMPLETE) [ "$(state_get accepted)" = true ] || fail_exit 3 "state is COMPLETE without an acceptance record: run 'release.sh resume'" ;;
       FIX_FORWARD_REQUIRED) [ "$fixfwd" = 1 ] || fail_exit 3 "state is FIX_FORWARD_REQUIRED: apply the corrected release with --fix-forward (it needs an approval)" ;;
       *) fail_exit 3 "state is $prior: run 'release.sh resume' or 'release.sh rollback', not a new release" ;;
     esac
     state_set phase=PLANNED release_id="$M_ID" manifest_sha256="$M_SHA" trigger="$RELEASE_TRIGGER" run_id="${RELEASE_RUN_ID:-run-$$}" \
-      started_at="$(date -u +%FT%TZ)" mutated=false error= previous_release="$(current_id)" fix_forward="$fixfwd" >/dev/null
+      started_at="$(date -u +%FT%TZ)" mutated=false error= previous_release="$(current_id)" fix_forward="$fixfwd" accepted=false exit_unexpected=false >/dev/null
     event started release_id="$M_ID" trigger="$RELEASE_TRIGGER" manifest_sha256="$M_SHA"
   fi
+  RUN_ACTIVE=1; trap premature_guard EXIT
   if [ "$resume" = 1 ] && [ -s "$D/plan.json" ]; then PLAN=$(cat "$D/plan.json")   # the plan the release started under, not one recomputed after a half-applied migration
   else
     PLAN=$(make_plan) || { state_set phase=ABORTED error=plan >/dev/null; fail_exit 1 "the plan could not be computed"; }
@@ -442,7 +459,7 @@ cmd_apply() {
   fi
   event planned release_id="$M_ID" class="$(pj class <<<"$PLAN")"
   info "plan: class=$(pj class <<<"$PLAN") services=$(pj services_changed <<<"$PLAN") maintenance=$(pj needs_maintenance <<<"$PLAN") rollback-after=$(pj rollback_allowed_after <<<"$PLAN")"
-  if [ "$(pj class <<<"$PLAN")" = NOOP ]; then state_set phase=COMPLETE >/dev/null; ok "nothing to do: $M_ID is already running"; return 0; fi
+  if [ "$(pj class <<<"$PLAN")" = NOOP ]; then record_acceptance; state_set phase=COMPLETE accepted=true >/dev/null; ok "nothing to do: $M_ID is already running"; return 0; fi
   # Approval gates. Schema changes, destructive operations and --fix-forward never run on the strength of a green build alone.
   if [ "$(pj needs_approval <<<"$PLAN")" = true ] || [ "$fixfwd" = 1 ]; then
     approval_ok "$(pj destructive <<<"$PLAN")" || { state_set phase=ABORTED error=approval >/dev/null; fail_exit 3 "this release needs an owner approval bound to manifest ${M_SHA:0:12} (release.sh approve); destructive=$(pj destructive <<<"$PLAN")"; }
@@ -455,7 +472,8 @@ cmd_apply() {
   pipeline || rc=$?
   if [ "$rc" != 0 ]; then handle_failure "${STEP_FAILED:-pipeline}" "$rc"; return $?; fi
   promote
-  state_set phase=COMPLETE error= >/dev/null
+  record_acceptance
+  state_set phase=COMPLETE accepted=true error= >/dev/null
   event completed release_id="$M_ID" class="$(pj class <<<"$PLAN")"
   ok "release $M_ID is live (previous: $(cat "$D/previous" 2>/dev/null || echo none))"
 }
@@ -476,7 +494,8 @@ PY
   else
     echo "run:         $run_state"; echo "phase:       ${phase:-none}"; echo "release:     $(state_get release_id)"
     echo "current:     $(current_id)"; echo "previous:    $(cat "$D/previous" 2>/dev/null || echo none)"
-    echo "maintenance: $([ -f "$D/MAINTENANCE" ] && cat "$D/MAINTENANCE" || echo off)"; echo "error:       $(state_get error)"
+    echo "maintenance: $([ -f "$D/MAINTENANCE" ] && cat "$D/MAINTENANCE" || echo off)"; echo "error:       $(state_get error)"; echo "accepted:    $(state_get accepted)"
+    if caddy_partial; then echo "caddy:       PARTIAL WRITE on disk (a release command repairs it from the durable record)"; fi
     case $phase in FIX_FORWARD_REQUIRED) echo "next:        ship a corrected release: release.sh apply <manifest> --fix-forward (needs approval)";;
       ROLLBACK_FAILED) echo "next:        an operator must act: read $D/diagnostics, fix, then release.sh rollback or release.sh resume";; esac
   fi
@@ -507,6 +526,7 @@ cmd_rollback() {
   local to=""; [ "${1:-}" != --to ] || to=$2
   exec 9>"$D/apply.lock"; flock -n 9 || fail_exit 5 "a release is running"
   cutover_busy && fail_exit 3 "the coordinated cutover is in progress"
+  caddy_recover || fail_exit 1 "Caddy's files could not be repaired automatically"
   local phase cur rc=0; phase=$(state_get phase); cur=$(current_id)
   if [ "$phase" = ROLLBACK_FAILED ] || [ "$phase" = ROLLING_BACK ]; then
     # A release failed and its automatic rollback did not finish: the aim is to put the CURRENT release (the one
@@ -547,13 +567,17 @@ cmd_resolve_migration() {
 cmd_maintenance() {
   case ${1:-} in
     on) exec 9>"$D/apply.lock"; flock -n 9 || fail_exit 5 "a release is running"; maintenance_on manual ;;
-    off) exec 9>"$D/apply.lock"; flock -n 9 || fail_exit 5 "a release is running"; maintenance_off ;;
+    off) exec 9>"$D/apply.lock"; flock -n 9 || fail_exit 5 "a release is running"; caddy_recover || true; maintenance_off ;;
     status) if [ -f "$D/MAINTENANCE" ]; then cat "$D/MAINTENANCE"; else echo off; fi ;;
     *) usage ;;
   esac
 }
 
 cmd=${1:-}; shift || true
+# Standard input is closed for everything except `approve`, which may ask for its phrase. Every docker, compose, psql and
+# curl below would otherwise inherit whatever feeds this process (an ssh session, a pipe, a heredoc) and could swallow it.
+# Commands that NEED input take it from an explicit redirection or here-document, which this does not affect.
+[ "$cmd" = approve ] || exec </dev/null
 case $cmd in
   adopt) cmd_adopt "$@" ;;
   plan) cmd_plan "$@" ;;

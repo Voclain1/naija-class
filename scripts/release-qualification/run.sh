@@ -126,8 +126,11 @@ stack_reset() { # fresh stack running release R0 (m1), adopted
   stack_down
   rm -rf "$SK"; mkdir -p "$SK/sites" "$SK/deployments"
   cp "$Q/stack/docker-compose.yml" "$Q/stack/init.sql" "$SK/"; cp "$ROOT/infra/vps/Caddyfile" "$SK/Caddyfile"
-  printf 'http://%s:8080 {\n\trespond "betgenius" 200\n}\n' "$BGH" > "$SK/sites/betgenius.caddy"
-  printf 'http://%s:8080 {\n\trespond "custom school domain" 200\n}\n' "$SCHOOLH" > "$SK/sites/custom-school.caddy"
+  # Unrelated sites use `handle` blocks (which `caddy adapt` gives numbered route groups) and sort AFTER School Kit's own
+  # school-address site, so when that site changes during maintenance, THEIR group numbers shift although their routing does not.
+  printf 'http://%s:8080 {\n\thandle /bg-extra* {\n\t\trespond "betgenius extra" 200\n\t}\n\thandle {\n\t\trespond "betgenius" 200\n\t}\n}\n' "$BGH" > "$SK/sites/zz-betgenius.caddy"
+  printf 'http://%s:8080 {\n\thandle /extra* {\n\t\trespond "school extra" 200\n\t}\n\thandle {\n\t\trespond "custom school domain" 200\n\t}\n}\n' "$SCHOOLH" > "$SK/sites/zz-custom-school.caddy"
+  printf 'http://*.schools.skq.test:8080 {\n\thandle /staff* {\n\t\trespond "staff" 200\n\t}\n\thandle {\n\t\trespond "portal" 200\n\t}\n}\n' > "$SK/sites/school-addresses.caddy"
   local ops; ops=$(build_push "ops-fixture" skq-ops "$Q/stub/Dockerfile.ops" "$Q/stub" --build-arg "REV=$(hex40 ops)") || return 1
   cat > "$SK/deploy.env" <<EOF
 IMAGE_PREFIX=$REG
@@ -207,6 +210,7 @@ make_all_releases() {
   mk_release brkcrash crash good 20270101000000_baseline:m1_baseline 20270401000000_drop_legacy_ref:m4_drop_column || return 1
   mk_release brkfix good good 20270101000000_baseline:m1_baseline 20270401000000_drop_legacy_ref:m4_drop_column || return 1
   mk_release data2 good good 20270101000000_baseline:m1_baseline 20270301000000_backfill_legacy_ref:m3_data_backfill || return 1
+  mk_release datacrash crash good 20270101000000_baseline:m1_baseline 20270301000000_backfill_legacy_ref:m3_data_backfill || return 1
   mk_release data3 good good 20270101000000_baseline:m1_baseline 20270301000000_backfill_legacy_ref:m3_data_backfill || return 1
 }
 
