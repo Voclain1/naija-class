@@ -162,7 +162,9 @@ gates() {
     [[ $by =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [ "$(date -u +%F)" \< "$by" ] && ok "legacy-signature review date is in the future" || { bad "PAYSTACK_WEBHOOK_LEGACY_REVIEW_BY missing or past: the owner must re-authorise it"; fails=1; }
   fi
   [ "$(df -Pk /var/lib/docker | awk 'NR == 2 { printf "%d", $4 / 1048576 }')" -ge 5 ] && ok "at least 5 GiB free" || { bad "less than 5 GiB free"; fails=1; }
-  grep -c '^{\$API_HOST} {$' Caddyfile | grep -qx 1 && ok "Caddyfile has exactly one API host block" || { bad "Caddyfile API host block not found exactly once"; fails=1; }
+  for k in API WEB PORTAL; do
+    [ "$(grep -Fxc "{\$${k}_HOST} {" Caddyfile)" = 1 ] || { bad "Caddyfile needs exactly one $k host block"; fails=1; }
+  done
   return "$fails"
 }
 
@@ -194,6 +196,7 @@ maintenance_on() {
   require_closed
 }
 require_closed() {
+  [ "$(grep -c '^# BATCH3-MAINTENANCE$' Caddyfile)" = 3 ] || die "maintenance must cover API, web and portal"
   [ "$(edge_code /api/v1/health)" = 503 ] || die "the edge does not answer 503 on /api/v1/health"
   [ "$(edge_code /api/v1/payments/paystack/webhook)" = 503 ] || die "the edge does not answer 503 on the webhook path"
   [ -n "$(edge_retry_after /api/v1/payments/paystack/webhook)" ] || die "503 carries no Retry-After header"

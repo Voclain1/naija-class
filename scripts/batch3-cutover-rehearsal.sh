@@ -13,6 +13,8 @@
 set -Eeuo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 : "${RELEASE_MANIFEST:?}" "${OLD_API:?}" "${OLD_RENDER:?}" "${BASELINE_MIGRATIONS:?}" "${FRONTEND_OVERRIDE:?}" "${FRONTEND_SHA:?}"
+RELEASE_MANIFEST=$(realpath -e "$RELEASE_MANIFEST")
+FRONTEND_OVERRIDE=$(realpath -e "$FRONTEND_OVERRIDE")
 R=${REHEARSAL_ROOT:-$(mktemp -d)/sk}
 mkdir -p "$R"
 fails=0
