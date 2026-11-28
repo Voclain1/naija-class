@@ -1,6 +1,27 @@
-import { expect, test, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { loginAsAdmin, setupAcademicStructure, openFromMenu } from "../fixtures/index.js";
+
+// Lets the page run whatever the released terms response sets in motion (React
+// commits, effects, the selector's router.replace in the old code), then returns.
+// Deliberately NOT page.waitForLoadState("networkidle"): that waits for every
+// connection in the page to go quiet, and this app always has unrelated ones in
+// flight (next/image optimiser requests for the logo, RSC prefetches). In CI run
+// 46070650528 two optimiser requests never completed, networkidle never fired,
+// and, with no action timeout configured, both tests sat until the 180 s test
+// timeout and then failed in context.close(). The trace showed the last call was
+// "Wait for load state". What matters here is a bounded, deterministic settle.
+async function settle(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let frames = 0;
+        const tick = () => (++frames >= 10 ? resolve() : requestAnimationFrame(tick));
+        tick();
+      }),
+  );
+  await page.waitForTimeout(500);
+}
 
 // The /dashboard navigation race (docs/deferred-archive.md, captured
 // 2026-07-31; fixed 2026-10-10). The topbar's term selector writes the
@@ -37,7 +58,7 @@ test("a click made before the dashboard picks its term is not undone", async ({ 
     await released;
     // Bounded, so the race fails as "stayed on /dashboard", not as a test timeout.
     await page.waitForURL(/\/students(\?.*)?$/, { timeout: 45_000 });
-    await page.waitForLoadState("networkidle");
+    await settle(page);
 
     await expect(page).toHaveURL(/\/students(\?.*)?$/);
     expect(new URL(page.url()).searchParams.has("termId")).toBe(false);
@@ -74,7 +95,7 @@ test("a command-palette jump made before the dashboard picks its term is not und
     for (const route of held) await route.continue();
     await released;
     await page.waitForURL(/\/students(\?.*)?$/, { timeout: 45_000 });
-    await page.waitForLoadState("networkidle");
+    await settle(page);
 
     await expect(page).toHaveURL(/\/students(\?.*)?$/);
   } finally {

@@ -80,7 +80,7 @@ above 6 minutes; the next levers are below.
 | e2e shards | 2 m 41 s (34 tests) - 4 m 52 s; shard 2 took **7 m 04 s**, see below |
 | whole run | **9 m 22 s**; the other four e2e shards had finished by 7 m 08 s |
 
-**The slow shard is a known flake, not the sharding.** Shard 2 held `tests/exam-papers.spec.ts`; its
+**The slow shard (run 46069503506): a flake, not the sharding.** Shard 2 held `tests/exam-papers.spec.ts`; its
 first attempt hit the 180 s per-test timeout and the retry passed in 5.4 s (Playwright reports it as
 `1 flaky`; CI has run with `retries: 2` for exactly this). `ci.yml`'s old comments already record "a
 dev-server memory restart (a 3-minute retry)". Sharding does not cause it, but it does not hide it
@@ -105,3 +105,27 @@ hangs is worth doing and is not part of this change.
 - **Test files are not rebalanced by duration.** Vitest and Playwright shard by file count; one 94 s
   timing test makes one API shard longer than the others. Splitting it would change what it tests.
 - **Coverage is not merged across shards** (see above).
+
+## 6. The hang in run 46070650528, found in the trace (2026-11-28)
+
+Both tests in `dashboard-navigation-race.spec.ts` sat for the whole 180 s, on all three attempts, then
+failed with `browserContext.close: Target page, context or browser has been closed`. That error is only
+where the timeout landed; the Playwright trace of retry 1 (downloaded from the run's artifact) shows what
+was actually running: every action finished in under 0.3 s, and the last call, started 0.1 s after the
+click and never finished, is **`Wait for load state`**, i.e. `page.waitForLoadState("networkidle")`.
+
+The network log of the same trace explains why it never fired: two `GET /staff/_next/image?url=…schoolkit-icon.png&w=32`
+and `&w=16` requests (the next/image optimiser, for the topbar logo) were issued right after the held
+request was released and **never got a response** (status -1), so the page was never idle. A third, `w=48`,
+had completed in 67 ms earlier in the same trace. The config sets no `actionTimeout`, which Playwright
+treats as no limit, so `waitForLoadState` waited until the test timeout; the context cleanup then ran with
+no time left. The exam-papers test passed in 3 s in that run: it was not involved (my earlier attribution to
+it was wrong, it was the neighbouring flake in an earlier run).
+
+Fix (test only, nothing loosened): `networkidle` is replaced by `settle(page)`: ten animation frames plus
+500 ms, which is all the race needs (the old code's `router.replace` ran in the first frames after the
+response), bounded and independent of unrelated background requests. The assertions that follow, the URL
+staying on `/students` and carrying no `termId`, are unchanged. No timeout was raised and nothing skipped.
+Not done: the optimiser stall itself (why two image requests never completed on that server), and the same
+`networkidle` idiom in `session-expiry-deep-link`, `guardian-auth` and `a11y-wave3a`, which carry the same
+exposure; changing them was out of scope here.
