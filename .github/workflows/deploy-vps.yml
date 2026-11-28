@@ -1,3 +1,5 @@
+# SUPERSEDED for routine releases by release.yml + infra/vps/release/ (2026-11-27, docs/runbooks/automated-release.md).
+# This workflow stays rehearsal-only, as before: it refuses VPS_MODE=live, so it cannot touch production.
 # School Kit on the VPS (docs/runbooks/vps-migration.md): build the images,
 # migrate the VPS database, switch with health-checked rollback, smoke test.
 # Runs after `ci` passes on main once VPS_DEPLOY_ENABLED is "true", or by hand.

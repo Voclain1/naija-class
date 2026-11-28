@@ -1,0 +1,334 @@
+# School Kit production release pipeline (docs/runbooks/automated-release.md).
+#
+# MANUAL ONLY. Automatic deployment is NOT enabled: this workflow has no push, schedule or
+# workflow_run trigger. The owner's later decision to enable it is one uncommented block below plus
+# the server's own switch (deployments/AUTO_ENABLED) plus the checklist in the runbook (§9).
+# Even a manual run can do nothing on a server that has not adopted a baseline release
+# (`release.sh adopt`), and it never touches PostgreSQL, Redis, Caddy or the backup scheduler.
+#
+# Flow:   inputs -> build (only what changed, by digest) -> manifest -> plan (read-only on the
+#         server) -> deploy-app | deploy-schema (the latter waits for the owner's approval on the
+#         `production-schema` environment) -> acceptance, rollback and recovery run on the server.
+#
+# Why digest pins and a manifest: a release is a file naming immutable images and every migration
+# with its checksum. What was approved is exactly what runs, and what is running can be proved.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "plan = build + read-only plan (default). deploy = also release (needs a baseline on the server)"
+        type: choice
+        options: [plan, deploy]
+        default: plan
+      allow_destructive:
+        description: "Approve destructive migrations in this release (only meaningful for a schema release)"
+        type: boolean
+        default: false
+  # --- NOT ENABLED. Uncomment ONLY as the owner's explicit activation (runbook §9, step 12) ---
+  # workflow_run:
+  #   workflows: ["ci"]
+  #   branches: [main]
+  #   types: [completed]
+
+concurrency:
+  group: release-production
+  cancel-in-progress: false   # a release in flight is never cancelled
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  IMAGE_PREFIX: ghcr.io/voclain1
+  REGISTRY_ALLOW: ghcr.io/voclain1/
+
+jobs:
+  inputs:
+    name: what changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+      units: ${{ steps.need.outputs.units }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Release only a commit whose CI is fully green
+        id: sha
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          for job in "lint + typecheck + test + build" "e2e (Playwright)"; do
+            c=$(gh api "repos/${{ github.repository }}/commits/$sha/check-runs?per_page=100" --jq "[.check_runs[] | select(.name==\"$job\")] | sort_by(.completed_at) | last | .conclusion")
+            [ "$c" = success ] || { echo "::error::CI job '$job' for $sha is '$c', not success: refusing to release"; exit 1; }
+          done
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Read what the server runs now (read-only)
+        run: |
+          mkdir -p "$RUNNER_TEMP/prev"
+          if ssh -n vps '/opt/school-kit/release-tools/release.sh show-current' > "$RUNNER_TEMP/prev/manifest.json" 2>/dev/null; then echo "previous release found"; else rm -f "$RUNNER_TEMP/prev/manifest.json"; echo "no baseline on the server: every unit will be built"; fi
+      - name: Public build settings (hashes only reach the inputs)
+        env:
+          WEB_ENV_FILE: ${{ secrets.WEB_ENV_FILE }}
+          PORTAL_ENV_FILE: ${{ secrets.PORTAL_ENV_FILE }}
+          CBT_ENV_FILE: ${{ secrets.CBT_ENV_FILE }}
+        run: |
+          umask 077; mkdir -p "$RUNNER_TEMP/public"
+          for app in web portal cbt; do
+            var="${app^^}_ENV_FILE"
+            printf '%s\n' "${!var}" | grep -E '^(NEXT_PUBLIC_[A-Z_]+|SESSION_COOKIE_DOMAIN)=' > "$RUNNER_TEMP/public/$app.env" || true
+          done
+      - name: Which units need building
+        id: need
+        run: |
+          set -euo pipefail
+          bash scripts/release/service-inputs.sh "${{ steps.sha.outputs.sha }}" "$RUNNER_TEMP/public" > "$RUNNER_TEMP/inputs.txt"
+          cat "$RUNNER_TEMP/inputs.txt"
+          args=(); while IFS='=' read -r k v; do args+=(--input "$k=$v"); done < "$RUNNER_TEMP/inputs.txt"
+          prev=(); [ ! -f "$RUNNER_TEMP/prev/manifest.json" ] || prev=(--previous "$RUNNER_TEMP/prev/manifest.json")
+          units=$(python3 infra/vps/release/release_tool.py need-build "${prev[@]}" "${args[@]}")
+          echo "units=$units" >> "$GITHUB_OUTPUT"
+          echo "### Units to build: \`$units\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-inputs
+          path: ${{ runner.temp }}/inputs.txt
+          retention-days: 30
+
+  build:
+    name: build ${{ matrix.unit }}
+    needs: inputs
+    if: needs.inputs.outputs.units != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: true
+      matrix:
+        unit: ${{ fromJson(needs.inputs.outputs.units) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.inputs.outputs.sha }}
+      - name: Dockerfile and build arguments for this unit
+        id: u
+        env:
+          WEB_ENV_FILE: ${{ secrets.WEB_ENV_FILE }}
+          PORTAL_ENV_FILE: ${{ secrets.PORTAL_ENV_FILE }}
+          CBT_ENV_FILE: ${{ secrets.CBT_ENV_FILE }}
+        run: |
+          set -euo pipefail
+          case "${{ matrix.unit }}" in
+            api)           echo "file=apps/api/Dockerfile" >> "$GITHUB_OUTPUT"; echo "image=school-kit-api" >> "$GITHUB_OUTPUT" ;;
+            render-worker) echo "file=apps/api/Dockerfile.render" >> "$GITHUB_OUTPUT"; echo "image=school-kit-render" >> "$GITHUB_OUTPUT" ;;
+            migrate)       echo "file=infra/vps/migrate/Dockerfile" >> "$GITHUB_OUTPUT"; echo "image=school-kit-migrate" >> "$GITHUB_OUTPUT" ;;
+            web|portal|cbt) echo "file=infra/vps/Dockerfile.next" >> "$GITHUB_OUTPUT"; echo "image=school-kit-${{ matrix.unit }}" >> "$GITHUB_OUTPUT"
+              umask 077; mkdir -p "$RUNNER_TEMP/public"; var="${{ matrix.unit }}"; var="${var^^}_ENV_FILE"
+              printf '%s\n' "${!var}" | grep -E '^(NEXT_PUBLIC_[A-Z_]+|SESSION_COOKIE_DOMAIN)=' > "$RUNNER_TEMP/public/${{ matrix.unit }}.env" || true
+              echo "public_sha=$(sha256sum "$RUNNER_TEMP/public/${{ matrix.unit }}.env" | cut -c1-16)" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - name: Build and push (Node units)
+        id: node
+        if: contains(fromJson('["web","portal","cbt"]'), matrix.unit)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ steps.u.outputs.file }}
+          push: true
+          provenance: false   # one plain manifest, so the digest is the image's, not an attestation index
+          tags: ${{ env.IMAGE_PREFIX }}/${{ steps.u.outputs.image }}:r-${{ needs.inputs.outputs.sha }}
+          labels: org.opencontainers.image.revision=${{ needs.inputs.outputs.sha }}
+          build-args: |
+            APP=${{ matrix.unit }}
+            PUBLIC_ENV_SHA=${{ steps.u.outputs.public_sha }}
+          secret-files: public_env=${{ runner.temp }}/public/${{ matrix.unit }}.env
+          cache-from: type=gha,scope=${{ matrix.unit }}
+          cache-to: type=gha,scope=${{ matrix.unit }},mode=max
+      - name: Build and push (API, worker, migration runner)
+        id: backend
+        if: contains(fromJson('["api","render-worker","migrate"]'), matrix.unit)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ steps.u.outputs.file }}
+          push: true
+          provenance: false
+          tags: ${{ env.IMAGE_PREFIX }}/${{ steps.u.outputs.image }}:r-${{ needs.inputs.outputs.sha }}
+          labels: org.opencontainers.image.revision=${{ needs.inputs.outputs.sha }}
+          build-args: SENTRY_RELEASE=${{ needs.inputs.outputs.sha }}
+          cache-from: type=gha,scope=${{ matrix.unit }}
+          cache-to: type=gha,scope=${{ matrix.unit }},mode=max
+      - name: Record the digest
+        run: |
+          d="${{ steps.node.outputs.digest }}${{ steps.backend.outputs.digest }}"
+          [[ $d =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest was produced"; exit 1; }
+          echo "${{ matrix.unit }}=${{ env.IMAGE_PREFIX }}/${{ steps.u.outputs.image }}@$d" > "digest-${{ matrix.unit }}.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.unit }}
+          path: digest-${{ matrix.unit }}.txt
+          retention-days: 30
+
+  manifest:
+    name: release manifest
+    needs: [inputs, build]
+    # build is skipped when nothing needs building; the manifest is still produced (all units reused)
+    if: always() && needs.inputs.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      release_id: ${{ steps.m.outputs.release_id }}
+      manifest_sha: ${{ steps.m.outputs.manifest_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.inputs.outputs.sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+        continue-on-error: true   # nothing was built
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-inputs
+          path: ${{ runner.temp }}/inputs
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Build the manifest
+        id: m
+        run: |
+          set -euo pipefail
+          prev=(); if ssh -n vps '/opt/school-kit/release-tools/release.sh show-current' > "$RUNNER_TEMP/prev.json" 2>/dev/null; then prev=(--previous "$RUNNER_TEMP/prev.json"); fi
+          args=()
+          while IFS='=' read -r k v; do args+=(--input "$k=$v"); done < "$RUNNER_TEMP/inputs/inputs.txt"
+          for f in "$RUNNER_TEMP"/digests/digest-*.txt; do [ -f "$f" ] || continue; IFS='=' read -r k v < "$f"; args+=(--built "$k=$v"); done
+          python3 infra/vps/release/release_tool.py build-manifest --git-sha "${{ needs.inputs.outputs.sha }}" --pg-major "${{ vars.PG_MAJOR || '18' }}" \
+            --migrations-dir packages/db/prisma/migrations "${prev[@]}" "${args[@]}" --out "$RUNNER_TEMP/manifest.json"
+          echo "release_id=$(python3 infra/vps/release/release_tool.py jget "$RUNNER_TEMP/manifest.json" release_id)" >> "$GITHUB_OUTPUT"
+          echo "manifest_sha=$(sha256sum "$RUNNER_TEMP/manifest.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release manifest"; echo; echo "\`${{ needs.inputs.outputs.sha }}\`"; echo; echo '```json'
+            python3 infra/vps/release/release_tool.py summary "$RUNNER_TEMP/manifest.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-manifest
+          path: ${{ runner.temp }}/manifest.json
+          retention-days: 90   # the record of what each release was
+
+  plan:
+    name: plan (read-only on the server)
+    needs: manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      class: ${{ steps.p.outputs.class }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with: { name: release-manifest, path: "${{ runner.temp }}/m" }
+      - uses: ./.github/actions/vps-ssh
+        with: { host: "${{ secrets.VPS_HOST }}", key: "${{ secrets.VPS_SSH_KEY }}" }
+      - name: Install tools and plan
+        id: p
+        run: |
+          set -euo pipefail
+          bash scripts/release/package-tools.sh "$RUNNER_TEMP/rt.tar"
+          scp -q "$RUNNER_TEMP/rt.tar" vps:/tmp/school-kit-release-tools.tar
+          scp -q infra/vps/release/install.sh vps:/tmp/school-kit-install.sh
+          ssh -n vps 'RELEASE_BUNDLE=/tmp/school-kit-release-tools.tar bash /tmp/school-kit-install.sh'
+          ssh -n vps 'rm -f /tmp/school-kit-install.sh'
+          ssh -n vps 'rm -f /tmp/school-kit-release-tools.tar; umask 077; mkdir -p /opt/school-kit/deployments/incoming'
+          id="${{ needs.manifest.outputs.release_id }}"
+          scp -q "$RUNNER_TEMP/m/manifest.json" "vps:/opt/school-kit/deployments/incoming/$id.json"
+          plan=$(ssh -n vps "/opt/school-kit/release-tools/release.sh plan /opt/school-kit/deployments/incoming/$id.json") || { echo "$plan"; echo "::error::the plan has blockers"; exit 1; }
+          echo "$plan" | python3 infra/vps/release/release_tool.py redact
+          class=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["class"])' <<<"$plan")
+          echo "class=$class" >> "$GITHUB_OUTPUT"
+          { echo "### Plan: \`$class\`"; echo '```json'; echo "$plan"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-app:
+    name: deploy (application only)
+    needs: [manifest, plan]
+    if: inputs.action == 'deploy' && needs.plan.outputs.class == 'APP_ONLY'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with: { name: release-manifest, path: "${{ runner.temp }}/m" }
+      - uses: ./.github/actions/vps-release
+        with:
+          manifest: ${{ runner.temp }}/m/manifest.json
+          trigger: manual
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          ghcr-user: ${{ github.actor }}
+          ghcr-token: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy-schema:
+    name: deploy (schema change, owner approval)
+    needs: [manifest, plan]
+    if: inputs.action == 'deploy' && needs.plan.outputs.class == 'SCHEMA'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # Required reviewers on this environment ARE the owner's approval gate for migrations.
+    environment: production-schema
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with: { name: release-manifest, path: "${{ runner.temp }}/m" }
+      - uses: ./.github/actions/vps-release
+        with:
+          manifest: ${{ runner.temp }}/m/manifest.json
+          trigger: manual
+          approve: "true"
+          allow-destructive: ${{ inputs.allow_destructive }}
+          approved-by: ${{ github.actor }}/run-${{ github.run_id }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          ghcr-user: ${{ github.actor }}
+          ghcr-token: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-failure:
+    name: failure notification
+    needs: [deploy-app, deploy-schema]
+    if: always() && (needs.deploy-app.result == 'failure' || needs.deploy-schema.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Say what to do (no secrets, no personal data)
+        run: |
+          {
+            echo "### :rotating_light: Release failed"
+            echo
+            echo "The server's own state is the truth. From the server run \`/opt/school-kit/release-tools/release.sh status\`, then follow runbook section 6:"
+            echo "- **ROLLED_BACK / ABORTED**: nothing for you to do; the previous release is serving. Read the diagnostics path in the job summary."
+            echo "- **FIX_FORWARD_REQUIRED**: maintenance is ON; ship a corrected release (\`release.sh apply <manifest> --fix-forward\`, needs approval)."
+            echo "- **ROLLBACK_FAILED**: maintenance is ON; an operator must act now."
+            echo "- **INTERRUPTED**: \`release.sh resume\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Email the owner (only when both secrets exist)
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_TO: ${{ secrets.RELEASE_ALERT_EMAIL }}
+        run: |
+          [ -n "${RESEND_API_KEY:-}" ] && [ -n "${ALERT_TO:-}" ] || { echo "no alert email configured"; exit 0; }
+          curl -fsS -m 20 https://api.resend.com/emails -H "Authorization: Bearer $RESEND_API_KEY" -H 'Content-Type: application/json' \
+            -d "{\"from\":\"SchoolKit Releases <releases@schoolkit.ng>\",\"to\":[\"$ALERT_TO\"],\"subject\":\"SchoolKit release failed\",\"text\":\"A production release failed. Open ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} for the summary and the runbook step to follow.\"}" >/dev/null && echo "alert sent" || echo "alert email failed (the job summary still holds the instructions)"

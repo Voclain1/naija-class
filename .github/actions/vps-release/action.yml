@@ -1,0 +1,76 @@
+name: VPS release
+description: >-
+  Installs the verified release tooling on the server, stages the release's images BY DIGEST,
+  records the owner's approval when the release is a schema change, starts the release DETACHED on
+  the server, and follows it. The release does not depend on this job: a lost connection leaves it
+  running (or recoverable with `release.sh resume`). Never runs unless a caller invokes it.
+inputs:
+  manifest:   { description: Path of the release manifest on this runner, required: true }
+  trigger:    { description: "auto or manual", default: manual }
+  approve:    { description: "true when this is a gated (schema) release: records the owner's approval bound to the manifest", default: "false" }
+  allow-destructive: { description: "true to allow destructive migrations (approval only)", default: "false" }
+  approved-by: { description: Who/what approved (written to the journal), default: "" }
+  host:       { description: "VPS address (secrets.VPS_HOST)", required: true }
+  key:        { description: "Deploy key (secrets.VPS_SSH_KEY)", required: true }
+  ghcr-user:  { description: Registry user, required: true }
+  ghcr-token: { description: Registry token (read), required: true }
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/vps-ssh
+      with: { host: "${{ inputs.host }}", key: "${{ inputs.key }}" }
+    - name: Install the release tooling (verified, never under a running release)
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash scripts/release/package-tools.sh "$RUNNER_TEMP/release-tools.tar"
+        scp -q "$RUNNER_TEMP/release-tools.tar" vps:/tmp/school-kit-release-tools.tar
+        # the installer verifies every file against the bundle's SHA256SUMS before swapping the directory in
+        scp -q infra/vps/release/install.sh vps:/tmp/school-kit-install.sh
+        ssh -n vps 'RELEASE_BUNDLE=/tmp/school-kit-release-tools.tar bash /tmp/school-kit-install.sh'
+        ssh -n vps 'rm -f /tmp/school-kit-install.sh'
+        ssh -n vps 'rm -f /tmp/school-kit-release-tools.tar'
+    - name: Copy the manifest and its checksum
+      shell: bash
+      run: |
+        set -euo pipefail
+        sha=$(sha256sum "${{ inputs.manifest }}" | cut -d' ' -f1)
+        id=$(python3 infra/vps/release/release_tool.py jget "${{ inputs.manifest }}" release_id)
+        ssh -n vps 'umask 077; mkdir -p /opt/school-kit/deployments/incoming'
+        scp -q "${{ inputs.manifest }}" "vps:/opt/school-kit/deployments/incoming/$id.json"
+        remote=$(ssh -n vps "sha256sum /opt/school-kit/deployments/incoming/$id.json | cut -d' ' -f1")
+        [ "$sha" = "$remote" ] || { echo "::error::manifest checksum differs after the copy"; exit 1; }
+        echo "RELEASE_ID=$id" >> "$GITHUB_ENV"; echo "MANIFEST_SHA=$sha" >> "$GITHUB_ENV"
+    - name: Stage the images (by digest; no runtime change)
+      shell: bash
+      env:
+        GHCR_TOKEN: ${{ inputs.ghcr-token }}
+      run: |
+        set -euo pipefail
+        t=/opt/school-kit/release-tools
+        printf '%s' "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u '${{ inputs.ghcr-user }}' --password-stdin" >/dev/null
+        trap 'ssh -n vps "docker logout ghcr.io" >/dev/null 2>&1 || true' EXIT
+        ssh -n vps "$t/release.sh stage /opt/school-kit/deployments/incoming/$RELEASE_ID.json"
+    - name: Record the owner's approval (gated releases only)
+      if: inputs.approve == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        t=/opt/school-kit/release-tools
+        flag=""; [ "${{ inputs.allow-destructive }}" = true ] && flag="--allow-destructive"
+        ssh -n vps "RELEASE_APPROVED=true RELEASE_APPROVAL_PHRASE='APPROVE ${MANIFEST_SHA:0:12}' $t/release.sh approve /opt/school-kit/deployments/incoming/$RELEASE_ID.json $flag --by 'github:${{ inputs.approved-by }}'"
+    - name: Start the release (detached on the server) and follow it
+      shell: bash
+      run: |
+        set -euo pipefail
+        t=/opt/school-kit/release-tools
+        ssh -n vps "$t/release.sh apply /opt/school-kit/deployments/incoming/$RELEASE_ID.json --trigger ${{ inputs.trigger }} --detach"
+        rc=0; EXPECT_RELEASE_ID="$RELEASE_ID" EXPECT_MANIFEST_SHA256="$MANIFEST_SHA" bash scripts/release/poll-release.sh vps 2700 || rc=$?
+        {
+          echo "### Release $RELEASE_ID"
+          echo "exit status: $rc"
+          echo '```'
+          ssh -n vps "$t/release.sh status; $t/release.sh history 12" 2>&1 | python3 infra/vps/release/release_tool.py redact || true
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+        exit "$rc"

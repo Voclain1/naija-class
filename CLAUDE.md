@@ -1350,6 +1350,33 @@ GitHub secrets `API_ENV_FILE`, `WEB_ENV_FILE` and `PORTAL_ENV_FILE`
 (`docs/runbooks/vps-migration.md`); read the Fly, Vercel and Neon notes above
 as history.
 
+**Routine releases (2026-11-27, `docs/runbooks/automated-release.md`).** A release is a
+manifest (`infra/vps/release/release_tool.py`): every image by `@sha256` digest, every migration
+with its checksum and a class (additive / data / breaking). `release.yml` (manual only; automatic
+deployment is NOT switched on) builds only the units whose inputs changed, and
+`infra/vps/release/release.sh` runs the release on the server, detached, as a resumable phase
+machine under one lock: preflight, drain, restore point (a verified dump when maintenance is
+needed), migrate, switch only the changed services, acceptance, local rollback or fix-forward.
+Hard rules for anyone editing it: it only ever creates, stops or recreates `api`, `render-worker`,
+`web`, `portal` and `cbt` (`--no-deps --no-build --pull never`, never `down`, `--remove-orphans`,
+a prune, or a volume operation); PostgreSQL, Redis, the pinned scheduler (`ops-pinned`), the
+stopped original `ops`, `backup.env` and every Caddy site that is not School Kit's are re-checked
+unchanged after every phase; rollback uses only images already on the server and is refused after a
+breaking migration; a schema release needs an owner approval bound to the manifest's hash; acceptance
+is read-only and never starts a payment or a message. Release scripts are run FROM FILES, never fed through a pipe or heredoc, and every
+subprocess has its standard input closed (`exec </dev/null`; the incident of 2026-11-27: a `docker compose exec -T` swallowed the
+rest of a heredoc-fed deployment script, bash hit end-of-file and exited 0 with production still in maintenance); an apply that
+ends without a recorded outcome is a FAILURE (exit 9) even if it exited 0, and COMPLETE exists only with its durable acceptance
+record; Caddy files are changed only after a durable recovery record exists, and route-group numbering is normalised (never ignored)
+when comparing routing. Review findings of 2026-11-28 are rules too: `maintenance off` runs the readiness gates and is refused over an
+unfinished release; rollback closes ingress and drains writers before it stops anything, and a failed stop is never ignored; Caddy
+recovery repairs only a pending-intent, same-inode, strict-prefix write and never overwrites an unrelated edit; COMPLETE needs
+`acceptance/<id>.json` matching the release id and manifest checksum everywhere (adopt, NOOP, resume, status, poller); an unreadable
+Caddy admin endpoint fails release acceptance; every route is accounted for before maintenance. It coexists with, and refuses to run during,
+`ops-tools/cutover.sh`; its data is in `deployments/`, never `release/`. Changing any of it means
+running `scripts/release-qualification/run.sh` (real PostgreSQL 18, Redis, Caddy and a local
+registry; the `release-qualification` workflow does it) and updating the runbook.
+
 **Recreating a Vercel project does NOT carry over its environment
 variables (confirmed 2026-07-17).** `school-kit-portal` was deleted and
 recreated during Slice 1 CP2 troubleshooting (to fix a stuck Root

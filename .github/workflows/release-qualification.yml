@@ -1,0 +1,81 @@
+# Full isolated qualification of the release tooling (docs/reviews/deployment-ci-qualification-2026-11-27.md).
+#
+# Drives the REAL tooling (infra/vps/release/*) against a real Docker Compose stack on the runner:
+# PostgreSQL 18, Redis 7.4, Caddy 2.10 with the repository's Caddyfile, a local registry (real digests,
+# really stoppable). Only the application images are stand-ins. It injects the failures a production
+# release can meet (interruption, SSH loss, Caddy restart, partial writes, registry outage, failed start,
+# failed front end, failed migration, concurrent releases, webhooks in flight, active jobs, low disk, a
+# failed rollback, protected infrastructure changing) and asserts the system either completes or stops
+# in a recoverable state. It touches no production host, no secret and no real provider.
+#
+# This is the "extended release qualification" the routine ci workflow deliberately leaves out: it
+# takes about half an hour, so it runs when the tooling changes, weekly, and on demand.
+name: release-qualification
+
+on:
+  pull_request:
+    paths:
+      - "infra/vps/release/**"
+      - "scripts/release/**"
+      - "scripts/release-qualification/**"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/release-qualification.yml"
+      - ".github/actions/vps-release/**"
+  schedule:
+    - cron: "41 4 * * 1"   # Mondays
+  workflow_dispatch:
+
+concurrency:
+  group: release-qualification-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  unit:
+    name: tooling unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Python unit tests
+        run: python3 -W error::ResourceWarning -m unittest -v infra/vps/release/test_release_tool.py
+      - name: Poll-release tests (fake ssh)
+        run: bash scripts/release/poll-release.test.sh
+      - name: Stdin-safety guards (the swallowed-script incident class)
+        run: bash scripts/release/stdin-safety.test.sh
+      - name: shellcheck
+        run: shellcheck -S warning infra/vps/release/*.sh scripts/release/*.sh scripts/release-qualification/*.sh
+      - name: Workflows parse
+        run: |
+          python3 - <<'PY'
+          import glob, yaml
+          for f in glob.glob(".github/workflows/*.yml") + glob.glob(".github/actions/*/action.yml"):
+              yaml.safe_load(open(f))
+          PY
+
+  qualify:
+    name: real-stack qualification
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run every scenario
+        env:
+          QUAL_OUT: ${{ runner.temp }}/qualification-evidence
+        run: bash scripts/release-qualification/run.sh
+      - name: Summary
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/qualification-evidence/summary.md" ] && cat "$RUNNER_TEMP/qualification-evidence/summary.md" >> "$GITHUB_STEP_SUMMARY" || echo "no summary was produced" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: qualification-evidence
+          path: ${{ runner.temp }}/qualification-evidence
+          retention-days: 30

@@ -81,3 +81,7 @@ apps/mobile/*.orig.*
 # Register photos and their ground truth for the Smart Student Import
 # accuracy pass: children's personal data, never committed.
 packages/ai/evals/register-scans/data/
+
+# Python bytecode (the release tooling has unit tests)
+__pycache__/
+*.pyc

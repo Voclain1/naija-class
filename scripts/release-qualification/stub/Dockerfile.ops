@@ -1,0 +1,11 @@
+# The backup scheduler's stand-in: a real PostgreSQL 18 client (pg_dump, pg_restore) and a real
+# crond, with a file-backed `rclone` so the snapshot and freshness code run for real.
+FROM postgres:18-alpine
+ARG REV
+LABEL org.opencontainers.image.revision=$REV
+USER root
+COPY rclone /usr/local/bin/rclone
+COPY env.sh /ops/env.sh
+COPY entrypoint.sh /ops/entrypoint.sh
+RUN chmod +x /usr/local/bin/rclone /ops/entrypoint.sh && mkdir -p /store
+ENTRYPOINT ["/ops/entrypoint.sh"]

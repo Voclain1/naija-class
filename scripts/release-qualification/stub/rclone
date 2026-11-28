@@ -1,0 +1,8 @@
+#!/bin/sh
+# lsf --files-only backup:BUCKET/path | copyto SRC DST   (backup:BUCKET/... maps to /store/BUCKET/...)
+map() { case "$1" in backup:*) echo "/store/${1#backup:}" ;; *) echo "$1" ;; esac; }
+case "$1" in
+  lsf) shift; [ "$1" = --files-only ] && shift; d=$(map "$1"); [ -d "$d" ] || exit 3; ls -1 "$d" ;;
+  copyto) src=$(map "$2"); dst=$(map "$3"); mkdir -p "$(dirname "$dst")"; cp "$src" "$dst" ;;
+  *) echo "stub rclone: unsupported $*" >&2; exit 2 ;;
+esac

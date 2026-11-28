@@ -1,0 +1,11 @@
+# Stands in for infra/vps/migrate/Dockerfile: `migrate deploy|status|resolve --rolled-back NAME`,
+# recording _prisma_migrations rows the way Prisma does (SHA-256 of migration.sql as the checksum;
+# a failing migration leaves a row with finished_at NULL).
+FROM postgres:18-alpine
+ARG REV
+LABEL org.opencontainers.image.revision=$REV
+USER root
+COPY migrate /usr/local/bin/migrate
+COPY migrations /migrations
+RUN chmod +x /usr/local/bin/migrate
+ENTRYPOINT ["/usr/local/bin/migrate"]

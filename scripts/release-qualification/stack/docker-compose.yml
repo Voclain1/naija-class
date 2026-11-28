@@ -1,0 +1,79 @@
+# The qualification twin of infra/vps/docker-compose.yml: same service names, same shape (a scheduler
+# `ops` plus the `ops-pinned` override), same restart policies and loopback-only ports; stand-in
+# application images. Nothing here is real: no real data, no real payment or message provider.
+name: skq
+x-app: &app
+  restart: unless-stopped
+services:
+  postgres:
+    <<: *app
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: school_kit
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./init.sql:/docker-entrypoint-initdb.d/00-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d school_kit"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+  redis:
+    <<: *app
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  api:
+    <<: *app
+    image: ${IMAGE_PREFIX}/skq-api:${APP_TAG:-none}
+    environment: &gates
+      STUB_ROLE: api
+      STUB_PORT: "4000"
+      MESSAGING_PAID_ENABLED: "off"
+      MESSAGING_LEGACY_SMS_ENABLED: "off"
+      MESSAGING_LEGACY_SMS_MIGRATION_MODE: "off"
+      MESSAGING_TERMII_REPORTS_ENABLED: "off"
+    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
+    ports: ["127.0.0.1:${P_API}:4000"]
+  render-worker:
+    <<: *app
+    image: ${IMAGE_PREFIX}/skq-render:${APP_TAG:-none}
+    environment: { STUB_ROLE: render, STUB_PORT: "4001" }
+    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
+  web:
+    <<: *app
+    image: ${IMAGE_PREFIX}/skq-web:${APP_TAG:-none}
+    environment: { STUB_ROLE: web, STUB_PORT: "3000" }
+    ports: ["127.0.0.1:${P_WEB}:3000"]
+  portal:
+    <<: *app
+    image: ${IMAGE_PREFIX}/skq-portal:${APP_TAG:-none}
+    environment: { STUB_ROLE: portal, STUB_PORT: "3000" }
+    ports: ["127.0.0.1:${P_PORTAL}:3000"]
+  caddy:
+    <<: *app
+    image: caddy:2.10
+    environment:
+      API_HOST: ${API_HOST}
+      WEB_HOST: ${WEB_HOST}
+      PORTAL_HOST: ${PORTAL_HOST}
+      SCHOOL_ADDRESS_DOMAIN: ${SCHOOL_ADDRESS_DOMAIN:-}
+    ports: ["127.0.0.1:${P_EDGE}:8080"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
+  ops:
+    <<: *app
+    image: ${OPS_IMAGE}
+    environment: { PGHOST: postgres, PGUSER: postgres, PGDATABASE: school_kit, PGPASSWORD: "${POSTGRES_PASSWORD}", BACKUP_BUCKET: skq-bucket }
+    volumes: ["backupstore:/store"]
+    depends_on: { postgres: { condition: service_healthy } }
+volumes:
+  pgdata:
+  backupstore:
