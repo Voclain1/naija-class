@@ -31,7 +31,7 @@ exec 8>"$D/apply.lock"
 if flock -n 8; then lock=free; else lock=held; fi
 case $phase in
   ''|ROLLED_BACK|ABORTED) ok "no release is half way (state: ${phase:-none})" ;;
-  COMPLETE) [ "$(state_get accepted)" = true ] && ok "the last release is COMPLETE with its acceptance record" || bad "state is COMPLETE but there is no acceptance record" ;;
+  COMPLETE) if acceptance_ok; then ok "the last release is COMPLETE with its acceptance record ($(acceptance_why))"; else bad "state is COMPLETE but its acceptance record does not verify: $(acceptance_why)"; fi ;;
   FIX_FORWARD_REQUIRED|ROLLBACK_FAILED) bad "release state is $phase: an operator must act (release.sh status)" ;;
   *) if [ "$lock" = free ]; then bad "release $(state_get release_id) is INTERRUPTED at $phase: release.sh resume"; else info "a release is running ($phase)"; fi ;;
 esac
@@ -40,12 +40,25 @@ if [ -f "$D/MAINTENANCE" ]; then
   if [ "$lock" = free ]; then bad "maintenance has been on for ${since} minutes with no release running"; else info "maintenance on for ${since} minutes (a release is running)"; fi
 fi
 free=$(free_gib); [ "${free:-0}" -ge "${RELEASE_MONITOR_MIN_FREE_GIB:-8}" ] && ok "free disk ${free} GiB" || bad "free disk ${free:-?} GiB is below ${RELEASE_MONITOR_MIN_FREE_GIB:-8} GiB"
-if caddy_partial; then bad "Caddy's files are a partial write (neither the original nor the maintenance version)"; fi
+caddy_classify
+case $CADDY_VERDICT in
+  INTERRUPTED) bad "Caddy's files hold an interrupted write ($CADDY_DETAIL): a release command completes it from the durable record" ;;
+  UNRELATED_EDIT|RECORD_INVALID) bad "Caddy's files differ from the recorded versions and it is not an interrupted write ($CADDY_VERDICT: $CADDY_DETAIL): nothing will be overwritten automatically" ;;
+esac
+# Monitoring only: an unreadable Caddy admin endpoint is reported as DEGRADED verification, separately from a failure
+# (release acceptance, by contrast, fails closed).
+ACCEPT_ADMIN_DEGRADED_OK=1 check_caddy_routing_live_only || CHECK_FAILED=1
 check_images || CHECK_FAILED=1
 check_backups || CHECK_FAILED=1
 [ "$(sql -c "SELECT coalesce(last_failed_time > last_archived_time, false) FROM pg_stat_archiver")" = f ] && ok "the WAL archiver is not failing" || bad "the WAL archiver is failing"
 check_integrity || CHECK_FAILED=1
 check_gates || CHECK_FAILED=1
-if [ "$CHECK_FAILED" = 0 ]; then ok "monitor: healthy"; exit 0; fi
+if [ "$CHECK_FAILED" = 0 ]; then
+  if [ -n "$DEGRADED_VERIFICATION" ]; then
+    ok "monitor: healthy, with DEGRADED verification ($DEGRADED_VERIFICATION): not a failure, but not fully verified either"
+    notify monitor-degraded "release monitor: healthy, but verification is degraded ($DEGRADED_VERIFICATION) on $(date -u +%FT%TZ)"
+  else ok "monitor: healthy"; fi
+  exit 0
+fi
 notify monitor "release monitor found problems on $(date -u +%FT%TZ); see $D/run.log"
 exit 1

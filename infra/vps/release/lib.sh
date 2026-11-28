@@ -30,6 +30,10 @@ v = json.load(sys.stdin).get(sys.argv[1], "")
 print(str(v).lower() if isinstance(v, bool) else v)' "$1" 2>/dev/null || true; }
 state_set() { TOOL state set --file "$D/state.json" "$@"; }
 CHECK_FAILED=0
+# COMPLETE is final only with a durable acceptance record that names the SAME release id and manifest checksum as the state
+# and as the manifest kept for that release (release_tool.py acceptance_check). A bare `accepted=true` is not enough.
+acceptance_ok() { TOOL acceptance-check --dir "$D" >/dev/null 2>&1; }
+acceptance_why() { TOOL acceptance-check --dir "$D" 2>&1 || true; }
 
 # --------------------------------------------------------------------------- compose (scoped)
 # Same file order as the operators' tooling (ops-tools/lib.sh `dco`): base, adopted overlays,
@@ -81,7 +85,7 @@ protected_assert() { # label
   if [ "$(caddy_identity)" != "$(cat "$D/caddy.identity" 2>/dev/null)" ]; then
     warn "Caddy was restarted by something other than this release ($1); its configuration is on disk, so the edge is unchanged"
     caddy_identity > "$D/caddy.identity"
-    if [ -f "$D/MAINTENANCE" ]; then caddy_apply "$D/Caddyfile.maintenance" && ok "maintenance re-asserted after the Caddy restart" || { bad "maintenance could not be re-asserted after the Caddy restart"; return 1; }; fi
+    if [ -f "$D/MAINTENANCE" ]; then caddy_apply "$D/Caddyfile.maintenance" to_maintenance && ok "maintenance re-asserted after the Caddy restart" || { bad "maintenance could not be re-asserted after the Caddy restart"; return 1; }; fi
   fi
   if [ "$now" = "$(cat "$D/protected.snapshot")" ]; then return 0; fi
   bad "protected infrastructure changed ($1): $(diff <(cat "$D/protected.snapshot") <(printf '%s\n' "$now") | grep '^[<>]' | sed 's/ [0-9a-f]\{64\}/ <id>/' | tr '\n' ';')"
@@ -132,60 +136,80 @@ wait_healthy() { # service [tries]
 # (Paystack and other senders retry 5xx; nothing is silently dropped at the edge).
 MAINT_MARK='# RELEASE-MAINTENANCE'
 caddy_exec() { rdc exec -T caddy "$@"; }
-caddy_apply() { # file: validate inside the container, overwrite IN PLACE (a bind-mounted file keeps its inode), CHECK the write, reload
+# `caddy_apply FILE [DIRECTION]`: validate inside the container, overwrite IN PLACE (a bind-mounted file keeps its inode),
+# CHECK the write, reload. With a DIRECTION (to_maintenance | to_original) the durable record's write intent is set to
+# pending BEFORE the first byte changes and to done only after the bytes are verified, so a crash in between is
+# recognisable as an interrupted write rather than mistaken for somebody else's edit.
+caddy_apply() {
+  local dir=${2:-}
   caddy_exec sh -c 'cat > /tmp/Caddyfile.candidate' < "$1" || return 1
   caddy_exec caddy validate --config /tmp/Caddyfile.candidate --adapter caddyfile >/dev/null 2>&1 || return 1
+  if [ -n "$dir" ] && [ -f "$D/caddy.record.json" ]; then TOOL caddy-record intent --dir "$D" --direction "$dir" --status pending || return 1; fi
   # test-only: the process dies half way through the write (a prefix of the file on disk)
   if fault kill_in_caddy_write; then head -c 40 "$1" > Caddyfile; kill -9 $$; fi
   cat "$1" > Caddyfile
   sync Caddyfile 2>/dev/null || true
   cmp -s "$1" Caddyfile || return 1          # the bytes on disk are the bytes intended, not a prefix of them
+  if [ -n "$dir" ] && [ -f "$D/caddy.record.json" ]; then TOOL caddy-record intent --dir "$D" --direction "$dir" --status "done" || return 1; fi
   caddy_exec caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || return 1
 }
-# --- durable recovery record. Written BEFORE the first byte of Caddy's configuration changes: the sha256 of the
-# original and of the maintenance version of the Caddyfile and of the school-address site, whose full copies live
-# beside it. The in-place write is not atomic (a rename would break the single-file bind mount), so a crash can leave
-# a PREFIX of a file on disk, and a Caddy restart then loads it (a comment-only Caddyfile is a valid, empty config:
-# the edge goes dark). `caddy_recover` compares what is on disk with the record and puts back a whole version.
+# --- durable recovery record. Written BEFORE the first byte of Caddy's configuration changes (release_tool.py
+# "Caddy write intent and recovery"): checksums of the original and maintenance version of each file and of the full
+# copies kept beside it, the inode of each live file, and the write intent. `caddy_classify` judges the files on disk
+# against it and tells an INTERRUPTED write (repairable) from an UNRELATED edit (never overwritten) or an invalid record.
 sha_of() { [ -f "$1" ] && sha256sum "$1" | cut -d' ' -f1 || echo -; }
 caddy_record_write() {
   sync "$D/Caddyfile.pre-release" "$D/Caddyfile.maintenance" 2>/dev/null || true
-  printf '{"original_sha":"%s","maintenance_sha":"%s","site_original_sha":"%s","site_maintenance_sha":"%s"}\n' \
-    "$(sha_of "$D/Caddyfile.pre-release")" "$(sha_of "$D/Caddyfile.maintenance")" \
-    "$(sha_of "$D/sites.pre-release/school-addresses.caddy")" "$(sha_of "$D/school-addresses.maintenance")" > "$D/caddy.record.json.new"
-  sync "$D/caddy.record.json.new" 2>/dev/null || true
-  mv -f "$D/caddy.record.json.new" "$D/caddy.record.json"
+  TOOL caddy-record write --dir "$D" --caddyfile Caddyfile --site sites/school-addresses.caddy
 }
-caddy_partial() { # 0 when a record exists and Caddyfile (or the site file) is neither of its two recorded versions
-  [ -f "$D/caddy.record.json" ] || return 1
-  local cur o m so sm
-  cur=$(sha_of Caddyfile); o=$(TOOL jget "$D/caddy.record.json" original_sha); m=$(TOOL jget "$D/caddy.record.json" maintenance_sha)
-  [ "$cur" = "$o" ] || [ "$cur" = "$m" ] || return 0
-  so=$(TOOL jget "$D/caddy.record.json" site_original_sha); sm=$(TOOL jget "$D/caddy.record.json" site_maintenance_sha)
-  if [ "$so" != - ]; then cur=$(sha_of sites/school-addresses.caddy); [ "$cur" = "$so" ] || [ "$cur" = "$sm" ] || return 0; fi
-  return 1
-}
-caddy_recover() {
-  caddy_partial || return 0
-  local want_maint=0 src sha so sm
-  [ ! -f "$D/MAINTENANCE" ] || want_maint=1
-  warn "Caddy's files are neither the original nor the maintenance version (a write was interrupted): repairing from the durable record"
-  if [ "$want_maint" = 1 ]; then src="$D/Caddyfile.maintenance"; sha=$(TOOL jget "$D/caddy.record.json" maintenance_sha)
-  else src="$D/Caddyfile.pre-release"; sha=$(TOOL jget "$D/caddy.record.json" original_sha); fi
-  [ "$(sha_of "$src")" = "$sha" ] || { log "BLOCK the recovery copy $src does not match the record: cannot repair automatically; the original is in $D"; return 1; }
-  so=$(TOOL jget "$D/caddy.record.json" site_original_sha); sm=$(TOOL jget "$D/caddy.record.json" site_maintenance_sha)
-  if [ "$so" != - ]; then
-    if [ "$want_maint" = 1 ]; then cp "$D/school-addresses.maintenance" sites/school-addresses.caddy; else cp -p "$D/sites.pre-release/school-addresses.caddy" sites/school-addresses.caddy; fi
+CADDY_VERDICT=NO_RECORD; CADDY_DIRECTION=""; CADDY_DETAIL=""
+caddy_classify() { # sets CADDY_VERDICT / CADDY_DIRECTION / CADDY_DETAIL
+  local out ino=() cino
+  if [ -f "$D/caddy.record.json" ]; then
+    cino=$(caddy_exec stat -c %i /etc/caddy/Caddyfile 2>/dev/null | tr -d '\r' || true)
+    [ -z "$cino" ] || ino=(--container-ino "$cino")
   fi
-  caddy_apply "$src" || { log "BLOCK the repaired Caddyfile was refused by Caddy"; return 1; }
-  ok "Caddy's files repaired from the durable record ($([ "$want_maint" = 1 ] && echo maintenance || echo original) version)"
+  out=$(TOOL caddy-classify --dir "$D" "${ino[@]}" 2>&1) || true
+  IFS='|' read -r CADDY_VERDICT CADDY_DIRECTION CADDY_DETAIL <<<"$out"
+  [ -n "$CADDY_VERDICT" ] || { CADDY_VERDICT=RECORD_INVALID; CADDY_DETAIL="the classifier gave no answer"; }
 }
-# Put School Kit's Caddyfile and school-address site back exactly as they were before the window.
-# Idempotent; safe to call when there is nothing to restore. Never leaves the edge half-changed.
+caddy_partial() { caddy_classify; [ "$CADDY_VERDICT" = INTERRUPTED ]; }          # a write was interrupted (repairable)
+caddy_unrelated() { caddy_classify; [ "$CADDY_VERDICT" = UNRELATED_EDIT ] || [ "$CADDY_VERDICT" = RECORD_INVALID ]; }
+caddy_recover() {
+  caddy_classify
+  case $CADDY_VERDICT in
+    NO_RECORD|CONSISTENT) return 0 ;;
+    UNRELATED_EDIT|RECORD_INVALID)
+      event caddy_not_repaired verdict="$CADDY_VERDICT" detail="$CADDY_DETAIL"
+      notify caddy-not-repaired "Caddy's files were NOT repaired automatically: $CADDY_VERDICT ($CADDY_DETAIL). Nothing was overwritten. The saved originals are in $D."
+      log "BLOCK Caddy's files differ from the recorded versions and this is not an interrupted write ($CADDY_VERDICT: $CADDY_DETAIL); nothing was overwritten. Decide by hand; the saved originals are in $D"
+      return 1 ;;
+  esac
+  # INTERRUPTED: the intent was pending, the file is the same inode and a strict prefix of what was being written.
+  warn "an interrupted write to Caddy's files was found ($CADDY_DETAIL; direction $CADDY_DIRECTION): completing it from the durable record"
+  local src
+  if [ "$CADDY_DIRECTION" = to_maintenance ]; then src="$D/Caddyfile.maintenance"; else src="$D/Caddyfile.pre-release"; fi
+  if [ -f "$D/sites.pre-release/school-addresses.caddy" ]; then
+    if [ "$CADDY_DIRECTION" = to_maintenance ]; then cat "$D/school-addresses.maintenance" > sites/school-addresses.caddy; else cat "$D/sites.pre-release/school-addresses.caddy" > sites/school-addresses.caddy; fi
+  fi
+  caddy_apply "$src" "$CADDY_DIRECTION" || { log "BLOCK the repaired Caddyfile was refused by Caddy"; return 1; }
+  event caddy_repaired direction="$CADDY_DIRECTION"
+  ok "Caddy's files repaired from the durable record (the interrupted write to ${CADDY_DIRECTION#to_} was completed)"
+}
+# Put School Kit's Caddyfile and school-address site back exactly as they were before the window. Idempotent; safe to call
+# when there is nothing to restore. Never overwrites an edit made by somebody else during the window: that is reported
+# and refused, and the saved originals stay where they are.
 caddy_restore_original() {
   [ -e "$D/Caddyfile.pre-release" ] || return 0
-  if [ -f "$D/sites.pre-release/school-addresses.caddy" ]; then cp -p "$D/sites.pre-release/school-addresses.caddy" sites/school-addresses.caddy; fi
-  caddy_apply "$D/Caddyfile.pre-release" || return 1
+  caddy_classify
+  case $CADDY_VERDICT in UNRELATED_EDIT|RECORD_INVALID)
+    log "BLOCK refusing to restore over Caddy's files: $CADDY_VERDICT ($CADDY_DETAIL). Nothing was overwritten; the saved originals are in $D"
+    event caddy_not_restored verdict="$CADDY_VERDICT"
+    return 1 ;;
+  esac
+  if [ -f "$D/caddy.record.json" ]; then TOOL caddy-record intent --dir "$D" --direction to_original --status pending || return 1; fi
+  if [ -f "$D/sites.pre-release/school-addresses.caddy" ]; then cat "$D/sites.pre-release/school-addresses.caddy" > sites/school-addresses.caddy; fi
+  caddy_apply "$D/Caddyfile.pre-release" to_original || return 1
   rm -f "$D/Caddyfile.maintenance" "$D/school-addresses.maintenance" "$D/MAINTENANCE" "$D/caddy.record.json"
   rm -rf "$D/sites.pre-release"
   mv -f "$D/Caddyfile.pre-release" "$D/Caddyfile.pre-release.restored" 2>/dev/null || true
@@ -213,15 +237,16 @@ maintenance_on() { # release-id
       TOOL maintenance-verify "$D/sites.pre-release/school-addresses.caddy" "$D/school-addresses.maintenance" --site || { log "BLOCK the school-address maintenance site is incomplete"; return 1; }
     fi
     caddy_record_write                       # durable record FIRST; only then does any byte of Caddy's configuration change
-    [ ! -f "$D/school-addresses.maintenance" ] || cp "$D/school-addresses.maintenance" sites/school-addresses.caddy
+    TOOL caddy-record intent --dir "$D" --direction to_maintenance --status pending || { log "BLOCK the write intent could not be recorded; nothing was changed"; return 1; }
+    [ ! -f "$D/school-addresses.maintenance" ] || cat "$D/school-addresses.maintenance" > sites/school-addresses.caddy   # in place: same inode
     # From here on the edge has changed. Any failure puts the original back before returning.
-    if ! caddy_apply "$D/Caddyfile.maintenance"; then
+    if ! caddy_apply "$D/Caddyfile.maintenance" to_maintenance; then
       log "BLOCK caddy refused the maintenance configuration; restoring the original"
       caddy_restore_original || log "BLOCK THE ORIGINAL CADDYFILE COULD NOT BE RESTORED AUTOMATICALLY: $D/Caddyfile.pre-release holds it"
       return 1
     fi
   else
-    caddy_apply "$D/Caddyfile.maintenance" || { log "BLOCK could not reassert maintenance"; return 1; }
+    caddy_apply "$D/Caddyfile.maintenance" to_maintenance || { log "BLOCK could not reassert maintenance"; return 1; }
   fi
   printf '{"since":"%s","release_id":"%s"}\n' "$(date -u +%FT%TZ)" "$1" > "$D/MAINTENANCE"
   if [ "$(edge_code /api/v1/health)" != 503 ] || [ "$(edge_code /api/v1/payments/paystack/webhook -X POST)" != 503 ]; then

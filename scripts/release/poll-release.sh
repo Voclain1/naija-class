@@ -9,6 +9,8 @@
 # Exit: 0 COMPLETE with its durable acceptance record · 1 ROLLED_BACK/ABORTED (failed, but safe) · 4 ABORTED because the system was busy (retry later)
 #       6 FIX_FORWARD_REQUIRED · 7 ROLLBACK_FAILED · 8 lost contact (the release may still be running)
 #       9 INTERRUPTED on the server (run `release.sh resume`) · 10 timed out
+#       COMPLETE counts ONLY when the server's own verification says the durable acceptance record is valid, and (when given)
+#       it names the release id and manifest checksum this workflow started: EXPECT_RELEASE_ID, EXPECT_MANIFEST_SHA256.
 # Environment: POLL_INTERVAL (10), POLL_MAX_LOST (30 consecutive failed polls), RELEASE_TOOLS (/opt/school-kit/release-tools),
 #              RELEASE_SSH (ssh) so tests can substitute it.
 set -uo pipefail
@@ -25,10 +27,17 @@ while :; do
     phase=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["state"].get("phase",""))' <<<"$out" 2>/dev/null || echo "")
     run=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["run"])' <<<"$out" 2>/dev/null || echo "")
     if [ "$phase:$run" != "$last" ]; then echo "$(date -u +%FT%TZ) phase=$phase run=$run"; last="$phase:$run"; fi
-    acc=$(python3 -c 'import json,sys; print(str(json.load(sys.stdin)["state"].get("accepted", False)).lower())' <<<"$out" 2>/dev/null || echo false)
+    # valid acceptance = state.accepted AND the server verified record, release id and manifest checksum all agree
+    acc=$(python3 -c 'import json,sys
+d = json.load(sys.stdin); st = d["state"]; a = d.get("acceptance") or {}
+print("true" if st.get("accepted") is True and a.get("valid") is True and a.get("release_id") == st.get("release_id") and a.get("manifest_sha256") == st.get("manifest_sha256") else "false")' <<<"$out" 2>/dev/null || echo false)
+    seen_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["state"].get("release_id",""))' <<<"$out" 2>/dev/null || echo "")
+    seen_sha=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["state"].get("manifest_sha256",""))' <<<"$out" 2>/dev/null || echo "")
     case $phase:$run in
-      COMPLETE:IDLE) if [ "$acc" = true ]; then echo "release complete (acceptance recorded)"; exit 0; fi
-                     echo "::error::the server says COMPLETE but holds no durable acceptance record: treating the release as FAILED"; exit 9 ;;
+      COMPLETE:IDLE) if [ "$acc" != true ]; then echo "::error::the server says COMPLETE but its durable acceptance record is missing or does not verify: treating the release as FAILED"; exit 9; fi
+                     if { [ -n "${EXPECT_RELEASE_ID:-}" ] && [ "$seen_id" != "$EXPECT_RELEASE_ID" ]; } || { [ -n "${EXPECT_MANIFEST_SHA256:-}" ] && [ "$seen_sha" != "$EXPECT_MANIFEST_SHA256" ]; }; then
+                       echo "::error::the server is COMPLETE for a different release or manifest than this workflow started ($seen_id): treating as FAILED"; exit 9; fi
+                     echo "release complete (acceptance recorded and verified)"; exit 0 ;;
       ROLLED_BACK:IDLE) echo "::error::the release failed and the previous release was restored"; exit 1 ;;
       ABORTED:IDLE) err=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["state"].get("error",""))' <<<"$out"); echo "::error::the release stopped before changing anything ($err)"; [ "$err" = quiesce ] && exit 4; exit 1 ;;
       FIX_FORWARD_REQUIRED:*) echo "::error::FIX-FORWARD REQUIRED: the database changed and the previous release cannot run on it; ingress is in maintenance"; exit 6 ;;

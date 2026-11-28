@@ -213,7 +213,14 @@ check_edge() { # mode
 # Routing equivalence. `caddy adapt` numbers route groups (group0, group1...) across the whole Caddyfile, so a harmless
 # renumbering must not read as a change, while a real change must still be caught (see release_tool.caddy_normalize).
 caddy_adapt() { caddy_exec caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile; }
-caddy_live() { caddy_exec wget -qO- http://127.0.0.1:2019/config/; }
+caddy_live() {
+  # test-only: the admin endpoint is unavailable (no safe way to take it away from a real Caddy that the stack needs)
+  if fault caddy_admin_unavailable; then return 1; fi
+  caddy_exec wget -qO- http://127.0.0.1:2019/config/
+}
+# Release acceptance FAILS CLOSED when the running configuration cannot be read: "I could not look" is not "it is fine".
+# Only a monitoring-only caller (ACCEPT_ADMIN_DEGRADED_OK=1, monitor.sh) may report it, separately, as degraded verification.
+DEGRADED_VERIFICATION=""
 check_caddy_routing() {
   local t; t=$(mktemp -d); local rc=0
   if [ -f "$D/caddy.adapted.before.json" ]; then
@@ -224,12 +231,44 @@ check_caddy_routing() {
   if caddy_live > "$t/live.json" 2>/dev/null && [ -s "$t/live.json" ]; then
     [ -s "$t/now.json" ] || caddy_adapt > "$t/now.json" 2>/dev/null || true
     if TOOL caddy-equivalent "$t/now.json" "$t/live.json" >/dev/null; then ok "Caddy is running the configuration its Caddyfile describes"; else bad "Caddy's running configuration is not what its Caddyfile adapts to"; rc=1; fi
-  else warn "Caddy's admin endpoint could not be read; running-configuration check skipped"; fi
+  elif [ "${ACCEPT_ADMIN_DEGRADED_OK:-0}" = 1 ]; then
+    warn "DEGRADED verification: Caddy's admin endpoint could not be read, so the running configuration was not compared (monitoring only)"
+    DEGRADED_VERIFICATION="caddy admin endpoint unreadable"
+  else
+    bad "Caddy's running configuration could not be read from its admin endpoint: it cannot be verified, so acceptance fails"; rc=1
+  fi
+  rm -rf "$t"; return "$rc"
+}
+# The "what is Caddy running" half of check_caddy_routing, for the monitor (which has no before-release snapshot to compare to).
+check_caddy_routing_live_only() {
+  local t rc=0; t=$(mktemp -d)
+  if caddy_live > "$t/live.json" 2>/dev/null && [ -s "$t/live.json" ] && caddy_adapt > "$t/now.json" 2>/dev/null; then
+    if TOOL caddy-equivalent "$t/now.json" "$t/live.json" >/dev/null; then ok "Caddy is running the configuration its Caddyfile describes"; else bad "Caddy's running configuration is not what its Caddyfile adapts to"; rc=1; fi
+  elif [ "${ACCEPT_ADMIN_DEGRADED_OK:-0}" = 1 ]; then
+    warn "DEGRADED verification: Caddy's admin endpoint could not be read (monitoring only)"; DEGRADED_VERIFICATION="caddy admin endpoint unreadable"
+  else bad "Caddy's running configuration could not be read from its admin endpoint"; rc=1; fi
   rm -rf "$t"; return "$rc"
 }
 check_caddy_untouched() {
   [ -f "$D/caddy.fingerprint" ] || { warn "no Caddy fingerprint was recorded for this release"; return 0; }
   if [ "$(caddy_fingerprint)" = "$(cat "$D/caddy.fingerprint")" ]; then ok "Caddyfile and every site file (BetGenius, school domains, the rest) are byte-for-byte as before the release"; else bad "Caddyfile or a site file differs from before the release"; return 1; fi
+}
+
+# Before a maintenance window: every route Caddy serves must be accounted for. `caddy adapt` is the source of truth (it follows
+# `import sites/*.caddy`), each site file's own host must be in it, and any route that reaches a School Kit upstream but is
+# neither closed by the maintenance rewrite nor an explicit operator decision ($D/caddy-route-decisions.conf, "HOST accept-live
+# REASON") is REJECTED: it would keep serving through a window the rest of the edge is closed for.
+check_route_accounting() {
+  local t rc=0 rep; t=$(mktemp)
+  caddy_adapt > "$t" 2>/dev/null || { rm -f "$t"; bad "route accounting: Caddy's configuration could not be adapted, so its routes cannot be accounted for"; return 1; }
+  rep=$(TOOL caddy-route-audit "$t" --env-file deploy.env --sites-dir sites --decisions "$D/caddy-route-decisions.conf") || rc=$?
+  rm -f "$t"
+  if [ "$rc" = 0 ]; then
+    ok "route accounting: $(python3 -c 'import json,sys; d=json.load(sys.stdin); print("%d closed by maintenance, %d unrelated, %d operator-accepted" % (len(d["maintained"]), len(d["unrelated"]), len(d["accepted_live"])))' <<<"$rep")"
+    return 0
+  fi
+  bad "route accounting: refusing to enter maintenance. $(python3 -c 'import json,sys; d=json.load(sys.stdin); print("unclassified (reach a School Kit upstream, not closed, not accepted): %s; site hosts missing from the adapted configuration: %s; unresolvable site addresses: %s" % (d["unclassified"], d["missing"], d["unresolved"]))' <<<"$rep" 2>/dev/null || echo "see the report")"
+  return 1
 }
 
 run_acceptance() { # manifest scope
@@ -251,7 +290,7 @@ run_acceptance() { # manifest scope
     check_caddy_untouched || CHECK_FAILED=1
     check_caddy_routing || CHECK_FAILED=1
   fi
-  if [ "$CHECK_FAILED" = 0 ]; then ok "acceptance ($scope) passed"; else bad "acceptance ($scope) FAILED"; fi
+  if [ "$CHECK_FAILED" = 0 ]; then ok "acceptance ($scope) passed${DEGRADED_VERIFICATION:+ (DEGRADED verification: $DEGRADED_VERIFICATION)}"; else bad "acceptance ($scope) FAILED"; fi
   return "$CHECK_FAILED"
 }
 

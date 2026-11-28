@@ -65,7 +65,7 @@ runs:
         set -euo pipefail
         t=/opt/school-kit/release-tools
         ssh -n vps "$t/release.sh apply /opt/school-kit/deployments/incoming/$RELEASE_ID.json --trigger ${{ inputs.trigger }} --detach"
-        rc=0; bash scripts/release/poll-release.sh vps 2700 || rc=$?
+        rc=0; EXPECT_RELEASE_ID="$RELEASE_ID" EXPECT_MANIFEST_SHA256="$MANIFEST_SHA" bash scripts/release/poll-release.sh vps 2700 || rc=$?
         {
           echo "### Release $RELEASE_ID"
           echo "exit status: $rc"

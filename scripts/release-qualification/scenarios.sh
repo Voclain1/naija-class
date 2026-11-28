@@ -116,15 +116,19 @@ s05() { # SSH connection loss
   stack_reset || return 1
   # (a) a DETACHED release survives the launching session being killed outright
   ( setsid bash -c "cd $SK; SK_DIR=$SK RELEASE_QUALIFICATION=1 RELEASE_PROBE_API=http://127.0.0.1:$P_API/api/v1/health RELEASE_PROBE_API_DB=http://127.0.0.1:$P_API/api/v1/health/db RELEASE_PROBE_WEB=http://127.0.0.1:$P_WEB/staff/login RELEASE_PROBE_PORTAL=http://127.0.0.1:$P_PORTAL/api/health RELEASE_EDGE_SCHEME=http RELEASE_EDGE_PORT=$P_EDGE RELEASE_NOW_HHMM=1200 RELEASE_HEALTH_SLEEP=1 RELEASE_STOP_GRACE=3 RELEASE_DRAIN_TRIES=2 RELEASE_DRAIN_SLEEP=1 RELEASE_ACCEPT_WINDOW=20 RELEASE_DISK_PATH=$W RELEASE_MIN_FREE_KIB=1000 RELEASE_REGISTRY_ALLOW=$REG/ exec bash $TOOLS/release.sh apply $W/m/app.json --detach" > "$W/launch.out" 2>&1 & )
-  sleep 0.3; pkill -KILL -f "release.sh apply $W/m/app.json --detach" 2>/dev/null   # the "SSH session" dies
+  # the "SSH session" dies once the detached child exists (its run_id is recorded); killing earlier would test nothing
+  local _; for _ in $(seq 1 100); do [ "$(state phase)" != COMPLETE ] && break; sleep 0.2; done
+  pkill -KILL -f "release.sh apply $W/m/app.json --detach" 2>/dev/null
   wait_run_done 120
   check "the detached release completed although its launching session was killed" eq "$(state phase):$(current)" "COMPLETE:$(rid app)"
   # (b) a FOREGROUND release hung up mid-way (what a dropped SSH session does) is recoverable
+  for _ in $(seq 1 60); do flock -n "$SK/deployments/apply.lock" true 2>/dev/null && break; sleep 0.5; done   # the finished release has let go of its lock
   local pid
   RELEASE_FAULTS=pause_after_PREFLIGHT_OK setsid bash -c "cd $SK; SK_DIR=$SK RELEASE_QUALIFICATION=1 RELEASE_FAULTS=pause_after_PREFLIGHT_OK RELEASE_PROBE_API=http://127.0.0.1:$P_API/api/v1/health RELEASE_PROBE_API_DB=http://127.0.0.1:$P_API/api/v1/health/db RELEASE_PROBE_WEB=http://127.0.0.1:$P_WEB/staff/login RELEASE_PROBE_PORTAL=http://127.0.0.1:$P_PORTAL/api/health RELEASE_EDGE_SCHEME=http RELEASE_EDGE_PORT=$P_EDGE RELEASE_NOW_HHMM=1200 RELEASE_HEALTH_SLEEP=1 RELEASE_STOP_GRACE=3 RELEASE_ACCEPT_WINDOW=20 RELEASE_DISK_PATH=$W RELEASE_MIN_FREE_KIB=1000 RELEASE_REGISTRY_ALLOW=$REG/ exec bash $TOOLS/release.sh apply $W/m/app2.json" >/dev/null 2>&1 &
   wait_state PREFLIGHT_OK 60
   pid=$(pgrep -f "release.sh apply $W/m/app2.json" | head -n 1)
-  kill -HUP "$pid"; sleep 1
+  kill -HUP "$pid"
+  for _ in $(seq 1 60); do flock -n "$SK/deployments/apply.lock" true 2>/dev/null && break; sleep 0.5; done   # the hung-up process (and its paused sleep) have let go of the lock
   check "the hung-up foreground release stopped at a recorded phase" eq "$(state phase)" PREFLIGHT_OK
   check "status says INTERRUPTED" contains "$(R status)" INTERRUPTED
   R resume; check "resume finishes it" eq "$(state phase):$(current)" "COMPLETE:$(rid app2)"
@@ -385,7 +389,7 @@ s20() { # acceptance: genuine failures are detected, and fast
   check "a stale off-site backup (7 days old) fails" bash -c "! ACC '$m' internal >/dev/null 2>&1"
   docker exec "$(cid_of ops-pinned)" sh -c 'd=$(date -u +%Y-%m-%dT%H%M%SZ); touch /store/skq-bucket/dumps/daily/school-kit-$d.dump.sha256'
   check "a checksum marker without its dump is not a backup" bash -c "! ACC '$m' internal >/dev/null 2>&1"
-  docker exec "$(cid_of ops-pinned)" sh -c 'd=$(date -u +%Y-%m-%dT%H%M%SZ); touch /store/skq-bucket/dumps/daily/school-kit-$d.dump'
+  docker exec "$(cid_of ops-pinned)" sh -c 'f=$(ls /store/skq-bucket/dumps/daily/*.sha256 | sort | tail -n 1); touch "${f%.sha256}"'   # the dump that goes with the newest marker (a second clock read could name a different second)
   check "a fresh complete pair passes" eq "$(ACC "$m" internal >/dev/null 2>&1; echo $?)" 0
   echo "# tampered" >> "$SK/sites/zz-betgenius.caddy"
   check "a changed site file (BetGenius) is detected at the edge" bash -c "! ACC '$m' edge >/dev/null 2>&1"
@@ -537,7 +541,7 @@ s26() { # the process dies in the middle of writing the Caddyfile, then Caddy re
   check "the release process was killed in the middle of the write" neq "$rc" 0
   check "the durable record exists (written BEFORE the first byte changed)" test -s "$SK/deployments/caddy.record.json"
   check "the Caddyfile on disk is a PREFIX of a file: neither the original nor the maintenance version" bash -c "[ \"\$(sha256sum $SK/Caddyfile | cut -d' ' -f1)\" != '$orig' ] && [ \$(wc -c < $SK/Caddyfile) -lt 100 ]"
-  check "status says so" contains "$(R status)" "PARTIAL WRITE"
+  check "status says so" contains "$(R status)" "INTERRUPTED WRITE"
   check "the monitor flags it" bash -c "! rel bash $TOOLS/monitor.sh >/dev/null 2>&1"
   docker restart "$(cid_of caddy)" >/dev/null; sleep 4
   local dark; dark=$(edge $APIH /api/v1/health)
@@ -592,9 +596,11 @@ s28() { # the whole lifecycle, chained: kill, Caddy restart, a torn Caddyfile, r
   check "1. killed with the window open: INTERRUPTED, edge closed" eq "$(state phase):$(edge $APIH /api/v1/health)" "QUIESCED:503"
   docker restart "$(cid_of caddy)" >/dev/null; sleep 4
   check "2. Caddy restarted: maintenance survives (503) and BetGenius is served" eq "$(edge $APIH /api/v1/health):$(edge $BGH /)" "503:200"
-  head -c 60 "$SK/Caddyfile" > "$W/torn" && cat "$W/torn" > "$SK/Caddyfile"; docker restart "$(cid_of caddy)" >/dev/null; sleep 4
-  check "3. the Caddyfile is torn by something else and Caddy restarts onto it: the edge is dark" neq "$(edge $APIH /api/v1/health)" 503
-  check "   the tooling sees it" contains "$(R status)" "PARTIAL WRITE"
+  # the resumed release re-asserts maintenance after the Caddy restart, and dies in the middle of THAT write (a real interrupted write)
+  RELEASE_FAULTS=kill_in_caddy_write R resume >/dev/null 2>&1
+  docker restart "$(cid_of caddy)" >/dev/null; sleep 4
+  check "3. the resumed release is killed mid-write and Caddy restarts onto the partial file: the edge is dark" neq "$(edge $APIH /api/v1/health)" 503
+  check "   the tooling sees an INTERRUPTED write (pending intent, same file, a prefix of what was being written)" contains "$(R status)" "INTERRUPTED WRITE"
   R resume; rc=$?
   check "4. resume repairs Caddy and completes with acceptance recorded" eq "$rc:$(state phase):$(state accepted)" "0:COMPLETE:true"
   check "   Caddyfile and BetGenius are byte-identical to the start; the edge is open" eq "$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1):$(sha256sum "$SK/sites/zz-betgenius.caddy" | cut -c1-16):$(edge $APIH /api/v1/health)" "$orig:$bg0:200"
@@ -605,6 +611,269 @@ s28() { # the whole lifecycle, chained: kill, Caddy restart, a torn Caddyfile, r
   check "   nothing pulled from the registry during the rollback" bash -c "! grep -q 'pulling' $SK/deployments/run.log"
   check "   PostgreSQL, Redis and the scheduler were never restarted" protected_same "$W/prot" hard
   docker start skq-registry >/dev/null; registry_up
+}
+
+# =========================================================================================================================
+# Review findings (2026-11-28): each scenario injects the failure for real wherever a real means exists.
+# =========================================================================================================================
+ev_order() { # event... -> 0 when, after the LAST rollback_started, these events occur in this order and no stop precedes the drain
+  hist | python3 -c '
+import sys, json
+ev = [json.loads(l)["event"] for l in sys.stdin if l.strip()]
+i = len(ev) - 1 - ev[::-1].index("rollback_started"); after = ev[i:]
+p = 0
+for w in sys.argv[1:]:
+    try: p = after.index(w, p) + 1
+    except ValueError: sys.exit(1)
+if "stopping" in after and "rollback_drained" in after and after.index("stopping") < after.index("rollback_drained"): sys.exit(1)
+' "$@"
+}
+rollback_did_not_stop() { hist | python3 -c '
+import sys, json
+ev = [json.loads(l)["event"] for l in sys.stdin if l.strip()]
+i = len(ev) - 1 - ev[::-1].index("rollback_started")
+sys.exit(1 if "stopping" in ev[i:] else 0)'; }
+wait_file() { local _; for _ in $(seq 1 "${2:-60}"); do [ -e "$1" ] && return 0; sleep 1; done; return 1; }
+api_health() { edge $APIH /api/v1/health; }
+
+s29() { # FINDING 1: opening ingress by hand cannot bypass the readiness gates
+  stack_reset || return 1
+  R maintenance on >/dev/null 2>&1
+  check "maintenance was switched on by hand (the edge answers 503)" eq "$(api_health)" 503
+  gate() { # description inject restore expected-text
+    local d=$1 inj=$2 rst=$3 expect=$4 out rc
+    eval "$inj"; out=$(R maintenance off 2>&1); rc=$?
+    check "$d: opening ingress is REFUSED (exit 3)" eq "$rc" 3
+    check "  ...ingress stays closed (503)" eq "$(api_health)" 503
+    check "  ...the reason is the gate: $expect" contains "$out" "$expect"
+    check "  ...the refusal is journaled and alerted" bash -c "grep -q maintenance_off_refused $SK/deployments/history.jsonl && ls $SK/deployments/alerts/*maintenance-off-refused* >/dev/null"
+    eval "$rst"
+  }
+  gate "a webhook backlog older than 10 minutes" "psql_q -c \"INSERT INTO paystack_webhook_inbox (mode,event_key,event_type,received_at) SELECT 'live','old-'||g,'x', now() - interval '3 hours' FROM generate_series(1,5) g\" >/dev/null" \
+       "psql_q -c \"DELETE FROM paystack_webhook_inbox WHERE event_key LIKE 'old-%'\" >/dev/null" "webhook events have waited"
+  gate "a duplicate Paystack reference (money)" "psql_q -c \"INSERT INTO payments (id,school_id,invoice_id,amount,status,paystack_reference,allocated_kobo) VALUES ('dup1','school-a','inv1',1000,'SUCCESS','ref-001',1000)\" >/dev/null" \
+       "psql_q -c \"DELETE FROM payments WHERE id = 'dup1'\" >/dev/null" "dup_paystack_refs = 1"
+  gate "a payment allocated above its amount (money)" "psql_q -c \"UPDATE payments SET allocated_kobo = amount + 1 WHERE id = 'pay1'\" >/dev/null" \
+       "psql_q -c \"UPDATE payments SET allocated_kobo = amount WHERE id = 'pay1'\" >/dev/null" "payment_over_allocated = 1"
+  printf 'MESSAGING_PAID_ENABLED=on\n' > "$W/gates.on"
+  gate "a runtime gate that is not as required" "export RELEASE_GATES_FILE=$W/gates.on" "unset RELEASE_GATES_FILE" "gate MESSAGING_PAID_ENABLED is not"
+  gate "an application that is down (web)" "docker stop \"\$(cid_of web)\" >/dev/null" "docker start \"\$(cid_all web)\" >/dev/null; sleep 3" "web is not running"
+  gate "the backup scheduler stopped (infrastructure)" "docker stop \"\$(cid_of ops-pinned)\" >/dev/null" "docker start \"\$(cid_all ops-pinned)\" >/dev/null; sleep 2" "backup scheduler"
+  gate "a stale off-site backup" "docker exec \"\$(cid_of ops-pinned)\" sh -c 'rm -f /store/skq-bucket/dumps/daily/*; d=2026-11-20T010000Z; touch /store/skq-bucket/dumps/daily/school-kit-\$d.dump /store/skq-bucket/dumps/daily/school-kit-\$d.dump.sha256'" \
+       "docker exec \"\$(cid_of ops-pinned)\" sh -c 'd=\$(date -u +%Y-%m-%dT%H%M%SZ); touch /store/skq-bucket/dumps/daily/school-kit-\$d.dump /store/skq-bucket/dumps/daily/school-kit-\$d.dump.sha256'" "off-site dump"
+  docker restart "$(cid_of redis)" >/dev/null; sleep 4
+  local out rc; out=$(R maintenance off 2>&1); rc=$?
+  check "protected infrastructure restarted while the window was open: refused (exit 3), still closed" eq "$rc:$(api_health)" "3:503"
+  check "  ...the reason names the protected infrastructure" contains "$out" "protected infrastructure changed"
+  R adopt --manifest "$W/m/r0.json" >/dev/null 2>&1   # the operator re-baselines the infrastructure they restarted
+  out=$(R maintenance off 2>&1); rc=$?
+  check "with every gate passing, maintenance off opens ingress (exit 0)" eq "$rc:$(api_health)" "0:200"
+  check "  ...journaled as completed, after the checks" bash -c "grep -q maintenance_off_requested $SK/deployments/history.jsonl && grep -q maintenance_off_completed $SK/deployments/history.jsonl"
+  check "  ...the readiness checks really ran (acceptance output is in the log)" contains "$out" "acceptance (internal) passed"
+  # an unfinished release owns the window: it is finished (resume) or reversed (rollback), never bypassed by hand
+  approve data >/dev/null
+  RELEASE_FAULTS=kill_after_QUIESCED R apply "$W/m/data.json" >/dev/null 2>&1
+  check "a release killed mid-window leaves ingress closed" eq "$(state phase):$(api_health)" "QUIESCED:503"
+  out=$(R maintenance off 2>&1); rc=$?
+  check "maintenance off over an UNFINISHED release is refused (exit 3) and ingress stays closed" eq "$rc:$(api_health)" "3:503"
+  check "  ...it says to resume or roll back" contains "$out" "resume"
+  RELEASE_FAULTS=pause_after_SNAPSHOT_DONE R resume >/dev/null 2>&1 &
+  local _; for _ in $(seq 1 60); do [ "$(state phase)" = SNAPSHOT_DONE ] && break; sleep 1; done
+  R maintenance off >/dev/null 2>&1; rc=$?
+  check "maintenance off while a release is RUNNING is refused (exit 5)" eq "$rc" 5
+  continue_run; wait; wait_run_done 120
+  check "the release finishes through its own gates" eq "$(state phase):$(state accepted):$(api_health)" "COMPLETE:true:200"
+}
+
+s30() { # FINDING 3: an interrupted write is repaired; an unrelated edit, a replaced file or a tampered record never is
+  stack_reset || return 1
+  approve data >/dev/null
+  local orig; orig=$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1)
+  # (a) a real interrupted write: the intent was recorded as pending first
+  RELEASE_FAULTS=kill_in_caddy_write R apply "$W/m/data.json" >/dev/null 2>&1
+  check "(a) the record holds a pending write intent toward maintenance" contains "$(cat "$SK/deployments/caddy.record.json")" '"direction": "to_maintenance"'
+  check "(a) ...and it is pending, not done" contains "$(cat "$SK/deployments/caddy.record.json")" '"status": "pending"'
+  check "(a) the record names each file's inode" contains "$(cat "$SK/deployments/caddy.record.json")" '"ino"'
+  check "(a) status says INTERRUPTED WRITE (not an unrelated edit)" contains "$(R status)" "INTERRUPTED WRITE"
+  check "(a) the status JSON says INTERRUPTED" contains "$(R status --json)" '"caddy": "INTERRUPTED"'
+  R resume; check "(a) resume repairs it and completes" eq "$?:$(state phase)" "0:COMPLETE"
+  check "(a) the original Caddyfile is back byte for byte" eq "$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1)" "$orig"
+  # (b) somebody edits the Caddyfile while a window is open: never overwritten
+  stack_reset || return 1; approve data >/dev/null
+  RELEASE_FAULTS=kill_after_QUIESCED R apply "$W/m/data.json" >/dev/null 2>&1
+  printf '# hand edit: temporary rule added by an operator\n' >> "$SK/Caddyfile"
+  local edited rc out; edited=$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1)
+  check "(b) status says it is NOT repairable automatically" contains "$(R status)" "NOT REPAIRABLE AUTOMATICALLY"
+  out=$(R resume 2>&1); rc=$?
+  check "(b) resume refuses (exit 1) and says nothing was overwritten" eq "$rc" 1
+  check "(b) ...the message" contains "$out" "nothing was overwritten"
+  check "(b) the operator's edit is still on disk, byte for byte" eq "$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1)" "$edited"
+  R rollback >/dev/null 2>&1; check "(b) a rollback refuses too (exit non-zero)" neq "$?" 0
+  R maintenance off >/dev/null 2>&1; check "(b) maintenance off refuses too" neq "$?" 0
+  check "(b) ...and the edit is STILL there" eq "$(sha256sum "$SK/Caddyfile" | cut -d' ' -f1)" "$edited"
+  check "(b) an alert and a journal entry record the refusal" bash -c "ls $SK/deployments/alerts/*caddy-not-repaired* >/dev/null && grep -q caddy_not_repaired $SK/deployments/history.jsonl"
+  check "(b) the monitor flags it" bash -c "! rel bash $TOOLS/monitor.sh >/dev/null 2>&1"
+  grep -v 'hand edit' "$SK/Caddyfile" > "$W/cf.tmp"; cat "$W/cf.tmp" > "$SK/Caddyfile"     # the operator removes their edit, in place
+  R resume >/dev/null 2>&1; check "(b) once the operator's edit is gone the release resumes and completes" eq "$(state phase):$(state accepted)" "COMPLETE:true"
+  # (c) a partial file that is a DIFFERENT file (an editor replaced it): not the file the window was recorded on
+  stack_reset || return 1; approve data >/dev/null
+  RELEASE_FAULTS=kill_in_caddy_write R apply "$W/m/data.json" >/dev/null 2>&1
+  cp "$SK/Caddyfile" "$W/partial"; rm -f "$SK/Caddyfile"; cp "$W/partial" "$SK/Caddyfile"    # same bytes, new inode
+  check "(c) status says NOT REPAIRABLE (the file is not the one recorded)" contains "$(R status)" "NOT REPAIRABLE AUTOMATICALLY"
+  out=$(R resume 2>&1); rc=$?
+  check "(c) resume refuses and the bytes are untouched" eq "$rc:$(cmp -s "$W/partial" "$SK/Caddyfile" && echo same)" "1:same"
+  check "(c) the reason names the inode" contains "$(cat "$SK/deployments/alerts/"*caddy-not-repaired*)" "inode"
+  # (d) a tampered saved copy invalidates the whole record
+  stack_reset || return 1; approve data >/dev/null
+  RELEASE_FAULTS=kill_in_caddy_write R apply "$W/m/data.json" >/dev/null 2>&1
+  echo "# tampered" >> "$SK/deployments/Caddyfile.maintenance"
+  cp "$SK/Caddyfile" "$W/partial"
+  out=$(R resume 2>&1); rc=$?
+  check "(d) the record does not match its saved copy: refused, Caddyfile untouched" eq "$rc:$(cmp -s "$W/partial" "$SK/Caddyfile" && echo same)" "1:same"
+  check "(d) the reason is the checksum" contains "$(cat "$SK/deployments/alerts/"*caddy-not-repaired*)" "RECORD_INVALID"
+}
+
+s31() { # FINDING 2: every rollback closes ingress and drains writers BEFORE it stops anything; a failed stop is never ignored
+  stack_reset || return 1
+  # (a) automatic rollback of an application-only release (which never needed maintenance)
+  RELEASE_FAULTS=pause_rollback_before_stop R apply "$W/m/crash.json" --detach >/dev/null
+  wait_file "$SK/deployments/.paused-before-stop" 120 || say "    the rollback never reached its pause"
+  check "(a) at the moment the rollback is about to stop containers, ingress is CLOSED (503)" eq "$(api_health)" 503
+  check "(a) ...the journal shows: rollback started, ingress closed, drained, and no stop before that" ev_order rollback_started rollback_ingress_closed rollback_drained
+  continue_run; wait_run_done 120
+  check "(a) the release was rolled back from local images" eq "$(state phase):$(running_image api)" "ROLLED_BACK:$(img r0 api)"
+  check "(a) ingress is open again afterwards" eq "$(api_health)" 200
+  # (b) an active background job holds the rollback: nothing is stopped under it
+  stack_reset || return 1
+  RELEASE_FAULTS=pause_after_QUIESCED R apply "$W/m/crash.json" --detach >/dev/null; wait_state QUIESCED 90
+  docker exec "$(cid_of redis)" redis-cli lpush bull:render:active job-9 >/dev/null
+  continue_run; wait_run_done 150
+  check "(b) the release failed, then the rollback could NOT drain the writers: ROLLBACK_FAILED" eq "$(state phase)" ROLLBACK_FAILED
+  check "(b) the reason says the writers did not drain and nothing was stopped" contains "$(run_log)" "the writers did not drain"
+  check "(b) no container was stopped by the rollback" rollback_did_not_stop
+  check "(b) the job is still there" eq "$(docker exec "$(cid_of redis)" redis-cli llen bull:render:active | tr -d '\r')" 1
+  check "(b) ingress is closed (503), not serving a half-rolled-back system" eq "$(api_health)" 503
+  docker exec "$(cid_of redis)" redis-cli del bull:render:active >/dev/null
+  R rollback >/dev/null 2>&1; check "(b) once the queue is idle the operator's rollback succeeds" eq "$?:$(state phase):$(api_health)" "0:ROLLED_BACK:200"
+  # (c) a stop that fails is never ignored: in the switch ...
+  stack_reset || return 1; app_ids > "$W/ids"
+  local rc; RELEASE_FAULTS=stop_fails_render-worker R apply "$W/m/app.json" >/dev/null 2>&1; rc=$?
+  check "(c) a stop that fails fails the release (it does not carry on with a container still running): exit 1, ROLLED_BACK" eq "$rc:$(state phase)" "1:ROLLED_BACK"
+  check "(c) the log names the failed stop" contains "$(run_log)" "stopping render-worker failed"
+  check "(c) nothing was replaced: the previous release is still current" eq "$(current)" "$(rid r0)"
+  # ... and in the rollback itself
+  stack_reset || return 1
+  RELEASE_FAULTS=rollback_stop_fails_api R apply "$W/m/crash.json" >/dev/null 2>&1; rc=$?
+  check "(c) a rollback whose stop fails is ROLLBACK_FAILED (exit 7), not a rollback that carried on" eq "$rc:$(state phase)" "7:ROLLBACK_FAILED"
+  check "(c) the log names the failed stop" contains "$(run_log)" "stopping api failed"
+  check "(c) ingress is closed (503)" eq "$(api_health)" 503
+  R rollback >/dev/null 2>&1; check "(c) the operator's rollback (the stop now works) succeeds" eq "$?:$(state phase):$(api_health)" "0:ROLLED_BACK:200"
+  # (d) operator-initiated rollback
+  stack_reset || return 1
+  R apply "$W/m/app.json" >/dev/null 2>&1; check "(d) an application-only release is live" eq "$(current)" "$(rid app)"
+  RELEASE_FAULTS=pause_rollback_before_stop R rollback >/dev/null 2>&1 &
+  wait_file "$SK/deployments/.paused-before-stop" 90 || say "    the operator rollback never reached its pause"
+  check "(d) the operator's rollback has closed ingress before stopping anything (503)" eq "$(api_health)" 503
+  check "(d) ...and the app containers still run the release being rolled back" eq "$(running_image api)" "$(img app api)"
+  continue_run; wait
+  check "(d) rolled back, ingress open" eq "$(state phase):$(running_image api):$(api_health)" "ROLLED_BACK:$(img r0 api):200"
+  check "(d) the order is journaled" ev_order rollback_started rollback_ingress_closed rollback_drained
+  # (e) operator rollback held by an active job: nothing replaced
+  stack_reset || return 1
+  R apply "$W/m/app.json" >/dev/null 2>&1; app_ids > "$W/ids"
+  docker exec "$(cid_of redis)" redis-cli lpush bull:render:active job-7 >/dev/null
+  R rollback >/dev/null 2>&1; rc=$?
+  check "(e) rollback with an active job: exit 7, and every container is still the one it was" eq "$rc" 7
+  check "(e) ...untouched" untouched "$W/ids"
+  docker exec "$(cid_of redis)" redis-cli del bull:render:active >/dev/null
+}
+
+s32() { # FINDING 4: COMPLETE needs a durable record that names THIS release id and manifest checksum, everywhere
+  stack_reset || return 1
+  local d="$SK/deployments" r0 app
+  r0=$(rid r0); app=$(rid app)
+  check "adopt: the baseline has its durable acceptance record" test -s "$d/acceptance/$r0.json"
+  check "adopt: it names the release id and the manifest checksum" bash -c "grep -q '\"release_id\":\"$r0\"' $d/acceptance/$r0.json && grep -q '$(msha r0)' $d/acceptance/$r0.json"
+  check "status reports the record as valid" contains "$(R status --json)" '"valid": true'
+  R apply "$W/m/app.json" >/dev/null 2>&1
+  check "a normal release: the record names its release id and its manifest checksum" bash -c "grep -q '\"release_id\":\"$app\"' $d/acceptance/$app.json && grep -q '$(msha app)' $d/acceptance/$app.json"
+  R apply "$W/m/app.json" >/dev/null 2>&1; check "NOOP (already running): exit 0, record still valid" eq "$?:$(R status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["acceptance"]["valid"])')" "0:True"
+  local fakessh="$W/fakessh"
+  printf '#!/usr/bin/env bash\nexec env SK_DIR=%s RELEASE_DATA=%s bash %s/release.sh status --json </dev/null\n' "$SK" "$d" "$TOOLS" > "$fakessh"
+  printf '#!/usr/bin/env bash\nshift 2\nexec env SK_DIR=%s RELEASE_DATA=%s bash %s/release.sh status --json </dev/null\n' "$SK" "$d" "$TOOLS" > "$fakessh"; chmod +x "$fakessh"
+  poll() { RELEASE_SSH="$fakessh" POLL_INTERVAL=1 POLL_MAX_LOST=3 "$@" bash "$ROOT/scripts/release/poll-release.sh" vps 20 >"$W/poll.out" 2>&1; echo $?; }
+  check "polling a valid COMPLETE exits 0" eq "$(poll env)" 0
+  check "polling for the release this workflow started: exit 0" eq "$(poll env EXPECT_RELEASE_ID="$app" EXPECT_MANIFEST_SHA256="$(msha app)")" 0
+  check "polling when the server holds a different release than the workflow started: exit 9" eq "$(poll env EXPECT_RELEASE_ID="$r0")" 9
+  tamper() { # description command-that-damages-the-record
+    local desc=$1; shift
+    "$@"
+    check "$desc: status reads INTERRUPTED, not idle" contains "$(R status)" "run:         INTERRUPTED"
+    check "  ...the acceptance block reports it invalid" contains "$(R status --json)" '"valid": false'
+    check "  ...polling treats it as a failure (exit 9)" eq "$(poll env)" 9
+    R apply "$W/m/app2.json" >/dev/null 2>&1; check "  ...no new release may start on top of it (exit 3)" eq "$?" 3
+    check "  ...the monitor flags it" bash -c "! rel bash $TOOLS/monitor.sh >/dev/null 2>&1"
+    R resume >/dev/null 2>&1
+    check "  ...resume runs acceptance AGAIN and records a valid one" eq "$(state phase):$(R status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["acceptance"]["valid"])')" "COMPLETE:True"
+    check "  ...the journal says it re-verified" contains "$(hist)" acceptance_reverify
+  }
+  tamper "a record for a different manifest checksum" sed -i 's/"manifest_sha256":"[0-9a-f]*"/"manifest_sha256":"0000000000000000000000000000000000000000000000000000000000000000"/' "$d/acceptance/$app.json"
+  tamper "a record naming a different release id" sed -i 's/"release_id":"[^"]*"/"release_id":"20200101T000000Z-aaaaaaaaaaaa"/' "$d/acceptance/$app.json"
+  tamper "a missing record" rm -f "$d/acceptance/$app.json"
+  tamper "state naming a different manifest checksum than the record" python3 "$TOOLS/release_tool.py" state set --file "$d/state.json" manifest_sha256=1111111111111111111111111111111111111111111111111111111111111111
+  tamper "a malformed record" bash -c "echo '{broken' > $d/acceptance/$app.json"
+  tamper "a manifest kept for the release that no longer matches" bash -c "echo '{}' >> $d/releases/$app/manifest.json"
+}
+
+s33() { # FINDING 5: unreadable Caddy admin configuration fails release acceptance closed; only monitoring may report it as degraded
+  stack_reset || return 1
+  local m out rc; m="$SK/deployments/releases/$(current)/manifest.json"
+  ACC "$m" edge >/dev/null 2>&1; check "control: with the admin endpoint available the edge acceptance passes" eq "$?" 0
+  out=$(RELEASE_FAULTS=caddy_admin_unavailable ACC "$m" edge 2>&1); rc=$?
+  check "the admin endpoint cannot be read: edge acceptance FAILS (it does not skip)" neq "$rc" 0
+  check "  ...and says it cannot be verified" contains "$out" "cannot be verified"
+  check "  ...it is a failure, not a warning-only skip" lacks "$out" "running-configuration check skipped"
+  RELEASE_FAULTS=caddy_admin_unavailable R apply "$W/m/app.json" >/dev/null 2>&1; rc=$?
+  check "a release whose edge cannot be verified is never COMPLETE" bash -c "[ $rc -ne 0 ] && [ '$(state phase)' != COMPLETE ]"
+  check "  ...it did not become the current release" eq "$(current)" "$(rid r0)"
+  check "  ...the log says why" contains "$(run_log)" "cannot be verified"
+  R rollback >/dev/null 2>&1; R maintenance off >/dev/null 2>&1
+  out=$(RELEASE_FAULTS=caddy_admin_unavailable rel bash "$TOOLS/monitor.sh" 2>&1); rc=$?
+  check "monitoring only: the same condition is reported as DEGRADED verification" contains "$out" "DEGRADED"
+  check "  ...and is not reported as a failure by itself (exit 0)" eq "$rc" 0
+  check "  ...a separate alert says verification is degraded" bash -c "ls $SK/deployments/alerts/*monitor-degraded* >/dev/null"
+  rel bash "$TOOLS/monitor.sh" >/dev/null 2>&1; check "control: the monitor is healthy and silent about degradation when Caddy's admin is readable" eq "$?" 0
+}
+
+s34() { # FINDING 6: every route is accounted for before maintenance; an unclassified route that reaches School Kit is rejected
+  stack_reset || return 1
+  app_ids > "$W/ids"
+  check "the default fixture (static unrelated sites, the school-address site) is fully accounted for" contains "$(rel bash -c "cd $SK && source $TOOLS/lib.sh && source $TOOLS/acceptance.sh && check_route_accounting" 2>&1)" "route accounting:"
+  # a custom school domain that proxies to the portal: it would keep serving through a window the rest of the edge is closed for
+  printf 'http://parents.example.test:8080 {\n\treverse_proxy portal:3000\n}\n' > "$SK/sites/zz-custom-portal.caddy"
+  (cd "$SK" && docker compose --env-file deploy.env -f docker-compose.yml -f backup-ops.override.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile </dev/null >/dev/null 2>&1)
+  approve data >/dev/null
+  local out rc; out=$(R apply "$W/m/data.json" 2>&1); rc=$?
+  check "a data release that needs maintenance is REFUSED before anything changes (exit 1, ABORTED)" eq "$rc:$(state phase)" "1:ABORTED"
+  check "  ...the reason names the unclassified route and its upstream" contains "$out" "parents.example.test"
+  check "  ...and says it refuses to enter maintenance" contains "$out" "refusing to enter maintenance"
+  check "  ...nothing changed: containers untouched" untouched "$W/ids"
+  check "  ...the edge still serves" eq "$(api_health)" 200
+  R maintenance on >/dev/null 2>&1; check "maintenance on by hand is refused too (exit 3) and the edge stays open" eq "$?:$(api_health)" "3:200"
+  R apply "$W/m/app.json" >/dev/null 2>&1; check "an application-only release (no maintenance) is not blocked by it" eq "$?" 0
+  # the operator decides, in writing; the decision is data on the server, never in code
+  printf '# decisions\nparents.example.test accept-live fictional: parents keep read-only portal pages during a window\n' > "$SK/deployments/caddy-route-decisions.conf"
+  R apply "$W/m/data.json" >/dev/null 2>&1; rc=$?
+  check "with the operator's written decision the same release goes ahead and completes" eq "$rc:$(state phase)" "0:COMPLETE"
+  check "  ...the accounting reported the accepted route" contains "$(run_log)" "1 operator-accepted"
+  # a site file whose address cannot be resolved cannot be accounted for: fail closed
+  stack_reset || return 1
+  printf '{$UNSET_CUSTOM_DOMAIN_HOST} {\n\trespond ok\n}\n' > "$SK/sites/zz-unresolvable.caddy"
+  approve data >/dev/null
+  out=$(R apply "$W/m/data.json" 2>&1); rc=$?
+  check "a site file with an address that cannot be resolved: refused before maintenance" eq "$rc:$(state phase)" "1:ABORTED"
+  check "  ...by route accounting" contains "$out" "route accounting"
+  rm -f "$SK/sites/zz-unresolvable.caddy"
 }
 
 run_scenarios() {
@@ -635,5 +904,11 @@ run_scenarios() {
   scenario s26 "partial Caddyfile write, Caddy restart onto it, recovery from the durable record" s26
   scenario s27 "route-group renumbering on real Caddy: ignored; a real routing change: caught" s27
   scenario s28 "lifecycle gauntlet: kill, Caddy restart, torn Caddyfile, resume, rollback with the registry down" s28
+  scenario s29 "FINDING 1 maintenance off by hand cannot bypass the readiness gates (webhooks, money, apps, infrastructure, backups)" s29
+  scenario s30 "FINDING 3 Caddy recovery: interrupted write repaired; unrelated edit, replaced file and tampered record never overwritten" s30
+  scenario s31 "FINDING 2 rollback closes ingress and drains writers before any stop; a failed stop is never ignored" s31
+  scenario s32 "FINDING 4 COMPLETE needs a durable record matching release id and manifest checksum: adopt, NOOP, resume, status, polling" s32
+  scenario s33 "FINDING 5 unreadable Caddy admin configuration fails release acceptance closed; monitoring reports it as degraded" s33
+  scenario s34 "FINDING 6 route accounting before maintenance: unclassified routes that reach School Kit are rejected" s34
   scenario s23 "tool installer: verified, atomic, never under a running release" s23
 }

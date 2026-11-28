@@ -1368,7 +1368,11 @@ subprocess has its standard input closed (`exec </dev/null`; the incident of 202
 rest of a heredoc-fed deployment script, bash hit end-of-file and exited 0 with production still in maintenance); an apply that
 ends without a recorded outcome is a FAILURE (exit 9) even if it exited 0, and COMPLETE exists only with its durable acceptance
 record; Caddy files are changed only after a durable recovery record exists, and route-group numbering is normalised (never ignored)
-when comparing routing. It coexists with, and refuses to run during,
+when comparing routing. Review findings of 2026-11-28 are rules too: `maintenance off` runs the readiness gates and is refused over an
+unfinished release; rollback closes ingress and drains writers before it stops anything, and a failed stop is never ignored; Caddy
+recovery repairs only a pending-intent, same-inode, strict-prefix write and never overwrites an unrelated edit; COMPLETE needs
+`acceptance/<id>.json` matching the release id and manifest checksum everywhere (adopt, NOOP, resume, status, poller); an unreadable
+Caddy admin endpoint fails release acceptance; every route is accounted for before maintenance. It coexists with, and refuses to run during,
 `ops-tools/cutover.sh`; its data is in `deployments/`, never `release/`. Changing any of it means
 running `scripts/release-qualification/run.sh` (real PostgreSQL 18, Redis, Caddy and a local
 registry; the `release-qualification` workflow does it) and updating the runbook.

@@ -33,7 +33,7 @@ rank() { local i; for i in "${!PHASES[@]}"; do [ "${PHASES[$i]}" = "$1" ] && { e
 phase_ge() { [ "$(rank "$(state_get phase)")" -ge "$(rank "$1")" ]; }
 # COMPLETE is final ONLY with its durable acceptance record (state `accepted`, plus acceptance/<release>.json). A process that
 # stops early, whatever exit status it reports, therefore never looks like a finished release.
-terminal() { case "$(state_get phase)" in ''|ROLLED_BACK|ABORTED) return 0 ;; COMPLETE) [ "$(state_get accepted)" = true ] ;; *) return 1 ;; esac; }
+terminal() { case "$(state_get phase)" in ''|ROLLED_BACK|ABORTED) return 0 ;; COMPLETE) acceptance_ok ;; *) return 1 ;; esac; }
 record_acceptance() { # durable, synced record that acceptance passed for $M_ID
   mkdir -p "$D/acceptance"
   printf '{"release_id":"%s","manifest_sha256":"%s","accepted_at":"%s","scope":"internal+edge"}\n' "$M_ID" "$M_SHA" "$(date -u +%FT%TZ)" > "$D/acceptance/$M_ID.json.new"
@@ -45,11 +45,11 @@ record_acceptance() { # durable, synced record that acceptance passed for $M_ID
 # (end-of-input, a swallowed heredoc, `exit 0` in the wrong place) reports success having done a fraction of the work.
 RUN_ACTIVE=0
 premature_guard() {
-  local rc=$? ph acc
+  local rc=$? ph
   trap - EXIT
   [ "$RUN_ACTIVE" = 1 ] || exit "$rc"
-  ph=$(state_get phase); acc=$(state_get accepted)
-  case $ph in ROLLED_BACK|ABORTED|FIX_FORWARD_REQUIRED|ROLLBACK_FAILED) exit "$rc" ;; COMPLETE) [ "$acc" = true ] && exit "$rc" ;; esac
+  ph=$(state_get phase)
+  case $ph in ROLLED_BACK|ABORTED|FIX_FORWARD_REQUIRED|ROLLBACK_FAILED) exit "$rc" ;; COMPLETE) acceptance_ok && exit "$rc" ;; esac
   event premature_exit release_id="$(state_get release_id)" phase="${ph:-none}" status="$rc"
   state_set exit_unexpected=true >/dev/null
   log "BLOCK the release process ended (status $rc) at phase ${ph:-none} without a recorded outcome: this is a FAILURE. Ingress and state are left exactly as they are; 'release.sh status' then 'release.sh resume'."
@@ -115,7 +115,9 @@ cmd_adopt() {
   mkdir -p "$D/releases/$M_ID"; cp "$M" "$D/releases/$M_ID/manifest.json"
   echo "$M_ID" > "$D/current"; rm -f "$D/previous"
   protected_save
+  record_acceptance
   state_set release_id="$M_ID" manifest_sha256="$M_SHA" phase=COMPLETE trigger=adopt mutated=false accepted=true >/dev/null
+  acceptance_ok || { local why; why=$(acceptance_why); state_set accepted=false >/dev/null; fail_exit 1 "the acceptance record for the adopted baseline does not verify: $why"; }
   event adopted release_id="$M_ID" manifest_sha256="$M_SHA"
   ok "adopted $M_ID as the baseline release; the overlays recorded: ${#extras[@]}"
 }
@@ -192,6 +194,16 @@ drain_wait() { # bounded: never stop the API or worker under an active job or a 
   done
   log "BUSY still $n active job(s) / $w claimed webhook(s): not stopping anything mid-work"; return 1
 }
+writers_running() { local s c; for s in api render-worker; do c=$(cid "$s" || true); if [ -n "$c" ] && [ "$(docker inspect -f '{{.State.Running}}' "$c")" = true ]; then return 0; fi; done; return 1; }
+# A stop that fails, or that leaves the container running, is a failure of the release: it is never ignored.
+stop_service() { # service
+  local s=$1 c
+  if fault "stop_fails_$s" || { [ "${STOP_CONTEXT:-}" = rollback ] && fault "rollback_stop_fails_$s"; }; then log "FAULT stopping $s fails"; log "BLOCK stopping $s failed"; return 1; fi
+  c=$(cid_any "$s" || true); [ -n "$c" ] || return 0
+  event stopping service="$s"
+  rdc stop -t "${RELEASE_STOP_GRACE:-60}" "$s" >/dev/null || { log "BLOCK stopping $s failed"; return 1; }
+  [ "$(docker inspect -f '{{.State.Running}}' "$c")" = false ] || { log "BLOCK $s is still running after the stop"; return 1; }
+}
 step_stage() { stage_core; }
 step_preflight() {
   CHECK_FAILED=0
@@ -203,6 +215,7 @@ step_preflight() {
   local pg; pg=$(sql -c "SELECT current_setting('server_version_num')::int / 10000") || return 1
   [ "$pg" = "$(mf pg_major)" ] && [ "$(dvar PG_MAJOR)" = "$pg" ] && ok "PostgreSQL major $pg matches the manifest and deploy.env" || bad "PostgreSQL major mismatch (running $pg, deploy.env $(dvar PG_MAJOR), manifest $(mf pg_major))"
   local cur; cur=$(current_manifest); local s ref
+  if [ "$(pj needs_maintenance <<<"$PLAN")" = true ] && ! maintenance_active; then check_route_accounting || true; fi
   if [ "$fixfwd" = 1 ]; then
     # A fix-forward starts from a system a failed release left half-changed: what runs is NOT the recorded current release
     # and the API may be down. The checks that need that are skipped here and run in full in acceptance after the switch.
@@ -231,12 +244,12 @@ step_quiesce() {
   drain_wait || return 4
   if [ "$NEEDS_MAINT" = true ]; then
     state_set mutated=true >/dev/null
+    if ! maintenance_active; then check_route_accounting || return 1; fi
     maintenance_on "$M_ID" || return 1
     info "ingress is closed; waiting ${RELEASE_DRAIN_SECONDS:-30}s for in-flight requests"; sleep "${RELEASE_DRAIN_SECONDS:-30}"
     drain_wait || return 1
-    rdc stop -t "${RELEASE_STOP_GRACE:-60}" api render-worker >/dev/null || return 1
-    local s id
-    for s in api render-worker; do id=$(cid_any "$s"); [ -z "$id" ] || [ "$(docker inspect -f '{{.State.Running}}' "$id")" = false ] || { log "BLOCK $s did not stop"; return 1; }; done
+    local s
+    for s in api render-worker; do stop_service "$s" || return 1; done
     ok "ingress closed; the API and render worker are stopped; no queue job was interrupted"
   fi
   protected_assert quiesce
@@ -293,7 +306,7 @@ step_switch() {
     [ -n "$s" ] || continue
     log "switching $s"
     # graceful stop first (the API drains requests on SIGTERM), then create ONLY this service from the pinned image
-    if [ -n "$(cid "$s" || true)" ]; then rdc stop -t "${RELEASE_STOP_GRACE:-60}" "$s" >/dev/null || true; fi
+    if [ -n "$(cid "$s" || true)" ]; then stop_service "$s" || return 1; fi
     rdc up -d --no-deps --no-build --pull never "$s" >/dev/null || { log "BLOCK compose could not start $s"; return 1; }
     wait_healthy "$s" || { log "BLOCK $s did not become healthy on the new image"; return 1; }
     protected_assert "switch $s" || return 1
@@ -301,7 +314,7 @@ step_switch() {
   ok "switched: ${up[*]:-nothing}"
 }
 step_verify() {
-  MANIFEST=$M; PHASE=internal; BASELINE_FILE="$D/baseline/$M_ID.env"
+  MANIFEST=$M; PHASE=internal; BASELINE_FILE="$D/baseline/$M_ID.env"; [ -f "$BASELINE_FILE" ] || BASELINE_FILE=""
   run_acceptance "$M" internal || return 1
   if maintenance_active; then maintenance_off || return 1; fi
   run_acceptance "$M" edge || return 1
@@ -314,6 +327,32 @@ promote() {
 }
 
 # --------------------------------------------------------------------------- rollback (local images only)
+rollback_needs_stop() { # target -> 0 when any running service must be stopped or replaced
+  local target=$1 s c
+  for s in "${APPLY_ORDER[@]}"; do
+    service_enabled "$s" || continue
+    TOOL jget "$target" "images.$s" >/dev/null 2>&1 || continue
+    c=$(cid "$s" || true); [ -n "$c" ] || continue
+    if [ "$(docker inspect -f '{{.Config.Image}}' "$c")" != "$(TOOL jget "$target" "images.$s")" ] || [ "$(docker inspect -f '{{.State.Running}}' "$c")" != true ]; then return 0; fi
+  done
+  return 1
+}
+# Automatic AND operator-initiated rollback protect the system the same way a release does: close ingress, then wait for the
+# writers (queue jobs, claimed payment webhooks) to finish, and only then stop or replace a container.
+rollback_protect() { # target
+  rollback_needs_stop "$1" || { info "rollback: no running container has to be stopped or replaced"; return 0; }
+  if ! maintenance_active; then
+    check_route_accounting || { log "BLOCK the edge cannot be closed safely (a route would keep serving); the rollback is not started"; return 1; }
+    maintenance_on "${M_ID:-rollback}" || { log "BLOCK ingress could not be closed before the rollback; nothing was stopped"; return 1; }
+  fi
+  event rollback_ingress_closed release_id="${M_ID:-}"
+  info "rollback: ingress is closed; waiting ${RELEASE_DRAIN_SECONDS:-30}s for in-flight requests"; sleep "${RELEASE_DRAIN_SECONDS:-30}"
+  if writers_running; then
+    drain_wait || { log "BLOCK the writers did not drain (an active job or a claimed webhook): nothing was stopped; an operator must act"; return 1; }
+  fi
+  event rollback_drained release_id="${M_ID:-}"
+  if fault pause_rollback_before_stop; then : > "$D/.paused-before-stop"; while [ ! -f "$D/.continue" ]; do sleep 1; done; rm -f "$D/.continue" "$D/.paused-before-stop"; fi
+}
 rollback_core() { # target-manifest-file -> 0 done | 6 fix-forward required | 7 failed
   local target=$1 s ref rc=0
   # test-only: the old API image is removed by "someone" after the release replaced its container (an image
@@ -328,6 +367,8 @@ rollback_core() { # target-manifest-file -> 0 done | 6 fix-forward required | 7 
   rm -f "$f"
   if [ "$rc" != 0 ]; then log "FIX-FORWARD the database holds a change the earlier release cannot run on: $(python3 -c 'import json; print("; ".join(json.load(open("'"$D"'/.rbcheck.json"))["reasons"]))')"; return 6; fi
   state_set phase=ROLLING_BACK >/dev/null; event rollback_started to="$(TOOL jget "$target" release_id)"
+  rollback_protect "$target" || return 7
+  STOP_CONTEXT=rollback
   write_override "$target" release.override.yml.new
   RELEASE_OVERRIDE_FILE=release.override.yml.new rdc config --quiet || return 7
   mv -f release.override.yml.new release.override.yml
@@ -337,7 +378,7 @@ rollback_core() { # target-manifest-file -> 0 done | 6 fix-forward required | 7 
     local c; c=$(cid "$s" || true)
     if [ -n "$c" ]; then
       [ "$(docker inspect -f '{{.Config.Image}}' "$c")" = "$(TOOL jget "$target" "images.$s")" ] && [ "$(docker inspect -f '{{.State.Running}}' "$c")" = true ] && continue
-      rdc stop -t "${RELEASE_STOP_GRACE:-60}" "$s" >/dev/null || true
+      stop_service "$s" || return 7
     fi
     rdc up -d --no-deps --no-build --pull never "$s" >/dev/null || return 7
     wait_healthy "$s" || { log "BLOCK $s is not healthy after the rollback"; return 7; }
@@ -438,12 +479,17 @@ cmd_apply() {
   local prior; prior=$(state_get phase)
   if [ "$resume" = 1 ]; then
     [ "$M_ID" = "$(state_get release_id)" ] || fail_exit 3 "the state belongs to a different release"
-    state_set run_id="${RELEASE_RUN_ID:-resume-$$}" >/dev/null
+    state_set run_id="${RELEASE_RUN_ID:-resume-$$}" manifest_sha256="$M_SHA" >/dev/null   # re-asserted from the staged manifest, which load_manifest just re-hashed
     event resumed release_id="$M_ID" from="$prior"
+    if [ "$prior" = COMPLETE ]; then
+      # COMPLETE without a matching durable record is not a state to paper over: acceptance is run again in full
+      state_set phase=SWITCHED accepted=false >/dev/null; event acceptance_reverify release_id="$M_ID"; REVERIFY=1
+      log "the state said COMPLETE but its acceptance record does not verify ($(acceptance_why)): running acceptance again"
+    fi
   else
     case $prior in
       ''|ROLLED_BACK|ABORTED) ;;
-      COMPLETE) [ "$(state_get accepted)" = true ] || fail_exit 3 "state is COMPLETE without an acceptance record: run 'release.sh resume'" ;;
+      COMPLETE) acceptance_ok || fail_exit 3 "state is COMPLETE without a matching acceptance record ($(acceptance_why)): run 'release.sh resume'" ;;
       FIX_FORWARD_REQUIRED) [ "$fixfwd" = 1 ] || fail_exit 3 "state is FIX_FORWARD_REQUIRED: apply the corrected release with --fix-forward (it needs an approval)" ;;
       *) fail_exit 3 "state is $prior: run 'release.sh resume' or 'release.sh rollback', not a new release" ;;
     esac
@@ -459,7 +505,13 @@ cmd_apply() {
   fi
   event planned release_id="$M_ID" class="$(pj class <<<"$PLAN")"
   info "plan: class=$(pj class <<<"$PLAN") services=$(pj services_changed <<<"$PLAN") maintenance=$(pj needs_maintenance <<<"$PLAN") rollback-after=$(pj rollback_allowed_after <<<"$PLAN")"
-  if [ "$(pj class <<<"$PLAN")" = NOOP ]; then record_acceptance; state_set phase=COMPLETE accepted=true >/dev/null; ok "nothing to do: $M_ID is already running"; return 0; fi
+  if [ "$(pj class <<<"$PLAN")" = NOOP ]; then
+    if [ "${REVERIFY:-0}" = 1 ]; then step_verify || { state_set phase=SWITCHED >/dev/null; fail_exit 1 "acceptance did not pass again: the release is not COMPLETE"; }
+      mkdir -p "$D/releases/$M_ID"; cp "$M" "$D/releases/$M_ID/manifest.json"   # acceptance has just passed in full: the kept copy is re-written from the staged manifest
+    fi
+    record_acceptance; state_set phase=COMPLETE accepted=true >/dev/null
+    acceptance_ok || { local why; why=$(acceptance_why); state_set accepted=false >/dev/null; fail_exit 9 "the acceptance record does not verify: $why"; }
+    ok "nothing to do: $M_ID is already running"; return 0; fi
   # Approval gates. Schema changes, destructive operations and --fix-forward never run on the strength of a green build alone.
   if [ "$(pj needs_approval <<<"$PLAN")" = true ] || [ "$fixfwd" = 1 ]; then
     approval_ok "$(pj destructive <<<"$PLAN")" || { state_set phase=ABORTED error=approval >/dev/null; fail_exit 3 "this release needs an owner approval bound to manifest ${M_SHA:0:12} (release.sh approve); destructive=$(pj destructive <<<"$PLAN")"; }
@@ -474,6 +526,7 @@ cmd_apply() {
   promote
   record_acceptance
   state_set phase=COMPLETE accepted=true error= >/dev/null
+  acceptance_ok || { local why; why=$(acceptance_why); state_set accepted=false >/dev/null; log "BLOCK the acceptance record does not verify ($why): the release is NOT complete"; exit 9; }
   event completed release_id="$M_ID" class="$(pj class <<<"$PLAN")"
   ok "release $M_ID is live (previous: $(cat "$D/previous" 2>/dev/null || echo none))"
 }
@@ -484,18 +537,27 @@ cmd_status() {
   exec 8>"$D/apply.lock"; flock -n 8 || lock=held
   if ! terminal && [ "$lock" = free ]; then run_state=INTERRUPTED; elif [ "$lock" = held ]; then run_state=RUNNING; else run_state=IDLE; fi
   if [ "${1:-}" = --json ]; then
-    python3 - "$D" "$run_state" "$(current_id)" "$(cat "$D/previous" 2>/dev/null || true)" "$([ -f "$D/MAINTENANCE" ] && echo true || echo false)" <<'PY'
+    local acc_valid=false acc_why; acc_why=$(TOOL acceptance-check --dir "$D" 2>&1) && acc_valid=true || true
+    caddy_classify
+    python3 - "$D" "$run_state" "$(current_id)" "$(cat "$D/previous" 2>/dev/null || true)" "$([ -f "$D/MAINTENANCE" ] && echo true || echo false)" "$acc_valid" "$acc_why" "$CADDY_VERDICT" <<'PY'
 import json, sys
-d, run, cur, prev, maint = sys.argv[1:6]
+d, run, cur, prev, maint, acc_valid, acc_why, caddy = sys.argv[1:9]
 try: st = json.load(open(d + "/state.json"))
 except OSError: st = {}
-print(json.dumps({"run": run, "current": cur, "previous": prev, "maintenance": maint == "true", "state": st}, indent=2, sort_keys=True))
+print(json.dumps({"run": run, "current": cur, "previous": prev, "maintenance": maint == "true", "state": st,
+                  "acceptance": {"valid": acc_valid == "true", "detail": acc_why, "release_id": st.get("release_id", ""), "manifest_sha256": st.get("manifest_sha256", "")},
+                  "caddy": caddy}, indent=2, sort_keys=True))
 PY
   else
     echo "run:         $run_state"; echo "phase:       ${phase:-none}"; echo "release:     $(state_get release_id)"
     echo "current:     $(current_id)"; echo "previous:    $(cat "$D/previous" 2>/dev/null || echo none)"
     echo "maintenance: $([ -f "$D/MAINTENANCE" ] && cat "$D/MAINTENANCE" || echo off)"; echo "error:       $(state_get error)"; echo "accepted:    $(state_get accepted)"
-    if caddy_partial; then echo "caddy:       PARTIAL WRITE on disk (a release command repairs it from the durable record)"; fi
+    echo "acceptance:  $(acceptance_why)"
+    caddy_classify
+    case $CADDY_VERDICT in
+      INTERRUPTED) echo "caddy:       INTERRUPTED WRITE on disk ($CADDY_DETAIL): a release command completes it from the durable record" ;;
+      UNRELATED_EDIT|RECORD_INVALID) echo "caddy:       NOT REPAIRABLE AUTOMATICALLY: $CADDY_VERDICT ($CADDY_DETAIL); nothing will be overwritten" ;;
+    esac
     case $phase in FIX_FORWARD_REQUIRED) echo "next:        ship a corrected release: release.sh apply <manifest> --fix-forward (needs approval)";;
       ROLLBACK_FAILED) echo "next:        an operator must act: read $D/diagnostics, fix, then release.sh rollback or release.sh resume";; esac
   fi
@@ -564,10 +626,50 @@ cmd_resolve_migration() {
   rm -f "$envf"; [ "$rc" = 0 ] || fail_exit 1 "resolve failed"
   event migration_resolved name="$name"; ok "$name marked rolled back; a corrected release can now be applied"
 }
+# Opening ingress by hand is not a way around the gates a release must pass. It is refused while any release is unfinished
+# (resume or roll back instead), and otherwise the same readiness checks run first: images, protected infrastructure, migrations,
+# the money and webhook invariants against the last baseline, backups, runtime gates, application health and the workers.
+# Only then is ingress opened, and the edge is checked afterwards; if it does not serve, the window is closed again.
+maintenance_off_gated() {
+  exec 9>"$D/apply.lock"; flock -n 9 || fail_exit 5 "a release is running"
+  cutover_busy && fail_exit 3 "the coordinated cutover is in progress"
+  maintenance_active || [ -f "$D/MAINTENANCE" ] || [ -e "$D/Caddyfile.pre-release" ] || { echo "maintenance is not on"; return 0; }
+  caddy_recover || fail_exit 1 "Caddy's files are not in a state that can be repaired automatically: nothing was changed"
+  local phase cur; phase=$(state_get phase); cur=$(current_manifest)
+  terminal || fail_exit 3 "a release is unfinished (state $phase): finish it with 'release.sh resume' or 'release.sh rollback'; maintenance is not opened by hand over it"
+  [ -n "$cur" ] || fail_exit 3 "there is no recorded release to check readiness against"
+  event maintenance_off_requested state="${phase:-none}"
+  # shellcheck disable=SC2034  # MANIFEST, PHASE and BASELINE_FILE are read by the sourced acceptance checks
+  MANIFEST=$cur; CHECK_FAILED=0
+  # shellcheck disable=SC2034
+  PHASE=maintenance-off
+  # shellcheck disable=SC2034
+  BASELINE_FILE=$(ls -t "$D"/baseline/*.env 2>/dev/null | head -n 1 || true)
+  local rid; rid=$(state_get release_id)
+  [ -n "$rid" ] && [ -f "$D/staging/$rid.json" ] && export ACCEPT_CLASS_SOURCE=$D/staging/$rid.json
+  [ "$phase" != ROLLED_BACK ] || export ACCEPT_TOLERATE_UNRESOLVED=1
+  if ! run_acceptance "$cur" internal; then
+    event maintenance_off_refused reason=readiness
+    notify maintenance-off-refused "Ingress was NOT opened: the readiness gates failed (see $D/run.log). Maintenance stays on."
+    fail_exit 3 "readiness gates failed: maintenance stays on"
+  fi
+  maintenance_off || fail_exit 1 "could not restore the original Caddy files: maintenance stays on"
+  if ! run_acceptance "$cur" edge; then
+    log "BLOCK the edge does not serve correctly after opening: closing it again"
+    maintenance_on manual || log "BLOCK COULD NOT CLOSE INGRESS AGAIN: an operator must act now"
+    event maintenance_off_reverted
+    notify maintenance-off-reverted "Ingress was opened and the edge failed its checks; it was closed again."
+    fail_exit 1 "edge verification failed after opening: maintenance is on again"
+  fi
+  event maintenance_off_completed state="${phase:-none}"
+  ok "maintenance off after passing the readiness gates"
+}
 cmd_maintenance() {
   case ${1:-} in
-    on) exec 9>"$D/apply.lock"; flock -n 9 || fail_exit 5 "a release is running"; maintenance_on manual ;;
-    off) exec 9>"$D/apply.lock"; flock -n 9 || fail_exit 5 "a release is running"; caddy_recover || true; maintenance_off ;;
+    on) exec 9>"$D/apply.lock"; flock -n 9 || fail_exit 5 "a release is running"
+        maintenance_active || { check_route_accounting || fail_exit 3 "the edge cannot be closed safely: see the route accounting above"; }
+        maintenance_on manual ;;
+    off) maintenance_off_gated ;;
     status) if [ -f "$D/MAINTENANCE" ]; then cat "$D/MAINTENANCE"; else echo off; fi ;;
     *) usage ;;
   esac

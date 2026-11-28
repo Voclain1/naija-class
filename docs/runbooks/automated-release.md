@@ -209,6 +209,36 @@ production still in maintenance. Nothing failed; nothing had finished. The perma
 - Paid messaging, SMS and WhatsApp provider paths are not touched by any release step; acceptance
   fails if their gates are not `off`.
 
+### Review findings (2026-11-28), and what the tooling does about each
+
+- **Maintenance off by hand is gated.** `release.sh maintenance off` takes the lock, repairs nothing it cannot prove
+  is an interrupted write, refuses while any release is unfinished (use `resume` or `rollback`), then runs the same
+  internal acceptance a release does (images, protected infrastructure, migrations, money and webhook invariants
+  against the last baseline, backups, runtime gates, application health, workers). Only then is ingress opened, and
+  the edge is checked; if it does not serve, the window is closed again. A refusal is journaled and alerted.
+- **Rollback protects the system first.** Automatic and operator rollbacks close ingress (after route accounting),
+  wait for the writers (active jobs, claimed webhook deliveries) and only then stop or replace a container. A stop
+  that fails, or leaves the container running, fails the step (`ROLLBACK_FAILED`, exit 7); it is never ignored.
+- **Caddy recovery tells an interrupted write from an edit.** The durable record holds checksums of both versions
+  and of the saved copies, each live file's inode, and the write intent (direction, pending/done). A file is repaired
+  only if the intent is pending, it is the same inode, the container sees that inode, and its bytes are a strict
+  prefix of what was being written. Anything else (a hand edit, a replaced file, a tampered copy) is reported
+  (`status` says NOT REPAIRABLE AUTOMATICALLY, an alert is written) and **never overwritten**: release, rollback and
+  `maintenance off` all refuse until a person resolves it.
+- **COMPLETE needs a matching record.** `acceptance/<release>.json` must name the same release id and manifest
+  checksum as the state and as the manifest kept for that release. Adopt, NOOP, normal completion, resume, `status`
+  (`acceptance.valid` in `--json`), the monitor, cleanup and the poller (which also checks the id and checksum the
+  workflow started, `EXPECT_RELEASE_ID`, `EXPECT_MANIFEST_SHA256`) all use the same check. A COMPLETE that does not
+  verify reads as INTERRUPTED and `resume` runs acceptance again in full before recording anything.
+- **Unreadable Caddy admin configuration fails acceptance.** Only the monitor may report it, separately, as
+  DEGRADED verification (exit 0, a `monitor-degraded` alert).
+- **Route accounting before maintenance.** `caddy adapt` is read for every route. Hosts the maintenance rewrite closes
+  (API, web, portal, the school-address site) and routes that reach nothing of School Kit's pass. A route that
+  reaches a School Kit upstream (`api`, `web`, `portal`, `cbt`, `render-worker`, the database, or their loopback
+  ports) and is neither closed nor decided is **rejected before anything changes**; so is a site file whose host is
+  missing from the adapted configuration or cannot be resolved. A decision is a line in
+  `deployments/caddy-route-decisions.conf`: `HOST accept-live REASON` (data on the server, never in code).
+
 ## 8. Monitoring and retention
 
 - `monitor.sh` (read-only; exit 1 = needs attention): off-site backup age and WAL archiving, drift from
@@ -232,6 +262,10 @@ production still in maintenance. Nothing failed; nothing had finished. The perma
    (and `CBT_ENV_FILE`), and optionally `RESEND_API_KEY` + `RELEASE_ALERT_EMAIL`. Set variable `PG_MAJOR=18`.
 3. Read the production Caddyfile and compare it with `infra/vps/Caddyfile`: it must contain exactly one
    `{$API_HOST} {`, `{$WEB_HOST} {` and `{$PORTAL_HOST} {` block. If not, fix this before anything else.
+3a. List every site file in `sites/` and decide each host that reaches a School Kit upstream (typically
+   `cbt.schoolkit.ng`, and any custom school domain proxying to the portal): either it is closed by the maintenance
+   rewrite or write `HOST accept-live REASON` in `deployments/caddy-route-decisions.conf`. Without it, a release that
+   needs maintenance is refused at preflight (that is the point).
 4. Run `release.yml` with action `plan`. This installs the tools on the server and prints the plan;
    it will say `NO_BASELINE`. Nothing else has changed.
 5. Build a manifest for **the commit that is running now** and adopt it:

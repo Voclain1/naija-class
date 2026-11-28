@@ -70,7 +70,16 @@ local registry):
 | s27 | route-group renumbering on real Caddy: ignored; a real routing change: caught | PASS | 70s |
 | s28 | lifecycle gauntlet: kill, Caddy restart, torn Caddyfile, resume, rollback with the registry down | PASS | 156s |
 
-**28 of 28 scenarios passed; 291 individual checks passed, 0 failed.** The wall time of a scenario
+| s29 | FINDING 1: maintenance off by hand cannot bypass the readiness gates (webhooks, money, applications, infrastructure, backups, runtime gates); refused over an unfinished release | PASS | 209s |
+| s30 | FINDING 3: Caddy recovery repairs an interrupted write; an unrelated edit, a replaced file and a tampered record are never overwritten | PASS | 203s |
+| s31 | FINDING 2: every rollback closes ingress and drains writers before any stop; a failed stop is never ignored | PASS | 509s |
+| s32 | FINDING 4: COMPLETE needs a record matching release id and manifest checksum (adopt, NOOP, normal, resume, status, monitor, poller) | PASS | 132s |
+| s33 | FINDING 5: unreadable Caddy admin configuration fails release acceptance; the monitor reports it as degraded | PASS | 121s |
+| s34 | FINDING 6: route accounting before maintenance; unclassified routes that reach School Kit are rejected | PASS | 152s |
+
+**34 of 34 scenarios passed; 449 individual checks passed, 0 failed** (the final code, 2026-11-28; the 28 earlier
+scenarios were preserved, with the changes in §4b). They ran as one full run plus targeted re-runs of s05, s06 and s20:
+the full run's only failures were three race conditions in the harness itself (§4b), each fixed in the scenario. The wall time of a scenario
 includes building a fresh stack and, for the faulted ones, waiting out the timeouts the scenario sets.
 
 ## 4. What the qualification found (and what was done)
@@ -113,6 +122,24 @@ completion marker absent); the same sequence run from a file, with stdin closed,
 | 8 | Auto-generated Caddy route-group ids do not mask or fake routing changes | per-site comparison with group renaming by first appearance; group structure still compared | s27 (real Caddy renumbered group9 to group7), unit tests |
 | 9 | Rollback needs no GHCR | rollback uses local images only; the single `docker pull` is in staging, guarded statically | s09, s28 |
 | 10 | Full lifecycle on real Docker, Redis, PostgreSQL, Caddy, with interruption and failure injection | `scripts/release-qualification/run.sh` | all 28, especially s28 |
+
+## 4b. Review findings of 2026-11-28
+
+| # | Finding | Fix | Failure injection |
+|---|---|---|---|
+| 1 | `maintenance off` bypassed every gate | `maintenance_off_gated`: refused over any unfinished release, then the internal acceptance (images, protected infrastructure, migrations, money and webhooks against the baseline, backups, gates, health, workers), then the edge is checked and the window re-closed if it fails | s29: stale webhooks, duplicate Paystack reference, over-allocation, a gate, a stopped application, a stopped scheduler, a stale backup, a restarted Redis, an unfinished and a running release |
+| 2 | Rollback stopped containers without closing ingress or draining; stop failures were ignored | `rollback_protect` (route accounting, ingress, drain, then stops); `stop_service` fails on a failed or ineffective stop, in the switch and the rollback | s31: pause before the first stop and observe 503 and the journal order; an active job holds the rollback (exit 7, nothing stopped); `stop_fails_*` and `rollback_stop_fails_*` |
+| 3 | Recovery could overwrite an unrelated edit | durable record with checksums, inodes and a pending/done write intent; `caddy-classify`: repair only a pending, same-inode, container-visible, strict-prefix write; otherwise refuse everywhere | s30: a real interrupted write (repaired), a hand edit, a replaced file, a tampered saved copy (all refused, bytes untouched); unit tests |
+| 4 | `accepted=true` was trusted | `acceptance-check`: record exists and names this release id and manifest checksum, the kept manifest matches; used by adopt, NOOP, completion, resume (re-runs acceptance), status, monitor, cleanup and the poller (which also checks the id and checksum it started) | s32: wrong checksum, wrong id, missing, state tampered, malformed, kept manifest changed; poller exit codes; unit tests |
+| 5 | An unreadable Caddy admin endpoint was a warning | release acceptance fails closed; only the monitor reports DEGRADED verification | s33 (`caddy_admin_unavailable`) |
+| 6 | Production school-domain routes were not accounted for | `caddy-route-audit` over `caddy adapt` before any maintenance (preflight, quiesce, rollback, manual `maintenance on`); unclassified affected routes, missing site hosts and unresolvable addresses are rejected; operator decisions live in `deployments/caddy-route-decisions.conf` | s34; unit tests |
+
+Harness races found by the full run, all in the scenarios and not in the tooling, and fixed there: s05 killed its "SSH
+session" before the detached child had left the adopt-time COMPLETE state, then started the next release before the
+finished one let go of its lock; s20 named the backup's dump and marker from two clock reads that could straddle a
+second; s06 failed only because s05's leftover process was still running. s28 step 3 now uses a real interrupted write
+(`kill_in_caddy_write` on a resumed release) instead of an outsider's torn file, which finding 3 correctly classifies as an
+unrelated edit. s05 must not be started under `nohup` (it ignores SIGHUP, which s05 sends); the harness is launched with `setsid`.
 
 ## 5. Measured behaviour
 

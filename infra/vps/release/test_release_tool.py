@@ -476,5 +476,246 @@ class ScopedBuilds(unittest.TestCase):
             self.assertEqual(self.run_build(d, {"postgres": "9"}, dict(self.U), self.prev())[0], 2)
 
 
+class CaddyRecoveryIntent(unittest.TestCase):
+    """Finding 3: an interrupted write is told apart from an unrelated edit, and only the former is ever repaired."""
+    ORIG = "{$API_HOST} {\n\treverse_proxy api:4000\n}\n" * 3
+    MAINT = "# RELEASE-MAINTENANCE\n{$API_HOST} {\n\theader Retry-After \"120\"\n\trespond \"Maintenance\" 503\n}\n" * 3
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = os.path.join(self.tmp.name, "dep"); os.makedirs(os.path.join(self.d, "sites.pre-release"))
+        self.cf = os.path.join(self.tmp.name, "Caddyfile")
+        self.site = os.path.join(self.tmp.name, "school.caddy")
+        for path, text in ((os.path.join(self.d, "Caddyfile.pre-release"), self.ORIG), (os.path.join(self.d, "Caddyfile.maintenance"), self.MAINT),
+                           (os.path.join(self.d, "sites.pre-release", "school-addresses.caddy"), "*.s.test {\n\trespond ok\n}\n"),
+                           (os.path.join(self.d, "school-addresses.maintenance"), "*.s.test {\n\trespond 503\n}\n"),
+                           (self.cf, self.ORIG), (self.site, "*.s.test {\n\trespond ok\n}\n")):
+            with open(path, "w") as fh:
+                fh.write(text)
+        t.caddy_record_save(self.d, t.caddy_record_build(self.d, self.cf, self.site))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write_in_place(self, text):
+        with open(self.cf, "r+") as fh:        # same inode, as `cat > Caddyfile` does
+            fh.seek(0); fh.truncate(); fh.write(text)
+
+    def verdict(self, **kw):
+        return t.caddy_classify(self.d, **kw)[0]
+
+    def test_no_record_means_no_window(self):
+        os.unlink(os.path.join(self.d, t.CADDY_RECORD))
+        self.assertEqual(self.verdict(), "NO_RECORD")
+
+    def test_both_recorded_versions_are_consistent(self):
+        self.assertEqual(self.verdict(), "CONSISTENT")
+        self.write_in_place(self.MAINT)
+        self.assertEqual(self.verdict(), "CONSISTENT")
+
+    def test_a_prefix_of_the_intended_content_with_a_pending_intent_is_an_interrupted_write(self):
+        t.caddy_record_intent(self.d, "to_maintenance", "pending")
+        self.write_in_place(self.MAINT[:40])
+        v, direction, _ = t.caddy_classify(self.d)
+        self.assertEqual((v, direction), ("INTERRUPTED", "to_maintenance"))
+        self.write_in_place("")                    # truncated and nothing written yet
+        self.assertEqual(self.verdict(), "INTERRUPTED")
+
+    def test_an_interrupted_restore_is_recognised_in_its_own_direction(self):
+        self.write_in_place(self.MAINT)
+        t.caddy_record_intent(self.d, "to_original", "pending")
+        self.write_in_place(self.ORIG[:25])
+        self.assertEqual(t.caddy_classify(self.d)[:2], ("INTERRUPTED", "to_original"))
+
+    def test_a_partial_file_with_NO_write_in_progress_is_not_repaired(self):
+        self.write_in_place(self.MAINT[:40])      # intent is "none"
+        self.assertEqual(self.verdict(), "UNRELATED_EDIT")
+        t.caddy_record_intent(self.d, "to_maintenance", "done")
+        self.assertEqual(self.verdict(), "UNRELATED_EDIT")
+
+    def test_an_edit_that_is_not_a_prefix_is_unrelated_even_while_a_write_is_pending(self):
+        t.caddy_record_intent(self.d, "to_maintenance", "pending")
+        self.write_in_place(self.ORIG + "{$OTHER_HOST} {\n\trespond hi\n}\n")   # somebody's addition
+        v, _, why = t.caddy_classify(self.d)
+        self.assertEqual(v, "UNRELATED_EDIT"); self.assertIn("prefix", why)
+
+    def test_a_file_replaced_by_an_editor_is_a_different_inode_and_never_repaired(self):
+        t.caddy_record_intent(self.d, "to_maintenance", "pending")
+        new = self.cf + ".new"
+        with open(new, "w") as fh:
+            fh.write(self.MAINT[:40])              # looks like a prefix, but it is a different file
+        os.replace(new, self.cf)
+        v, _, why = t.caddy_classify(self.d)
+        self.assertEqual(v, "UNRELATED_EDIT"); self.assertIn("inode", why)
+
+    def test_a_container_seeing_another_file_is_a_bind_mount_identity_failure(self):
+        t.caddy_record_intent(self.d, "to_maintenance", "pending")
+        self.write_in_place(self.MAINT[:40])
+        ino = str(os.stat(self.cf).st_ino)
+        self.assertEqual(self.verdict(container_ino=ino), "INTERRUPTED")
+        v, _, why = t.caddy_classify(self.d, container_ino="99999999")
+        self.assertEqual(v, "UNRELATED_EDIT"); self.assertIn("bind-mount", why)
+
+    def test_a_tampered_saved_copy_invalidates_the_record(self):
+        t.caddy_record_intent(self.d, "to_maintenance", "pending")
+        self.write_in_place(self.MAINT[:40])
+        with open(os.path.join(self.d, "Caddyfile.maintenance"), "a") as fh:
+            fh.write("# edited\n")
+        self.assertEqual(self.verdict(), "RECORD_INVALID")
+
+    def test_the_school_address_site_is_judged_the_same_way(self):
+        t.caddy_record_intent(self.d, "to_maintenance", "pending")
+        with open(self.site, "r+") as fh:
+            fh.seek(0); fh.truncate(); fh.write("*.s.test {\n\trespon")
+        self.assertEqual(self.verdict(), "INTERRUPTED")
+        with open(self.site, "r+") as fh:
+            fh.seek(0); fh.truncate(); fh.write("something else entirely\n")
+        self.assertEqual(self.verdict(), "UNRELATED_EDIT")
+
+    def test_a_missing_live_file_is_not_repaired_by_guesswork(self):
+        os.unlink(self.cf)
+        self.assertEqual(self.verdict(), "UNRELATED_EDIT")
+
+    def test_cli_exit_codes(self):
+        t.caddy_record_intent(self.d, "to_maintenance", "pending")
+        self.write_in_place(self.MAINT[:40])
+        self.assertEqual(t.main(["caddy-classify", "--dir", self.d]), 10)
+        self.write_in_place("x")
+        self.assertEqual(t.main(["caddy-classify", "--dir", self.d]), 11)
+
+
+class AcceptanceRecord(unittest.TestCase):
+    """Finding 4: COMPLETE needs a durable record naming THIS release id and manifest checksum."""
+    RID, SHA = "20261127T120000Z-aaaaaaaaaaaa", "a" * 64
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.d = self.tmp.name
+        os.makedirs(os.path.join(self.d, "acceptance")); os.makedirs(os.path.join(self.d, "releases", self.RID))
+        self.write_state(); self.write_record()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write_state(self, **over):
+        st = {"release_id": self.RID, "manifest_sha256": self.SHA, "accepted": True, "phase": "COMPLETE"}; st.update(over)
+        with open(os.path.join(self.d, "state.json"), "w") as fh:
+            json.dump(st, fh)
+
+    def write_record(self, **over):
+        rec = {"release_id": self.RID, "manifest_sha256": self.SHA, "accepted_at": "2026-11-27T12:00:00Z"}; rec.update(over)
+        with open(os.path.join(self.d, "acceptance", f"{self.RID}.json"), "w") as fh:
+            json.dump(rec, fh)
+
+    def test_a_matching_record_is_valid(self):
+        self.assertTrue(t.acceptance_check(self.d)[0])
+
+    def test_accepted_true_alone_is_not_enough(self):
+        os.unlink(os.path.join(self.d, "acceptance", f"{self.RID}.json"))
+        ok, why = t.acceptance_check(self.d)
+        self.assertFalse(ok); self.assertIn("missing", why)
+
+    def test_a_record_for_another_release_id_is_refused(self):
+        self.write_record(release_id="20261127T130000Z-bbbbbbbbbbbb")
+        self.assertFalse(t.acceptance_check(self.d)[0])
+
+    def test_a_record_for_another_manifest_checksum_is_refused(self):
+        self.write_record(manifest_sha256="b" * 64)
+        self.assertFalse(t.acceptance_check(self.d)[0])
+
+    def test_a_manifest_changed_after_acceptance_is_refused(self):
+        with open(os.path.join(self.d, "releases", self.RID, "manifest.json"), "w") as fh:
+            fh.write("{}")
+        ok, why = t.acceptance_check(self.d)
+        self.assertFalse(ok); self.assertIn("manifest kept", why)
+
+    def test_state_that_does_not_say_accepted_is_refused(self):
+        self.write_state(accepted=False)
+        self.assertFalse(t.acceptance_check(self.d)[0])
+
+    def test_a_malformed_record_is_refused_not_trusted(self):
+        with open(os.path.join(self.d, "acceptance", f"{self.RID}.json"), "w") as fh:
+            fh.write("{not json")
+        self.assertFalse(t.acceptance_check(self.d)[0])
+
+    def test_a_path_like_release_id_cannot_reach_another_file(self):
+        self.write_state(release_id="../state")
+        self.assertFalse(t.acceptance_check(self.d)[0])
+
+
+class RouteAccounting(unittest.TestCase):
+    """Finding 6: every route is accounted for before maintenance; an unclassified route that reaches School Kit is rejected."""
+    def cfg(self, *routes):
+        return {"apps": {"http": {"servers": {"srv0": {"routes": list(routes)}}}}}
+
+    @staticmethod
+    def route(host, dial=None):
+        h = {"handler": "reverse_proxy", "upstreams": [{"dial": dial}]} if dial else {"handler": "static_response", "body": "x"}
+        return {"match": [{"host": [host]}] if host else [], "handle": [{"handler": "subroute", "routes": [{"handle": [h]}]}]}
+
+    MANAGED = {"api.sk.test", "app.sk.test", "portal.sk.test", "*.schools.sk.test"}
+
+    def audit(self, cfg, accepted=None, expected=(), unresolved=()):
+        return t.caddy_route_audit(cfg, set(self.MANAGED), accepted or {}, list(expected), list(unresolved))
+
+    def test_managed_hosts_are_closed_by_the_rewrite(self):
+        r = self.audit(self.cfg(self.route("api.sk.test", "api:4000"), self.route("*.schools.sk.test", "portal:3000")))
+        self.assertTrue(r["ok"]); self.assertEqual(len(r["maintained"]), 2)
+
+    def test_a_site_that_reaches_nothing_of_school_kit_is_unrelated(self):
+        r = self.audit(self.cfg(self.route("betgenius.test"), self.route("other.test", "betgenius-app:9000")))
+        self.assertTrue(r["ok"]); self.assertEqual(len(r["unrelated"]), 2)
+
+    def test_a_custom_school_domain_proxying_to_the_portal_is_rejected_until_decided(self):
+        cfg = self.cfg(self.route("api.sk.test", "api:4000"), self.route("school.example.ng", "portal:3000"))
+        r = self.audit(cfg)
+        self.assertFalse(r["ok"]); self.assertEqual(r["unclassified"][0]["hosts"], "school.example.ng")
+        self.assertTrue(self.audit(cfg, accepted={"school.example.ng": "decided"})["ok"])
+
+    def test_loopback_upstreams_on_school_kit_ports_count_as_school_kit(self):
+        for dial in ("127.0.0.1:4000", "localhost:3002", "api:4000"):
+            self.assertFalse(self.audit(self.cfg(self.route("x.example", dial)))["ok"], dial)
+        self.assertTrue(self.audit(self.cfg(self.route("x.example", "127.0.0.1:9999")))["ok"])
+
+    def test_a_route_with_no_host_that_reaches_school_kit_is_rejected(self):
+        self.assertFalse(self.audit(self.cfg(self.route(None, "web:3000")))["ok"])
+
+    def test_nested_upstreams_are_found(self):
+        r = {"match": [{"host": ["deep.example"]}], "handle": [{"handler": "subroute", "routes": [{"handle": [{"handler": "subroute", "routes": [
+            {"handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": "cbt:3003"}]}]}]}]}]}]}
+        self.assertFalse(self.audit(self.cfg(r))["ok"])
+
+    def test_a_site_file_host_missing_from_the_adapted_config_is_reported(self):
+        r = self.audit(self.cfg(self.route("api.sk.test", "api:4000")), expected=["api.sk.test", "custom.school.test"])
+        self.assertFalse(r["ok"]); self.assertEqual(r["missing"], ["custom.school.test"])
+
+    def test_an_unresolvable_site_address_fails_closed(self):
+        self.assertFalse(self.audit(self.cfg(), unresolved=["cbt.caddy: {$CBT_HOST}"])["ok"])
+
+    def test_site_file_hosts_resolve_placeholders_and_ports(self):
+        text = "{$CBT_HOST} {\n\treverse_proxy cbt:3000\n}\nhttp://custom.school.test:8080 {\n\trespond ok\n}\n(snippet) {\n}\nimport x\n"
+        hosts, bad = t.site_file_hosts(text, {"CBT_HOST": "cbt.sk.test"})
+        self.assertEqual((hosts, bad), (["cbt.sk.test", "custom.school.test"], []))
+        hosts, bad = t.site_file_hosts("{$NOPE} {\n}\n", {})
+        self.assertEqual((hosts, bad), ([], ["{$NOPE}"]))
+
+    def test_cli_rejects_and_accepts(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "sites"))
+            with open(os.path.join(d, "deploy.env"), "w") as fh:
+                fh.write("API_HOST=api.sk.test\nWEB_HOST=app.sk.test\nPORTAL_HOST=portal.sk.test\n")
+            with open(os.path.join(d, "sites", "school-addresses.caddy"), "w") as fh:
+                fh.write("*.schools.sk.test {\n\trespond ok\n}\n")
+            with open(os.path.join(d, "sites", "zz-custom.caddy"), "w") as fh:
+                fh.write("school.example.ng {\n\treverse_proxy portal:3000\n}\n")
+            with open(os.path.join(d, "adapted.json"), "w") as fh:
+                json.dump(self.cfg(self.route("api.sk.test", "api:4000"), self.route("*.schools.sk.test"), self.route("school.example.ng", "portal:3000")), fh)
+            args = ["caddy-route-audit", os.path.join(d, "adapted.json"), "--env-file", os.path.join(d, "deploy.env"), "--sites-dir", os.path.join(d, "sites"),
+                    "--decisions", os.path.join(d, "decisions.conf")]
+            self.assertEqual(t.main(args), 3)
+            with open(os.path.join(d, "decisions.conf"), "w") as fh:
+                fh.write("# operator decisions\nschool.example.ng accept-live parents reach the portal read-only during a window\n")
+            self.assertEqual(t.main(args), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

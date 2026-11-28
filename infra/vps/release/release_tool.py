@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import glob
 import hashlib
 import json
 import os
@@ -545,6 +546,236 @@ def caddy_servers(config: dict) -> str:
     return json.dumps(caddy_normalize(config.get("apps", {}).get("http", {}).get("servers", {})), sort_keys=True)
 
 
+# --------------------------------------------------------------------------- Caddy write intent and recovery
+# A maintenance window rewrites Caddy's files IN PLACE (a single-file bind mount keeps its inode only if the same
+# file is written). That write is not atomic: a crash can leave a PREFIX of the intended content on disk. Recovery must
+# repair exactly that, and must never "repair" a file somebody else edited, so the durable record carries evidence:
+#   * the sha256 of the original and of the maintenance version of each file, and of the full copies kept beside it;
+#   * the inode of each live file when the record was written (an editor that replaces a file changes it);
+#   * the WRITE INTENT: which direction (to_maintenance | to_original) and whether it is pending or done.
+# A live file is "interrupted" only when ALL of these hold: the intent is pending, the file is neither recorded
+# version, it is the same inode, and its bytes are a strict prefix of the content being written. Anything else that
+# differs from the record is an unrelated edit, which is reported and never overwritten.
+CADDY_RECORD = "caddy.record.json"
+
+
+def _sha_path(path: str) -> str | None:
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def _read_bytes(path: str) -> bytes | None:
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _caddy_copies(d: str) -> dict:
+    return {
+        "caddyfile": (os.path.join(d, "Caddyfile.pre-release"), os.path.join(d, "Caddyfile.maintenance")),
+        "site": (os.path.join(d, "sites.pre-release", "school-addresses.caddy"), os.path.join(d, "school-addresses.maintenance")),
+    }
+
+
+def caddy_record_build(d: str, caddyfile: str, site: str) -> dict:
+    files = {}
+    for name, live in (("caddyfile", caddyfile), ("site", site)):
+        orig, maint = _caddy_copies(d)[name]
+        if name == "site" and not os.path.exists(orig):
+            continue
+        files[name] = {"live": live, "original_sha": _sha_path(orig), "maintenance_sha": _sha_path(maint),
+                       "ino": os.stat(live).st_ino}
+        if not files[name]["original_sha"] or not files[name]["maintenance_sha"]:
+            raise Refusal(f"cannot record {name}: a saved copy is missing")
+    return {"version": 2, "written_at": now(), "files": files, "intent": {"direction": None, "status": "none"}}
+
+
+def caddy_record_load(d: str) -> dict | None:
+    try:
+        with open(os.path.join(d, CADDY_RECORD), encoding="utf-8") as fh:
+            rec = json.load(fh)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        raise Refusal(f"the Caddy recovery record is unreadable: {e}")
+    if not isinstance(rec, dict) or rec.get("version") != 2 or not isinstance(rec.get("files"), dict) or "caddyfile" not in rec["files"]:
+        raise Refusal("the Caddy recovery record has an unknown shape")
+    return rec
+
+
+def caddy_record_save(d: str, rec: dict) -> None:
+    atomic_write(os.path.join(d, CADDY_RECORD), (json.dumps(rec, indent=2, sort_keys=True) + "\n").encode())
+
+
+def caddy_record_intent(d: str, direction: str, status: str) -> None:
+    if direction not in ("to_maintenance", "to_original") or status not in ("pending", "done"):
+        raise Refusal("bad write intent")
+    rec = caddy_record_load(d)
+    if rec is None:
+        raise Refusal("no Caddy recovery record to record an intent on")
+    rec["intent"] = {"direction": direction, "status": status, "at": now()}
+    caddy_record_save(d, rec)
+
+
+def caddy_classify(d: str, container_ino: str | None = None) -> tuple[str, str, str]:
+    """-> (verdict, direction, detail). Verdicts: NO_RECORD, CONSISTENT, INTERRUPTED, UNRELATED_EDIT, RECORD_INVALID."""
+    try:
+        rec = caddy_record_load(d)
+    except Refusal as e:
+        return "RECORD_INVALID", "", str(e)
+    if rec is None:
+        return "NO_RECORD", "", "no maintenance window is recorded"
+    intent = rec.get("intent") or {}
+    direction, pending = intent.get("direction") or "", intent.get("status") == "pending"
+    copies = _caddy_copies(d)
+    for name, ent in rec["files"].items():
+        orig, maint = copies[name]
+        if _sha_path(orig) != ent["original_sha"] or _sha_path(maint) != ent["maintenance_sha"]:
+            return "RECORD_INVALID", "", f"the saved copy of {name} does not match its recorded checksum"
+    interrupted = []
+    for name, ent in rec["files"].items():
+        live = ent["live"]
+        cur = _sha_path(live)
+        if cur is None:
+            return "UNRELATED_EDIT", "", f"{live} is missing"
+        if cur in (ent["original_sha"], ent["maintenance_sha"]):
+            continue
+        if not pending:
+            return "UNRELATED_EDIT", "", f"{live} matches neither recorded version and no write was in progress"
+        if os.stat(live).st_ino != ent["ino"]:
+            return "UNRELATED_EDIT", "", f"{live} is a different file (inode changed) from the one the window was recorded on"
+        want = _read_bytes(copies[name][1] if direction == "to_maintenance" else copies[name][0]) or b""
+        have = _read_bytes(live) or b""
+        if not (len(have) < len(want) and want.startswith(have)):
+            return "UNRELATED_EDIT", "", f"{live} is not a prefix of the content being written (not a partial write)"
+        interrupted.append(name)
+    if not interrupted:
+        return "CONSISTENT", direction, "every Caddy file is one of its recorded versions"
+    if container_ino is not None and str(container_ino) != str(rec["files"]["caddyfile"]["ino"]):
+        return "UNRELATED_EDIT", "", "the container's Caddyfile is not the host file the window was recorded on (bind-mount identity differs)"
+    return "INTERRUPTED", direction, "interrupted write of " + ", ".join(interrupted)
+
+
+# --------------------------------------------------------------------------- durable acceptance
+def acceptance_check(d: str) -> tuple[bool, str]:
+    """COMPLETE is final only with a durable record that names THIS release id and THIS manifest checksum, and the manifest
+    kept for the release must be byte-identical to what was accepted."""
+    try:
+        with open(os.path.join(d, "state.json"), encoding="utf-8") as fh:
+            st = json.load(fh)
+    except (OSError, ValueError):
+        return False, "no readable release state"
+    rid, sha = st.get("release_id"), st.get("manifest_sha256")
+    if not rid or not sha or not re.match(r"^[A-Za-z0-9._-]+$", str(rid)):
+        return False, "the state names no release id / manifest checksum"
+    if st.get("accepted") is not True:
+        return False, "the state does not say the release was accepted"
+    try:
+        with open(os.path.join(d, "acceptance", f"{rid}.json"), encoding="utf-8") as fh:
+            rec = json.load(fh)
+    except (OSError, ValueError):
+        return False, f"acceptance record acceptance/{rid}.json is missing or unreadable"
+    if rec.get("release_id") != rid:
+        return False, "the acceptance record is for a different release id"
+    if rec.get("manifest_sha256") != sha:
+        return False, "the acceptance record is for a different manifest checksum"
+    if not rec.get("accepted_at"):
+        return False, "the acceptance record has no timestamp"
+    kept = _sha_path(os.path.join(d, "releases", str(rid), "manifest.json"))
+    if kept is not None and kept != sha:
+        return False, "the manifest kept for this release differs from the accepted checksum"
+    return True, f"release {rid} accepted with manifest {sha[:12]}"
+
+
+# --------------------------------------------------------------------------- production route accounting
+SK_UPSTREAM_NAMES = {"api", "web", "portal", "cbt", "render-worker", "postgres", "redis"}
+SK_LOOPBACK_PORTS = {"3000", "3001", "3002", "3003", "4000", "4001"}
+
+
+def _dials(o) -> list[str]:
+    found: list[str] = []
+    if isinstance(o, dict):
+        for u in o.get("upstreams", []) or []:
+            if isinstance(u, dict) and isinstance(u.get("dial"), str):
+                found.append(u["dial"])
+        for v in o.values():
+            found += _dials(v)
+    elif isinstance(o, list):
+        for v in o:
+            found += _dials(v)
+    return found
+
+
+def _is_sk_dial(dial: str) -> bool:
+    host, _, port = dial.rpartition(":")
+    host = (host or dial).strip("[]").lower()
+    return host in SK_UPSTREAM_NAMES or (host in ("127.0.0.1", "localhost", "::1", "host.docker.internal") and port in SK_LOOPBACK_PORTS)
+
+
+def _host_only(value: str) -> str:
+    value = re.sub(r"^https?://", "", value.strip().strip("\"'"))
+    return value.split("/")[0].split(":")[0].lower()
+
+
+def _subst_env(text: str, env: dict) -> str | None:
+    unresolved = []
+
+    def sub(m):
+        v = env.get(m.group(1), m.group(2))
+        if v is None:
+            unresolved.append(m.group(1))
+            return m.group(0)
+        return v
+
+    out = re.sub(r"\{\$([A-Za-z0-9_]+)(?::([^}]*))?\}", sub, text)
+    return None if unresolved or "{env." in out else out
+
+
+def site_file_hosts(text: str, env: dict) -> tuple[list[str], list[str]]:
+    """Addresses of the top-level site blocks in one site file -> (resolved hosts, addresses that could not be resolved)."""
+    hosts, bad = [], []
+    for line in text.splitlines():
+        if not line or line[0] in " \t#}(" or line.startswith("import ") or not line.rstrip().endswith("{"):
+            continue
+        for addr in re.split(r"[,\s]+", line.rstrip()[:-1].strip()):
+            if not addr:
+                continue
+            resolved = _subst_env(addr, env)
+            (hosts if resolved else bad).append(_host_only(resolved) if resolved else addr)
+    return hosts, bad
+
+
+def caddy_route_audit(config: dict, managed: set[str], accepted: dict[str, str], expected_site_hosts: list[str], unresolved: list[str]) -> dict:
+    """Account for every route in the adapted configuration before a maintenance window.
+    maintained = hosts the maintenance rewrite closes; unrelated = routes that reach nothing of School Kit's;
+    accepted_live = School Kit upstreams an operator decided, in writing, may stay up; unclassified = anything else
+    that reaches a School Kit upstream (REJECTED); missing = a site file whose host is not in the adapted configuration."""
+    rep = {"maintained": [], "unrelated": [], "accepted_live": [], "unclassified": [], "missing": [], "unresolved": sorted(unresolved)}
+    seen: set[str] = set()
+    for srv in (config.get("apps", {}).get("http", {}).get("servers", {}) or {}).values():
+        for r in srv.get("routes", []) or []:
+            hosts = [h.lower() for h in _hosts_of(r)]
+            seen.update(hosts)
+            sk = sorted({x for x in _dials(r) if _is_sk_dial(x)})
+            label = ",".join(hosts) or "(any host)"
+            if hosts and all(h in managed for h in hosts):
+                rep["maintained"].append(label)
+            elif not sk:
+                rep["unrelated"].append(label)
+            elif hosts and all(h in managed or h in accepted for h in hosts):
+                rep["accepted_live"].append(label)
+            else:
+                rep["unclassified"].append({"hosts": label, "upstreams": sk})
+    rep["missing"] = sorted(h for h in set(expected_site_hosts) if h not in seen)
+    rep["ok"] = not (rep["unclassified"] or rep["missing"] or rep["unresolved"])
+    return rep
+
+
 # --------------------------------------------------------------------------- redaction
 
 _REDACTIONS = [
@@ -693,6 +924,17 @@ def main(argv=None) -> int:
     sm.add_argument("manifest")
     ce = sub.add_parser("caddy-equivalent", help="exit 0 when two `caddy adapt` / live configs route identically (group ids normalised)")
     ce.add_argument("a"); ce.add_argument("b"); ce.add_argument("--host", help="compare only the routes of this host")
+    cr = sub.add_parser("caddy-record", help="write the durable Caddy recovery record, or set its write intent")
+    cr.add_argument("action", choices=["write", "intent"]); cr.add_argument("--dir", required=True)
+    cr.add_argument("--caddyfile", default="Caddyfile"); cr.add_argument("--site", default="sites/school-addresses.caddy")
+    cr.add_argument("--direction"); cr.add_argument("--status")
+    cc = sub.add_parser("caddy-classify", help="what state are Caddy's files in, judged against the durable record")
+    cc.add_argument("--dir", required=True); cc.add_argument("--container-ino")
+    ac = sub.add_parser("acceptance-check", help="exit 0 only when COMPLETE has a durable acceptance record matching the release id and manifest checksum")
+    ac.add_argument("--dir", required=True)
+    ra = sub.add_parser("caddy-route-audit", help="account for every route of the adapted Caddy configuration before maintenance")
+    ra.add_argument("adapted"); ra.add_argument("--env-file", required=True); ra.add_argument("--sites-dir", default="sites")
+    ra.add_argument("--decisions"); ra.add_argument("--managed-site", default="school-addresses.caddy")
     sub.add_parser("redact")
 
     a = p.parse_args(argv)
@@ -762,6 +1004,45 @@ def main(argv=None) -> int:
                 same = caddy_servers(ca) == caddy_servers(cb)
             print("equivalent" if same else "DIFFERENT")
             return 0 if same else 3
+        elif a.cmd == "caddy-record":
+            if a.action == "write":
+                caddy_record_save(a.dir, caddy_record_build(a.dir, a.caddyfile, a.site))
+            else:
+                caddy_record_intent(a.dir, a.direction or "", a.status or "")
+        elif a.cmd == "caddy-classify":
+            verdict, direction, detail = caddy_classify(a.dir, a.container_ino)
+            print(f"{verdict}|{direction}|{detail}")
+            return {"NO_RECORD": 0, "CONSISTENT": 0, "INTERRUPTED": 10, "UNRELATED_EDIT": 11, "RECORD_INVALID": 12}[verdict]
+        elif a.cmd == "acceptance-check":
+            good, why = acceptance_check(a.dir)
+            print(("valid: " if good else "invalid: ") + why)
+            return 0 if good else 3
+        elif a.cmd == "caddy-route-audit":
+            env: dict = {}
+            with open(a.env_file, encoding="utf-8") as fh:
+                for line in fh:
+                    k, sep, v = line.rstrip("\n").partition("=")
+                    if sep and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", k):
+                        env[k] = v
+            managed = {_host_only(env[k]) for k in ("API_HOST", "WEB_HOST", "PORTAL_HOST") if env.get(k)}
+            expected, unresolved = [], []
+            for f in sorted(glob.glob(os.path.join(a.sites_dir, "*.caddy"))):
+                with open(f, encoding="utf-8") as fh:
+                    hs, bad = site_file_hosts(fh.read(), env)
+                expected += hs
+                unresolved += [f"{os.path.basename(f)}: {x}" for x in bad]
+                if os.path.basename(f) == a.managed_site:
+                    managed.update(hs)
+            decisions: dict[str, str] = {}
+            if a.decisions and os.path.exists(a.decisions):
+                with open(a.decisions, encoding="utf-8") as fh:
+                    for line in fh:
+                        parts = line.split(None, 2)
+                        if len(parts) >= 3 and parts[1] == "accept-live" and not parts[0].startswith("#"):
+                            decisions[parts[0].lower()] = parts[2].strip()
+            rep = caddy_route_audit(load_manifest(a.adapted), managed, decisions, expected, unresolved)
+            out(rep)
+            return 0 if rep["ok"] else 3
         elif a.cmd == "redact":
             sys.stdout.write(redact(sys.stdin.read()))
     except Refusal as e:
