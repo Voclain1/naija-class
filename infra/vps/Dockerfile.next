@@ -11,8 +11,15 @@ FROM node:22-slim AS builder
 WORKDIR /app
 RUN corepack enable
 ENV PUPPETEER_SKIP_DOWNLOAD=true NEXT_TELEMETRY_DISABLED=1
+# Dependencies first, keyed on the lockfile ALONE (pnpm's documented Docker pattern): `pnpm fetch`
+# downloads every package the lockfile names into the store without looking at any source, so a source
+# change reuses this layer (and the layer cache restored from CI) and only the offline install and the
+# build below re-run. It used to be `COPY . .` first, so every commit reinstalled everything.
+# package.json is copied only for its `packageManager` pin (corepack reads it to pick pnpm's version).
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+RUN pnpm fetch
 COPY . .
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --offline
 
 ARG APP
 # The app's public build settings (NEXT_PUBLIC_*, and SESSION_COOKIE_DOMAIN,
